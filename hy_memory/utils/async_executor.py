@@ -54,6 +54,8 @@ def concurrent_result_guarded(
         try:
             return future.result(timeout=interval)
         except concurrent.futures.TimeoutError:
+            if future.done():
+                return future.result()
             target_loop.call_soon_threadsafe(lambda: None)
 
 
@@ -70,4 +72,6 @@ async def await_concurrent_future_guarded(
         try:
             return await asyncio.wait_for(asyncio.shield(wrapped), timeout=interval)
         except asyncio.TimeoutError:
+            if wrapped.done():
+                return wrapped.result()
             target_loop.call_soon_threadsafe(lambda: None)
