@@ -12,6 +12,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ensureStableRuntimeThenRepair,
   installBundledCliIfNeeded,
+  installServiceWithDisabledFallback,
+  isDisabledServiceInstallError,
   isInstalledApplicationsApp,
   stableRuntimeErrorCode,
   startStableRuntimeRepair,
@@ -156,5 +158,99 @@ describe("ensureStableRuntimeThenRepair", () => {
     expect(stableRuntimeErrorCode("installed_version_conflict")).toBe(
       "desktop_start_failed",
     );
+  });
+});
+
+describe("isDisabledServiceInstallError", () => {
+  it("recognises the durable disabled-service state", () => {
+    expect(
+      isDisabledServiceInstallError(
+        new Error("runtime_service_disabled_by_system"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps every other startup failure fatal", () => {
+    for (const other of [
+      new Error("runtime_service_label_conflict"),
+      new Error("runtime_service_install_root_not_ready"),
+      new Error("runtime_service_command_failed"),
+      "runtime_service_disabled_by_system",
+      null,
+      undefined,
+    ]) {
+      expect(isDisabledServiceInstallError(other)).toBe(false);
+    }
+  });
+});
+
+describe("installServiceWithDisabledFallback", () => {
+  it("keeps a successfully installed service managed", async () => {
+    const restoreOwner = vi.fn(async () => undefined);
+    const reportDisabled = vi.fn(async () => undefined);
+    const startTransient = vi.fn(async () => undefined);
+
+    await expect(
+      installServiceWithDisabledFallback({
+        install: async () => undefined,
+        restoreOwner,
+        reportDisabled,
+        startTransient,
+      }),
+    ).resolves.toBe("managed");
+    expect(restoreOwner).not.toHaveBeenCalled();
+    expect(reportDisabled).not.toHaveBeenCalled();
+    expect(startTransient).not.toHaveBeenCalled();
+  });
+
+  it("uses an app-lifetime Runtime when launchd disabled the service", async () => {
+    const order: string[] = [];
+
+    await expect(
+      installServiceWithDisabledFallback({
+        install: async () => {
+          order.push("install");
+          throw new Error("runtime_service_disabled_by_system");
+        },
+        restoreOwner: async () => {
+          order.push("restore-owner");
+        },
+        reportDisabled: async () => {
+          order.push("report-start");
+          await Promise.resolve();
+          order.push("report-end");
+        },
+        startTransient: async () => {
+          order.push("start-transient");
+        },
+      }),
+    ).resolves.toBe("transient");
+    expect(order).toEqual([
+      "install",
+      "restore-owner",
+      "report-start",
+      "report-end",
+      "start-transient",
+    ]);
+  });
+
+  it("restores ownership and preserves unrelated startup failures", async () => {
+    const restoreOwner = vi.fn(async () => undefined);
+    const reportDisabled = vi.fn(async () => undefined);
+    const startTransient = vi.fn(async () => undefined);
+
+    await expect(
+      installServiceWithDisabledFallback({
+        install: async () => {
+          throw new Error("runtime_service_command_failed");
+        },
+        restoreOwner,
+        reportDisabled,
+        startTransient,
+      }),
+    ).rejects.toThrow("runtime_service_command_failed");
+    expect(restoreOwner).toHaveBeenCalledOnce();
+    expect(reportDisabled).not.toHaveBeenCalled();
+    expect(startTransient).not.toHaveBeenCalled();
   });
 });
