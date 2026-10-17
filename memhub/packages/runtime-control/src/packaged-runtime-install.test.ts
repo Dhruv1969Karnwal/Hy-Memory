@@ -100,6 +100,7 @@ async function installFormalCurrent(options: {
   executable: string;
   installRoot: string;
   buildNumber?: number;
+  gitCommit?: string;
 }): Promise<{ current: string; selected: string }> {
   const buildNumber = options.buildNumber ?? 3757;
   const appLayout = await installPackagedRuntime({
@@ -109,6 +110,7 @@ async function installFormalCurrent(options: {
     platform: "darwin",
     arch: "arm64",
     buildNumber,
+    gitCommit: options.gitCommit ?? "a".repeat(40),
   });
   const formalSource = path.join(options.root, `formal-dist-${buildNumber}`);
   await cp(appLayout.version_directory, formalSource, { recursive: true });
@@ -374,6 +376,72 @@ describe("installPackagedRuntime", () => {
       }),
     ).rejects.toThrow("installed_version_conflict");
     expect((await lstat(current)).ino).toBe(inodeBefore);
+  });
+
+  it("takes over from a same-build runtime whose bytes differ when the bundle asks it to", async () => {
+    const { root, resources, executable, installRoot } = await fixture();
+    const { current, selected } = await installFormalCurrent({
+      root,
+      resources,
+      executable,
+      installRoot,
+    });
+    // A re-cut package: same build number, manifest still self-consistent,
+    // but not the bytes this bundle carries.
+    await writeFile(path.join(selected, "web", "index.html"), "rebuilt-body");
+    await rewriteManifestDigest(selected, "web/index.html");
+    const receipt = await installPackagedRuntime({
+      resourcesPath: resources,
+      executablePath: executable,
+      installRoot,
+      platform: "darwin",
+      arch: "arm64",
+      buildNumber: 3757,
+      gitCommit: "b".repeat(40),
+      replaceSameBuild: true,
+    });
+    expect(receipt.reused_current).toBe(false);
+    expect(receipt.version_directory).not.toBe(selected);
+    // `current` serves the payload this bundle brought.
+    expect(await readlink(current)).toBe(
+      path.relative(installRoot, receipt.version_directory),
+    );
+    expect(
+      await readFile(
+        path.join(receipt.version_directory, "web", "index.html"),
+        "utf8",
+      ),
+    ).toBe("web-body");
+    // The superseded tree is left on disk, not edited: it is the rollback.
+    expect(
+      await readFile(path.join(selected, "web", "index.html"), "utf8"),
+    ).toBe("rebuilt-body");
+  });
+
+  it("refuses same-commit different bytes even when the bundle opts in", async () => {
+    const { root, resources, executable, installRoot } = await fixture();
+    const { selected } = await installFormalCurrent({
+      root,
+      resources,
+      executable,
+      installRoot,
+      gitCommit: "a".repeat(40),
+    });
+    await writeFile(path.join(selected, "web", "index.html"), "unexpected");
+    await rewriteManifestDigest(selected, "web/index.html");
+
+    await expect(
+      installPackagedRuntime({
+        resourcesPath: resources,
+        executablePath: executable,
+        installRoot,
+        platform: "darwin",
+        arch: "arm64",
+        buildNumber: 3757,
+        gitCommit: "a".repeat(40),
+        replaceSameBuild: true,
+      }),
+    ).rejects.toThrow("installed_version_conflict");
   });
 
   it.each(["missing"])(

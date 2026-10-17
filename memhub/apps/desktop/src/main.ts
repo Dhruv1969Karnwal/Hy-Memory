@@ -1004,6 +1004,9 @@ async function initialize(isQuitting: () => boolean): Promise<void> {
           ...(packagedCommit === undefined
             ? {}
             : { gitCommit: packagedCommit }),
+          // Only the packaged Desktop path opts into a valid same-build,
+          // different-commit takeover. CLI installs remain strict.
+          replaceSameBuild: true,
           serviceEnableMarker: runtimeServiceEnableMarkerPath(dataDir),
         });
         runtimeChanged = !installed.reused_current;
@@ -1165,6 +1168,9 @@ async function initialize(isQuitting: () => boolean): Promise<void> {
           if (process.platform !== "darwin" && process.platform !== "linux") {
             throw new Error("packaged_runtime_platform_unsupported");
           }
+          // Captured here, not at the call site: the install callback below is
+          // a nested function, and TypeScript drops property narrowing there.
+          const hostPlatform = process.platform;
           const installRoot = defaultManagedInstallRoot(
             process.platform,
             app.getPath("home"),
@@ -1174,7 +1180,7 @@ async function initialize(isQuitting: () => boolean): Promise<void> {
             resourcesPath: process.resourcesPath,
             executablePath: process.execPath,
             installRoot,
-            platform: process.platform,
+            platform: hostPlatform,
             arch: process.arch,
             ...(packagedBuildNumber === undefined
               ? {}
@@ -1182,6 +1188,7 @@ async function initialize(isQuitting: () => boolean): Promise<void> {
             ...(packagedCommit === undefined
               ? {}
               : { gitCommit: packagedCommit }),
+            replaceSameBuild: true,
             serviceEnableMarker: runtimeServiceEnableMarkerPath(dataDir),
           });
           await installBundledCliIfNeeded({
