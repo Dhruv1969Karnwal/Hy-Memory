@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-HY Memory - Memory Strength（基于"闲置时长"的时间衰减排序）
+HY Memory - Memory Strength (time-decay ranking based on "idle duration")
 
-第一版记忆排序信号 strength，反映记忆的"活跃度"——基于使用近度 + 使用频次，
-而非创建以来的绝对年龄：
+The first strength ranking signal reflects the "activity" of a memory -- from recency of use plus usage frequency,
+rather than its absolute age since creation:
 
-    idle_days = (now - last_accessed_at) / 1 day        # 不是 age（创建至今）
-    strength  = (1 + log(access_count)) * exp(-idle_days / tau)   # tau 默认 180
+    idle_days = (now - last_accessed_at) / 1 day        # not age (time since creation)
+    strength  = (1 + log(access_count)) * exp(-idle_days / tau)   # tau defaults to 180
 
-设计理由：2023 年创建的"用户喜欢 Kobe"若昨天刚被命中，依然重要；用 age_days 会
-被衰减得很惨，但用 idle_days（自上次访问以来）就能保持强度。高频命中（access_count
-大）再叠加 log 频次加权。
+Rationale: "the user likes Kobe" created in 2023 still matters if it was hit yesterday; age_days would decay it
+harshly, while idle_days (since the last access) keeps its strength. Frequent hits (high access_count)
+add a further log-frequency boost.
 
-冷启动：last_accessed_at 为空时 idle_days 退回用 gmt_created 计算（新记忆 idle≈0
-→ 满强度）。access_count=0 时 freq=1.0（不罚不奖，避免 log(0)）。
+Cold start: when last_accessed_at is empty, idle_days falls back to gmt_created (a new memory has idle≈0
+→ full strength). With access_count=0, freq=1.0 (neither punished nor rewarded, avoiding log(0)).
 
-最终排序：final_score = relevance_score × strength（乘法叠加），仅作用于 normal
-通道（L2/L3/L4），profile（L0/L6）/ intention（L7）不参与。
+Final ranking: final_score = relevance_score × strength (multiplied in), applied only to the normal
+channel (L2/L3/L4); profile (L0/L6) and intention (L7) do not take part.
 """
 
 from __future__ import annotations
@@ -33,12 +33,12 @@ DEFAULT_TAU = 180.0
 
 def compute_strength(node: Any, *, now: Optional[datetime] = None, tau: float = DEFAULT_TAU) -> float:
     """
-    计算单个节点的 strength。
+    Compute the strength of a single node.
 
     strength = (1 + log(access_count)) * exp(-idle_days / tau)
-      - access_count < 1 → 频次因子 = 1.0（避免 log(0)，不罚不奖）
-      - last_accessed_at 为空 → idle_days 用 gmt_created 计算（冷启动）
-      - 两者都为空 → idle_days = 0（满近度）
+      - access_count < 1 → frequency factor = 1.0 (avoids log(0), neither punished nor rewarded)
+      - last_accessed_at empty → idle_days computed from gmt_created (cold start)
+      - both empty → idle_days = 0 (full recency)
     """
     if tau <= 0:
         tau = DEFAULT_TAU
@@ -70,12 +70,12 @@ def apply_strength_to_normal(
     tau: float = DEFAULT_TAU,
 ) -> List[Dict[str, Any]]:
     """
-    就地把 strength 乘进 normal 通道命中的分数；profile / intention 层原样透传。
+    Multiply strength into the scores of normal-channel hits in place; profile / intention layers pass through unchanged.
 
     hits: [{"node": MemoryNode, "score": float, "node_id": ...}, ...]
-    profile_layers / intention_layers: 不参与衰减的 layer value 集合（如
+    profile_layers / intention_layers: sets of layer values excluded from decay (e.g.
         {"l0_basic_info","l6_schema"} / {"l7_intention"}）。
-    返回同一个 list（已就地修改），方便链式调用。
+    Returns the same list (already modified in place) so calls can be chained.
     """
     _now = now or datetime.now()
     _profile = profile_layers or set()
@@ -100,10 +100,10 @@ async def bump_access(
     now: Optional[datetime] = None,
 ) -> int:
     """
-    best-effort 把命中节点的 access_count+1、last_accessed_at=now 写回 VDB。
+    Best-effort write-back of access_count+1 and last_accessed_at=now for hit nodes into the VDB.
 
-    items: 可迭代的 (node_id, current_access_count) 二元组。
-    任何写失败只记 debug，绝不抛错（不影响搜索响应）。返回成功写入条数。
+    items: an iterable of (node_id, current_access_count) pairs.
+    Any write failure is only logged at debug level and never raised (the search response is unaffected). Returns the number of successful writes.
     """
     _now = now or datetime.now()
     ts = int(_now.timestamp())

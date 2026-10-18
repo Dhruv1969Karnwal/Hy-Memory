@@ -1,10 +1,10 @@
-"""记忆关系图（pro 模式）。
+"""Memory relation graph (pro mode).
 
-- `projector`：写侧 —— 把 L2_FACT 投影进图，并建 RELATED_TO / TAGGED_WITH 边
-- `rerank`：读侧 —— 用法 A（池内支持度传播）/ B（k 跳阈值松弛）/ C（关系路径）
-- `topic_summary`：写侧 —— 按主题切摘要（要 LLM，写侧允许）
+- `projector`: write side -- project L2_FACT into the graph and build RELATED_TO / TAGGED_WITH edges
+- `rerank`: read side -- usage A (in-pool support propagation) / B (k-hop threshold relaxation) / C (relation paths)
+- `topic_summary`: write side -- split summaries by topic (needs an LLM, allowed on the write side)
 
-设计文档：`docs/pro_graph_design.md`
+Design doc: `docs/pro_graph_design.md`
 """
 
 from .projector import (

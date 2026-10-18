@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""向后兼容：请使用 pipeline_log_writer.PipelineLogWriter。"""
+"""Backwards compatibility: use pipeline_log_writer.PipelineLogWriter instead."""
 
 from .pipeline_log_writer import PipelineLogWriter, TraceFileWriter
 

@@ -1,7 +1,7 @@
 """
-Agent Memory - 记忆评分
+Agent Memory - Memory scoring
 
-计算记忆的综合评分，考虑语义相似度、时间衰减、重要性等因素
+Computes a composite memory score from semantic similarity, time decay, importance and other factors
 """
 
 import math
@@ -14,21 +14,21 @@ from ..config import RecallConfig
 
 class MemoryScorer:
     """
-    记忆评分器
+    Memory scorer
     
-    计算记忆的综合评分，支持：
-    - 语义相似度评分
-    - 时间衰减评分
-    - 重要性评分
-    - 访问频率评分
+    Computes a composite memory score, covering:
+    - Semantic similarity score
+    - Time decay score
+    - Importance score
+    - Access frequency score
     """
     
     def __init__(self, config: Optional[RecallConfig] = None):
         """
-        初始化评分器
+        Initialize the scorer
         
         Args:
-            config: 召回配置
+            config: recall configuration
         """
         self.config = config or RecallConfig()
     
@@ -39,29 +39,29 @@ class MemoryScorer:
         reference_time: Optional[datetime] = None
     ) -> MemoryScore:
         """
-        计算单条记忆的综合评分
+        Compute the composite score of a single memory
         
         Args:
-            entry: 记忆条目
-            semantic_score: 语义相似度分数（0-1）
-            reference_time: 参考时间（用于计算时间衰减）
+            entry: memory entry
+            semantic_score: semantic similarity score (0-1)
+            reference_time: reference time used to compute time decay
         
         Returns:
-            评分结果
+            The scoring result
         """
         if reference_time is None:
             reference_time = datetime.now()
         
-        # 1. 语义相似度分数（已由向量检索提供）
+        # 1. Semantic similarity score (already provided by vector retrieval)
         semantic = max(0.0, min(1.0, semantic_score))
         
-        # 2. 时间衰减分数
+        # 2. Time decay score
         recency = self._calc_recency_score(entry, reference_time)
         
-        # 3. 重要性分数
+        # 3. Importance score
         importance = self._calc_importance_score(entry)
         
-        # 4. 访问频率分数
+        # 4. Access frequency score
         access = self._calc_access_score(entry)
         
         return MemoryScore(
@@ -76,8 +76,8 @@ class MemoryScorer:
         )
     
     def _get_event_time(self, entry: MemoryEntry) -> Optional[datetime]:
-        """获取 entry 的事件时间，兼容 V2 MemoryNode 和 V1 metadata"""
-        # V2: MemoryNode 直接有 created_at / valid_from
+        """Get the event time of entry, compatible with V2 MemoryNode and V1 metadata"""
+        # V2: MemoryNode has created_at / valid_from directly
         if hasattr(entry, 'created_at') and entry.created_at is not None:
             return entry.created_at
         # V1: entry.metadata.event_time
@@ -86,8 +86,8 @@ class MemoryScorer:
         return None
 
     def _get_importance(self, entry: MemoryEntry) -> float:
-        """获取 entry 的重要性，兼容 V2 MemoryNode 和 V1 metadata"""
-        # V2: MemoryNode 直接有 confidence 字段作为重要性指标
+        """Get the importance of entry, compatible with V2 MemoryNode and V1 metadata"""
+        # V2: MemoryNode exposes the confidence field as the importance indicator
         if hasattr(entry, 'confidence') and entry.confidence is not None:
             return entry.confidence
         # V1: entry.metadata.importance
@@ -96,8 +96,8 @@ class MemoryScorer:
         return 0.5
 
     def _get_access_count(self, entry: MemoryEntry) -> int:
-        """获取 entry 的访问次数，兼容 V2 MemoryNode 和 V1 metadata"""
-        # V2: MemoryNode 直接有 access_count
+        """Get the access count of entry, compatible with V2 MemoryNode and V1 metadata"""
+        # V2: MemoryNode has access_count directly
         if hasattr(entry, 'access_count') and entry.access_count is not None:
             return entry.access_count
         # V1: entry.metadata.access_count
@@ -106,13 +106,13 @@ class MemoryScorer:
         return 0
 
     def _get_semantic_score(self, entry: MemoryEntry) -> float:
-        """获取 entry 的语义分数，兼容 score 对象"""
+        """Get the semantic score of entry, compatible with the score object"""
         if hasattr(entry, 'score') and entry.score and hasattr(entry.score, 'semantic_score'):
             return entry.score.semantic_score
         return 0.0
 
     def _get_final_score(self, entry: MemoryEntry) -> float:
-        """获取 entry 的最终评分，兼容 score 对象"""
+        """Get the final score of entry, compatible with the score object"""
         if hasattr(entry, 'score') and entry.score and hasattr(entry.score, 'final_score'):
             return entry.score.final_score
         return 0.0
@@ -123,19 +123,19 @@ class MemoryScorer:
         reference_time: datetime
     ) -> float:
         """
-        计算时间衰减分数
+        Compute the time decay score
         
-        使用指数衰减：score = decay_factor ^ (days / decay_days)
+        Uses exponential decay: score = decay_factor ^ (days / decay_days)
         """
         event_time = self._get_event_time(entry)
         if event_time is None:
-            return 0.5  # 默认中等分数
+            return 0.5  # Default medium score
         days_passed = (reference_time - event_time).days
         
         if days_passed <= 0:
             return 1.0
         
-        # 指数衰减
+        # Exponential decay
         decay_days = self.config.recency_decay_days
         decay_factor = self.config.recency_decay_factor
         
@@ -143,18 +143,18 @@ class MemoryScorer:
         return max(0.0, min(1.0, score))
     
     def _calc_importance_score(self, entry: MemoryEntry) -> float:
-        """计算重要性分数"""
+        """Compute the importance score"""
         return max(0.0, min(1.0, self._get_importance(entry)))
     
     def _calc_access_score(self, entry: MemoryEntry) -> float:
         """
-        计算访问频率分数
+        Compute the access frequency score
         
-        使用对数函数：score = log(access_count + 1) / log(max_count + 1)
+        Uses a logarithm: score = log(access_count + 1) / log(max_count + 1)
         """
         access_count = self._get_access_count(entry)
         
-        # 假设最大访问次数为 100
+        # Assume the maximum access count is 100
         max_count = 100
         
         if access_count <= 0:
@@ -169,20 +169,20 @@ class MemoryScorer:
         reference_time: Optional[datetime] = None
     ) -> List[MemoryEntry]:
         """
-        批量计算评分
+        Compute scores in batch
         
         Args:
-            entries: 记忆列表
-            reference_time: 参考时间
+            entries: list of memories
+            reference_time: reference time
         
         Returns:
-            带评分的记忆列表
+            The memory list with scores
         """
         if reference_time is None:
             reference_time = datetime.now()
         
         for entry in entries:
-            # 使用已有的语义分数
+            # Reuse the existing semantic score
             semantic_score = self._get_semantic_score(entry)
             entry.score = self.score(entry, semantic_score, reference_time)
         
@@ -194,14 +194,14 @@ class MemoryScorer:
         reference_time: Optional[datetime] = None
     ) -> List[MemoryEntry]:
         """
-        评分并排序
+        Score and sort
         
         Args:
-            entries: 记忆列表
-            reference_time: 参考时间
+            entries: list of memories
+            reference_time: reference time
         
         Returns:
-            按综合评分排序的记忆列表
+            The memory list sorted by composite score
         """
         scored = self.score_batch(entries, reference_time)
         return sorted(scored, key=lambda e: self._get_final_score(e), reverse=True)
@@ -212,14 +212,14 @@ class MemoryScorer:
         min_score: float = 0.0
     ) -> List[MemoryEntry]:
         """
-        按分数阈值过滤
+        Filter by score threshold
         
         Args:
-            entries: 记忆列表
-            min_score: 最小分数阈值
+            entries: list of memories
+            min_score: minimum score threshold
         
         Returns:
-            过滤后的记忆列表
+            The filtered memory list
         """
         return [e for e in entries if self._get_final_score(e) >= min_score]
     
@@ -231,9 +231,9 @@ class MemoryScorer:
         access_weight: Optional[float] = None
     ) -> None:
         """
-        调整评分权重
+        Adjust the scoring weights
         
-        权重会自动归一化
+        The weights are normalized automatically
         """
         weights = [
             semantic_weight or self.config.semantic_weight,
@@ -242,7 +242,7 @@ class MemoryScorer:
             access_weight or self.config.access_weight,
         ]
         
-        # 归一化
+        # Normalization
         total = sum(weights)
         if total > 0:
             weights = [w / total for w in weights]

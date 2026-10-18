@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-Pipeline 可观测性：Log（文件 JSONL，始终开启）与 Trace（SQLite pipeline_logs，可关闭）。
+Pipeline observability: Log (file JSONL, always on) and Trace (SQLite pipeline_logs, can be disabled).
 
-- Log：运维 tail/grep，每个环节即时一行，不依赖后续步骤成功与否。
-- Trace：Inspector / 调试，落库 pipeline_logs（需 MEMORY_CACHE_BACKEND=sqlite 等持久化后端）。
+- Log: for operators to tail/grep, one line per stage as soon as it happens, independent of whether later steps succeed.
+- Trace: for the Inspector / debugging, persisted into pipeline_logs (needs a durable backend such as MEMORY_CACHE_BACKEND=sqlite).
 
-环境变量：
-  MEMORY_PIPELINE_TRACE_ENABLED  — Trace 落库，默认 true；OpenClaw C 端可设 false
-  MEMORY_MEMORY_OPERATIONS_ENABLED — memory_operations 审计表落库，默认 false
-  MEMORY_LOG_DIR                 — Log 目录（优先）
-  MEMORY_TRACE_LOG_DIR           — Log 目录（兼容旧名）
+Environment variables:
+  MEMORY_PIPELINE_TRACE_ENABLED  — persist Trace rows, default true; OpenClaw client deployments may set false
+  MEMORY_MEMORY_OPERATIONS_ENABLED — persist the memory_operations audit table, default false
+  MEMORY_LOG_DIR                 — Log directory (preferred)
+  MEMORY_TRACE_LOG_DIR           — Log directory (legacy name, still supported)
 
-子目录（{log_dir}/{subdir}/{date}.log）由 PipelineLogWriter 从每条记录的
-user_id 前缀（第一个 "__" 左侧）切分；无前缀回落 "default"。该前缀是
-通用 namespace，可用于项目、部署或数据分桶。
+Subdirectories ({log_dir}/{subdir}/{date}.log) are derived by PipelineLogWriter from the prefix of each record's
+user_id (everything left of the first "__"); without a prefix it falls back to "default". That prefix is a
+generic namespace and can be used for projects, deployments or data bucketing.
 
-写入语义（search/write 热路径）：
-  store_pipeline_log 包装后对调用方 **立即返回**；JSONL / DB 落盘在后台任务完成。
-  event_at_ms / step-to-step elapsed_ms 在入队前同步打点，不受后台 IO 影响。
-  调用方（如 App 侧 write_trace()）若已在事件真正发生的瞬间同步捕获了
-  event_at_ms 并显式传入，本模块优先复用它而不是用本地 time.time() 覆盖——
-  这样即使调用经过跨线程/跨队列转发到这里已产生延迟，落库时间也仍对齐真实
-  事件时刻；不传或传 0 时才回落本地当前时间。
+Write semantics (search/write hot paths):
+  store_pipeline_log **returns immediately** to the caller once wrapped; JSONL / DB flushing happens in background tasks.
+  event_at_ms / step-to-step elapsed_ms are stamped synchronously before enqueueing and are unaffected by background IO.
+  When the caller (e.g. the App-side write_trace()) already captured event_at_ms synchronously at the very moment the event
+  happened and passes it explicitly, this module reuses it instead of overwriting it with a local time.time() --
+  so even if the call reached here through cross-thread/cross-queue forwarding and is already delayed, the persisted time still aligns with the real
+  event moment; only a missing value or 0 falls back to the local current time.
 """
 
 from __future__ import annotations
@@ -42,36 +42,36 @@ from .async_executor import run_in_executor_guarded
 
 logger = logging.getLogger(__name__)
 
-# JSONL 同步 open/write 放到专用线程池，避免堵 asyncio 事件循环。
+# The synchronous JSONL open/write runs in a dedicated thread pool so it cannot stall the asyncio event loop.
 _jsonl_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=2,
     thread_name_prefix="pipeline-jsonl",
 )
 
-# 测试可 await drain_pipeline_log_tasks() 等待后台落盘完成。
+# Tests can await drain_pipeline_log_tasks() to wait for background flushing to finish.
 _pending_log_tasks: Set["asyncio.Task[Any]"] = set()
 
 _TERMINAL_STEPS = {"READ_SUMMARY", "READ_CODING_RESULT", "WRITE_TIMELINE"}
 _LAST_EVENT_MAX = 4096
-# step → 该 step 主要耗时的语义 key。注入的值是业务侧传进 store_pipeline_log 的
-# elapsed_ms，即「该环节整体墙钟耗时」。
+# step -> semantic key of that step's dominant cost. The injected value is the elapsed_ms the business code passed into store_pipeline_log,
+# i.e. the overall wall-clock duration of that stage.
 #
-# 命名原则：只有当该 step 的耗时**必然等于**某种具体操作耗时时，才用具体语义 key
-# （embed_ms / llm_ms / vdb_search_ms）；否则用中立的 step_ms。
+# Naming rule: use a concrete semantic key only when the step's duration **necessarily equals** that of a specific operation
+# (embed_ms / llm_ms / vdb_search_ms); otherwise use the neutral step_ms.
 #
-# READ_SCENE_JUDGE 用 step_ms 而非 llm_ms：它只在 mode="llm" 时才真调 LLM，
-# mode="default"（单 query / 功能关闭）与 "explicit"（显式指定 scene）都是
-# 纯同步分支、根本不调 LLM。此前统一映射成 llm_ms 会让人把「环节耗时」误读成
-# 「LLM 耗时」（线上曾出现 mode=default 却 llm_ms=445 的困惑）。真实 LLM 耗时
-# 改由业务侧在三个 LLM 分支显式塞 parsed.llm_ms（见 client._async_search_impl）。
+# READ_SCENE_JUDGE uses step_ms rather than llm_ms: it only calls the LLM in mode="llm";
+# mode="default" (single query / feature off) and "explicit" (scene specified explicitly) are both
+# purely synchronous branches that never call the LLM at all. Mapping everything to llm_ms used to invite reading "stage latency" as
+# "LLM latency" (production once showed mode=default with llm_ms=445). Real LLM latency is
+# now injected by business code as parsed.llm_ms in the three LLM branches (see client._async_search_impl).
 #
-# S1_EMBED 用 embed_ms：writer 侧用 `datetime.now()` 精确圈住
-# `embed_queued_with_meta()` 这一次调用，涵盖 入队 → 等锁 → 等攒批 → HTTP，
-# 正是「用户感受到的整个 embed 环节耗时」。**告警应盯这个字段**——只看
-# provider_meta.embed_request_ms（纯 HTTP）会把排队/锁竞争问题整个隐藏掉
-# （线上事故：embed_request_ms 仅 1.7s，但排队使环节耗时达 48s）。
-# 此前 S1_EMBED 未登记在本表中，导致业务侧算好的耗时被 _inject_op_ms 丢弃、
-# parsed.embed_ms 恒为 None，只能退而用顶层 elapsed_ms（step 间隔）做告警。
+# S1_EMBED uses embed_ms: the writer brackets this single call precisely with `datetime.now()`,
+# `embed_queued_with_meta()`, covering enqueue -> lock wait -> batch wait -> HTTP,
+# which is exactly the whole embed stage duration as the user experiences it. **Alerts should watch this field** -- looking only at
+# provider_meta.embed_request_ms (pure HTTP) hides the entire queuing/lock-contention problem
+# (production incident: embed_request_ms was only 1.7s while queuing pushed the stage duration to 48s).
+# S1_EMBED used to be missing from this table, so the duration computed by business code was discarded by _inject_op_ms,
+# parsed.embed_ms stayed None forever, and alerts could only fall back to the top-level elapsed_ms (step interval).
 _STEP_TIMING_KEY = {
     "READ_EMBED_QUERY": "embed_ms", "READ_CODING_EMBED": "embed_ms",
     "READ_RECALL_VEC": "vdb_search_ms", "READ_HIDDEN_L0_CONTEXT": "vdb_search_ms",
@@ -86,7 +86,7 @@ _STEP_TIMING_KEY = {
 
 
 def is_pipeline_trace_enabled() -> bool:
-    """是否将 pipeline step 写入 cache（SQLite pipeline_logs），供 Inspector 使用。"""
+    """Whether pipeline steps are written to the cache (SQLite pipeline_logs) for the Inspector."""
     return os.getenv("MEMORY_PIPELINE_TRACE_ENABLED", "true").lower() in (
         "true",
         "1",
@@ -95,7 +95,7 @@ def is_pipeline_trace_enabled() -> bool:
 
 
 def is_memory_operations_enabled() -> bool:
-    """是否将知识库变动写入 memory_operations 审计表。默认关闭（false）。"""
+    """Whether memory base changes are written to the memory_operations audit table. Off by default (false)."""
     return os.getenv("MEMORY_MEMORY_OPERATIONS_ENABLED", "false").lower() in (
         "true",
         "1",
@@ -125,9 +125,9 @@ def redact_content(value: str) -> str:
 
 def resolve_pipeline_log_dir() -> str:
     """
-    JSONL pipeline log 根目录（始终使用，有默认值）。
+    Root directory of the JSONL pipeline logs (always used, has a default).
 
-    优先级: MEMORY_LOG_DIR > MEMORY_TRACE_LOG_DIR > {MEMORY_DATA_DIR}/logs/pipeline
+    Precedence: MEMORY_LOG_DIR > MEMORY_TRACE_LOG_DIR > {MEMORY_DATA_DIR}/logs/pipeline
     """
     explicit = os.getenv("MEMORY_LOG_DIR") or os.getenv("MEMORY_TRACE_LOG_DIR")
     if explicit:
@@ -137,11 +137,11 @@ def resolve_pipeline_log_dir() -> str:
 
 
 def split_namespace_user(user_id: str) -> tuple:
-    """把 SDK user_id 按第一个 "__" 拆成 (namespace, user_id)。
+    """Split an SDK user_id on the first "__" into (namespace, user_id).
 
     - "project__u1"        -> ("project", "u1")
     - "project__u1__extra" -> ("project", "u1__extra")
-    - "u1"（无 "__"）  -> ("", "u1")
+    - "u1" (no "__")       -> ("", "u1")
     - ""               -> ("", "")
     """
     if not user_id:
@@ -155,7 +155,7 @@ def split_namespace_user(user_id: str) -> tuple:
 
 
 def _inject_op_ms(parsed_str: str, step: str, op_ms: float) -> str:
-    """把本环节操作耗时按语义 key（embed_ms/llm_ms/vdb_search_ms）注入 parsed JSON。"""
+    """Inject this stage's operation duration into the parsed JSON under its semantic key (embed_ms/llm_ms/vdb_search_ms)."""
     key = _STEP_TIMING_KEY.get(step)
     if not key or not op_ms:
         return parsed_str
@@ -185,7 +185,7 @@ def _track_task(task: "asyncio.Task[Any]") -> None:
 
 
 async def drain_pipeline_log_tasks(timeout: float = 5.0) -> None:
-    """等待所有后台 pipeline log 任务完成（仅供测试 / 优雅关闭）。"""
+    """Wait for all background pipeline log tasks to finish (tests / graceful shutdown only)."""
     if not _pending_log_tasks:
         return
     current_loop = asyncio.get_running_loop()
@@ -226,17 +226,17 @@ def wrap_store_pipeline_log(
     trace_enabled: bool,
     owner_loop: Any = None,
 ) -> Callable[..., Any]:
-    """包装 cache.store_pipeline_log：计时同步、JSONL/DB 异步落盘，不堵主请求。
+    """Wrap cache.store_pipeline_log: timing stays synchronous while JSONL/DB persistence is asynchronous, so the main request is never blocked.
 
-    - step-to-step elapsed_ms / event_at_ms 在调用瞬间打点（与业务墙钟对齐）
-    - event_at_ms：调用方传入非 0 值则直接复用（App 已在自己被调用的那一刻
-      同步打点，比这里更接近真实事件时刻）；传 0 / 不传才用本地 time.time()
-    - JSONL 走线程池；DB Trace 走 create_task
-    - 调用方 await 后立即返回 True，不因磁盘/DB 慢而拉长 search RTT
-    - owner_loop：cache（如 aiomysql pool）绑定的 loop。search 走独立 loop 后，
-      从 search loop 触发的 DB 落库必须派发回 owner_loop 执行，否则跨 loop 用
-      aiomysql 会污染连接池，因此必须回到 cache 所属 loop。
-      为 None 时退回"当前 loop"（solo/单 loop 旧行为）。
+    - step-to-step elapsed_ms / event_at_ms are stamped at the moment of the call (aligned with the business wall clock)
+    - event_at_ms: a non-zero value passed by the caller is reused directly (the App already stamped the very moment
+      it was invoked, which is closer to the real event moment than here); only 0 or an omitted value uses local time.time()
+    - JSONL goes through the thread pool; DB Trace goes through create_task
+    - the caller gets True back immediately after awaiting, so a slow disk/DB never lengthens search RTT
+    - owner_loop: the loop the cache is bound to (e.g. the aiomysql pool). Once search runs on its own loop,
+      DB persistence triggered from the search loop must be dispatched back to owner_loop, otherwise using
+      aiomysql across loops would poison the connection pool, so it has to return to the loop the cache owns.
+      When it is None the code falls back to "the current loop" (the old solo/single-loop behaviour).
     """
     _last_event: OrderedDict[str, float] = OrderedDict()
     try:
@@ -312,12 +312,12 @@ def wrap_store_pipeline_log(
         event_at_ms: int = 0,
         **kwargs,
     ):
-        # 调用方（如 App 层）如果已经在自己被调用的那一刻同步打过点、显式传入
-        # event_at_ms，就用它——这才是事件真实发生的墙钟时刻。默认 0 时才退回
-        # 用「这个 hook 被调度到、真正执行到」的 time.time()，这只是本包装函数
-        # 自己被调用的时刻，调用方经过 create_task/跨线程调度后可能已经晚了。
-        # 显式命名参数（而不是让它落进 **kwargs）是为了避免下面 original_store(
-        # event_at_ms=event_at_ms, **extra_kwargs) 出现重复关键字参数报错。
+        # If the caller (e.g. the App layer) already stamped the moment it was invoked and passes
+        # event_at_ms explicitly, that value wins -- it is the real wall-clock moment of the event. Only the default 0 falls back to
+        # the time.time() of when this hook was scheduled and actually reached, which is only the moment this wrapper function itself
+        # was called; the caller may already be late by then because of create_task/cross-thread scheduling.
+        # The parameters are named explicitly (instead of letting them land in **kwargs) so that the original_store(
+        # event_at_ms=event_at_ms, **extra_kwargs) call below cannot fail with a duplicate keyword argument error.
         _now = time.time()
         event_at_ms = int(event_at_ms) if event_at_ms else int(_now * 1000)
 
@@ -336,7 +336,7 @@ def wrap_store_pipeline_log(
             while len(_last_event) > _LAST_EVENT_MAX:
                 _last_event.popitem(last=False)
 
-        # 快照可变入参，避免后台任务读到后续被改掉的 list
+        # Snapshot the mutable arguments so background tasks never read a list that was later changed
         mem_ids = list(memory_ids) if memory_ids is not None else None
         extra_kwargs = dict(kwargs)
 
@@ -409,10 +409,10 @@ def wrap_store_pipeline_log(
 
         try:
             loop = asyncio.get_running_loop()
-            # JSONL 用线程池，与 loop 无亲和，留在当前 loop。
+            # JSONL uses the thread pool and has no affinity to a loop, so it stays on the current loop.
             _track_task(loop.create_task(_persist_jsonl()))
-            # DB trace 用 cache pool（可能 aiomysql，绑定 owner_loop）。若当前不在
-            # owner_loop（如 search 走独立 loop），派发回 owner_loop 执行，避免跨 loop。
+            # DB trace uses the cache pool (possibly aiomysql, bound to owner_loop). If the current loop is not
+            # owner_loop (e.g. search on its own loop), the work is dispatched back to owner_loop to avoid crossing loops.
             if trace_enabled:
                 if _reserve_trace_slot():
                     try:
@@ -445,7 +445,7 @@ def wrap_store_pipeline_log(
                             "[pipeline-log] trace scheduling failed: %s", e,
                         )
         except RuntimeError:
-            # 无 running loop（极少见）：退化为同步写，保证不丢日志
+            # No running loop (extremely rare): degrade to synchronous writes so no log is lost
             try:
                 log_writer.write_step(
                     request_id=request_id,
@@ -485,7 +485,7 @@ def wrap_store_pipeline_log(
                         **extra_kwargs,
                     )
                     if asyncio.iscoroutine(result):
-                        # 无法 await：丢弃，避免卡住
+                        # Cannot be awaited: discard it so nothing gets stuck
                         result.close()
                 except Exception:
                     pass
@@ -501,11 +501,11 @@ def install_pipeline_observability(
     *,
     log_label: str = "init",
 ) -> None:
-    """给 cache 安装 JSONL + Trace 包装（fire-and-forget）。
+    """Install the JSONL + Trace wrapper on a cache (fire-and-forget).
 
-    在 cache 所属 loop（write loop / _LoopThread）上调用，本函数会捕获该 loop
-    作为 owner_loop 传给包装器：search 走独立 loop 后，从 search loop 触发的 DB
-    落库会被派发回这个 owner_loop，避免跨 loop 用 aiomysql 污染连接池。
+    Call this on the loop the cache belongs to (write loop / _LoopThread); the function captures that loop
+    and passes it to the wrapper as owner_loop: once search runs on its own loop, DB writes triggered from the search
+    loop are dispatched back to this owner_loop, avoiding aiomysql cross-loop connection pool poisoning.
     """
     from .pipeline_log_writer import PipelineLogWriter
 

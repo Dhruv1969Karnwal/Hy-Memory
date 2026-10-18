@@ -1,19 +1,19 @@
 """
 Read-side pipeline trace logger.
 
-把一次 search 调用的各个阶段（embed / recall / bm25 / tag-match / rrf / evolution /
-summary）写入通用 `pipeline_logs` 表，step 字符串统一以 `READ_` 为前缀，与 writer
-侧（EXTRACT / RECONCILE / SUMMARY / WRITE_SUMMARY）平行。
+Writes the stages of one search call (embed / recall / bm25 / tag-match / rrf / evolution /
+summary) into the shared `pipeline_logs` table. Step strings all carry the `READ_` prefix, mirroring the
+writer side (EXTRACT / RECONCILE / SUMMARY / WRITE_SUMMARY).
 
-对外契约：
-  - 所有埋点调用都是 best-effort：cache 为空或写入失败时静默忽略，不影响主流程
-  - step 名是常量，inspector 可按步骤前缀检索（如 `step="READ_RECALL_VEC"`）
-  - 每条 log 的 parsed 字段存 JSON 化的结构化元数据（便于 inspector 解析 UI）
+External contract:
+  - Every instrumentation call is best-effort: an empty cache or a failed write is ignored silently and never affects the main flow
+  - Step names are constants, so the inspector can search by step prefix (e.g. `step="READ_RECALL_VEC"`)
+  - The parsed field of each log holds JSON-serialized structured metadata (so the inspector UI can parse it)
 
-设计取舍：
-  - 不引入新表，沿用现有 `store_pipeline_log`
-  - logger 是无状态工具类，按 request/user/agent 绑定后批量复用
-  - 内部 best-effort try/except 包死，上层调用方不用 try/except
+Design trade-offs:
+  - No new table; the existing `store_pipeline_log` is reused
+  - The logger is a stateless helper, bound to a request/user/agent and then reused across steps
+  - Best-effort try/except is fully contained internally, so callers do not need their own try/except
 """
 
 from __future__ import annotations
@@ -27,54 +27,54 @@ logger = logging.getLogger(__name__)
 
 
 def _best_effort_log(method):
-    """包装 log_* 协程方法：任何异常（含参数签名错误）都静默吞掉。
+    """Wrap log_* coroutine methods: any exception, including an argument signature error, is swallowed silently.
 
-    契约保证「埋点绝不影响主流程」。之前若调用方传错 kwarg，会在参数绑定阶段
-    抛 TypeError（早于内部 try/except），把整个 search 带崩 → total_found=0。
-    这里在最外层兜住所有异常，彻底落实 best-effort。
+    The contract guarantees instrumentation never affects the main flow. Previously a wrong kwarg from a caller raised during
+    argument binding (before the internal try/except) and took the whole search down → total_found=0.
+    Catching everything at the outermost level makes best-effort actually hold.
     """
     @functools.wraps(method)
     async def _wrapper(*args, **kwargs):
         try:
             return await method(*args, **kwargs)
-        except Exception as e:  # noqa: BLE001 — trace 绝不能影响主流程
+        except Exception as e:  # noqa: BLE001 — a trace must never affect the main flow
             logger.debug(f"[read-trace] {getattr(method, '__name__', '?')} swallowed: {e}")
             return None
     return _wrapper
 
 
 # ================================================================
-# Step 常量
+# Step constants
 # ================================================================
 
-# Reader 共通
-STEP_READ_SCENE_JUDGE   = "READ_SCENE_JUDGE"      # 生产力(coding)/普通场景判定（search 第一步，client 落库）
-STEP_READ_REQUEST       = "READ_REQUEST"          # 入参快照
+# Reader common
+STEP_READ_SCENE_JUDGE   = "READ_SCENE_JUDGE"      # productivity (coding) vs normal scene decision (first search step, persisted by client)
+STEP_READ_REQUEST       = "READ_REQUEST"          # input snapshot
 STEP_READ_EMBED_QUERY   = "READ_EMBED_QUERY"      # query embedding
-STEP_READ_INTENT        = "READ_INTENT"           # 意图分类结果（hybrid/*_tag）
+STEP_READ_INTENT        = "READ_INTENT"           # intent classification result (hybrid/*_tag)
 
-# 召回通道
-STEP_READ_RECALL_VEC        = "READ_RECALL_VEC"        # 路 A：主向量召回
+# Recall channels
+STEP_READ_RECALL_VEC        = "READ_RECALL_VEC"        # Channel A: main vector recall
 STEP_READ_HIDDEN_L0_CONTEXT = "READ_HIDDEN_L0_CONTEXT" # L0 used internally, not returned by Search
-STEP_READ_KEYWORD_EMBED     = "READ_KEYWORD_EMBED"     # 路 B：keyword batch embed
-STEP_READ_TAG_MATCH         = "READ_TAG_MATCH"         # 路 B：tag_index 相似度匹配
-STEP_READ_RECALL_TAG        = "READ_RECALL_TAG"        # 路 B：tag filter 向量召回
+STEP_READ_KEYWORD_EMBED     = "READ_KEYWORD_EMBED"     # Channel B: keyword batch embed
+STEP_READ_TAG_MATCH         = "READ_TAG_MATCH"         # Channel B: tag_index similarity match
+STEP_READ_RECALL_TAG        = "READ_RECALL_TAG"        # Channel B: tag filter vector recall
 
-# 融合 / 排序 / 合成
-STEP_READ_BM25          = "READ_BM25"             # 路 C：BM25 重排
-STEP_READ_RRF           = "READ_RRF"              # RRF 融合
-STEP_READ_MERGE_SCHEMA  = "READ_MERGE_SCHEMA"     # schema 并入 + 截断
-STEP_READ_EVOLUTION     = "READ_EVOLUTION"        # 演化链回溯合成
-STEP_READ_INTENTION     = "READ_INTENTION"        # L7 意图召回（Proactive 路，含过期转换/补向量/判重）
+# Fusion / ranking / synthesis
+STEP_READ_BM25          = "READ_BM25"             # Channel C: BM25 rerank
+STEP_READ_RRF           = "READ_RRF"              # RRF fusion
+STEP_READ_MERGE_SCHEMA  = "READ_MERGE_SCHEMA"     # schema merge + truncation
+STEP_READ_EVOLUTION     = "READ_EVOLUTION"        # evolution chain walk-back and synthesis
+STEP_READ_INTENTION     = "READ_INTENTION"        # L7 intention recall (Proactive channel, incl. expiry conversion / embedding backfill / dedup)
 
-# 总览
-STEP_READ_GRAPH_RERANK  = "READ_GRAPH_RERANK"    # 图重排/扩展（用法 A/B/C + episode 框选）
-STEP_READ_SUMMARY       = "READ_SUMMARY"          # 聚合总览（对齐 write 侧 WRITE_SUMMARY）
+# Overview
+STEP_READ_GRAPH_RERANK  = "READ_GRAPH_RERANK"    # graph rerank/expansion (usages A/B/C + episode bounding)
+STEP_READ_SUMMARY       = "READ_SUMMARY"          # aggregate overview (mirrors WRITE_SUMMARY on the write side)
 
-# Coding（productivity）召回路径
+# Coding (productivity) recall path
 STEP_READ_CODING_EMBED  = "READ_CODING_EMBED"     # coding query embedding
-STEP_READ_CODING_VDB    = "READ_CODING_VDB"       # coding store 向量召回（min_score 过滤前后）
-STEP_READ_CODING_RESULT = "READ_CODING_RESULT"    # coding 召回最终结果总览
+STEP_READ_CODING_VDB    = "READ_CODING_VDB"       # coding store vector recall (before/after min_score filtering)
+STEP_READ_CODING_RESULT = "READ_CODING_RESULT"    # final coding recall result overview
 
 
 def _safe_json(obj: Any) -> str:
@@ -85,7 +85,7 @@ def _safe_json(obj: Any) -> str:
 
 
 def _preview_node(item: Dict[str, Any], *, content_limit: int = 120) -> Dict[str, Any]:
-    """把一条 hit 压缩成可读性好、体积小的预览结构。"""
+    """Compress one hit into a compact, readable preview structure."""
     node = item.get("node")
     content = ""
     layer = ""
@@ -125,7 +125,7 @@ def _preview_hits(items: List[Dict[str, Any]], *, top: int = 10) -> List[Dict[st
 # ================================================================
 
 def _wrap_log_methods(cls):
-    """给所有 log_* 协程方法套上 best-effort 包装（含参数签名错误也吞掉）。"""
+    """Put every log_* coroutine method behind the best-effort wrapper (argument signature errors included)."""
     import inspect
     for name, attr in list(vars(cls).items()):
         if name.startswith("log_") and inspect.iscoroutinefunction(attr):
@@ -136,15 +136,15 @@ def _wrap_log_methods(cls):
 @_wrap_log_methods
 class ReadTraceLogger:
     """
-    Read pipeline 的轻量 trace 写入器。
+    Lightweight trace writer for the read pipeline.
 
-    使用方式：
+    Usage:
         tracer_log = ReadTraceLogger(cache, request_id, user_id, agent_id)
         await tracer_log.log_embed_query(query, dims=384, cache_hit=False, elapsed_ms=12.3)
         ...
 
-    所有 log_* 方法都 best-effort（cache 为 None / 写入异常 / 参数错误 → 静默跳过，
-    绝不影响主 search 流程）。
+    Every log_* method is best-effort (cache is None / write exception / argument error → silently skipped,
+    never affecting the main search flow).
     """
 
 
@@ -181,7 +181,7 @@ class ReadTraceLogger:
         if not self.enabled:
             return
         try:
-            # parsed 统一带上 reader 标签，便于 inspector 区分哪一版 reader
+            # parsed uniformly carries the reader tag so the inspector can tell which reader version ran
             p_dict = dict(parsed or {})
             if self._reader_version and "_reader" not in p_dict:
                 p_dict["_reader"] = self._reader_version
@@ -204,7 +204,7 @@ class ReadTraceLogger:
             logger.debug(f"[read-trace] store_pipeline_log step={step} failed: {e}")
 
     # ------------------------------------------------------------------
-    # 具体步骤埋点
+    # Per-step instrumentation
     # ------------------------------------------------------------------
 
     async def log_scene_judge(
@@ -222,25 +222,25 @@ class ReadTraceLogger:
         gc_delta: Optional[int] = None,
         throttle_ms: Optional[float] = None,
     ) -> None:
-        """生产力(coding)/普通场景判定。search 的第一步，由 client 在调 reader 前落库。
+        """Productivity (coding) vs normal scene decision. First step of search, persisted by the client before the reader runs.
 
-        mode: "explicit"（显式 scene 指定，未调 LLM）/ "llm"（多 query LLM 判类+改写）
-              / "default"（单 query 或链路关闭，默认 normal）
-        created_after: query rewrite 抽出的时间下界，已转成可读日期字符串（如 "2026-06-24"），
-                       无则 None。
+        mode: "explicit" (scene specified explicitly, no LLM call) / "llm" (multi-query LLM classification + rewrite)
+              / "default" (single query or pipeline disabled, defaults to normal)
+        created_after: lower time bound extracted by query rewrite, already converted to a readable date string (e.g. "2026-06-24"),
+                       None when there is none.
 
-        耗时字段语义（务必区分，历史上曾混淆过）：
-        - elapsed_ms → 落库为 `parsed.step_ms`：**本环节整体墙钟耗时**（t0 → 本次调用），
-          与是否调 LLM 无关。mode=default/explicit 时它就是一段纯同步代码的耗时。
-        - llm_ms: **仅 mode="llm" 时有值**，是那次 judge/rewrite LLM 调用的净耗时。
-          mode=default/explicit 不调 LLM → 不传 → parsed 里没有这个字段。
+        Timing field semantics (keep these apart; they were once confused):
+        - elapsed_ms → persisted as `parsed.step_ms`: **total wall-clock time of this stage** (t0 → this call),
+          regardless of whether an LLM was called. For mode=default/explicit it is the cost of a purely synchronous block.
+        - llm_ms: **only set for mode="llm"**, the net duration of that judge/rewrite LLM call.
+          mode=default/explicit calls no LLM → not passed → the field is absent from parsed.
 
-        运行时停顿归因字段（None 时不落库，保持 parsed 精简）：
-        - gc_delta: 本段（t0 → 本次调用）内 GC 累计次数增量。>=1 说明期间发生过 GC。
-        - throttle_ms: 本段内 cgroup CPU 被限流的时长（毫秒）。≈step_ms 说明是容器
-          CPU throttling 导致的停顿。
-        三者与 elapsed_ms 同为业务侧同步求值，可信度一致；用于区分
-        GIL 争抢 / GC 长停顿 / cgroup throttling 三类进程级停顿。
+        Runtime stall attribution fields (not persisted when None, keeping parsed lean):
+        - gc_delta: increase in the cumulative GC count within this segment (t0 → this call). >=1 means GC ran in between.
+        - throttle_ms: how long (milliseconds) this segment spent under cgroup CPU throttling. ≈step_ms means container
+          CPU throttling caused the stall.
+        All three are evaluated synchronously on the business side like elapsed_ms, so they carry equal weight; they separate
+        GIL contention / long GC pauses / cgroup throttling as the three kinds of process-level stalls.
         """
         _parsed = {
             "scene": scene,
@@ -278,7 +278,7 @@ class ReadTraceLogger:
         elapsed_ms: float = 0.0,
         provider_meta: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """coding 路径：query embedding。"""
+        """coding path: query embedding."""
         parsed: Dict[str, Any] = {"dims": dims}
         if provider_meta:
             parsed["provider_meta"] = provider_meta
@@ -302,10 +302,10 @@ class ReadTraceLogger:
         branch: Optional[str] = None,
         elapsed_ms: float = 0.0,
     ) -> None:
-        """coding 路径：coding store 向量召回 + min_score 过滤。
+        """coding path: coding store vector recall + min_score filtering.
 
-        raw_hits: 过采样召回条数；kept_hits: min_score 过滤后条数。
-        top_scores: 过滤前 top 分数，便于诊断"是分数不够还是库为空"。
+        raw_hits: oversampled recall count; kept_hits: count left after min_score filtering.
+        top_scores: top scores before filtering, useful to diagnose "scores too low or collection empty".
         """
         await self._write(
             STEP_READ_CODING_VDB,
@@ -335,7 +335,7 @@ class ReadTraceLogger:
         previews: Optional[List[Dict[str, Any]]] = None,
         elapsed_ms: float = 0.0,
     ) -> None:
-        """coding 路径：最终返回结果总览（search 收尾）。"""
+        """coding path: overview of the final returned results (search wrap-up)."""
         await self._write(
             STEP_READ_CODING_RESULT,
             prompt=query or "",
@@ -343,8 +343,8 @@ class ReadTraceLogger:
             parsed={"returned": returned, "hits": previews or [],
                     "elapsed_ms": round(float(elapsed_ms or 0.0), 2)},
             memory_ids=memory_ids or None,
-            # 收尾总览：elapsed_ms 是整条 coding search 的总耗时（汇总值，非单环节），
-            # 落库 elapsed_ms 字段置 0，总耗时保留在 parsed.elapsed_ms。
+            # Wrap-up overview: elapsed_ms is the total duration of the whole coding search (an aggregate, not one stage),
+            # so the persisted elapsed_ms column is 0 and the total stays in parsed.elapsed_ms.
             elapsed_ms=0,
         )
 
@@ -362,10 +362,10 @@ class ReadTraceLogger:
         session_ids: List[str],
         intention_limit: Optional[int] = None,
     ) -> None:
-        # intention_limit：调用方传入的 L7 意图召回上限。0 或 None 都会导致
-        # reader 跳过 intention 通道；把它明确落进 READ_REQUEST.parsed，才能
-        # 从日志区分「上游没传」和「reader 内部跳过」这两种截然不同的失败模式
-        # （0805 事故追查耗时的直接原因）。
+        # intention_limit: the L7 intention recall cap passed by the caller. Both 0 and None make the
+        # reader skip the intention channel; only by persisting it explicitly into READ_REQUEST.parsed can
+        # the logs distinguish "upstream passed nothing" from "reader skipped it internally", two completely different failure modes
+        # (the direct reason the 0805 incident took so long to trace).
         parsed = {
             "query": query,
             "limit": limit,
@@ -545,18 +545,18 @@ class ReadTraceLogger:
         elapsed_ms: float = 0.0,
         sparse_query: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """BM25/keyword 路埋点。
+        """BM25/keyword channel instrumentation.
 
-        除融合后的 `hits` 外，尽量暴露 BM25 的「具体情况」：
-          - keyword_count / has_bm25：本 query 后端关键词召回是否命中（决定是否触发加权）；
-          - normalize_method：`passthrough`（后端分已在 [0,1]）/
-            `sigmoid`（经典 BM25 原始分 → sigmoid 归一化）；
-          - sigmoid_midpoint / sigmoid_steepness：sigmoid 归一化参数（随 query 词数自适应）；
-          - bm25_detail：每条关键词命中的 raw → normalized 变换（看清单条 BM25 如何参与打分）；
-          - sparse_query：BM25Encoder.encode_queries 产出的 sparse（nnz + 完整 [[token_id, weight], ...]）。
+        Beyond the fused `hits`, it exposes as much of BM25's actual behaviour as possible:
+          - keyword_count / has_bm25: whether backend keyword recall hit for this query (decides whether weighting kicks in);
+          - normalize_method: `passthrough` (backend scores already in [0,1]) /
+            `sigmoid` (raw classic BM25 scores → sigmoid normalization);
+          - sigmoid_midpoint / sigmoid_steepness: sigmoid normalization parameters (adaptive to the query term count);
+          - bm25_detail: the raw → normalized transform for each keyword hit (shows how a single BM25 score feeds the ranking);
+          - sparse_query: the sparse vector produced by BM25Encoder.encode_queries (nnz + the full [[token_id, weight], ...]).
         """
         preview = _preview_hits(hits)
-        # 关键词命中的 raw→normalized 明细（按 raw 分降序，便于排查）
+        # raw→normalized detail for keyword hits (sorted by raw score descending, easier to debug)
         bm25_detail: List[Dict[str, Any]] = []
         _scores = bm25_scores or {}
         _raw = raw_hits if raw_hits is not None else []
@@ -671,11 +671,11 @@ class ReadTraceLogger:
         admitted_ids: Optional[List[str]] = None,
         elapsed_ms: float = 0.0,
     ) -> None:
-        """图重排 / 扩展（用法 A/B/C + episode 框选）。
+        """Graph rerank / expansion (usages A/B/C + episode bounding).
 
-        这一步的效果**必须能和"池子变大"区分开**，所以 stats 要同时带上漏斗各级的存量：
+        The effect of this step **must be separable from "the pool got bigger"**, so stats carries the population at every funnel level:
         edges / propagated / reachable / episode_candidates / prefiltered / admitted / paths。
-        少了它线上只能看到"结果变了"，无法归因到是哪一级放进来的。
+        Without it, production only shows "the results changed" with no way to attribute which level admitted them.
         """
         st = dict(stats or {})
         st["pool_size"] = pool_size
@@ -717,21 +717,21 @@ class ReadTraceLogger:
         stats: Optional[Dict[str, Any]] = None,
         elapsed_ms: float = 0.0,
     ) -> None:
-        """L7 意图召回（Proactive 路）分段耗时与数量。
+        """Stage timings and counts for L7 intention recall (Proactive channel).
 
-        这一步此前**完全没有埋点**，导致 READ_EVOLUTION → READ_SUMMARY 之间
-        出现无法解释的空白（线上见过 426ms）。stats 由
-        `_retrieval.intention.recall_intentions()` 通过 stats_out 回填，
-        分段拆开各子环节，便于直接定位是哪一段慢：
+        This step had **no instrumentation at all** before, which left an unexplained gap between
+        READ_EVOLUTION → READ_SUMMARY (426ms seen in production). stats is backfilled by
+        `_retrieval.intention.recall_intentions()` through stats_out, split into
+        sub-stages so the slow segment can be located directly:
 
-        - `vdb_search_ms`      VDB 向量检索（超采样捞 L7，fetch_limit=limit×6）
-        - `expire_ms`          惰性过期转换（逐条 update_payload 转 L2_FACT）
-        - `backfill_embed_ms`  判重前补拉缺失 embedding（get_embeddings）
-        - `dedup_ms`           判重（cosine 两两比较，纯 CPU）
-        - `total_ms`           recall_intentions 端到端
-        数量类：`fetched` / `expired` / `survivors` / `dedup_dropped` / `returned`
+        - `vdb_search_ms`      VDB vector search (oversampled L7 fetch, fetch_limit=limit×6)
+        - `expire_ms`          lazy expiry conversion (per-node update_payload into L2_FACT)
+        - `backfill_embed_ms`  backfilling missing embeddings before dedup (get_embeddings)
+        - `dedup_ms`           dedup (pairwise cosine comparison, pure CPU)
+        - `total_ms`           end to end for recall_intentions
+        Counts: `fetched` / `expired` / `survivors` / `dedup_dropped` / `returned`
 
-        `stats.total_ms` 表示函数自身端到端耗时，适合跨调用路径比较。
+        `stats.total_ms` is the function's own end-to-end duration, suitable for comparing across call paths.
         """
         await self._write(
             STEP_READ_INTENTION,
@@ -751,7 +751,7 @@ class ReadTraceLogger:
         elapsed_ms: float,
         returned_memories: List[Dict[str, Any]],
     ) -> None:
-        """一次 search 的总览日志，对齐 writer 侧的 WRITE_SUMMARY 作用。"""
+        """Overview log for one search, the read-side counterpart of WRITE_SUMMARY on the writer side."""
         parsed = {
             "query": query,
             "reader": self._reader_version,
@@ -784,7 +784,7 @@ class ReadTraceLogger:
             }),
             parsed=parsed,
             memory_ids=[m.get("memory_id") for m in (returned_memories or []) if m.get("memory_id")],
-            # 一次 search 的总览：elapsed_ms 是整条 search 的总耗时（汇总值，非单环节），
-            # 落库 elapsed_ms 字段置 0，总耗时保留在 parsed.elapsed_ms / response。
+            # Overview of one search: elapsed_ms is the total duration of the whole search (an aggregate, not one stage),
+            # so the persisted elapsed_ms column is 0 and the total stays in parsed.elapsed_ms / response.
             elapsed_ms=0,
         )

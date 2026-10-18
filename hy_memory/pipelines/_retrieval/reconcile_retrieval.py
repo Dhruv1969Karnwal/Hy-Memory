@@ -1,12 +1,12 @@
 """
-Reconcile 候选召回：向量 + BM25 的 additive 融合逻辑。
+Reconcile candidate recall: additive fusion of vector + BM25.
 
-  1. 向量扩池（limit × multiplier）
-  2. 独立 keyword 通道（若后端支持 keyword_search）
-  3. 按条加成：final = sem + 𝟙[bm25]·w_bm25·bm25 + 𝟙[ent]·w_tag·max(tag_cos, entity_hit)
-  4. tag 实体 cos（LLM tags）+ Graph Entity MENTIONS（正文 NER）
+  1. Vector pool expansion (limit × multiplier)
+  2. Independent keyword channel (if the backend supports keyword_search)
+  3. Per-item bonus: final = sem + 𝟙[bm25]·w_bm25·bm25 + 𝟙[ent]·w_tag·max(tag_cos, entity_hit)
+  4. tag entity cos (LLM tags) + Graph Entity MENTIONS (NER over the body)
 
-保留历史权重 env：
+Legacy weight envs kept:
   MEMORY_HYBRID_V2_VDB_WEIGHT_BM25 / WEIGHT_TAG / TAG_COS_THR
 """
 
@@ -49,12 +49,12 @@ def _float_env(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class ReconcileRetrievalConfig:
-    """Reconcile 候选召回的默认权重与阈值。"""
+    """Default weights and thresholds for Reconcile candidate recall."""
 
     limit: int = 20
     vec_pool_multiplier: int = 3
     min_score: float = 0.4
-    # additive（不再用旧 convex 0.6/0.4）
+    # additive (the old convex 0.6/0.4 is no longer used)
     w_bm25: float = 0.2
     w_tag: float = 0.3
     tag_cos_thr: float = 0.5
@@ -81,7 +81,7 @@ class ReconcileRetrievalConfig:
 
 
 class ReconcileHybridRetriever:
-    """对单条新 memory 文本做向量 + BM25 融合召回。"""
+    """Vector + BM25 fused recall for a single new memory text."""
 
     def __init__(self, config: Optional[ReconcileRetrievalConfig] = None):
         self._cfg = config or ReconcileRetrievalConfig.from_env()
@@ -153,7 +153,7 @@ class ReconcileHybridRetriever:
         top_k: int,
         include_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """独立 keyword 通道；不支持则空。"""
+        """Independent keyword channel; empty when unsupported."""
         if not query_lemmatized or not hasattr(vector_store, "keyword_search"):
             return []
         try:
@@ -161,7 +161,7 @@ class ReconcileHybridRetriever:
                 query=query_lemmatized,
                 top_k=top_k,
                 user_id=user_id,
-                # 与 vec 主路一致：user 维度，不按 agent 收窄
+                # Consistent with the main vec path: user dimension, not narrowed by agent
                 agent_ids=None,
                 layers=layers,
                 status_filter=status_filter,
@@ -183,7 +183,7 @@ class ReconcileHybridRetriever:
         user_id: str,
         agent_id: Optional[str],
     ) -> Tuple[Dict[str, float], Dict[str, float]]:
-        """返回 (tag_cos_by_id, entity_boost_by_id)。"""
+        """Return (tag_cos_by_id, entity_boost_by_id)."""
         tag_cos_by_id: Dict[str, float] = {}
         entity_boost_by_id: Dict[str, float] = {}
         query_ents = extract_entities(query_text or "", for_boost=True)
@@ -203,7 +203,7 @@ class ReconcileHybridRetriever:
                 )
             return tag_cos_by_id, entity_boost_by_id
 
-        # --- tag 实体 embedding cos ---
+        # --- tag entity embedding cos ---
         if embed_service is not None and nodes_by_id:
             emb_texts: List[str] = []
             for span, _lab in query_ents:
@@ -273,9 +273,9 @@ class ReconcileHybridRetriever:
         """
         Returns:
             [{"node", "score", "_sem", "_bm25", "_tag_cos", "_entity_boost"}, ...]
-            按融合分降序，长度 ≤ limit，且 score >= min_score。
+            Sorted by fused score descending, length ≤ limit, and score >= min_score.
 
-        候选范围是 **user 维度**（不下发 agent_id 过滤）—— 与原先 reconcile 契约一致。
+        The candidate scope is the **user dimension** (no agent_id filter is pushed down) -- same as the original reconcile contract.
         """
         if not query_text.strip() or not query_embedding:
             return []
@@ -577,7 +577,7 @@ class ReconcileHybridRetriever:
         if not nodes_by_id:
             return []
 
-        # 池内 BM25（与旧 reconcile 一致，补 keyword 通道未覆盖的项）
+        # BM25 inside the pool (as in the old reconcile, covering what the keyword channel missed)
         q_terms = rbm25.tokenize(query_lemmatized or query_text)
         ordered_ids = list(nodes_by_id.keys())
         contents_lem = [
@@ -589,7 +589,7 @@ class ReconcileHybridRetriever:
         for i, nid in enumerate(ordered_ids):
             pool_bm25[nid] = normalize_bm25(raw_bm25[i], midpoint, steepness)
 
-        # 每条记忆的 bm25：keyword 通道分与池内 BM25 取 max
+        # bm25 per memory: max of the keyword channel score and in-pool BM25
         bm25_by_id: Dict[str, float] = {}
         for nid in ordered_ids:
             bm25_by_id[nid] = max(
@@ -606,7 +606,7 @@ class ReconcileHybridRetriever:
             agent_id=agent_id,
         )
 
-        # Entity 命中但不在池内：从 VDB 补进（sem=0 + entity boost）
+        # Entity hits outside the pool: pull them in from the VDB (sem=0 + entity boost)
         for nid, esc in entity_boost_by_id.items():
             if nid in nodes_by_id:
                 continue

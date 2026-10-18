@@ -1,15 +1,15 @@
 """
 Agent Memory V2 - KuzuGraphStore
 
-基于 Kuzu 嵌入式图数据库的图存储层实现。
+Graph storage layer implementation built on the embedded Kuzu graph database.
 
-Kuzu 优势:
-- 嵌入式部署 (无需额外服务进程)
-- 支持 Cypher 查询语言
-- 高性能图遍历
-- 支持属性图模型
+Kuzu advantages:
+- Embedded deployment (no extra service process)
+- Supports the Cypher query language
+- High-performance graph traversal
+- Supports the property graph model
 
-注意: Kuzu 嵌入式 DB 只支持单进程访问。在多进程环境中会降级为 no-op 模式。
+Note: the embedded Kuzu DB only supports single-process access. In multi-process environments it degrades to no-op mode.
 """
 
 from typing import Optional, List, Dict, Any, Tuple, Sequence
@@ -31,14 +31,14 @@ from .graph_store_base import GraphStoreBase, embed_text_for_graph
 
 logger = logging.getLogger(__name__)
 
-# Kuzu 专属单线程 executor。
-# 关键约束：
-#   1) Kuzu 的 Connection 不是线程安全的 —— 并发在同一连接上 execute 会数据损坏/崩溃。
-#   2) Kuzu 的 QueryResult 有线程亲和性 —— execute 与结果消费（has_next/get_next）
-#      必须在同一线程完成。
-# 因此用 max_workers=1 的单线程池：既把同步的 Kuzu 调用挪出 event loop（不再阻塞
-# 整个 server 的唯一 loop），又天然串行化所有 Kuzu 操作，满足上面两条约束。
-# 绝不要调大 max_workers。
+# Dedicated single-threaded executor for Kuzu.
+# Key constraints:
+#   1) The Kuzu Connection is not thread-safe -- concurrent execute calls on one connection corrupt data or crash.
+#   2) Kuzu QueryResult has thread affinity -- execute and result consumption (has_next/get_next)
+#      must complete on the same thread.
+# So we use a single-threaded pool with max_workers=1: it moves the synchronous Kuzu calls off the event loop
+# (no longer blocking the server's single loop) and naturally serializes every Kuzu operation, satisfying both constraints above.
+# Never raise max_workers.
 _KUZU_POOL_SIZE = 1
 _kuzu_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=_KUZU_POOL_SIZE, thread_name_prefix="kuzu"
@@ -52,7 +52,7 @@ _kuzu_max_wait_ms = 0.0
 
 
 async def _run_in_kuzu_pool(func, *args, **kwargs):
-    """在 Kuzu 单线程池中执行同步函数（execute + 结果消费必须整体在此运行）。"""
+    """Run a synchronous function in the Kuzu single-threaded pool (execute + result consumption must run here as a whole)."""
     submitted = time.perf_counter()
     call = functools.partial(func, *args, **kwargs) if (args or kwargs) else func
 
@@ -90,19 +90,19 @@ def kuzu_executor_snapshot() -> Dict[str, Any]:
 
 
 def _materialize_row(row: Any) -> List[Any]:
-    """把 Kuzu 结果行物化成跨线程安全的普通 list。
+    """Materialize a Kuzu result row into a plain list that is safe across threads.
 
-    行内元素可能是：
-      - Kuzu Node 对象（RETURN m 时 row[0]）→ 转成 dict（_row_to_memory_node 能吃 dict）
-      - 标量（RETURN m.x, m.y 时的各列）→ 原样保留
-    物化后脱离 QueryResult，可安全跨线程传回 event loop。
+    Row elements may be:
+      - Kuzu Node object (row[0] for RETURN m) → converted to a dict (_row_to_memory_node accepts dicts)
+      - Scalars (each column of RETURN m.x, m.y) → kept as is
+    Once materialized the row is detached from the QueryResult and can safely cross threads back to the event loop.
     """
     out: List[Any] = []
     for col in row:
         if isinstance(col, dict) or isinstance(col, (str, int, float, bool)) or col is None:
             out.append(col)
         elif hasattr(col, "__iter__") and not isinstance(col, (list, tuple)):
-            # Kuzu Node / Rel 对象（dict-like）
+            # Kuzu Node / Rel object (dict-like)
             try:
                 out.append(dict(col))
             except Exception:
@@ -113,8 +113,8 @@ def _materialize_row(row: Any) -> List[Any]:
 
 
 # Kuzu Cypher schema DDL
-# 注意: Kuzu < 0.4.0 不支持 IF NOT EXISTS，需要先检查表是否存在再创建
-# embedding / beh_embedding 列使用 FLOAT[{dims}]，dims 在 init_schema 时动态替换
+# Note: Kuzu < 0.4.0 has no IF NOT EXISTS, so check whether the table exists before creating it
+# The embedding / beh_embedding columns use FLOAT[{dims}]; dims is substituted dynamically in init_schema
 _SCHEMA_DDL_TABLES = {
     # Node tables
     "User": """
@@ -125,10 +125,10 @@ CREATE NODE TABLE User(
     created_at TIMESTAMP,
     PRIMARY KEY (isolation_key)
 )""",
-    "Memory": None,  # 动态生成，依赖 embedding_dims
-    # Topic 带 embedding：tag 是自由文本，"work"/"job"/"career" 不归一化就是三个孤岛，
-    # 连画像聚合（按 Topic 度数排序）都做不了。写 tag 时按 embedding 余弦复用已有 Topic。
-    # 注：Kuzu 带索引的列 CREATE 后不能 SET，但 Topic.embedding 没建 HNSW 索引，可以更新。
+    "Memory": None,  # Generated dynamically, depends on embedding_dims
+    # Topics carry an embedding: tags are free text, so without normalization "work"/"job"/"career" stay three separate islands,
+    # and even profile aggregation (ranking by Topic degree) becomes impossible. When writing a tag, reuse an existing Topic by embedding cosine.
+    # Note: Kuzu indexed columns cannot be SET after CREATE, but Topic.embedding has no HNSW index, so it can be updated.
     "Topic": """
 CREATE NODE TABLE Topic(
     topic_id STRING,
@@ -150,7 +150,7 @@ CREATE NODE TABLE HierarchyTopic(
     created_at TIMESTAMP,
     PRIMARY KEY (hierarchy_topic_id)
 )""",
-    # 正文 NER 实体（≠ Topic）。Kuzu 对存量 DB 可补建缺失表；新列不行。
+    # Body-text NER entities (not Topic). Kuzu can backfill missing tables on an existing DB; new columns are not possible.
     "Entity": """
 CREATE NODE TABLE Entity(
     entity_id STRING,
@@ -206,19 +206,19 @@ CREATE REL TABLE DERIVED_FROM(
     FROM Memory TO VdbRef,
     created_at TIMESTAMP
 )""",
-    # Cross-domain schema induction: L6 basic → L6 core (单向)
+    # Cross-domain schema induction: L6 basic → L6 core (directed)
     "CROSS_ABSTRACTS_TO": """
 CREATE REL TABLE CROSS_ABSTRACTS_TO(
     FROM Memory TO Memory,
     created_at TIMESTAMP
 )""",
-    # 时序脊：同一 Topic 内按 memory_at 串起的**有向**递进链。
+    # Temporal spine: a **directed** progression chain inside one Topic, linked by memory_at.
     #
-    # 与 supersedes 的区别很重要：supersedes 表达**矛盾取代**（旧的不再成立），
-    # TEMPORAL_NEXT 表达**递进**（旧的仍然成立，只是更早）。这两个语义此前混在一起。
+    # The difference from supersedes matters: supersedes means **contradictory replacement** (the old one no longer holds),
+    # while TEMPORAL_NEXT means **progression** (the old one still holds, it is only earlier). These two semantics used to be conflated.
     #
-    # 注：Kuzu 的 initialize 会在已有 DB 上创建**缺失的表**（只有新增列不行），
-    # 所以新增这张 REL TABLE 对存量 DB 是安全的。
+    # Note: Kuzu initialize creates **missing tables** on an existing DB (only new columns do not work),
+    # so adding this REL TABLE is safe for existing databases.
     "TEMPORAL_NEXT": """
 CREATE REL TABLE TEMPORAL_NEXT(
     FROM Memory TO Memory,
@@ -229,7 +229,7 @@ CREATE REL TABLE TEMPORAL_NEXT(
 
 
 def _make_memory_ddl(dims: int) -> str:
-    """生成 Memory 表 DDL，embedding 列维度由配置决定"""
+    """Generate the Memory table DDL; the embedding column dimension comes from config"""
     return f"""
 CREATE NODE TABLE Memory(
     node_id STRING,
@@ -273,12 +273,12 @@ CREATE NODE TABLE Memory(
 
 class KuzuGraphStore(GraphStoreBase):
     """
-    Kuzu 图存储
+    Kuzu graph store
 
-    使用嵌入式 Kuzu 数据库，通过 Cypher 查询实现图操作。
+    Uses the embedded Kuzu database and implements graph operations with Cypher queries.
 
-    注意: Kuzu 嵌入式 DB 只支持单进程访问。在多进程（如 tRPC 多 worker）环境中，
-    只有第一个获取到锁的进程能正常使用 GraphStore，其他进程会降级为 no-op 模式。
+    Note: the embedded Kuzu DB only supports single-process access. In multi-process environments (e.g. multiple tRPC workers),
+    only the first process to acquire the lock can use GraphStore normally; the other processes degrade to no-op mode.
     """
 
     _supports_batch_topic_tags = True
@@ -287,14 +287,14 @@ class KuzuGraphStore(GraphStoreBase):
         super().__init__(config)
         self._db = None
         self._conn = None
-        self._available = False  # 是否成功初始化
+        self._available = False  # Whether initialization succeeded
 
-        # embedding 维度（从 VectorStore 或 Embedder 配置中取）
+        # Embedding dimensions (read from the VectorStore or Embedder config)
         vs_dims = getattr(getattr(config, 'vector_store', None), 'embedding_dims', None)
         emb_dims = getattr(getattr(config, 'embedder', None), 'embedding_dims', None)
         self._embedding_dims = vs_dims or emb_dims or 1536
 
-        # 图数据库存储路径
+        # Graph database storage path
         graph_config = getattr(config, 'graph_store', None)
         if graph_config and hasattr(graph_config, 'db_path'):
             self._db_path = graph_config.db_path
@@ -308,10 +308,10 @@ class KuzuGraphStore(GraphStoreBase):
         return kuzu_executor_snapshot()
 
     async def initialize(self) -> None:
-        """初始化 Kuzu 数据库并创建 Schema
+        """Initialize the Kuzu database and create the Schema
         
-        在多进程环境中，如果 Kuzu 文件被其他进程锁定，会降级为 no-op 模式。
-        使用线程池 + 超时来防止 Kuzu Database() 构造函数阻塞事件循环。
+        In multi-process environments, if the Kuzu file is locked by another process, this degrades to no-op mode.
+        Uses a thread pool plus a timeout so the Kuzu Database() constructor cannot block the event loop.
         """
         try:
             import kuzu
@@ -321,29 +321,29 @@ class KuzuGraphStore(GraphStoreBase):
             )
 
         db_path = Path(self._db_path)
-        # Kuzu >= 0.11 自行管理数据库文件，不接受已存在的空目录
+        # Kuzu >= 0.11 manages its own database files and rejects a pre-existing empty directory
         db_path.parent.mkdir(parents=True, exist_ok=True)
         if db_path.is_dir():
-            # 如果路径是一个空目录，删除它让 Kuzu 自己创建
+            # If the path is an empty directory, remove it and let Kuzu create it itself
             try:
                 if not any(db_path.iterdir()):
                     logger.info(f"Removing empty directory at {db_path} for Kuzu initialization")
                     db_path.rmdir()
                 else:
-                    # 非空目录可能是旧版 Kuzu 数据，尝试直接使用
+                    # A non-empty directory may hold older Kuzu data; try opening it directly
                     logger.info(f"Non-empty directory at {db_path}, attempting Kuzu open")
             except Exception as rm_err:
                 logger.warning(f"Could not clean up {db_path}: {rm_err}")
 
         def _open_kuzu_db():
-            """在线程池中执行 Kuzu Database 构造（可能阻塞获取文件锁）"""
+            """Construct the Kuzu Database in a thread pool (may block while acquiring the file lock)"""
             db = kuzu.Database(self._db_path)
             conn = kuzu.Connection(db)
             return db, conn
 
         try:
-            # 用 guarded executor await，避免这台机器上已完成的线程任务丢失
-            # event-loop wakeup 而被误判成文件锁超时。
+            # Await through the guarded executor so that an already finished thread task on this machine cannot lose its
+            # event-loop wakeup and be misread as a file lock timeout.
             db, conn = await asyncio.wait_for(
                 run_in_executor_guarded(None, _open_kuzu_db),
                 timeout=5.0,
@@ -360,7 +360,7 @@ class KuzuGraphStore(GraphStoreBase):
             self._available = False
             return
         except Exception as db_err:
-            # Kuzu 初始化失败 — 降级为 no-op，记录完整诊断信息
+            # Kuzu initialization failed -- degrade to no-op and log full diagnostics
             import os as _os
             try:
                 import kuzu as _kuzu_mod
@@ -379,12 +379,12 @@ class KuzuGraphStore(GraphStoreBase):
             self._available = False
             return
 
-        # 获取 embedding 维度 → 动态生成 Memory 表 DDL
+        # Resolve the embedding dimensions → generate the Memory table DDL dynamically
         dims = self._embedding_dims
         ddl_tables = dict(_SCHEMA_DDL_TABLES)
         ddl_tables["Memory"] = _make_memory_ddl(dims)
 
-        # 执行 Schema DDL (先检查表是否存在，不存在才创建)
+        # Execute the Schema DDL (check whether the table exists first and create it only when missing)
         ddl_errors = []
         for table_name, ddl_stmt in ddl_tables.items():
             if ddl_stmt is None:
@@ -397,14 +397,14 @@ class KuzuGraphStore(GraphStoreBase):
                 logger.debug(f"Created table {table_name}")
             except Exception as e:
                 err_msg = str(e)
-                # "already exists" 类错误可以忽略
+                # "already exists" style errors can be ignored
                 if "already exist" in err_msg.lower() or "duplicate" in err_msg.lower():
                     logger.debug(f"Schema DDL note (ignored): {e}")
                 else:
                     ddl_errors.append((table_name, err_msg))
                     logger.warning(f"Schema DDL failed for {table_name}: {e}")
 
-        # 检查关键表是否存在
+        # Check that the critical tables exist
         critical_tables = ["User", "Memory", "Topic"]
         missing = [t for t in critical_tables if not self._table_exists(t)]
         if missing:
@@ -417,19 +417,19 @@ class KuzuGraphStore(GraphStoreBase):
             self._available = False
             return
 
-        # 创建 HNSW 向量索引（已有则跳过）
+        # Create the HNSW vector indexes (skipped when already present)
         self._ensure_vector_indexes(dims)
 
         self._available = True
         logger.info(f"GraphStore initialized (Kuzu), db_path={self._db_path}, embedding_dims={dims}")
 
     def _ensure_vector_indexes(self, dims: int) -> None:
-        """确保 Memory 表上的 HNSW 向量索引存在
+        """Ensure the HNSW vector indexes on the Memory table exist
 
-        注意: Kuzu 不允许 SET 被索引的列。因此：
-        - embedding (V_con): 建索引，CREATE 时一次性写入，不做后续 SET
-        - beh_embedding (V_beh): 不建索引，允许 sweeper 后续 SET 写入
-        beh_embedding 的检索走内存矩阵计算（N < 100，毫秒级）
+        Note: Kuzu does not allow SET on indexed columns. Therefore:
+        - embedding (V_con): indexed, written once at CREATE, never SET afterwards
+        - beh_embedding (V_beh): not indexed, so the sweeper can SET it later
+        beh_embedding retrieval uses in-memory matrix math (N < 100, millisecond scale)
         """
         try:
             self._conn.execute(
@@ -447,12 +447,12 @@ class KuzuGraphStore(GraphStoreBase):
     def _execute_materialized(
         self, query: str, params: Optional[Dict[str, Any]] = None
     ) -> Optional[List[List[Any]]]:
-        """【必须在 kuzu 单线程 executor 内调用】执行 query 并把 QueryResult 完整
-        物化成跨线程安全的 List[row]（row 为 list，Node 元素转 dict）后返回。
+        """[Must be called inside the kuzu single-threaded executor] Execute the query and fully materialize the QueryResult
+        into a thread-safe List[row] (each row a list, Node elements converted to dicts).
 
-        execute 与 has_next/get_next 消费在同一 worker 线程完成（QueryResult 线程
-        亲和）。返回的 list 已脱离 QueryResult，可安全传回 event loop。
-        无结果的写语句返回空 list；GraphStore 不可用返回 None。
+        execute and the has_next/get_next consumption finish on the same worker thread (QueryResult has thread
+        affinity). The returned list is detached from the QueryResult and can safely go back to the event loop.
+        Write statements without results return an empty list; an unavailable GraphStore returns None.
         """
         if not self._available or self._conn is None:
             return None
@@ -462,27 +462,27 @@ class KuzuGraphStore(GraphStoreBase):
             while result.has_next():
                 rows.append(_materialize_row(result.get_next()))
         except Exception:
-            # 写语句可能没有可迭代结果集
+            # Write statements may have no iterable result set
             pass
         return rows
 
     async def _run(
         self, query: str, params: Optional[Dict[str, Any]] = None
     ) -> Optional[List[List[Any]]]:
-        """异步执行 Cypher：把同步的 Kuzu 调用卸载到单线程 executor，不阻塞 event loop。
+        """Execute Cypher asynchronously: offload the synchronous Kuzu call to the single-threaded executor without blocking the event loop.
 
-        返回物化后的 List[row]（row 为 list）；不可用时返回 None。
-        写语句忽略返回值即可。
+        Returns the materialized List[row] (each row a list); returns None when unavailable.
+        Write statements can ignore the return value.
         """
         if not self._available or self._conn is None:
             return None
         return await _run_in_kuzu_pool(self._execute_materialized, query, params)
 
     def _execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """【已废弃/仅 init 用】同步执行，直接跑在调用线程上。
+        """[Deprecated / init only] Synchronous execution, running directly on the calling thread.
 
-        运行期严禁调用（会阻塞 event loop，正是死锁根因）。仅 initialize() 期间、
-        服务尚未对外时使用。运行期请一律用 await self._run(...)。
+        Never call this at runtime (it blocks the event loop, which is the root cause of the deadlock). Use it only during initialize(),
+        while the service is not yet serving traffic. At runtime always use await self._run(...).
         """
         if not self._available or self._conn is None:
             return None
@@ -491,11 +491,11 @@ class KuzuGraphStore(GraphStoreBase):
         return self._conn.execute(query)
 
     def _table_exists(self, table_name: str) -> bool:
-        """检查 Kuzu 中某个 node/rel table 是否存在（仅 init 期同步调用）
+        """Check whether a node/rel table exists in Kuzu (synchronous call, init only)
 
-        兼容不同 Kuzu 版本:
-        - Kuzu 0.4.x: show_tables() 返回 [name, type, comment]
-        - Kuzu 0.11+: show_tables() 返回 [id, name, type, database, comment]
+        Compatible with different Kuzu versions:
+        - Kuzu 0.4.x: show_tables() returns [name, type, comment]
+        - Kuzu 0.11+: show_tables() returns [id, name, type, database, comment]
         """
         if self._conn is None:
             return False
@@ -503,7 +503,7 @@ class KuzuGraphStore(GraphStoreBase):
             result = self._conn.execute("CALL show_tables() RETURN *;")
             while result.has_next():
                 row = result.get_next()
-                # 遍历所有列查找表名（兼容不同版本）
+                # Scan every column for the table name (version compatibility)
                 for col in row:
                     if col == table_name:
                         return True
@@ -514,19 +514,19 @@ class KuzuGraphStore(GraphStoreBase):
 
 
     # ================================================================
-    # User 节点管理
+    # User node management
     # ================================================================
 
     async def ensure_user_node(self, isolation_key: str, user_id: str = "",
                                 agent_id: str = "") -> None:
-        """确保 User 节点存在
+        """Ensure the User node exists
         
-        Kuzu 0.4.x 不支持 MERGE ... ON CREATE SET，改用 exists check + CREATE/UPDATE
+        Kuzu 0.4.x does not support MERGE ... ON CREATE SET, so use an exists check plus CREATE/UPDATE
         """
         if not self._available:
             return
         try:
-            # 检查是否已存在
+            # Check whether it already exists
             rows = await self._run(
                 "MATCH (u:User {isolation_key: $ik}) RETURN u.isolation_key;",
                 {"ik": isolation_key}
@@ -544,11 +544,11 @@ class KuzuGraphStore(GraphStoreBase):
             logger.warning(f"ensure_user_node failed: {e}")
 
     # ================================================================
-    # Memory 节点 CRUD
+    # Memory node CRUD
     # ================================================================
 
     async def upsert_memory_node(self, node: MemoryNode) -> str:
-        """创建或更新 Memory 节点 + User→Memory 边"""
+        """Create or update a Memory node plus the User→Memory edge"""
         if not self._available:
             return node.node_id
         isolation_key = node.get_isolation_key()
@@ -558,7 +558,7 @@ class KuzuGraphStore(GraphStoreBase):
 
         now = datetime.now()
 
-        # 安全获取属性（MemoryNode 在不同版本/场景下可能缺少某些字段）
+        # Safe attribute access (MemoryNode may lack some fields depending on version/scenario)
         def _val(attr, default=""):
             v = getattr(node, attr, default)
             if v is None:
@@ -606,12 +606,12 @@ class KuzuGraphStore(GraphStoreBase):
             "extra": "{}",
         }
 
-        # 向量属性：从 MemoryNode._graph_embedding / _graph_beh_embedding 获取
-        # 这些是瞬态属性，不序列化，仅在 create_graph_node 流程中传递
+        # Vector properties: read from MemoryNode._graph_embedding / _graph_beh_embedding
+        # These are transient attributes, never serialized, and only passed through the create_graph_node flow
         embedding = getattr(node, '_graph_embedding', None)
         beh_embedding = getattr(node, '_graph_beh_embedding', None)
 
-        # Kuzu 0.4.x 不支持 MERGE ... ON CREATE/MATCH SET，改用 exists check + CREATE/UPDATE
+        # Kuzu 0.4.x does not support MERGE ... ON CREATE/MATCH SET, so use an exists check plus CREATE/UPDATE
         exists_rows = await self._run(
             "MATCH (m:Memory {node_id: $nid}) RETURN m.node_id;",
             {"nid": node.node_id}
@@ -619,7 +619,7 @@ class KuzuGraphStore(GraphStoreBase):
         node_exists = bool(exists_rows)
 
         if not node_exists:
-            # CREATE 新节点（Kuzu 被索引的列只能在 CREATE 时写入，不能 SET）
+            # CREATE the new node (Kuzu indexed columns can only be written at CREATE, never SET)
             params["emb"] = embedding
             params["beh_emb"] = beh_embedding
             await self._run(
@@ -645,7 +645,7 @@ class KuzuGraphStore(GraphStoreBase):
                 params,
             )
         else:
-            # UPDATE 已有节点（content embedding 有索引，不能 SET，见 update_embedding）
+            # UPDATE the existing node (the content embedding is indexed and cannot be SET, see update_embedding)
             update_sets = [
                 "m.content = $content", "m.status = $status", "m.version = $ver",
                 "m.source = $source",
@@ -672,7 +672,7 @@ class KuzuGraphStore(GraphStoreBase):
                 params,
             )
 
-        # 确保 HAS_MEMORY 边 (Kuzu 0.4.x 不支持 MERGE edge，用 CREATE)
+        # Ensure the HAS_MEMORY edge (Kuzu 0.4.x does not support MERGE on edges, so use CREATE)
         try:
             await self._run(
                 """
@@ -687,7 +687,7 @@ class KuzuGraphStore(GraphStoreBase):
         return node.node_id
 
     async def get_node(self, node_id: str) -> Optional[MemoryNode]:
-        """获取单个 Memory 节点"""
+        """Fetch a single Memory node"""
         if not self._available:
             return None
         rows = await self._run(
@@ -699,7 +699,7 @@ class KuzuGraphStore(GraphStoreBase):
         return self._row_to_memory_node(rows[0][0])
 
     async def get_nodes_by_ids(self, node_ids: List[str]) -> List[MemoryNode]:
-        """批量获取"""
+        """Batch fetch"""
         if not self._available or not node_ids:
             return []
         nodes = []
@@ -716,7 +716,7 @@ class KuzuGraphStore(GraphStoreBase):
         status: Optional[MemoryStatus] = None,
         limit: int = 100,
     ) -> List[MemoryNode]:
-        """按条件获取节点列表"""
+        """Fetch the node list matching the given filters"""
         if not self._available:
             return []
         conditions = ["m.isolation_key = $ik"]
@@ -730,7 +730,7 @@ class KuzuGraphStore(GraphStoreBase):
             params["status"] = status.value
 
         where = " AND ".join(conditions)
-        # Kuzu 0.4.x 不支持参数化 LIMIT，使用字符串拼接
+        # Kuzu 0.4.x does not support parameterized LIMIT, so the string is concatenated
         query = f"MATCH (m:Memory) WHERE {where} RETURN m LIMIT {int(limit)};"
         rows = await self._run(query, params)
 
@@ -765,7 +765,7 @@ class KuzuGraphStore(GraphStoreBase):
         return [self._row_to_memory_node(row[0]) for row in (rows or [])]
 
     async def get_profile(self, isolation_key: str) -> Optional[MemoryNode]:
-        """获取 L5 Identity Profile 节点"""
+        """Fetch the L5 Identity Profile node"""
         if not self._available:
             return None
         rows = await self._run(
@@ -778,7 +778,7 @@ class KuzuGraphStore(GraphStoreBase):
         return self._row_to_memory_node(rows[0][0])
 
     async def update_node(self, node_id: str, updates: Dict[str, Any]) -> bool:
-        """更新节点属性"""
+        """Update node properties"""
         if not self._available:
             return False
         if not updates:
@@ -802,7 +802,7 @@ class KuzuGraphStore(GraphStoreBase):
             return False
 
     async def delete_node(self, node_id: str) -> bool:
-        """删除 Memory 节点及其关联边"""
+        """Delete a Memory node and its incident edges"""
         if not self._available:
             return False
         try:
@@ -816,11 +816,11 @@ class KuzuGraphStore(GraphStoreBase):
             return False
 
     async def delete_all_nodes(self, isolation_key: str) -> int:
-        """删除某隔离键下所有 Memory 节点"""
+        """Delete all Memory nodes under one isolation key"""
         if not self._available:
             return 0
         try:
-            # 先统计
+            # Count first
             count_rows = await self._run(
                 "MATCH (m:Memory) WHERE m.isolation_key = $ik RETURN count(m);",
                 {"ik": isolation_key},
@@ -843,7 +843,7 @@ class KuzuGraphStore(GraphStoreBase):
         *,
         layer: str = "l2_fact",
     ) -> Dict[str, int]:
-        """见基类。按 layer 收窄，避免连带删掉 System 2 的 l6_schema。"""
+        """See the base class. Scoped by layer so System 2 l6_schema nodes are not deleted as collateral."""
         out = {"memories": 0, "topics": 0, "entities": 0}
         if not self._available:
             return out
@@ -860,8 +860,8 @@ class KuzuGraphStore(GraphStoreBase):
             out["memories"] = int(rows[0][0]) if rows else 0
             await self._run(f"MATCH (m:Memory) WHERE {cond} DETACH DELETE m;", params)
 
-            # 仅清目标 user/agent scope 内的孤儿 Topic。不能让单用户回填
-            # 顺手清理全库其他 namespace 的历史孤儿节点。
+            # Only clear orphan Topics inside the target user/agent scope. A single-user backfill
+            # must not also clean up historical orphan nodes in other namespaces of the whole database.
             topic_scope = (
                 f"{user_id}::{agent_id}" if agent_id else f"{user_id}::"
             )
@@ -907,7 +907,7 @@ class KuzuGraphStore(GraphStoreBase):
                 for row in scope_rows:
                     out["topics"] += await self.prune_hierarchy_topics(str(row[0]))
 
-            # 孤儿 Entity，同样限制在目标 scope。
+            # Orphan Entities, likewise restricted to the target scope.
             try:
                 rows = await self._run(
                     f"""
@@ -942,7 +942,7 @@ class KuzuGraphStore(GraphStoreBase):
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> int:
-        """按 metadata 删除该用户范围内的图数据（Memory + User + Topic + 孤立 VdbRef）"""
+        """Delete this user's graph data by metadata (Memory + User + Topic + orphan VdbRef)"""
         if not self._available:
             return 0
         try:
@@ -970,7 +970,7 @@ class KuzuGraphStore(GraphStoreBase):
             )
             total += mem_count
 
-            # User 节点（按 user_id / agent_id / session 粒度）
+            # User nodes (at user_id / agent_id / session granularity)
             user_conds = ["u.user_id = $uid"]
             user_params: Dict[str, Any] = {"uid": user_id}
             if session_id is not None:
@@ -986,7 +986,7 @@ class KuzuGraphStore(GraphStoreBase):
                 user_params,
             )
 
-            # Topic 节点（isolation_key 与 User 同格式）
+            # Topic nodes (isolation_key uses the same format as User)
             topic_conds = ["t.isolation_key STARTS WITH $pfx"]
             topic_params: Dict[str, Any] = {"pfx": f"{user_id}::"}
             if agent_id is not None and session_id is None:
@@ -1018,7 +1018,7 @@ class KuzuGraphStore(GraphStoreBase):
                     hierarchy_params,
                 )
 
-            # 孤立 VdbRef（DERIVED_FROM 已随 Memory 删除）
+            # Orphan VdbRef nodes (their DERIVED_FROM edges were already deleted with the Memory nodes)
             await self._run(
                 "MATCH (v:VdbRef) "
                 "OPTIONAL MATCH ()-[r:DERIVED_FROM]->(v) "
@@ -1037,7 +1037,7 @@ class KuzuGraphStore(GraphStoreBase):
             return 0
 
     # ================================================================
-    # 边操作
+    # Edge operations
     # ================================================================
 
     async def add_edge(
@@ -1047,7 +1047,7 @@ class KuzuGraphStore(GraphStoreBase):
         edge_type: str,
         properties: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """添加 Memory→Memory 关系边 (RELATED_TO)，自动建双向边"""
+        """Add a Memory→Memory relation edge (RELATED_TO), creating both directions automatically"""
         if not self._available:
             return False
         props = properties or {}
@@ -1065,13 +1065,13 @@ class KuzuGraphStore(GraphStoreBase):
             "now": now,
         }
 
-        # 必须用 MERGE 而不是 CREATE：同一对节点之间会**反复**建同类型边 ——
-        # UPDATE 是原地更新（node_id 不变），一条记忆被合并多次就会多次参与投影；
-        # System 2 的 agent 循环更可能对同一对反复调用（线上实测 `related` 有 20 万对
-        # 重复、最严重 32 份）。重复边不放大打分（build_adjacency 折叠成最强），
-        # 但会吃掉 get_related_edges 的 max_edges 预算（Cypher LIMIT 先截断、去重在
-        # Python 侧），把本该返回的真实边挤掉。
-        # ON MATCH 取较大权重，与读侧"折叠成最强"语义一致。
+        # MERGE is mandatory instead of CREATE: the same node pair gets the same edge type **repeatedly** --
+        # UPDATE is in place (node_id unchanged), so a memory merged several times joins the projection several times;
+        # the System 2 agent loop is even likelier to call the same pair over and over (measured in production: 200k `related`
+        # duplicate pairs, up to 32 copies for the worst one). Duplicate edges do not inflate scoring (build_adjacency folds to the strongest),
+        # but they consume the max_edges budget of get_related_edges (the Cypher LIMIT truncates first, deduplication happens
+        # on the Python side), pushing out the real edges that should have been returned.
+        # ON MATCH keeps the larger weight, matching the read-side "fold to the strongest" semantics.
         _merge = """
             MATCH (a:Memory {{node_id: ${src}}}), (b:Memory {{node_id: ${tgt}}})
             MERGE (a)-[r:RELATED_TO {{relation_type: $rtype}}]->(b)
@@ -1080,9 +1080,9 @@ class KuzuGraphStore(GraphStoreBase):
                     CASE WHEN $w > r.weight THEN $w ELSE r.weight END;
         """
         try:
-            # 正向 A→B
+            # Forward A→B
             await self._run(_merge.format(src="src", tgt="tgt"), params)
-            # 反向 B→A
+            # Reverse B→A
             await self._run(_merge.format(src="tgt", tgt="src"), params)
             return True
         except Exception as e:
@@ -1097,11 +1097,11 @@ class KuzuGraphStore(GraphStoreBase):
         embed_service=None,
         similarity_threshold: float = 0.85,
     ) -> str:
-        """记忆节点关联主题 (Memory→Topic)。
+        """Attach a topic to a memory node (Memory→Topic).
 
-        传入 embed_service 时做**语义归一化**：先在该 isolation_key 下找语义最近的
-        已有 Topic，余弦 ≥ similarity_threshold 就复用它，否则新建。
-        不归一化的话 tag 图会碎成一堆同义孤岛（work / job / career 各自成 Topic）。
+        When embed_service is passed, do **semantic normalization**: first find the semantically nearest
+        existing Topic under this isolation_key and reuse it when cosine >= similarity_threshold, otherwise create a new one.
+        Without normalization the tag graph shatters into synonym islands (work / job / career each becoming its own Topic).
         """
         if not self._available:
             return ""
@@ -1111,14 +1111,14 @@ class KuzuGraphStore(GraphStoreBase):
         embedding: Optional[List[float]] = None
 
         try:
-            # Kuzu 0.4.x 不支持 MERGE ... ON CREATE SET，改用 exists check + CREATE
+            # Kuzu 0.4.x does not support MERGE ... ON CREATE SET, so use an exists check plus CREATE
             topic_rows = await self._run(
                 "MATCH (t:Topic {topic_id: $tid}) RETURN t.topic_id;",
                 {"tid": topic_id}
             )
             topic_exists = bool(topic_rows)
 
-            # 精确同名不存在时，才尝试语义归一化到已有 Topic
+            # Only when no exact same-name Topic exists, try semantic normalization onto an existing Topic
             if not topic_exists and embed_service is not None:
                 try:
                     embedding = await embed_text_for_graph(embed_service, topic_name)
@@ -1524,7 +1524,7 @@ class KuzuGraphStore(GraphStoreBase):
         label: str,
         isolation_key: str,
     ) -> str:
-        """Memory -[:MENTIONS]-> Entity（精确名归一：casefold）。"""
+        """Memory -[:MENTIONS]-> Entity (exact-name normalization via casefold)."""
         if not self._available or not memory_node_id or not name:
             return ""
         from .graph_store_base import make_entity_id, normalize_entity_name
@@ -1553,7 +1553,7 @@ class KuzuGraphStore(GraphStoreBase):
                         "nn": name_norm, "lab": lab, "now": now,
                     },
                 )
-            # 避免重复边：先查再 CREATE
+            # Avoid duplicate edges: check first, then CREATE
             existing = await self._run(
                 """
                 MATCH (m:Memory {node_id: $mid})-[r:MENTIONS]->(e:Entity {entity_id: $eid})
@@ -1614,7 +1614,7 @@ class KuzuGraphStore(GraphStoreBase):
         if not norms:
             return []
         try:
-            # Kuzu 对 list IN 支持因版本而异；逐 norm 查再合并
+            # Kuzu support for list IN varies by version; query each norm separately and merge
             seen: Dict[str, Dict[str, Any]] = {}
             for nn in norms:
                 rows = await self._run(
@@ -1654,7 +1654,7 @@ class KuzuGraphStore(GraphStoreBase):
         embedding: List[float],
         threshold: float,
     ) -> Optional[str]:
-        """在已有 Topic 里找余弦 ≥ threshold 的最近者，返回 topic_id；没有则 None。"""
+        """Return the topic_id of the closest existing Topic with cosine >= threshold, or None when there is none."""
         best_id, best_sim = None, threshold
         norm_q = sum(x * x for x in embedding) ** 0.5
         if norm_q == 0:
@@ -1672,9 +1672,9 @@ class KuzuGraphStore(GraphStoreBase):
         return best_id
 
     async def get_all_topics(self, isolation_key: str) -> List[Dict[str, Any]]:
-        """列出该 isolation_key 下所有 Topic（含 embedding、度数）。
+        """List every Topic under this isolation_key (including embedding and degree).
 
-        度数用于画像聚合：Topic 挂的记忆越多、越新，越代表"用户是什么样的人"。
+        Degree drives profile aggregation: the more memories a Topic carries and the fresher they are, the better it represents what kind of person the user is.
         """
         if not self._available:
             return []
@@ -1705,7 +1705,7 @@ class KuzuGraphStore(GraphStoreBase):
     # ================================================================
 
     async def ensure_vdbref(self, node_id: str, layer: str) -> None:
-        """确保 VdbRef 影子节点存在"""
+        """Ensure the VdbRef shadow node exists"""
         if not self._available:
             return
         try:
@@ -1714,7 +1714,7 @@ class KuzuGraphStore(GraphStoreBase):
                 {"nid": node_id}
             )
             if rows:
-                return  # 已存在
+                return  # Already exists
             await self._run(
                 "CREATE (v:VdbRef {node_id: $nid, layer: $layer});",
                 {"nid": node_id, "layer": layer},
@@ -1723,7 +1723,7 @@ class KuzuGraphStore(GraphStoreBase):
             logger.debug(f"ensure_vdbref note: {e}")
 
     async def add_derived_from(self, memory_node_id: str, vdbref_node_id: str) -> bool:
-        """添加 DERIVED_FROM 边: Memory → VdbRef"""
+        """Add a DERIVED_FROM edge: Memory → VdbRef"""
         if not self._available:
             return False
         try:
@@ -1748,7 +1748,7 @@ class KuzuGraphStore(GraphStoreBase):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """反向查找: VDB node_id → 引用它的 Graph Memory 节点"""
+        """Reverse lookup: VDB node_id → the Graph Memory nodes referencing it"""
         if not self._available or not vdb_node_ids:
             return []
         results = []
@@ -1799,7 +1799,7 @@ class KuzuGraphStore(GraphStoreBase):
         return results[:limit]
 
     async def get_evidence_vdbrefs(self, memory_node_id: str) -> List[Dict[str, Any]]:
-        """获取一个 Graph Memory 的全部 DERIVED_FROM evidence VdbRef"""
+        """Get every DERIVED_FROM evidence VdbRef of one Graph Memory node"""
         if not self._available:
             return []
         try:
@@ -1819,7 +1819,7 @@ class KuzuGraphStore(GraphStoreBase):
             return []
 
     # ================================================================
-    # 图检索
+    # Graph retrieval
     # ================================================================
 
     async def expand_from_anchors(
@@ -1828,7 +1828,7 @@ class KuzuGraphStore(GraphStoreBase):
         hop: int = 1,
         max_nodes: int = 50,
     ) -> List[Dict[str, Any]]:
-        """从锚点节点出发，沿图边扩展 N 跳"""
+        """Expand N hops from the anchor nodes along graph edges"""
         if not self._available or not anchor_ids:
             return []
 
@@ -1837,7 +1837,7 @@ class KuzuGraphStore(GraphStoreBase):
 
         for anchor_id in anchor_ids:
             try:
-                # 正向边
+                # Outgoing edges
                 rows = await self._run(
                     f"""
                     MATCH (a:Memory {{node_id: $aid}})-[r]->(b:Memory)
@@ -1862,7 +1862,7 @@ class KuzuGraphStore(GraphStoreBase):
                             "source": "graph_expand",
                         })
 
-                # 反向边
+                # Incoming edges
                 rows2 = await self._run(
                     f"""
                     MATCH (b:Memory)-[r]->(a:Memory {{node_id: $aid}})
@@ -1898,10 +1898,10 @@ class KuzuGraphStore(GraphStoreBase):
     async def get_topic_memories(
         self, topic_id: str, *, limit: int = 200,
     ) -> List[Dict[str, Any]]:
-        """列出某 Topic 下的 active 记忆。语义见基类。
+        """List the active memories under one Topic. See the base class for semantics.
 
-        注意只能按 created_at 排 —— 图里的 Memory 表没有 memory_at 列
-        （事件时间以 VDB 为准，调用方回 VDB 取）。
+        Note that this can only order by created_at -- the Memory table in the graph has no memory_at column
+        (the VDB is authoritative for event time; callers go back to the VDB for it).
         """
         if not self._available or not topic_id:
             return []
@@ -1927,11 +1927,11 @@ class KuzuGraphStore(GraphStoreBase):
     async def add_temporal_edge(
         self, prev_id: str, next_id: str, topic_id: str = "",
     ) -> bool:
-        """建 Topic 内时序脊边（TEMPORAL_NEXT，有向 prev→next）。语义见基类。"""
+        """Create a temporal spine edge inside a Topic (TEMPORAL_NEXT, directed prev→next). See the base class for semantics."""
         if not self._available or not prev_id or not next_id or prev_id == next_id:
             return False
         try:
-            # 幂等：已存在同一对就不重复建
+            # Idempotent: skip creation when the same pair already exists
             rows = await self._run(
                 """
                 MATCH (a:Memory {node_id: $p})-[r:TEMPORAL_NEXT]->(b:Memory {node_id: $n})
@@ -1964,12 +1964,12 @@ class KuzuGraphStore(GraphStoreBase):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """取一端落在 node_ids 里的 RELATED_TO（+ 可选 TEMPORAL_NEXT）边。语义见基类。"""
+        """Return RELATED_TO (plus optional TEMPORAL_NEXT) edges with one endpoint in node_ids. See the base class for semantics."""
         if not self._available or not node_ids:
             return []
 
-        # add_edge 建的是双向边，所以只查正向即可覆盖两个方向；
-        # 无向去重用 frozenset(pair) 做 key。
+        # add_edge creates bidirectional edges, so querying the forward direction already covers both;
+        # undirected deduplication uses frozenset(pair) as the key.
         rtype_filter = ""
         if relation_types:
             _quoted = ", ".join(f"'{t}'" for t in relation_types if t)
@@ -2006,9 +2006,9 @@ class KuzuGraphStore(GraphStoreBase):
                 src, tgt = row[0], row[1]
                 if not src or not tgt or src == tgt:
                     continue
-                # 去重 key 必须带 relation_type：add_edge 建的是双向边，需要把
-                # A→B / B→A 折叠成一条；但同一对节点之间**可以有多种关系**
-                # （既 co_occurs 又 causes），那是两条不同的边，不能合并。
+                # The dedup key must include relation_type: add_edge creates bidirectional edges, so
+                # A→B / B→A must fold into one; but one node pair **can carry several relations**
+                # (both co_occurs and causes), which are two distinct edges and must not be merged.
                 pair = (frozenset((src, tgt)), row[2] or "related")
                 if pair in seen_pairs:
                     continue
@@ -2027,8 +2027,8 @@ class KuzuGraphStore(GraphStoreBase):
         except Exception as e:
             logger.debug(f"get_related_edges: {e}")
 
-        # ── 时序脊：TEMPORAL_NEXT 是有向边（source=更早，target=更晚）──
-        # 一端落在 node_ids 里就要取（两个方向都查），否则"X 之前发生了什么"走不通。
+        # -- Temporal spine: TEMPORAL_NEXT is a directed edge (source = earlier, target = later) --
+        # Take every edge with one endpoint in node_ids (query both directions), otherwise "what happened before X" cannot be answered.
         if include_temporal and (
             not relation_types or "temporal_next" in relation_types
         ):
@@ -2067,7 +2067,7 @@ class KuzuGraphStore(GraphStoreBase):
                             "target_id": tgt,
                             "relation_type": "temporal_next",
                             "weight": 1.0,
-                            # target/source 状态都带上：读侧不管从哪端命中都能过滤 shadow
+                            # Carry both target and source status so the read side can filter shadow nodes whichever endpoint it hits
                             "target_status": row[2],
                             "target_layer": row[3],
                             "source_status": row[4],
@@ -2088,7 +2088,7 @@ class KuzuGraphStore(GraphStoreBase):
         max_nodes: int = 500,
         isolation_key: str = "",
     ) -> List[Dict[str, Any]]:
-        """BFS 展开：RELATED_TO + TAGGED_WITH(双向)，N 跳。"""
+        """BFS expansion: RELATED_TO + TAGGED_WITH (both directions), N hops."""
         if not self._available or not anchor_ids:
             return []
 
@@ -2105,7 +2105,7 @@ class KuzuGraphStore(GraphStoreBase):
             next_frontier = []
 
             for aid in frontier:
-                # --- RELATED_TO 邻居（双向）---
+                # --- RELATED_TO neighbours (both directions) ---
                 try:
                     rows = await self._run(
                         f"""
@@ -2132,7 +2132,7 @@ class KuzuGraphStore(GraphStoreBase):
                 except Exception as e:
                     logger.debug(f"expand_with_tags RELATED_TO {aid}: {e}")
 
-                # --- TAGGED_WITH 桥接 ---
+                # --- TAGGED_WITH bridge ---
                 try:
                     rows = await self._run(
                         f"""
@@ -2167,7 +2167,7 @@ class KuzuGraphStore(GraphStoreBase):
         return all_expanded[:max_nodes]
 
     # ================================================================
-    # 向量检索 (HNSW)
+    # Vector search (HNSW)
     # ================================================================
 
     async def vector_search(
@@ -2181,7 +2181,7 @@ class KuzuGraphStore(GraphStoreBase):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """V_con 向量检索 Graph Memory 节点"""
+        """V_con vector search over Graph Memory nodes"""
         if not self._available or not query_embedding:
             return []
 
@@ -2209,8 +2209,8 @@ class KuzuGraphStore(GraphStoreBase):
                 conditions.append("NOT list_contains($exclude_sources, m.source)")
                 params["exclude_sources"] = list(exclude_sources)
 
-            # 先在数据库内按属性缩小候选集，再计算 cosine 并排序。不能使用
-            # QUERY_VECTOR_INDEX 的全局 top-k 后置过滤，否则 source 会吃掉名额。
+            # Narrow the candidate set by properties inside the database first, then compute cosine and sort. Never use
+            # the QUERY_VECTOR_INDEX global top-k with post-filtering, otherwise sources eat the quota.
             r = await self._run(
                 f"""
                 MATCH (m:Memory)
@@ -2247,10 +2247,10 @@ class KuzuGraphStore(GraphStoreBase):
         isolation_key: str,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        """V_beh 向量检索 L6 basic 节点 (sweeper 用)
+        """V_beh vector search over L6 basic nodes (used by the sweeper)
 
-        beh_embedding 不建 HNSW 索引（Kuzu 限制：被索引列不能 SET），
-        所以用全量扫描 + 内存 cosine 计算。N < 100 时毫秒级。
+        beh_embedding carries no HNSW index (Kuzu limitation: indexed columns cannot be SET),
+        so this does a full scan plus in-memory cosine math. Millisecond scale while N < 100.
         """
         if not self._available or not query_beh_embedding:
             return []
@@ -2258,7 +2258,7 @@ class KuzuGraphStore(GraphStoreBase):
         try:
             import numpy as np
 
-            # 全量取 L6 basic 的 beh_embedding + embedding
+            # Fetch beh_embedding + embedding for all L6 basic nodes
             r = await self._run(
                 "MATCH (m:Memory) WHERE m.isolation_key = $ik "
                 "AND m.layer = 'l6_schema' AND m.status = 'active' "
@@ -2278,7 +2278,7 @@ class KuzuGraphStore(GraphStoreBase):
             if not candidates:
                 return []
 
-            # 内存 cosine 计算
+            # In-memory cosine math
             q_vec = np.array(query_beh_embedding, dtype=np.float32)
             q_norm = q_vec / (np.linalg.norm(q_vec) + 1e-10)
 
@@ -2289,7 +2289,7 @@ class KuzuGraphStore(GraphStoreBase):
                 beh_sim = float(np.dot(q_norm, beh_norm))
                 scored.append((beh_sim, c))
 
-            # 按 beh_sim 降序，取 topk
+            # Sort by beh_sim descending and take the topk
             scored.sort(key=lambda x: x[0], reverse=True)
             results = []
             for beh_sim, c in scored[:limit]:
@@ -2310,12 +2310,12 @@ class KuzuGraphStore(GraphStoreBase):
         embedding: Optional[List[float]] = None,
         beh_embedding: Optional[List[float]] = None,
     ) -> bool:
-        """更新节点的 embedding / beh_embedding 向量属性
+        """Update the node embedding / beh_embedding vector properties
 
-        Kuzu 限制：被 HNSW 索引的列（embedding）不能 SET。
-        - beh_embedding：无索引，可直接 SET
-        - embedding：有索引，需在 CREATE 时写入（不支持后续更新）
-          如果确实需要更新 embedding，调用方应 delete + upsert（带新 embedding）
+        Kuzu limitation: the column under the HNSW index (embedding) cannot be SET.
+        - beh_embedding: not indexed, can be SET directly
+        - embedding: indexed, must be written at CREATE (later updates unsupported)
+          If an embedding really must change, the caller should delete + upsert (with the new embedding)
         """
         if not self._available:
             return False
@@ -2326,7 +2326,7 @@ class KuzuGraphStore(GraphStoreBase):
                     {"nid": node_id, "vec": beh_embedding},
                 )
             if embedding is not None:
-                # Kuzu 被索引列不能 SET；应在 upsert CREATE 时传 _graph_embedding
+                # Kuzu indexed columns cannot be SET; pass _graph_embedding at upsert CREATE instead
                 logger.debug(
                     f"Kuzu: skip SET indexed column 'embedding' for {node_id} "
                     f"(use upsert_memory_node with _graph_embedding on CREATE)"
@@ -2339,11 +2339,11 @@ class KuzuGraphStore(GraphStoreBase):
             return False
 
     # ================================================================
-    # 跨域归纳 (Cross-Domain)
+    # Cross-domain schema induction
     # ================================================================
 
     async def add_cross_abstracts_to(self, basic_id: str, core_id: str) -> bool:
-        """添加 CROSS_ABSTRACTS_TO 边: L6 basic → L6 core (单向)"""
+        """Add a CROSS_ABSTRACTS_TO edge: L6 basic → L6 core (directed)"""
         if not self._available:
             return False
         try:
@@ -2365,7 +2365,7 @@ class KuzuGraphStore(GraphStoreBase):
         basic_ids: List[str],
         max_hops: int = 2,
     ) -> List[Dict[str, Any]]:
-        """从 L6 basic 出发，沿 RELATED_TO / CROSS_ABSTRACTS_TO 找 L6 core"""
+        """Find L6 core nodes starting from L6 basic nodes along RELATED_TO / CROSS_ABSTRACTS_TO"""
         if not self._available or not basic_ids:
             return []
 
@@ -2397,7 +2397,7 @@ class KuzuGraphStore(GraphStoreBase):
         return results
 
     async def get_cross_abstracts_targets(self, basic_id: str) -> List[str]:
-        """查询某个 L6 basic 已有的 CROSS_ABSTRACTS_TO → core node_id 列表"""
+        """List the core node_ids one L6 basic already links to via CROSS_ABSTRACTS_TO"""
         if not self._available:
             return []
         try:
@@ -2415,11 +2415,11 @@ class KuzuGraphStore(GraphStoreBase):
             return []
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     async def get_stats(self) -> Dict[str, Any]:
-        """获取图统计"""
+        """Get graph statistics"""
         if not self._available:
             return {"backend": "kuzu", "available": False, "reason": "file lock not acquired"}
         try:
@@ -2439,7 +2439,7 @@ class KuzuGraphStore(GraphStoreBase):
             return {"backend": "kuzu", "error": str(e)}
 
     async def close(self) -> None:
-        """关闭连接"""
+        """Close the connection"""
         conn, db = self._conn, self._db
         self._conn = None
         self._db = None
@@ -2461,19 +2461,19 @@ class KuzuGraphStore(GraphStoreBase):
         logger.info("GraphStore (Kuzu) closed")
 
     # ================================================================
-    # 内部工具
+    # Internal helpers
     # ================================================================
 
     @staticmethod
     def _row_to_memory_node(row_data: Any) -> MemoryNode:
-        """将 Kuzu 查询结果行转为 MemoryNode"""
+        """Convert a Kuzu result row into a MemoryNode"""
         if isinstance(row_data, dict):
             d = row_data
         else:
-            # Kuzu Node 对象有 dict-like 接口
+            # Kuzu Node objects expose a dict-like interface
             d = dict(row_data) if hasattr(row_data, '__iter__') else {}
 
-        # 解析 JSON 字段
+        # Parse JSON fields
         meta_tags_raw = d.get("meta_tags", "[]")
         if isinstance(meta_tags_raw, str):
             try:

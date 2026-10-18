@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Coding Memory 预处理工具（规则，零 LLM）
+Coding memory preprocessing utilities (rule based, zero LLM)
 
-- has_any_tool_message  : 检测 messages 是否含 tool 消息（O(1) 决定是否进 coding 链）
-- strip_tool_messages   : 把 tool 消息 + assistant tool_calls 字段 strip 掉，留给 chat 链
-- truncate_tool_message : 长 tool_result 头尾保留中段截断（不做 schema 化压缩）
-- extract_files         : 从 tool_calls.arguments 抽 path / file_path 等常见键
-- extract_tool_summary  : 写 LLM judge 时给的简化视图
+- has_any_tool_message  : detect whether messages contain tool messages (O(1) gate for the coding chain)
+- strip_tool_messages   : strip tool messages plus the assistant tool_calls field, leaving them for the chat chain
+- truncate_tool_message : keep head/tail of a long tool_result and cut the middle (no schema-aware compression)
+- extract_files         : pull path / file_path and similar keys out of tool_calls.arguments
+- extract_tool_summary  : simplified view handed to the LLM judge
 
-使用方式与 scene 路由见 docs/scene_coding_usage.md。
+See docs/scene_coding_usage.md for usage and scene routing.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,7 +17,7 @@ from ..pipelines.base import ChatMessage
 
 
 # ================================================================
-# 路径键名（跨 OpenAI / Anthropic / Claude Code 通用）
+# Path key names (shared across OpenAI / Anthropic / Claude Code)
 # ================================================================
 
 PATH_KEYS: Tuple[str, ...] = (
@@ -27,36 +27,36 @@ PATH_KEYS: Tuple[str, ...] = (
 
 
 # ================================================================
-# 检测 / 过滤
+# Detection / filtering
 # ================================================================
 
 def has_any_tool_message(messages: List[ChatMessage]) -> bool:
-    """messages 中是否存在 tool 消息或 assistant 的 tool_calls。"""
+    """Whether messages contain a tool message or assistant tool_calls."""
     return any(m.is_tool_message() or m.has_tool_calls() for m in messages)
 
 
 def strip_tool_messages(messages: List[ChatMessage]) -> List[ChatMessage]:
     """
-    给现有 chat 链路用：去掉 role=tool 的消息；
-    含 tool_calls 的 assistant 消息保留 content（去掉 tool_calls 字段）；
-    若 strip 后 content 为空且无 tool_calls 则丢弃。
+    For the existing chat chain: drops role=tool messages;
+    an assistant message with tool_calls keeps its content (the tool_calls field is dropped);
+    a message whose content is empty after stripping and that has no tool_calls is discarded.
     """
     out: List[ChatMessage] = []
     for m in messages:
         if m.is_tool_message():
             continue
         if m.has_tool_calls():
-            # 保留 text，丢 tool_calls；content 为空就整条丢弃
+            # Keep the text, drop tool_calls; if content is empty the whole message is discarded
             if m.content.strip():
                 out.append(ChatMessage(role=m.role, content=m.content))
-            # else: 整条丢
+            # else: discard the whole message
             continue
         out.append(m)
     return out
 
 
 # ================================================================
-# tool_result 截断（不做 schema 化压缩）
+# tool_result truncation (no schema-aware compression)
 # ================================================================
 
 DEFAULT_MAX_TOOL_RESULT_BYTES = 2048
@@ -71,18 +71,18 @@ def truncate_tool_result_text(
     tail_bytes: int = DEFAULT_TAIL_BYTES,
 ) -> str:
     """
-    长字符串头尾保留中段截断。
+    Keeps the head and tail of a long string and cuts out the middle.
 
-    跨平台 tool 输出 schema 不统一，规则化压缩（"Read 取行数 / Bash 取 exit code"）注定失败；
-    最稳妥做法是按字节截断，把信号交给 LLM 自己消化。
+    Tool output schemas are not consistent across platforms, so rule-based compression ("line count for Read / exit code for Bash") is hopeless;
+    the safest option is plain byte truncation, leaving the signal for the LLM to digest.
     """
     if not isinstance(text, str):
         text = "" if text is None else str(text)
     raw = text.encode("utf-8")
     if len(raw) <= max_bytes:
         return text
-    # 自定义 max_bytes 可能小于默认 head+tail（1024+512）。按原比例缩放内容窗口，
-    # 给省略标记预留空间，不能因为窗口和过大而把超限原文直接返回。
+    # A custom max_bytes can be smaller than the default head+tail (1024+512). Scale the content window
+    # down proportionally and reserve room for the omission marker; never return the oversized source text as is.
     marker_budget = min(96, max(24, max_bytes // 4))
     content_budget = max(2, max_bytes - marker_budget)
     requested = max(1, head_bytes + tail_bytes)
@@ -103,13 +103,13 @@ def truncate_tool_message(
     msg: ChatMessage,
     max_bytes: int = DEFAULT_MAX_TOOL_RESULT_BYTES,
 ) -> ChatMessage:
-    """对 role=tool 的消息内容做截断。其它 role 原样返回。"""
+    """Truncate the content of role=tool messages. Other roles are returned unchanged."""
     if not msg.is_tool_message():
         return msg
     if len(msg.content.encode("utf-8")) <= max_bytes:
         return msg
     new_content = truncate_tool_result_text(msg.content, max_bytes=max_bytes)
-    # 不修改原对象（messages 可能被 caller 复用）
+    # Do not mutate the original object (the caller may reuse messages)
     return ChatMessage(
         role=msg.role,
         content=new_content,
@@ -124,21 +124,21 @@ def truncate_messages(
     messages: List[ChatMessage],
     max_bytes: int = DEFAULT_MAX_TOOL_RESULT_BYTES,
 ) -> List[ChatMessage]:
-    """对整个 messages 列表的所有 tool 消息做截断。"""
+    """Truncate every tool message in the messages list."""
     return [truncate_tool_message(m, max_bytes=max_bytes) for m in messages]
 
 
 # ================================================================
-# 长会话窗口压缩：last-K user-turn + assistant 头尾截断
+# Long-session window compression: last-K user turns + assistant head/tail truncation
 # ================================================================
 
 DEFAULT_LAST_K_USER_TURNS = 5
-# 原值是 head 200 + tail 200。那是按"assistant 文本是行文、只需还原意图"设的，
-# 但 assistant 的最后一段常常**就是交付物本身**（一份行程表、一段配置、一个答案），
-# 对它做头尾截断等于把答卷中间撕掉再让人抄。
+# The original values were head 200 + tail 200, which assumed assistant text is prose where
+# recovering the intention is enough. In practice the last assistant block often **is the deliverable itself**
+# (an itinerary, a config block, an answer), and truncating it tears out the middle of the answer sheet.
 #
-# 阈值取 6000（head+tail 各 3000）：大多数正常交付物在此长度内可完整保留；超过阈值
-# 的通常是反复试错的长轨迹，**仍然要截**——保留它只会稀释注意力。
+# The threshold is 6000 (3000 each for head and tail): most normal deliverables fit and stay intact;
+# anything above it is usually a long trial-and-error trajectory that **still must be cut** -- keeping it only dilutes attention.
 DEFAULT_ASSISTANT_HEAD_CHARS = 3000
 DEFAULT_ASSISTANT_TAIL_CHARS = 3000
 
@@ -149,13 +149,13 @@ def truncate_assistant_text(
     tail_chars: int = DEFAULT_ASSISTANT_TAIL_CHARS,
 ) -> str:
     """
-    assistant.content 的字符级头尾截断。
+    Character-level head/tail truncation of assistant.content.
 
-    跟 tool_result 不同，assistant 文本一般不会"超大"，但长 trajectory 累积下来
-    仍会膨胀 prompt。默认 head 3000 + tail 3000：assistant 的收尾段常常就是交付物
-    本身，阈值的取法见模块里 DEFAULT_ASSISTANT_HEAD_CHARS 上方的说明。
+    Unlike tool_result, assistant text is rarely huge, but a long trajectory still accumulates
+    and bloats the prompt. Default head 3000 + tail 3000: the closing part of an assistant message
+    is often the deliverable itself; see the notes above DEFAULT_ASSISTANT_HEAD_CHARS in this module.
 
-    注意：tool_calls 列表不在此截断；在 _format_conversation 中由 caller 决定渲染策略。
+    Note: the tool_calls list is not truncated here; the caller decides how to render it in _format_conversation.
     """
     if not isinstance(text, str):
         text = "" if text is None else str(text)
@@ -174,10 +174,10 @@ def truncate_assistant_messages(
     head_chars: int = DEFAULT_ASSISTANT_HEAD_CHARS,
     tail_chars: int = DEFAULT_ASSISTANT_TAIL_CHARS,
 ) -> List[ChatMessage]:
-    """截断列表内所有 assistant 文本，但不裁掉任何消息或 user-turn。
+    """Truncate all assistant text in the list without dropping any message or user turn.
 
-    ``New Messages`` 必须完整覆盖本次 write 传入的所有 turn；last-K 只属于历史
-    上下文。这个 helper 因此只限制单条 assistant 的体积，不做窗口选择。
+    ``New Messages`` must cover every turn passed to this write in full; last-K only belongs to
+    historical context. This helper therefore only bounds the size of a single assistant message and does no window selection.
     """
     out: List[ChatMessage] = []
     for m in messages:
@@ -210,10 +210,10 @@ def prepare_extractor_messages(
     assistant_head_chars: int = DEFAULT_ASSISTANT_HEAD_CHARS,
     assistant_tail_chars: int = DEFAULT_ASSISTANT_TAIL_CHARS,
 ) -> List[ChatMessage]:
-    """限制单条消息体积，同时完整保留输入中的所有 turn。
+    """Bound the size of individual messages while keeping every input turn intact.
 
-    供 ``New Messages`` 使用。顺序必须是先裁 tool result，再裁 assistant 文本；
-    两步都不改变消息数量和先后关系。
+    Used for ``New Messages``. The order must be tool results first, then assistant text;
+    neither step changes the message count or their relative order.
     """
     return truncate_assistant_messages(
         truncate_messages(messages, max_bytes=tool_max_bytes),
@@ -229,39 +229,39 @@ def keep_last_k_user_turns(
     assistant_tail_chars: int = DEFAULT_ASSISTANT_TAIL_CHARS,
 ) -> List[ChatMessage]:
     """
-    对长 trajectory 压缩为最近 K 个 user-turn 的窗口，并对其中 assistant
-    消息做头尾截断。
+    Compresses a long trajectory into a window of the last K user turns and applies
+    head/tail truncation to the assistant messages inside that window.
 
-    一个 "user-turn" 定义为：一条真实 user 消息（非 tool_result-only）+ 之后
-    直到下一条真实 user 消息之前的所有 assistant / tool / tool_result 消息。
+    A "user-turn" is one real user message (not tool_result-only) plus every following
+    assistant / tool / tool_result message up to the next real user message.
 
-    设计动机：
-    - extractor 的 conversation_block 现状是整段渲染，长 batch 会让 LLM 注意力稀释、
+    Motivation:
+    - the extractor renders conversation_block in full, so a long batch dilutes LLM attention and causes
       under-extract
-    - tool_result 已有字节截断（head 1024 + tail 512），但 assistant 长文本和
-      消息条数本身没有上限
-    - 此函数只压缩**消息条数**和 assistant 文本长度；tool_result 由
-      truncate_messages 处理，不变
+    - tool_result already has byte truncation (head 1024 + tail 512), but neither the long assistant text nor
+      the message count itself was bounded
+    - this function only compresses the **message count** and the assistant text length; tool_result is still
+      handled by truncate_messages and stays unchanged
 
     Args:
-        messages: 完整的 ChatMessage 列表（顺序）
-        k: 保留最近多少个 user-turn（默认 5）
-        assistant_head_chars / assistant_tail_chars: assistant 文本头尾保留字符数
+        messages: the complete ChatMessage list (ordered)
+        k: how many recent user turns to keep (default 5)
+        assistant_head_chars / assistant_tail_chars: characters kept at the head and tail of assistant text
 
     Returns:
-        截断后的 messages 列表（保序，含 tool_call_id 等元字段不变）。
-        如果消息为空或 user-turn 数 ≤ k，原样返回（仍会做 assistant 截断以保持行为一致）。
+        The truncated messages list (order preserved, metadata such as tool_call_id unchanged).
+        Returned as is when there are no messages or the user-turn count is <= k (assistant truncation still runs so behaviour stays consistent).
     """
     if not messages:
         return messages
 
-    # 1) 找到所有真实 user-turn 的起始位置（"真实" = role=user 且不是 tool_result-only）
+    # 1) Find the start of every real user turn (real = role=user and not tool_result-only)
     user_turn_starts: List[int] = []
     for idx, m in enumerate(messages):
         if m.role == "user" and not m.is_tool_message():
             user_turn_starts.append(idx)
 
-    # 2) 决定窗口起点：保留最后 k 个 user-turn → 取倒数第 k 个起点
+    # 2) Decide the window start: keeping the last k user turns means the k-th start from the end
     if len(user_turn_starts) > k:
         window_start = user_turn_starts[-k]
     else:
@@ -269,7 +269,7 @@ def keep_last_k_user_turns(
 
     windowed = messages[window_start:]
 
-    # 3) 对 assistant 消息做头尾截断（保留 tool_calls）
+    # 3) Apply head/tail truncation to assistant messages (tool_calls preserved)
     out: List[ChatMessage] = []
     for m in windowed:
         if m.role == "assistant" and m.content:
@@ -295,15 +295,15 @@ def keep_last_k_user_turns(
 
 
 # ================================================================
-# 文件路径抽取
+# File path extraction
 # ================================================================
 
 def extract_files(messages: List[ChatMessage]) -> List[str]:
     """
-    从 messages 中所有 tool_calls.arguments 抽 path / file_path / filename 等常见键。
+    Pulls path / file_path / filename and similar keys from every tool_calls.arguments in messages.
 
-    返回去重后排序的 path 列表。跨 OpenAI / Anthropic / Claude Code 都稳定有效，
-    属于 tool 信号里少数能规则化处理的部分。
+    Returns the deduplicated, sorted list of paths. Reliable across OpenAI / Anthropic / Claude Code,
+    one of the few tool signals that can be handled with rules.
     """
     paths: set = set()
     for m in messages:
@@ -318,17 +318,17 @@ def extract_files(messages: List[ChatMessage]) -> List[str]:
 
 
 # ================================================================
-# 写入 / search 端 LLM 输入的简化视图
+# Simplified view of the LLM input on the write / search side
 # ================================================================
 
 def extract_tool_summary(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
     """
-    给 LLM judge / extractor 的 turn 级简化视图。
+    Turn-level simplified view for the LLM judge / extractor.
 
-    每个 turn = 一个 user 消息 + 之后到下一个 user 之前所有 assistant/tool 消息的 tool_names 集合。
-    chat 路径不会调用此函数（无 tool 消息直接走旧链）。
+    Each turn = one user message plus the tool_names of all assistant/tool messages up to the next user message.
+    The chat path never calls this function (no tool message means the legacy chain).
 
-    返回:
+    Returns:
         [
             {"turn": 0, "user": "...", "tools": ["Read", "Edit"], "has_tool_result": True},
             ...
@@ -339,7 +339,7 @@ def extract_tool_summary(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
 
     def _flush():
         if cur is not None:
-            # 去重保序
+            # Deduplicate while preserving order
             seen = set()
             cur["tools"] = [t for t in cur["tools"] if not (t in seen or seen.add(t))]
             out.append(cur)
@@ -355,7 +355,7 @@ def extract_tool_summary(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
             }
         else:
             if cur is None:
-                # 没有 user 起头时（可能是历史 assistant），开一个匿名 turn
+                # No leading user message (possibly a history assistant message): open an anonymous turn
                 cur = {"turn": len(out), "user": "", "tools": [], "has_tool_result": False}
             if m.has_tool_calls():
                 for tc in m.tool_calls:

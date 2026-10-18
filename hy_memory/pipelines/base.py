@@ -1,12 +1,12 @@
 """
-HY Memory - 抽象基类 + 统一协议
+HY Memory - abstract base classes + unified protocol
 
-定义 WritePipeline / ReadPipeline 抽象接口，以及统一的请求/响应协议。
+Defines the WritePipeline / ReadPipeline abstract interfaces plus the unified request/response protocol.
 
-设计原则:
-1. 统一协议 — WriteRequest/Response, ReadRequest/Response 是版本无关的
-2. 可扩展 — 各版本在 extra_data 中传递版本特有的数据
-3. 生命周期管理 — 通过 initialize() / close() 管理资源
+Design principles:
+1. Unified protocol -- WriteRequest/Response and ReadRequest/Response are version-agnostic
+2. Extensible -- each version passes its version-specific data in extra_data
+3. Lifecycle management -- resources are managed through initialize() / close()
 """
 
 import re
@@ -15,49 +15,49 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# 类型前向声明 (避免循环导入)
+# Type forward declarations (avoids circular imports)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..utils.tracer import PipelineTracer
 
 
 # ================================================================
-# 统一请求/响应协议
+# Unified request/response protocol
 # ================================================================
 
 @dataclass
 class PipelineContext:
     """
-    Pipeline 执行上下文 — 贯穿整个 write/read 流程的共享状态。
+    Pipeline execution context -- shared state spanning the whole write/read flow.
     
-    公共模块可以通过此上下文传递中间结果，Pipeline 内部使用。
+    Shared modules can pass intermediate results through this context for use inside the pipeline.
     """
-    # 请求标识
+    # Request identity
     request_id: str = ""
     
-    # 用户隔离（两级: user_id + agent_id）
+    # User isolation (two levels: user_id + agent_id)
     user_id: str = ""
     agent_id: str = ""
 
-    # 会话
+    # Session
     session_id: str = ""
 
-    # 中间结果存储 (Pipeline 内部使用)
+    # Intermediate result storage (used inside the pipeline)
     intermediate: Dict[str, Any] = field(default_factory=dict)
 
-    # 性能追踪
+    # Performance tracking
     start_time: Optional[datetime] = None
     timings: Dict[str, float] = field(default_factory=dict)
 
     def elapsed_ms(self) -> float:
-        """返回从 start_time 到现在的毫秒数"""
+        """Milliseconds elapsed from start_time until now"""
         if self.start_time is None:
             return 0.0
         return (datetime.now() - self.start_time).total_seconds() * 1000
 
     @property
     def isolation_key(self) -> str:
-        """构建隔离键: {user_id}:{agent_id}"""
+        """Build the isolation key: {user_id}:{agent_id}"""
         parts = [self.user_id or "default", self.agent_id or "default"]
         return ":".join(parts)
 
@@ -65,16 +65,16 @@ class PipelineContext:
 @dataclass
 class ToolCall:
     """
-    Assistant 发起的 tool 调用（OpenAI / Anthropic 通用化表示）。
+    A tool call initiated by the assistant (normalized representation for OpenAI / Anthropic).
 
-    OpenAI 风格的 `tool_calls` 数组里每个 entry、Anthropic 风格的 content
-    block (`type=="tool_use"`) 都规范化到这个结构。
+    Every entry of the OpenAI-style `tool_calls` array and every Anthropic-style content
+    block (`type=="tool_use"`) is normalized into this structure.
     """
-    id: str = ""                         # 调用 id（OpenAI: tc.id；Anthropic: tool_use block id）
-    name: str = ""                       # tool 名
+    id: str = ""                         # call id (OpenAI: tc.id; Anthropic: tool_use block id)
+    name: str = ""                       # tool name
     arguments: Dict[str, Any] = field(default_factory=dict)
-    # OpenAI 把 arguments 编码成 JSON 字符串；规范化层负责 json.loads 后塞进来
-    # Anthropic 直接给 dict；规范化层照搬
+    # OpenAI encodes arguments as a JSON string; the normalization layer json.loads them before passing them in
+    # Anthropic already gives a dict; the normalization layer copies it as is
 
     def to_dict(self) -> Dict[str, Any]:
         return {"id": self.id, "name": self.name, "arguments": self.arguments}
@@ -88,23 +88,23 @@ class ToolCall:
         )
 
 
-# ── 用户名字行（多真人对话专用）──
-# 有名字的对话渲染成：
-#   用户名叫Tim
-#   [user]: 我喜欢咖啡
-#   [John]: 我也喜欢茶
-# 名字单独占一行、整段只出现一次；[user] 标签**不换成名字**，视角信息留在标签里。
-# extract 用这一行给 L0 basic_info 取 name（用户不必在对话里自报姓名）。
-_USER_NAME_LINE_ZH = "用户名叫{name}"
+# ── user name line (multi-real-person dialogues only) ──
+# A dialogue with names renders as:
+#   The user's name is Tim
+#   [user]: I like coffee
+#   [John]: I like tea too
+# The name occupies its own line and appears exactly once per block; the [user] label is **not replaced by the name**, so the perspective stays in the label.
+# extract uses this line to take name for L0 basic_info (the user need not state their name in the dialogue).
+_USER_NAME_LINE_ZH = "\u7528\u6237\u540d\u53eb{name}"
 _USER_NAME_LINE_EN = "The user's name is {name}"
 
 _USER_NAME_LINE_RE = re.compile(
-    r"^(?:用户名叫|The user's name is)\s*(.+?)\s*$"
+    r"^(?:\u7528\u6237\u540d\u53eb|The user's name is)\s*(.+?)\s*$"
 )
 
 
 def render_user_name_line(name: str, is_zh: bool) -> str:
-    """渲染文首的用户名字行；name 为空返回空串。"""
+    """Render the leading user name line; returns an empty string when name is empty."""
     name = (name or "").strip()
     if not name:
         return ""
@@ -113,10 +113,10 @@ def render_user_name_line(name: str, is_zh: bool) -> str:
 
 
 def parse_user_name_line(line: str) -> Optional[str]:
-    """若该行是用户名字行则返回名字，否则返回 None。
+    """Return the name when the line is a user name line, otherwise None.
 
-    L1_RAW 存的就是 get_flat_content() 的产物，回读历史时要靠这个把名字行识别出来，
-    否则它会被当成一条无前缀的裸消息（见 MemoryWriter._get_recent_history）。
+    L1_RAW stores exactly what get_flat_content() produces, so reading history back relies on this to recognize the name line,
+    otherwise it would be treated as a bare message with no prefix (see MemoryWriter._get_recent_history).
     """
     m = _USER_NAME_LINE_RE.match((line or "").strip())
     return m.group(1) if m else None
@@ -124,29 +124,29 @@ def parse_user_name_line(line: str) -> Optional[str]:
 
 @dataclass
 class ChatMessage:
-    """单条聊天消息，兼容 OpenAI / Anthropic messages 格式（含 tool 调用）"""
+    """A single chat message, compatible with the OpenAI / Anthropic messages format (including tool calls)"""
     role: str = "user"       # user / assistant / system / tool
     content: str = ""
 
     name: Optional[str] = None
-    # 说话人显示名（OpenAI messages 的 `name` 字段）。多真人对话用它区分对方是谁：
-    #   role=user     → 当前记忆归属者。带 name 只用于给出"用户叫什么"，标签仍渲染 [user]
-    #   role=assistant + name → **对方真人**（不是 AI），渲染为 [<name>]
-    #   role=assistant 无 name → AI assistant，渲染为 [assistant]
-    # 视角由 role 决定，name 只是显示名——两侧都可以有 name。
-    # role=tool 时该字段不走这里（工具名在 tool_name）。
+    # Speaker display name (the `name` field of OpenAI messages). Multi-real-person dialogues use it to tell the parties apart:
+    #   role=user     → the current memory owner. A name only states "what the user is called"; the label still renders [user]
+    #   role=assistant + name → **the other real person** (not an AI), rendered as [<name>]
+    #   role=assistant without name → AI assistant, rendered as [assistant]
+    # Perspective is decided by role; name is only a display name, and both sides may have one.
+    # With role=tool this field is not used here (the tool name lives in tool_name).
 
-    # ── tool 扩展（仅 productivity / coding 路径使用；chat 路径忽略）──
+    # ── tool extensions (used only on the productivity / coding paths; the chat path ignores them) ──
     tool_calls: List[ToolCall] = field(default_factory=list)
-    # role=assistant 时：发起的 tool 调用列表
-    # 其他 role 必为空
+    # With role=assistant: the list of tool calls that were initiated
+    # Always empty for other roles
 
     tool_call_id: Optional[str] = None
-    # role=tool 时：本消息对应的调用 id
-    # 其他 role 为 None
+    # With role=tool: the call id this message corresponds to
+    # None for other roles
 
     tool_name: Optional[str] = None
-    # role=tool 时：本消息对应的工具名（OpenAI 直接给；Anthropic 需要从前序 tool_use 反查，可空）
+    # With role=tool: the tool name this message corresponds to (OpenAI provides it directly; Anthropic needs a lookup in the preceding tool_use, may be empty)
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {"role": self.role, "content": self.content}
@@ -172,10 +172,10 @@ class ChatMessage:
         )
 
     def speaker_label(self) -> str:
-        """渲染用的说话人标签（不含方括号）。
+        """Speaker label used for rendering (without brackets).
 
-        role=user 恒为 "user"（即使带 name），视角信息留在标签里；
-        对方真人（role=assistant + name）用名字；其余回退到 role。
+        role=user is always "user" (even when a name is present), so the perspective stays in the label;
+        the other real person (role=assistant + name) uses their name; everything else falls back to the role.
         """
         if self.role == "user":
             return "user"
@@ -193,45 +193,45 @@ class ChatMessage:
 @dataclass
 class WriteRequest:
     """
-    统一写入请求协议。
+    Unified write request protocol.
     
-    所有版本的 WritePipeline 都接收此格式的请求。
-    版本特有参数通过 extra 传递。
+    Every version of WritePipeline accepts requests in this format.
+    Version-specific parameters are passed via extra.
     
-    输入方式 (二选一):
-    1. content: str — 单条文本 (向后兼容)
-    2. messages: List[ChatMessage] — 多轮 (user-assistant)*N 对话
-       优先使用 messages，如果为空则回退到 content。
+    Input modes (choose one):
+    1. content: str -- a single text (backward compatible)
+    2. messages: List[ChatMessage] -- a multi-turn (user-assistant)*N dialogue
+       messages takes precedence; content is used as a fallback when messages is empty.
     """
-    # 必填 (二选一)
+    # Required (choose one)
     content: str = ""
     messages: List[ChatMessage] = field(default_factory=list)
     
-    # 用户隔离
+    # User isolation
     user_id: str = ""
     agent_id: str = ""
-    # 调用来源（openclaw / cursor / codex 等），与 agent_id 正交。
+    # Call source (openclaw / cursor / codex, etc.), orthogonal to agent_id.
     source: str = "default"
 
-    # 请求追溯 id。由 client 入口显式注入（contextvar-immune），作为整条写入链路
-    # 落库 memory_ops / WRITE_SUMMARY / pipeline_logs 的单一真相源。空值时 writer
-    # 会用 contextvar 兜底。
+    # Request trace id. Injected explicitly at the client entry point (contextvar-immune) and used across the whole write pipeline
+    # as the single source of truth for persisting memory_ops / WRITE_SUMMARY / pipeline_logs. When empty, the writer
+    # falls back to the contextvar.
     request_id: str = ""
 
-    # 可选元数据
+    # Optional metadata
     content_type: str = "text"
     session_id: str = ""
     turn_index: Optional[int] = None
     role: str = "user"
     assistant_content: Optional[str] = None
     
-    # 版本特有参数 (V1: agent_mode 等; V2: gate_config 等)
+    # Version-specific parameters (V1: agent_mode etc.; V2: gate_config etc.)
     extra: Dict[str, Any] = field(default_factory=dict)
     
-    # 已有记忆 (V1 合并检测用)
+    # Existing memories (used by V1 merge detection)
     existing_memories: Optional[List[Dict[str, Any]]] = None
 
-    # 记忆时间戳（不传则用当前时间 datetime.now()）
+    # Memory timestamp (the current time datetime.now() is used when omitted)
     memory_at: Optional[datetime] = None
 
     def __post_init__(self) -> None:
@@ -239,36 +239,36 @@ class WriteRequest:
         self.source = normalize_source(self.source)
 
 
-    # 调用方自定义的业务 meta，随本次产出的记忆一并存储、查询时原样返回。
-    # 纯附加负载：不 embed、不参与召回、不作过滤条件。
+    # Caller-defined business meta, stored together with the memories produced by this call and returned verbatim on query.
+    # Pure payload only: not embedded, not part of retrieval, never used as a filter condition.
     #
-    # 刻意独立于 extra：extra 混放 SDK 内部控制键（agent_mode / mode / layer），
-    # 与调用方的自定义键放一起会互相覆盖。
+    # Deliberately separate from extra: extra mixes SDK-internal control keys (agent_mode / mode / layer),
+    # and placing caller-defined keys next to them would let the two overwrite each other.
     #
-    # 命名带 client_ 前缀是为了和 writer 内部的 "meta"（抽取结果的元信息，
-    # 形如 {"content","layer","tags"}）区分开，二者完全无关。
+    # The client_ prefix keeps this apart from the writer-internal "meta" (metadata of the extraction result,
+    # shaped like {"content","layer","tags"}); the two are entirely unrelated.
     client_meta: Optional[Dict[str, Any]] = None
 
-    # ── Coding memory 路径专用（chat 路径忽略）──
+    # ── Coding memory path only (ignored on the chat path) ──
     workspace_id: Optional[str] = None
-    # repo 标识。建议用 git remote URL 规范化（如 "github.com/org/repo"）。
-    # 随经验与事实落库、召回时透出，并作为 search / list 的可选筛选条件；
-    # 缺失不会拒写。
+    # Repo identifier. Normalizing the git remote URL is recommended (e.g. "github.com/org/repo").
+    # Persisted with experiences and facts, surfaced on retrieval, and available as an optional search / list filter;
+    # a missing value never causes the write to be rejected.
     branch: Optional[str] = None
-    # 分支名。同 workspace_id。
+    # Branch name. Same rules as workspace_id.
 
-    # ---- 便捷方法 ----
+    # ---- Convenience methods ----
 
     def has_messages(self) -> bool:
-        """是否有多轮对话输入"""
+        """Whether multi-turn dialogue input is present"""
         return bool(self.messages)
 
     def get_user_queries(self) -> List[str]:
-        """提取所有 user 角色的消息内容 (用于 embed 查 novelty)"""
+        """Extract the content of every user-role message (used to embed and check novelty)"""
         return [m.content for m in self.messages if m.role == "user" and m.content.strip()]
 
     def user_name(self) -> Optional[str]:
-        """当前 user（role=user 一侧）的显示名；没有则 None。"""
+        """Display name of the current user (the role=user side); None when absent."""
         for m in self.messages:
             if m.role == "user" and m.name:
                 return m.name.strip() or None
@@ -276,18 +276,18 @@ class WriteRequest:
 
     def get_flat_content(self) -> str:
         """
-        获取完整的文本内容:
-        - 如果有 messages → 拼接为对话格式
-        - 否则 → 返回 content
+        Return the full text content:
+        - with messages → joined into dialogue format
+        - otherwise → return content
 
-        渲染格式（多真人对话）:
-            用户名叫Tim
-            [user]: 我喜欢咖啡
-            [John]: 我也喜欢茶
+        Rendered format (multi-real-person dialogue):
+            The user's name is Tim
+            [user]: I like coffee
+            [John]: I like tea too
 
-        无 name 时与历史行为完全一致（`[user]: ...` / `[assistant]: ...`）。
-        名字行只在 role=user 带 name 时出现，且整段只出现一次；语言按消息内容判定
-        （与 extractor 选 zh/en prompt 同一套判据）。
+        Without a name the behaviour is identical to the previous one (`[user]: ...` / `[assistant]: ...`).
+        The name line appears only when role=user carries a name, and exactly once per block; the language is decided from the message content
+        (the same criterion the extractor uses to pick the zh/en prompt).
         """
         if not self.messages:
             return self.content or ""
@@ -308,48 +308,48 @@ class WriteRequest:
 
     def get_dialogue_text(self) -> str:
         """
-        获取适合 LLM 阅读的对话格式:
-        - 如果有 messages → 完整对话格式
-        - 如果有 content + assistant_content → 单轮 QA 格式
-        - 否则 → 原始 content
+        Return a dialogue format suited to LLM reading:
+        - with messages → full dialogue format
+        - with content + assistant_content → single-turn QA format
+        - otherwise → the raw content
         """
         if self.messages:
             parts = []
             for m in self.messages:
-                label = {"user": "用户", "assistant": "助手", "system": "系统"}.get(m.role, m.role)
+                label = {"user": "User", "assistant": "Assistant", "system": "System"}.get(m.role, m.role)
                 parts.append(f"{label}: {m.content}")
             return "\n".join(parts)
         if self.assistant_content:
-            return f"用户: {self.content}\n助手: {self.assistant_content}"
+            return f"User: {self.content}\nAssistant: {self.assistant_content}"
         return self.content or ""
 
 
 @dataclass
 class WriteResponse:
     """
-    统一写入响应协议。
+    Unified write response protocol.
     
-    所有版本的 WritePipeline 都返回此格式的响应。
+    Every version of WritePipeline returns responses in this format.
     """
     success: bool = False
     
-    # 写入结果
+    # Write result
     memory_id: str = ""
     layer: str = ""
     message: str = ""
     
-    # 提取的实体 (通用)
+    # Extracted entities (generic)
     entities: List[Dict[str, Any]] = field(default_factory=list)
     
-    # 性能
+    # Performance
     elapsed_ms: float = 0.0
     tokens_used: int = 0
     
-    # 错误信息
+    # Error information
     error_code: int = 0
     error_message: str = ""
     
-    # 版本特有数据 (V1: routing_confidence, should_merge 等; V2: gate_passed, l2_fact_ids 等)
+    # Version-specific data (V1: routing_confidence, should_merge, etc.; V2: gate_passed, l2_fact_ids, etc.)
     extra: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -370,52 +370,52 @@ class WriteResponse:
 @dataclass
 class ReadRequest:
     """
-    统一读取请求协议。
+    Unified read request protocol.
     """
-    # 必填
+    # Required
     query: str = ""
 
-    # 用户隔离
-    user_id: str = ""              # 单用户（向后兼容）
-    user_ids: List[str] = field(default_factory=list)  # 多用户搜索
+    # User isolation
+    user_id: str = ""              # single user (backward compatible)
+    user_ids: List[str] = field(default_factory=list)  # multi-user search
     agent_id: str = ""
 
-    # 灵活搜索过滤（list 形式）
+    # Flexible search filters (list form)
     agent_ids: List[str] = field(default_factory=list)
     session_ids: List[str] = field(default_factory=list)
-    # 调用来源过滤。两者同时指定时语义为 IN(include) AND NOT IN(exclude)，
-    # exclude 优先。底层 store 必须在 top-k/limit 前执行。
+    # Call source filter. When both are given the semantics are IN(include) AND NOT IN(exclude),
+    # with exclude taking precedence. The underlying store must apply this before top-k/limit.
     include_sources: List[str] = field(default_factory=list)
     exclude_sources: List[str] = field(default_factory=list)
 
-    # 检索参数
+    # Retrieval parameters
     limit: int = 10
     layers: Optional[List[str]] = None
-    min_score: float = 0.4             # 通用最低分数阈值（部分 reader 用作召回门槛）
+    min_score: float = 0.4             # generic minimum score threshold (used as the recall bar by some readers)
 
-    # Schema (L6) 独立召回参数
-    schema_min_score: float = 0.4      # Schema 路的最低分数阈值
-    schema_limit: int = 10             # Schema 路的最大返回数
+    # Schema (L6) independent retrieval parameters
+    schema_min_score: float = 0.4      # minimum score threshold for the Schema path
+    schema_limit: int = 10             # maximum number of results for the Schema path
 
-    # Proactive (Intention) 独立召回参数
-    intention_limit: int = 0           # Intention 路的 topk，默认 0 关闭
+    # Proactive (Intention) independent retrieval parameters
+    intention_limit: int = 0           # topk for the Intention path, 0 (default) disables it
 
 
-    # 时间过滤
-    created_after: Optional[float] = None  # Unix timestamp (float)，只返回 gmt_created >= 此值的记忆
+    # Time filter
+    created_after: Optional[float] = None  # Unix timestamp (float); returns only memories with gmt_created >= this value
 
-    # 预计算的查询向量 (可选, 避免重复 embed)
+    # Precomputed query vector (optional, avoids re-embedding)
     query_embedding: Optional[List[float]] = None
 
-    # 会话
+    # Session
     session_id: str = ""
 
-    # Trace / 可观测
-    # 如果业务方在 async_search 层已生成 request_id（推荐），会透传进来。
-    # reader 用它把 pipeline_logs 关联到本次 search，供 inspector 查询。
+    # Trace / observability
+    # If the caller already generated a request_id at the async_search layer (recommended), it is passed through.
+    # The reader uses it to associate pipeline_logs with this search so the inspector can query them.
     request_id: str = ""
 
-    # 版本特有参数 (V2: token_budget, use_llm_understanding 等)
+    # Version-specific parameters (V2: token_budget, use_llm_understanding, etc.)
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -428,22 +428,22 @@ class ReadRequest:
 @dataclass
 class ReadResponse:
     """
-    统一读取响应协议。
+    Unified read response protocol.
     """
     success: bool = False
     
-    # 召回结果 (通用格式)
+    # Retrieval results (generic format)
     memories: List[Dict[str, Any]] = field(default_factory=list)
     total_found: int = 0
     
-    # 性能
+    # Performance
     elapsed_ms: float = 0.0
     
-    # 错误信息
+    # Error information
     error_code: int = 0
     error_message: str = ""
     
-    # 版本特有数据 (V2: context_package, query_understanding, recalled_node_ids 等)
+    # Version-specific data (V2: context_package, query_understanding, recalled_node_ids, etc.)
     extra: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -459,14 +459,14 @@ class ReadResponse:
 
 
 # ================================================================
-# Pipeline 抽象基类
+# Pipeline abstract base classes
 # ================================================================
 
 class WritePipeline(ABC):
     """
-    写入抽象基类。
+    Write abstract base class.
 
-    公共模块 (embed_service, vector_store, etc.) 通过构造函数注入。
+    Shared modules (embed_service, vector_store, etc.) are injected through the constructor.
 
     Example:
         class MemoryWriter(WritePipeline):
@@ -474,16 +474,16 @@ class WritePipeline(ABC):
                 ...
     """
     
-    # Pipeline 版本标识 (子类必须覆盖)
+    # Pipeline version identifier (subclasses must override)
     VERSION: str = "base"
     
     @abstractmethod
     async def initialize(self) -> None:
         """
-        初始化 Pipeline 所需的资源。
+        Initialize the resources the pipeline needs.
         
-        例如: 初始化存储连接、加载模型等。
-        在首次使用前调用一次即可。
+        For example: open storage connections, load models, and so on.
+        Call it once before first use.
         """
         pass
     
@@ -495,19 +495,19 @@ class WritePipeline(ABC):
         tracer: Optional["PipelineTracer"] = None,
     ) -> WriteResponse:
         """
-        执行写入流程。
+        Execute the write flow.
         
         Args:
-            request: 统一写入请求
-            ctx: Pipeline 上下文 (可选, 用于传递中间状态)
+            request: unified write request
+            ctx: pipeline context (optional, used to pass intermediate state)
             
         Returns:
-            统一写入响应
+            Unified write response
         """
         pass
     
     async def close(self) -> None:
-        """释放资源 (默认空实现)"""
+        """Release resources (default no-op)"""
         pass
     
     def __repr__(self) -> str:
@@ -516,15 +516,15 @@ class WritePipeline(ABC):
 
 class ReadPipeline(ABC):
     """
-    读取抽象基类。
+    Read abstract base class.
     """
     
-    # Pipeline 版本标识 (子类必须覆盖)
+    # Pipeline version identifier (subclasses must override)
     VERSION: str = "base"
     
     @abstractmethod
     async def initialize(self) -> None:
-        """初始化 Pipeline 所需的资源。"""
+        """Initialize the resources the pipeline needs."""
         pass
     
     @abstractmethod
@@ -535,19 +535,19 @@ class ReadPipeline(ABC):
         tracer: Optional["PipelineTracer"] = None,
     ) -> ReadResponse:
         """
-        执行读取流程。
+        Execute the read flow.
         
         Args:
-            request: 统一读取请求
-            ctx: Pipeline 上下文
+            request: unified read request
+            ctx: pipeline context
             
         Returns:
-            统一读取响应
+            Unified read response
         """
         pass
     
     async def close(self) -> None:
-        """释放资源 (默认空实现)"""
+        """Release resources (default no-op)"""
         pass
     
     def __repr__(self) -> str:

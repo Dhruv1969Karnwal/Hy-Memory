@@ -1,21 +1,21 @@
 """
-Agent Memory V2 - Intention Detector (意图检测 Agent)
+Agent Memory V2 - Intention Detector (intention detection agent)
 
-V2 设计文档 §3.4 + §4.1:
+V2 design doc §3.4 + §4.1:
 
-  检测用户对话中的前瞻性意图 (Prospective Memory)。
-  L6 层: 记住"将来要做什么"。
+  Detects prospective memory in user conversations (Prospective Memory).
+  L6 layer: remembers "what to do later".
 
-  两种触发类型:
-  1. TIME_BASED: 时间触发 (如 "下周一提醒我")
-  2. EVENT_BASED: 事件触发 (如 "下次聊到旅行时")
+  Two trigger types:
+  1. TIME_BASED: time trigger (e.g. "remind me next Monday")
+  2. EVENT_BASED: event trigger (e.g. "next time travel comes up")
 
-  意图检测用于:
-  1. Write Path (System 1): 轻量检测，快速写入 L6 Intention Queue
-  2. Read Path: 检查当前对话是否触发了已有意图
-  3. System 2: 深度分析意图细节，设置触发条件
+  Intention detection is used for:
+  1. Write Path (System 1): lightweight detection, fast write into the L6 Intention Queue
+  2. Read Path: check whether the current conversation triggers an existing intention
+  3. System 2: deep analysis of intention details, setting up trigger conditions
 
-  前额叶类比: 前瞻性记忆 — 在未来某个时刻自动触发的记忆。
+  Prefrontal cortex analogy: prospective memory -- memory that fires automatically at some later moment.
 """
 
 import json
@@ -29,93 +29,93 @@ logger = logging.getLogger(__name__)
 
 
 # ================================================================
-# Prompt 模板
+# Prompt templates
 # ================================================================
 
-INTENTION_DETECT_PROMPT = """分析以下对话内容，检测用户是否表达了任何未来的计划、意图或需求。
+INTENTION_DETECT_PROMPT = """Analyze the conversation below and detect whether the user expressed any future plan, intention or need.
 
-对话内容:
+Conversation:
 ---
 {content}
 ---
 
-当前时间: {current_time}
+Current time: {current_time}
 
-请检测以下类型的意图:
-1. 时间触发型: 有明确时间点的计划 ("下周一要开会", "三月份去旅行")
-2. 事件触发型: 需要在特定情境下提醒的需求 ("下次聊到XX时记得提醒我", "如果有XX相关的信息告诉我")
-3. 关怀型: 暗示未来可能需要关注的信号 ("最近压力好大", "考试快到了")
+Detect the following intention types:
+1. Time-triggered: plans with an explicit point in time ("there is a meeting next Monday", "travelling in March")
+2. Event-triggered: needs that should be surfaced in a specific context ("remind me next time XX comes up", "let me know if there is any information about XX")
+3. Proactive care: signals hinting that attention will be needed later ("I have been under a lot of pressure lately", "my exam is coming up")
 
-输出 JSON:
+Output JSON:
 {{
   "intentions": [
     {{
-      "content": "意图描述",
+      "content": "description of the intention",
       "trigger_type": "time_based/event_based",
-      "trigger_condition": "触发条件的自然语言描述",
-      "trigger_time": "ISO格式时间(time_based时,否则null)",
-      "trigger_event_pattern": "触发事件的模式描述(event_based时,否则null)",
+      "trigger_condition": "natural language description of the trigger condition",
+      "trigger_time": "time in ISO format (for time_based, otherwise null)",
+      "trigger_event_pattern": "pattern description of the trigger event (for event_based, otherwise null)",
       "priority": "high/medium/low",
-      "expiry": "ISO格式过期时间(如果有,否则null)",
+      "expiry": "expiry time in ISO format (if any, otherwise null)",
       "is_proactive_care": false
     }}
   ]
 }}
 
-关于 is_proactive_care:
-  如果意图不是用户明确提出的，而是系统应该主动关怀的信号，设为 true。
-  例如: 用户说"考试快到了好紧张" → 系统应在考试后关心结果。
+About is_proactive_care:
+  Set it to true when the intention is not something the user asked for explicitly, but a signal the system should proactively care about.
+  Example: the user says "I am so nervous, my exam is coming up" → the system should follow up on the result after the exam.
 
-如果没有检测到意图返回: {{"intentions": []}}"""
+If no intention is detected, return: {{"intentions": []}}"""
 
-INTENTION_TRIGGER_CHECK_PROMPT = """判断当前对话内容是否触发了以下已有意图。
+INTENTION_TRIGGER_CHECK_PROMPT = """Decide whether the current conversation triggers any of the existing intentions below.
 
-当前对话:
+Current conversation:
 ---
 {current_content}
 ---
 
-当前时间: {current_time}
+Current time: {current_time}
 
-已有意图列表:
+Existing intentions:
 {existing_intentions}
 
-对每个意图判断是否被当前对话触发。
+For each intention, decide whether the current conversation triggers it.
 
-输出 JSON:
+Output JSON:
 {{
   "triggered": [
     {{
-      "intention_id": "被触发的意图ID",
-      "trigger_reason": "触发原因",
+      "intention_id": "id of the triggered intention",
+      "trigger_reason": "reason for the trigger",
       "confidence": 0.0-1.0
     }}
   ]
 }}
 
-如果没有意图被触发: {{"triggered": []}}"""
+If no intention is triggered: {{"triggered": []}}"""
 
 
 # ================================================================
-# 数据结构
+# Data structures
 # ================================================================
 
 @dataclass
 class IntentionDetectorConfig:
-    """意图检测器配置"""
+    """Intention detector configuration."""
     detect_max_tokens: int = 600
-    # None = 跟随 config.llm.temperature
+    # None = follow config.llm.temperature
     detect_temperature: Optional[float] = None
     trigger_check_max_tokens: int = 500
     trigger_check_temperature: Optional[float] = None
 
-    # 主动关怀检测
+    # Proactive care detection
     enable_proactive_care: bool = True
 
 
 @dataclass
 class DetectedIntention:
-    """检测到的意图"""
+    """A detected intention."""
     content: str = ""
     trigger_type: str = "event_based"   # time_based / event_based
     trigger_condition: str = ""
@@ -128,7 +128,7 @@ class DetectedIntention:
 
 @dataclass
 class IntentionDetectResult:
-    """意图检测结果"""
+    """Result of intention detection."""
     success: bool
     intentions: List[DetectedIntention] = field(default_factory=list)
     tokens_used: int = 0
@@ -137,7 +137,7 @@ class IntentionDetectResult:
 
 @dataclass
 class TriggeredIntentionItem:
-    """被触发的意图"""
+    """A triggered intention."""
     intention_id: str = ""
     trigger_reason: str = ""
     confidence: float = 0.0
@@ -145,7 +145,7 @@ class TriggeredIntentionItem:
 
 @dataclass
 class IntentionTriggerResult:
-    """意图触发检查结果"""
+    """Result of the intention trigger check."""
     success: bool
     triggered: List[TriggeredIntentionItem] = field(default_factory=list)
     tokens_used: int = 0
@@ -153,16 +153,16 @@ class IntentionTriggerResult:
 
 
 # ================================================================
-# 核心实现
+# Core implementation
 # ================================================================
 
 class IntentionDetector:
     """
-    意图检测 Agent。
+    Intention detection agent.
 
-    能力:
-    1. detect(): 从对话中检测新意图 (Write Path)
-    2. check_triggers(): 检查当前对话是否触发已有意图 (Read Path)
+    Capabilities:
+    1. detect(): detect new intentions from a conversation (Write Path)
+    2. check_triggers(): check whether the current conversation triggers existing intentions (Read Path)
     """
 
     def __init__(
@@ -182,14 +182,14 @@ class IntentionDetector:
         current_time: str = "",
     ) -> IntentionDetectResult:
         """
-        从对话内容中检测意图。
+        Detect intentions from the conversation content.
 
         Args:
-            content:      对话文本
-            current_time: 当前时间 (ISO format)
+            content:      conversation text
+            current_time: current time (ISO format)
 
         Returns:
-            IntentionDetectResult 包含检测到的意图列表
+            IntentionDetectResult holding the list of detected intentions
         """
         try:
             from datetime import datetime as dt
@@ -209,7 +209,7 @@ class IntentionDetector:
 
             intentions = []
             for item in data.get("intentions", []):
-                # 如果不启用主动关怀，跳过 proactive_care 意图
+                # Skip proactive_care intentions when proactive care is disabled
                 if not self.config.enable_proactive_care and item.get("is_proactive_care"):
                     continue
 
@@ -241,15 +241,15 @@ class IntentionDetector:
         current_time: str = "",
     ) -> IntentionTriggerResult:
         """
-        检查当前对话是否触发了已有意图。
+        Check whether the current conversation triggers any existing intention.
 
         Args:
-            current_content:     当前对话内容
-            existing_intentions: 已有意图列表 [{id, content, trigger_condition, ...}]
-            current_time:        当前时间
+            current_content:     current conversation content
+            existing_intentions: existing intentions [{id, content, trigger_condition, ...}]
+            current_time:        current time
 
         Returns:
-            IntentionTriggerResult 包含被触发的意图列表
+            IntentionTriggerResult holding the list of triggered intentions
         """
         try:
             if not existing_intentions:
@@ -258,7 +258,7 @@ class IntentionDetector:
             from datetime import datetime as dt
             intentions_text = "\n".join(
                 f"[{i.get('id', '?')}] {i.get('content', '')} "
-                f"(触发条件: {i.get('trigger_condition', '?')})"
+                f"(trigger condition: {i.get('trigger_condition', '?')})"
                 for i in existing_intentions
             )
 
@@ -296,12 +296,12 @@ class IntentionDetector:
             return IntentionTriggerResult(success=False, error=str(e))
 
     # ================================================================
-    # 工具方法
+    # Helpers
     # ================================================================
 
     @staticmethod
     def _parse_json(text: str) -> Dict[str, Any]:
-        """从 LLM 输出中解析 JSON"""
+        """Parse JSON out of the LLM output."""
         import re
         text = text.strip()
         if "```json" in text:
@@ -320,7 +320,7 @@ class IntentionDetector:
         return {}
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Get statistics."""
         return {
             "call_count": self._call_count,
             "total_tokens": self._total_tokens,

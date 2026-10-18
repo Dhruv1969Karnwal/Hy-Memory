@@ -1,22 +1,22 @@
 """
 Agent Memory - LLM Provider
 
-统一的 LLM 调用接口，支持多种模型后端。
+Unified LLM call interface supporting multiple model backends.
 
-功能：
-- 统一的调用接口
-- 多模型支持（OpenAI、Hunyuan 等）
-- 请求重试和错误处理
-- Token 统计
-- 模型路由
+Features:
+- Unified call interface
+- Multiple model support (OpenAI, Hunyuan and others)
+- Request retry and error handling
+- Token statistics
+- Model routing
 
-示例：
+Example:
     provider = LLMProvider(config)
     
-    # 调用 LLM。不传 temperature —— 由 config.llm 统一决定（含"完全不传"的情形，
-    # 见 _resolve_temperature）。调用点写死会绕过用户配置。
+    # Call the LLM. Do not pass temperature; config.llm decides it uniformly (including the "pass nothing" case,
+    # see _resolve_temperature). Hardcoding it at a call site bypasses user configuration.)
     response = await provider.complete(
-        prompt="请总结以下内容：...",
+        prompt="Summarize the following content: ...",
         max_tokens=500,
     )
     
@@ -51,8 +51,8 @@ def _content_fingerprint(value: str) -> str:
 
 
 class LLMRetryError(RuntimeError):
-    """LLM 重试全部失败。attempts 携带每一次 attempt 的错误明细，供上层落进
-    EXTRACT/RECONCILE 的 pipeline trace（parsed.attempts）。"""
+    """All LLM retries failed. attempts carries the error detail of each attempt so the layers above can persist it into
+    the EXTRACT/RECONCILE pipeline trace (parsed.attempts)."""
 
     def __init__(self, message: str, attempts: List[Dict[str, Any]]):
         super().__init__(message)
@@ -60,7 +60,7 @@ class LLMRetryError(RuntimeError):
 
 
 def _attempt_record(attempt_no: int, exc: BaseException) -> Dict[str, Any]:
-    """把单次 attempt 的异常规范成可落库的 dict（含 HTTP 状态码等常见字段）。"""
+    """Normalize one attempt's exception into a persistable dict (including the HTTP status code and similar fields)."""
     import time as _t
     rec: Dict[str, Any] = {
         "attempt": attempt_no,
@@ -68,7 +68,7 @@ def _attempt_record(attempt_no: int, exc: BaseException) -> Dict[str, Any]:
         "error": str(exc)[:2000],
         "ts": _t.strftime("%Y-%m-%dT%H:%M:%S"),
     }
-    # 尽力提取 HTTP 状态码 / 响应体（OpenAI / requests / httpx 风格）
+    # Best-effort extraction of the HTTP status code / response body (OpenAI / requests / httpx styles)
     for _attr in ("status_code", "code"):
         _v = getattr(exc, _attr, None)
         if _v is not None:
@@ -119,9 +119,9 @@ def _build_retry_error(
 
 def _parse_tool_calls_list(raw_calls: list, _json) -> List[Dict[str, Any]]:
     """
-    解析 tool_calls 列表。
+    Parse a tool_calls list.
 
-    保留原始完整结构，只规范化 arguments（dict → JSON str）。
+    The original complete structure is kept; only arguments is normalized (dict → JSON str).
     """
     result = []
     for tc in raw_calls:
@@ -132,8 +132,8 @@ def _parse_tool_calls_list(raw_calls: list, _json) -> List[Dict[str, Any]]:
                 f"{_json.dumps(tc, ensure_ascii=False, default=str)[:500]}"
             )
 
-        # 保留原始 tc 完整结构，只规范化 arguments
-        tc_copy = dict(tc)  # 浅拷贝保留所有字段（signature 等）
+        # Keep the original tc structure intact; only normalize arguments
+        tc_copy = dict(tc)  # shallow copy keeps every field (signature and so on)
         fn = tc_copy.get("function", {})
         if isinstance(fn, dict):
             args = fn.get("arguments", "")
@@ -141,7 +141,7 @@ def _parse_tool_calls_list(raw_calls: list, _json) -> List[Dict[str, Any]]:
                 fn["arguments"] = _json.dumps(args, ensure_ascii=False)
             tc_copy["function"] = fn
 
-        # 确保基础字段存在
+        # Ensure the basic fields exist
         tc_copy.setdefault("id", tc_id)
         tc_copy.setdefault("type", "function")
 
@@ -150,9 +150,9 @@ def _parse_tool_calls_list(raw_calls: list, _json) -> List[Dict[str, Any]]:
 
 
 def _serialize_tool_calls(tool_calls_raw) -> Optional[List[Dict[str, Any]]]:
-    """OpenAI SDK 的 tool_call 对象 → 纯 dict 列表（便于传递 / 落库）。
+    """OpenAI SDK tool_call objects → a plain dict list (easy to pass around / persist).
 
-    单条序列化失败只跳过该条并告警，不让整次 LLM 调用失败。
+    A single serialization failure only skips that entry and warns; it never fails the whole LLM call.
     """
     if not tool_calls_raw:
         return None
@@ -181,7 +181,7 @@ class LLMBackend(Enum):
 @dataclass
 class LLMResponse:
     """
-    LLM 响应
+    LLM response
     """
     content: str
     tokens_used: int = 0
@@ -191,58 +191,58 @@ class LLMResponse:
     finish_reason: str = ""
     response_id: str = ""
     choices_count: int = 0
-    # 推理模型（hy3 / kimi-k2.5 / deepseek-v4 等）的思维链内容与 token 数。
-    # content 为空但 reasoning_tokens 打满 max_tokens 时，说明推理吃光了输出配额，
-    # 需要关闭 thinking（hy3: reasoning_effort=no_think）或调大 agent_max_tokens。
+    # Chain-of-thought content and token count for reasoning models (hy3 / kimi-k2.5 / deepseek-v4 and so on).
+    # When content is empty but reasoning_tokens fill up max_tokens, reasoning consumed the whole output budget,
+    # so thinking must be disabled (hy3: reasoning_effort=no_think) or agent_max_tokens raised.
     reasoning_content: str = ""
     reasoning_tokens: int = 0
-    # function/tool calling：当 LLM 决定调用工具时填充，结构为 OpenAI 风格：
+    # function/tool calling: filled when the LLM decides to call a tool, in OpenAI shape:
     #   [{"id": "...", "type": "function", "function": {"name": "...", "arguments": "<json str>"}}]
-    # 调用方应使用 tools.base.parse_tool_calls_from_json 解析
+    # callers should parse it with tools.base.parse_tool_calls_from_json
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass
 class LLMConfig:
     """
-    LLM 配置
+    LLM configuration
     """
     backend: LLMBackend = LLMBackend.OPENAI
     model: str = "gpt-3.5-turbo"
     api_key: str = ""
     base_url: str = ""
-    # None = **请求里完全不带 temperature**。
-    # 有些网关（如 Opus 5）只接受 temperature=1 或干脆不传，传 0/0.1/0.3 会 400。
+    # None = **no temperature in the request at all**.
+    # Some gateways (e.g. Opus 5) accept only temperature=1 or nothing at all; sending 0/0.1/0.3 returns 400.
     temperature: Optional[float] = 0.7
     timeout: int = 30
     max_retries: int = 5
-    retry_delay: float = 1.0  # 初始 delay，每次递增
+    retry_delay: float = 1.0  # initial delay, increasing on each retry
     extra_headers: Optional[Dict[str, str]] = None
     extra_body: Optional[Dict[str, Any]] = None
 
 
 class LLMProvider:
     """
-    LLM 提供器
+    LLM provider
 
-    统一的 LLM 调用接口。
+    Unified LLM call interface.
 
-    _extract_response: 安全提取 choices[0].message，当 API 返回空 choices 时给出
-    明确错误信息而非 'NoneType' object is not subscriptable。
+    _extract_response: safely extracts choices[0].message, giving a clear error when the API returns empty choices
+    instead of 'NoneType' object is not subscriptable.
     """
 
     @staticmethod
     def _extract_response(response) -> tuple:
         """
-        从 OpenAI 兼容 response 中提取 message、usage、finish_reason。
-        当 choices 为空时抛出明确的 ValueError。
+        Extract message, usage and finish_reason from an OpenAI-compatible response.
+        Raises a clear ValueError when choices is empty.
 
         Returns:
             (msg, usage, finish_reason, choices_count)
         """
         choices = getattr(response, "choices", None)
         if not choices:
-            # 尝试拿到更多诊断信息
+            # Try to collect more diagnostic information
             raw = ""
             try:
                 raw = str(response)[:500]
@@ -260,13 +260,13 @@ class LLMProvider:
     @staticmethod
     def _extract_reasoning(msg, usage) -> tuple:
         """
-        提取推理模型的思维链内容与 token 数。
+        Extract the reasoning model's chain-of-thought content and token count.
 
-        不同平台字段位置不一：
-        - hy3 / kimi-k2.5：message.reasoning_content，兼容
+        Field placement differs across platforms:
+        - hy3 / kimi-k2.5: message.reasoning_content, also accepting
           message.provider_specific_fields.reasoning_content
         - reasoning_tokens：usage.completion_tokens_details.reasoning_tokens，
-          部分网关平铺在 usage.reasoning_tokens
+          some gateways flatten it onto usage.reasoning_tokens
 
         Returns:
             (reasoning_content, reasoning_tokens)
@@ -288,17 +288,17 @@ class LLMProvider:
 
     def __init__(self, config: Optional[MemoryConfig] = None):
         """
-        初始化 LLM Provider
+        Initialize the LLM Provider
         
         Args:
-            config: 配置对象
+            config: configuration object
         """
         self.config = config or MemoryConfig.from_env()
         self._llm_config = self._build_llm_config()
         self._client = None
         self._clients = weakref.WeakKeyDictionary()
         
-        # 统计
+        # Statistics
         self._total_calls = 0
         self._total_tokens = 0
         self._errors = 0
@@ -306,15 +306,15 @@ class LLMProvider:
         logger.debug(f"LLMProvider initialized, backend={self._llm_config.backend.value}")
     
     def _build_llm_config(self) -> LLMConfig:
-        """从配置构建 LLM 配置"""
+        """Build the LLM configuration from settings"""
         llm = self.config.llm
         return LLMConfig(
             backend=LLMBackend.OPENAI,
             model=llm.model,
             api_key=llm.api_key,
             base_url=llm.base_url,
-            # 不再把 None 兜成 0.7：None 是"不传"的合法表达，兜掉会让
-            # MEMORY_LLM_TEMPERATURE=none 这类配置失效
+            # No longer coercing None to 0.7: None is a legitimate way of saying "do not send it", and coercing it would make
+            # settings such as MEMORY_LLM_TEMPERATURE=none stop working
             temperature=(
                 None if getattr(llm, "omit_temperature", False)
                 else llm.temperature
@@ -327,14 +327,14 @@ class LLMProvider:
         )
     
     def _resolve_temperature(self, temperature: Optional[float]) -> Optional[float]:
-        """把调用点的 temperature 收敛到**配置**上。
+        """Converge the call site's temperature onto the **configuration**.
 
-        规则：调用点传了就用它；没传（None）就用 `config.llm.temperature`。
-        配置本身为 None 时返回 None，`_chat_completions` 会把该参数整个省略。
+        Rule: use the value the call site passed; when nothing is passed (None) use `config.llm.temperature`.
+        When the configuration itself is None, return None and `_chat_completions` omits the parameter entirely.
 
-        为什么必须收敛到一处：此前各调用点自己写死 0.1/0.2/0.3/0.4，`complete()` 的
-        默认值又是 0.7 —— 结果用户配的 `MEMORY_LLM_TEMPERATURE` 只对少数几条路径生效。
-        换成只接受特定 temperature 的网关（Opus 5 只收 1 或不传）时，这些写死的路径全 400。
+        Why it must converge in one place: call sites used to hardcode 0.1/0.2/0.3/0.4, and `complete()`'s
+        default was 0.7, so the user's `MEMORY_LLM_TEMPERATURE` only took effect on a few paths.
+        Switching to a gateway that accepts only certain temperatures (Opus 5 takes 1 or nothing) made all those hardcoded paths return 400.
         """
         if temperature is not None:
             return temperature
@@ -351,21 +351,21 @@ class LLMProvider:
         **kwargs
     ) -> LLMResponse:
         """
-        调用 LLM 完成文本生成
+        Call the LLM to complete text generation
 
         Args:
-            prompt: 提示词
-            max_tokens: 最大 token 数
-            temperature: 温度参数
-            stop: 停止词列表
-            tools: 可选，OpenAI function-calling 风格的 tools schema 列表
+            prompt: the prompt
+            max_tokens: maximum number of tokens
+            temperature: temperature parameter
+            stop: list of stop words
+            tools: optional list of OpenAI function-calling style tool schemas
                    （[{"type":"function","function":{"name":..., "parameters":...}}, ...]）。
-                   传入时 LLM 可以在响应中返回 tool_calls，由调用方决定如何 dispatch。
-            tool_choice: 可选，OpenAI 风格 tool_choice（"auto" / "none" / {"type":"function","function":{"name":...}}）
-            **kwargs: 其他参数
+                   When passed, the LLM may return tool_calls in its response and the caller decides how to dispatch them.
+            tool_choice: optional OpenAI-style tool_choice ("auto" / "none" / {"type":"function","function":{"name":...}})
+            **kwargs: other parameters
 
         Returns:
-            LLM 响应（成功时 response.tool_calls 可能非空）
+            LLM response (response.tool_calls may be non-empty on success)
         """
         _last_exc: Optional[BaseException] = None
         _attempts: List[Dict[str, Any]] = []
@@ -430,7 +430,7 @@ class LLMProvider:
                     delay = self._llm_config.retry_delay * (attempt + 1)
                     await asyncio.sleep(delay)
 
-        # 所有重试都失败 —— 异常携带每一次 attempt 的错误（供上层落进 EXTRACT trace）
+        # Every retry failed -- the exception carries each attempt's error (for the layers above to persist into the EXTRACT trace)
         raise _build_retry_error(
             self._llm_config.max_retries, self._llm_config.model,
             self._llm_config.backend.value, _attempts, _last_exc,
@@ -450,7 +450,7 @@ class LLMProvider:
         tool_choice: Optional[Any] = None,
         **kwargs
     ) -> LLMResponse:
-        """单轮 prompt → 统一走 Chat Completions。
+        """Single-turn prompt → always routed through Chat Completions.
 
         The configured endpoint is expected to implement Chat Completions.
         """
@@ -477,7 +477,7 @@ class LLMProvider:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[Any] = None,
     ) -> LLMResponse:
-        """OpenAI Chat Completions 的唯一实现。
+        """The single implementation of the OpenAI Chat Completions path.
 
         All supported endpoints use the OpenAI-compatible Chat Completions API.
         """
@@ -514,7 +514,7 @@ class LLMProvider:
             )
             clients[client_key] = client
 
-        # 确保有 system 消息（部分内部平台要求）
+        # Ensure a system message exists (required by some internal platforms)
         if not any(m.get("role") == "system" for m in messages):
             messages = [{"role": "system", "content": ""}] + list(messages)
 
@@ -523,7 +523,7 @@ class LLMProvider:
             "messages": messages,
             "max_tokens": max_tokens,
         }
-        # 解析到 None → **整个参数不发**（Opus 5 等网关只接受 1 或不传）
+        # Resolving to None → **the parameter is not sent at all** (gateways like Opus 5 accept only 1 or nothing)
         _temp = self._resolve_temperature(temperature)
         if _temp is not None:
             kwargs["temperature"] = _temp
@@ -597,15 +597,15 @@ class LLMProvider:
         tool_choice: Optional[Any] = None,
     ) -> LLMResponse:
         """
-        多轮 messages 调用（支持 tool results 回传）。
+        Multi-turn messages call (supports sending tool results back).
 
         Args:
-            messages: 完整的 messages 列表，可包含：
+            messages: the complete messages list, which may contain:
                 - {"role": "system", "content": "..."}
                 - {"role": "user", "content": "..."}
                 - {"role": "assistant", "content": "...", "tool_calls": [...]}
                 - {"role": "tool", "tool_call_id": "...", "content": "..."}
-            max_tokens, temperature, tools, tool_choice: 同 complete()
+            max_tokens, temperature, tools, tool_choice: same as complete()
 
         Returns:
             LLMResponse
@@ -668,17 +668,17 @@ class LLMProvider:
         **kwargs
     ) -> LLMResponse:
         """
-        多轮对话
+        Multi-turn conversation
         
         Args:
-            messages: 消息列表 [{"role": "user/assistant", "content": "..."}]
-            max_tokens: 最大 token 数
-            temperature: 温度参数
+            messages: message list [{"role": "user/assistant", "content": "..."}]
+            max_tokens: maximum number of tokens
+            temperature: temperature parameter
         
         Returns:
-            LLM 响应
+            LLM response
         """
-        # 将多轮消息转换为单个 prompt
+        # Convert the multi-turn messages into a single prompt
         prompt_parts = []
         for msg in messages:
             role = msg.get("role", "user")
@@ -695,7 +695,7 @@ class LLMProvider:
         )
     
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Return usage statistics"""
         return {
             "total_calls": self._total_calls,
             "total_tokens": self._total_tokens,

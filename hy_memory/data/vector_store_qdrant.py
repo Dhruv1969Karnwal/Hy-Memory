@@ -1,19 +1,19 @@
 """
 Agent Memory V2 - VectorStore (Qdrant)
 
-基于 Qdrant 的向量存储层。使用同步 QdrantClient + asyncio.to_thread，
-彻底避免 AsyncQdrantClient 的跨 event loop 问题。
+Qdrant-backed vector storage layer. It uses the synchronous QdrantClient plus asyncio.to_thread,
+which fully avoids the cross-event-loop problems of AsyncQdrantClient.
 
-职责:
-- L1 Raw 对话 append-only 存储
-- L2 Fact 语义检索
-- Schema / Intention 向量匹配
-- 时间增强向量检索
+Responsibilities:
+- Append-only storage for L1 raw conversations
+- Semantic retrieval over L2 facts
+- Vector matching for schema / intention
+- Time-enhanced vector retrieval
 
-集合策略:
-- 单集合设计: 所有层级的向量存入同一个 collection
-- 通过 payload filter 区分 isolation_key / layer / status
-- 简化运维，后续可按需拆分
+Collection strategy:
+- Single-collection design: vectors of every layer go into the same collection
+- payload filter distinguishes isolation_key / layer / status
+- simpler operations; can be split later if needed
 """
 
 import concurrent.futures
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 def _run_in_vdb_pool(func, *args, **kwargs):
-    """在 VDB 独立线程池中执行同步函数"""
+    """Run a synchronous function in the dedicated VDB thread pool"""
     import functools
     call = functools.partial(func, *args, **kwargs) if args or kwargs else func
     return run_in_executor_guarded(_vdb_executor, call)
@@ -107,10 +107,10 @@ class _LocalQdrantOwner:
 
 class QdrantVectorStore(VectorStoreBase):
     """
-    Qdrant 向量存储实现
+    Qdrant vector store implementation
 
-    使用同步 QdrantClient + asyncio.to_thread 包装为异步，
-    彻底绕开 httpx/httpcore 内部 asyncio.Event 跨 loop 绑定问题。
+    Wraps the synchronous QdrantClient with asyncio.to_thread to stay asynchronous,
+    fully bypassing the cross-loop asyncio.Event binding inside httpx/httpcore.
     """
 
     _supports_retrieval_clauses = True
@@ -118,13 +118,13 @@ class QdrantVectorStore(VectorStoreBase):
 
     def __init__(self, config: MemoryConfig):
         super().__init__(config)
-        self._client = None  # 同步 QdrantClient
-        # qdrant 原生 BM25 走 sparse vector（fastembed Qdrant/bm25），返回的是
-        # 真实 BM25 原始分（量级 0~20+），reader 端用 normalize_bm25 sigmoid 归一化
-        # → 保持 _keyword_score_normalized=False（与经典 BM25 一致）。
+        self._client = None  # synchronous QdrantClient
+        # Native qdrant BM25 runs on a sparse vector (fastembed Qdrant/bm25) and returns a
+        # real raw BM25 score (order 0~20+), which the reader normalizes with the normalize_bm25 sigmoid
+        # → so _keyword_score_normalized stays False (same as classic BM25).
         self._keyword_score_normalized = False
-        # collection 是否含 sparse "bm25" 向量 + fastembed 可用 → 决定 keyword_search
-        # 是否走真 BM25；旧的 dense-only collection 无 sparse 字段则降级。
+        # Whether the collection has a sparse "bm25" vector and fastembed is available → decides whether
+        # keyword_search uses real BM25; an old dense-only collection has no sparse field and degrades.
         self._supports_fulltext = False
         self._sparse_name = "bm25"
         self._tag_index_ready = False
@@ -134,7 +134,7 @@ class QdrantVectorStore(VectorStoreBase):
         self._is_local = False
 
     async def initialize(self) -> None:
-        """初始化 Qdrant 客户端，确保集合存在"""
+        """Initialize the Qdrant client and make sure the collection exists"""
         try:
             from qdrant_client import QdrantClient
             from qdrant_client.models import (
@@ -152,15 +152,15 @@ class QdrantVectorStore(VectorStoreBase):
             )
 
         from ..pipelines._retrieval import bm25_fastembed
-        # 新建 collection 是否带 sparse BM25：需 SparseVectorParams + fastembed 都可用
+        # Whether a new collection carries sparse BM25: needs both SparseVectorParams and fastembed to be available
         enable_sparse = (SparseVectorParams is not None) and bm25_fastembed.is_available()
 
         vs_config = self.config.vector_store
 
-        # 优先使用远程连接
+        # Prefer the remote connection
         if vs_config.host:
             import os as _os
-            # 扩大连接池以支持高并发（默认 keepalive=20 太小）
+            # Enlarge the connection pool for high concurrency (the default keepalive=20 is too small)
             _pool_size = int(_os.environ.get("QDRANT_POOL_SIZE", "256"))
             self._client = QdrantClient(
                 host=vs_config.host,
@@ -172,13 +172,13 @@ class QdrantVectorStore(VectorStoreBase):
             logger.info(f"[qdrant] pool_size={_pool_size}")
         else:
             self._is_local = True
-            # 兼容性处理: 清理高版本 qdrant-client 写入的 meta.json 中的未知字段
+            # Compatibility: strip unknown fields from the meta.json written by newer qdrant-client versions
             self._patch_local_meta(vs_config.persist_directory)
             self._client = _LocalQdrantOwner(
                 lambda: QdrantClient(path=vs_config.persist_directory)
             )
 
-        # 确保集合存在（同步调用，在 to_thread 中执行）
+        # Make sure the collection exists (synchronous call, executed inside to_thread)
         def _ensure_collection():
             collections = self._client.get_collections()
             collection_names = [c.name for c in collections.collections]
@@ -198,9 +198,9 @@ class QdrantVectorStore(VectorStoreBase):
                     }
                     created_with_sparse = True
                 self._client.create_collection(**create_kwargs)
-                # Local Qdrant 明确不使用 payload index，逐个 create 只会发 warning
-                # 且可能长时间阻塞初始化。远程服务才创建索引；两者的 query Filter
-                # 语义一致，区别只是本地数据量下没有索引加速。
+                # Local Qdrant deliberately uses no payload index; creating them one by one only warns
+                # and may block initialization for a long time. Only remote services get indexes; the
+                # query Filter semantics of both match, the only difference is the missing index speed-up at local data sizes.
                 if not self._is_local:
                     for field_name, field_type in [
                         ("isolation_key", PayloadSchemaType.KEYWORD),
@@ -220,9 +220,9 @@ class QdrantVectorStore(VectorStoreBase):
                             field_schema=field_type,
                         )
                 # Full-text index on search_text (content + tags) for keyword search
-                # 注意：tokenizer 用 WHITESPACE 而不是 MULTILINGUAL —— 配合
-                # _node_to_payload 中 lemmatize_for_bm25 (jieba) 预分词的 search_text，
-                # 让查询和倒排索引两侧统一用 jieba 分词，避免 MULTILINGUAL/jieba 边界差异。
+                # Note: the tokenizer is WHITESPACE rather than MULTILINGUAL -- it pairs with the
+                # lemmatize_for_bm25 (jieba) pre-tokenized search_text built in _node_to_payload, so
+                # query and inverted index share one jieba tokenization and avoid MULTILINGUAL/jieba boundary differences.
                 if not self._is_local:
                     try:
                         self._client.create_payload_index(
@@ -244,7 +244,7 @@ class QdrantVectorStore(VectorStoreBase):
                     f"(sparse_bm25={'on' if created_with_sparse else 'off'})"
                 )
             else:
-                # 对已有远程集合补建索引（幂等）；local 不支持，直接跳过。
+                # Backfill indexes on an existing remote collection (idempotent); unsupported on local, so skipped.
                 if not self._is_local:
                     self._ensure_text_index()
                     for field_name in (
@@ -265,7 +265,7 @@ class QdrantVectorStore(VectorStoreBase):
                                 field_name, exc,
                             )
 
-            # 探测该 collection 是否含 sparse "bm25" 向量（兼容旧 dense-only collection）
+            # Probe whether this collection has a sparse "bm25" vector (compatible with old dense-only collections)
             has_sparse = created_with_sparse
             if not has_sparse:
                 try:
@@ -292,16 +292,16 @@ class QdrantVectorStore(VectorStoreBase):
         logger.debug(f"VectorStore initialized (Qdrant sync client), collection={self._collection_name}")
 
     # ================================================================
-    # 写入
+    # Writes
     # ================================================================
 
     @staticmethod
     def _dense_of(vec):
-        """从 qdrant 返回的 vector 取 dense 部分。
+        """Extract the dense part from the vector qdrant returns.
 
-        含 sparse 的 collection 里 point.vector 是命名多向量 dict
-        （dense 在默认空键 ""，sparse 在 "bm25"）；dense-only collection 则直接
-        是 List[float]。统一归一为 List[float]（取不到则 None）。
+        In a collection with sparse vectors, point.vector is a named multi-vector dict
+        (dense under the default empty key "", sparse under "bm25"); a dense-only collection returns
+        a plain List[float]. Always normalized into List[float] (None when it cannot be obtained).
         """
         if isinstance(vec, dict):
             return vec.get("") or vec.get("dense")
@@ -309,17 +309,17 @@ class QdrantVectorStore(VectorStoreBase):
 
     def _build_vector_field(self, payload: Dict[str, Any], embedding: List[float]):
         """
-        构造 PointStruct.vector 字段。
+        Build the PointStruct.vector field.
 
-        - fulltext 关闭：返回纯 dense list（向后兼容旧 dense-only collection）
-        - fulltext 开启：返回 {"": dense, "bm25": SparseVector(...)}，sparse 由
-          fastembed BM25 对 search_text 编码而来；编码失败则回落纯 dense。
+        - fulltext off: returns a plain dense list (backward compatible with old dense-only collections)
+        - fulltext on: returns {"": dense, "bm25": SparseVector(...)}, the sparse vector encoded
+          from search_text by fastembed BM25; if encoding fails it falls back to plain dense.
 
-        跳过 L1_RAW：原始对话层不被任何召回路径消费（reader 召回 L0/L2/L3/L4，
-        提取后又降 SHADOW，System2 也只取 L2/L4），给它编 sparse 纯浪费写入/存储。
+        L1_RAW is skipped: the raw conversation layer is consumed by no recall path (the reader recalls
+        L0/L2/L3/L4, it drops to SHADOW after extraction, and System2 only takes L2/L4), so encoding it sparse only wastes write and storage cost.
         """
-        # 防御：若上游误传了命名多向量 dict（如 clone 复制了读路径的 embedding），
-        # 先抽出 dense，避免再包一层生成非法嵌套结构。
+        # Defence: if upstream wrongly passes a named multi-vector dict (e.g. a clone copied a read-path embedding),
+        # extract the dense part first instead of wrapping it again into an illegal nested structure.
         embedding = self._dense_of(embedding)
         if not self._supports_fulltext:
             return embedding
@@ -336,7 +336,7 @@ class QdrantVectorStore(VectorStoreBase):
         return {"": embedding, self._sparse_name: SparseVector(indices=indices, values=values)}
 
     async def upsert(self, node: MemoryNode) -> str:
-        """写入或更新一个 MemoryNode 的向量和 payload"""
+        """Insert or update one MemoryNode's vector and payload"""
         from qdrant_client.models import PointStruct
 
         if node.embedding is None:
@@ -369,7 +369,7 @@ class QdrantVectorStore(VectorStoreBase):
         return node.node_id
 
     async def upsert_batch(self, nodes: List[MemoryNode]) -> List[str]:
-        """批量写入"""
+        """Batch write"""
         from qdrant_client.models import PointStruct
 
         points = []
@@ -396,7 +396,7 @@ class QdrantVectorStore(VectorStoreBase):
         return ids
 
     async def update_embedding(self, node_id: str, embedding: List[float]) -> bool:
-        """仅更新向量（payload 不变）"""
+        """Update only the vector (payload unchanged)"""
         from qdrant_client.models import PointVectors
 
         point_id = self._node_id_to_point_id(node_id)
@@ -413,7 +413,7 @@ class QdrantVectorStore(VectorStoreBase):
             return False
 
     async def update_payload(self, node_id: str, updates: Dict[str, Any]) -> bool:
-        """更新 payload，并保持 lexical payload/sparse vector 与正文一致。"""
+        """Update payload and keep the lexical payload / sparse vector consistent with the content."""
         if not updates:
             return True
         from qdrant_client.models import (
@@ -428,7 +428,7 @@ class QdrantVectorStore(VectorStoreBase):
         )
         point_id = self._node_id_to_point_id(node_id)
         updates = dict(updates)
-        new_embedding = updates.pop("embedding", None)  # 取出向量单独处理
+        new_embedding = updates.pop("embedding", None)  # pull the vector out for separate handling
         try:
             lexical_changed = "content" in updates or "tags" in updates
             if lexical_changed:
@@ -634,7 +634,7 @@ class QdrantVectorStore(VectorStoreBase):
         return accepted_ids
 
     # ================================================================
-    # 检索
+    # Retrieval
     # ================================================================
 
     @staticmethod
@@ -770,7 +770,7 @@ class QdrantVectorStore(VectorStoreBase):
         tags_match_any: Optional[List[str]] = None,
         created_after: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
-        """语义检索。only_latest=True 时只搜索 is_latest=True 的节点（默认）。"""
+        """Semantic retrieval. With only_latest=True only is_latest=True nodes are searched (default)."""
         query_filter = self._build_search_filter(
             isolation_key=isolation_key,
             isolation_keys=isolation_keys,
@@ -787,7 +787,7 @@ class QdrantVectorStore(VectorStoreBase):
         )
 
         def _search():
-            # 兼容 qdrant-client >=1.17 (query_points) 和 <1.17 (search)
+            # Compatible with qdrant-client >=1.17 (query_points) and <1.17 (search)
             if hasattr(self._client, 'query_points'):
                 query_response = self._client.query_points(
                     collection_name=self._collection_name,
@@ -896,7 +896,7 @@ class QdrantVectorStore(VectorStoreBase):
             return await super().search_batch(requests)
 
     async def get_by_id(self, node_id: str) -> Optional[MemoryNode]:
-        """按 ID 获取"""
+        """Fetch by ID"""
         point_id = self._node_id_to_point_id(node_id)
         try:
             def _retrieve():
@@ -917,7 +917,7 @@ class QdrantVectorStore(VectorStoreBase):
         return None
 
     async def get_by_ids(self, node_ids: List[str]) -> List[MemoryNode]:
-        """批量按 ID 获取（单次 retrieve 调用）"""
+        """Fetch many by ID (a single retrieve call)"""
         if not node_ids:
             return []
         point_ids = [self._node_id_to_point_id(nid) for nid in node_ids]
@@ -940,7 +940,7 @@ class QdrantVectorStore(VectorStoreBase):
             return []
 
     async def get_embeddings(self, node_ids: List[str]) -> Dict[str, List[float]]:
-        """批量取向量（单次 retrieve，with_vectors=True），供去重本地算 cosine。"""
+        """Fetch vectors in bulk (one retrieve with with_vectors=True) so dedup can compute cosine locally."""
         if not node_ids:
             return {}
         point_ids = [self._node_id_to_point_id(nid) for nid in node_ids]
@@ -965,11 +965,11 @@ class QdrantVectorStore(VectorStoreBase):
             return {}
 
     # ================================================================
-    # 删除
+    # Deletion
     # ================================================================
 
     async def delete(self, node_id: str) -> bool:
-        """删除单个向量点"""
+        """Delete a single vector point"""
         from qdrant_client.models import PointIdsList
 
         point_id = self._node_id_to_point_id(node_id)
@@ -986,7 +986,7 @@ class QdrantVectorStore(VectorStoreBase):
             return False
 
     async def delete_by_isolation_key(self, isolation_key: str) -> int:
-        """删除某隔离键下的所有向量"""
+        """Delete every vector under one isolation key"""
         from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
 
         try:
@@ -1002,7 +1002,7 @@ class QdrantVectorStore(VectorStoreBase):
                     ),
                 )
             await _run_in_vdb_pool(_delete)
-            return -1  # Qdrant 不返回删除数量
+            return -1  # Qdrant does not report how many were deleted
         except Exception as e:
             logger.warning(f"Failed to delete vectors for {isolation_key}: {e}")
             return 0
@@ -1013,7 +1013,7 @@ class QdrantVectorStore(VectorStoreBase):
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> int:
-        """按 metadata 字段组合删除向量"""
+        """Delete vectors by a combination of metadata fields"""
         from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
 
         try:
@@ -1037,13 +1037,13 @@ class QdrantVectorStore(VectorStoreBase):
                     ),
                 )
             await _run_in_vdb_pool(_delete)
-            return -1  # Qdrant 不返回删除数量
+            return -1  # Qdrant does not report how many were deleted
         except Exception as e:
             logger.warning(f"Failed to delete vectors by metadata (user_id={user_id}): {e}")
             return 0
 
     # ================================================================
-    # 枚举
+    # Enumeration
     # ================================================================
 
     async def list_by_user(
@@ -1061,10 +1061,10 @@ class QdrantVectorStore(VectorStoreBase):
         with_vectors: bool = True,
         allow_raw_layer: bool = False,
     ) -> List[MemoryNode]:
-        """枚举用户的记忆节点，使用 scroll API，支持多 user / 多 agent
+        """Enumerate a user's memory nodes via the scroll API, supporting many users / many agents
 
-        allow_raw_layer: 默认 False，即不返回 L1_RAW（对外读路径）。
-            内部管线读原始对话须显式置 True。
+        allow_raw_layer: defaults to False, i.e. L1_RAW is not returned (external read path).
+            Internal pipelines reading raw conversations must set it True explicitly.
         """
         from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny
 
@@ -1121,8 +1121,8 @@ class QdrantVectorStore(VectorStoreBase):
                     FieldCondition(key="layer", match=MatchAny(any=layer_values))
                 )
             else:
-                # 只点名了 raw：过滤后为空，补排除条件使结果必然为空集，
-                # 不能省略（省略等于放开全部层级，比原意图更宽）
+                # Only raw was named and the filtered layer list is empty: add an exclusion so the result
+                # is certainly empty; it must not be omitted (omitting would open all layers, wider than intended)
                 must_not_conditions.append(
                     FieldCondition(key="layer", match=MatchValue(value=MemoryLayer.L1_RAW.value))
                 )
@@ -1168,8 +1168,8 @@ class QdrantVectorStore(VectorStoreBase):
                     with_vectors=with_vectors,
                 )
 
-                # 兼容 qdrant-client >= 1.17 (返回 ScrollResult 对象)
-                # 和 < 1.17 (返回 tuple(points, next_offset))
+                # Compatible with qdrant-client >= 1.17 (returns a ScrollResult object)
+                # and < 1.17 (returns tuple(points, next_offset))
                 if isinstance(scroll_result, tuple):
                     points, next_offset = scroll_result
                 else:
@@ -1401,11 +1401,11 @@ class QdrantVectorStore(VectorStoreBase):
         )
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     async def get_stats(self) -> Dict[str, Any]:
-        """获取集合统计"""
+        """Get collection statistics"""
         try:
             def _stats():
                 return self._client.get_collection(self._collection_name)
@@ -1420,7 +1420,7 @@ class QdrantVectorStore(VectorStoreBase):
             return {"error": str(e)}
 
     async def count(self, isolation_key: str) -> int:
-        """统计某隔离键下的向量数量"""
+        """Count the vectors under one isolation key"""
         from qdrant_client.models import Filter, FieldCondition, MatchValue
 
         try:
@@ -1441,7 +1441,7 @@ class QdrantVectorStore(VectorStoreBase):
             return 0
 
     async def close(self) -> None:
-        """关闭客户端"""
+        """Close the client"""
         client, self._client = self._client, None
         if client is not None:
             await _run_in_vdb_pool(client.close)
@@ -1452,22 +1452,22 @@ class QdrantVectorStore(VectorStoreBase):
 
     def _ensure_text_index(self) -> None:
         """
-        对已有集合补建 search_text text index。
+        Backfill the search_text text index on an existing collection.
 
-        现状期望：tokenizer = WHITESPACE（配合 _node_to_payload 的 jieba 预分词）。
+        Expected state: tokenizer = WHITESPACE (matching the jieba pre-tokenization in _node_to_payload).
 
-        三种情况：
-          1) 没有 index → 创建 WHITESPACE index
-          2) 已有 WHITESPACE index → skip
-          3) 已有别的 tokenizer (e.g. MULTILINGUAL 老索引) → 仅打 WARNING，不主动重建
-             因为现存 payload 里 search_text 还是老格式（原始中文），新 tokenizer 重建
-             会得到无用 token。需要先跑 scripts/migrate_search_text_to_jieba.py
-             重新写入 payload，再 drop+recreate index。
+        Three cases:
+          1) no index -> create a WHITESPACE index
+          2) a WHITESPACE index already exists -> skip
+          3) a different tokenizer (e.g. an old MULTILINGUAL index) -> WARNING only, never rebuild on our own:
+             existing payloads still carry search_text in the old format (raw untokenized original text), and a
+             new tokenizer would yield useless tokens. Run scripts/migrate_search_text_to_jieba.py first to
+             rewrite the payloads, then drop and recreate the index.
         """
         try:
             from qdrant_client.models import TextIndexParams, TokenizerType
 
-            # 先看一眼现状
+            # Inspect the current state first
             existing_tokenizer = None
             try:
                 info = self._client.get_collection(self._collection_name)
@@ -1477,14 +1477,14 @@ class QdrantVectorStore(VectorStoreBase):
                     params = getattr(schema_entry, "params", None)
                     tok = getattr(params, "tokenizer", None) if params else None
                     if tok is not None:
-                        # qdrant 返回的 tokenizer 可能是 enum 或 string
+                        # The tokenizer qdrant returns may be an enum or a string
                         existing_tokenizer = getattr(tok, "value", None) or str(tok)
             except Exception as e:
                 logger.debug(f"[qdrant] inspect search_text index failed (will try create anyway): {e}")
 
             if existing_tokenizer is not None:
                 if str(existing_tokenizer).lower().endswith("whitespace") or str(existing_tokenizer).lower() == "whitespace":
-                    return  # 已经是新格式，啥都不做
+                    return  # already the new format, nothing to do
                 logger.warning(
                     f"[qdrant] search_text text index uses old tokenizer={existing_tokenizer!r} "
                     f"(expected whitespace). Keyword search will be DEGRADED on this collection until "
@@ -1493,7 +1493,7 @@ class QdrantVectorStore(VectorStoreBase):
                 )
                 return
 
-            # 没 index → 直接 create
+            # No index -> just create one
             self._client.create_payload_index(
                 collection_name=self._collection_name,
                 field_name="search_text",
@@ -1508,7 +1508,7 @@ class QdrantVectorStore(VectorStoreBase):
                 "[qdrant] Created search_text text index (whitespace) on existing collection"
             )
         except Exception as e:
-            # 兜底：未支持或并发竞争，静默
+            # Fallback: unsupported or a concurrency race, stay silent
             logger.debug(f"[qdrant] _ensure_text_index swallowed: {e}")
 
     async def keyword_search(
@@ -1526,13 +1526,13 @@ class QdrantVectorStore(VectorStoreBase):
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        关键词检索。
+        Keyword retrieval.
 
-        - collection 含 sparse "bm25" 向量且 fastembed 可用（_supports_fulltext）：
-          走 query_points(using="bm25") 真 BM25 sparse 检索，返回真实 BM25 分
-          （量级 0~20+，reader 端用 normalize_bm25 sigmoid 归一）。
-        - 否则（旧 dense-only collection）：降级返回 []，hybrid 退化为纯向量。
-          注：不再用旧的 scroll text-match + binary 1.0 假 BM25。
+        - Collection carries a sparse "bm25" vector and fastembed is available (_supports_fulltext):
+          use query_points(using="bm25") for real BM25 sparse retrieval, returning true BM25 scores
+          (order 0~20+, normalized reader-side by the normalize_bm25 sigmoid).
+        - Otherwise (old dense-only collection): degrade to [] and hybrid becomes pure vector search.
+          Note: the old scroll text-match + binary 1.0 pseudo-BM25 is no longer used.
         """
         from qdrant_client.models import (
             Filter, FieldCondition, MatchValue, MatchAny,
@@ -1640,7 +1640,7 @@ class QdrantVectorStore(VectorStoreBase):
             node = self._payload_to_node(point.payload)
             output.append({
                 "node_id": node.node_id,
-                "score": float(getattr(point, "score", 0.0) or 0.0),  # 真实 BM25 分
+                "score": float(getattr(point, "score", 0.0) or 0.0),  # real BM25 score
                 "node": node,
             })
 
@@ -1762,17 +1762,17 @@ class QdrantVectorStore(VectorStoreBase):
         return output
 
     # ================================================================
-    # Qdrant 特有方法
+    # Qdrant-specific methods
     # ================================================================
 
     @staticmethod
     def _patch_local_meta(persist_directory: str) -> None:
         """
-        兼容性补丁: 清理本地 Qdrant meta.json 中当前版本不支持的字段。
+        Compatibility patch: strip fields the current version cannot read from the local Qdrant meta.json.
 
-        高版本 qdrant-client (>=1.13) 会在 meta.json 的 collection config 中写入
-        strict_mode_config、metadata 等字段，低版本 (<1.13) 的 pydantic model
-        配置了 extra='forbid'，加载时会报 ValidationError。
+        Newer qdrant-client (>=1.13) writes fields such as strict_mode_config and metadata into the
+        collection config of meta.json, while the pydantic models of older versions (<1.13) set
+        extra='forbid', so loading raises ValidationError.
         """
         import json as _json
         meta_path = Path(persist_directory) / "meta.json"
@@ -1805,31 +1805,31 @@ class QdrantVectorStore(VectorStoreBase):
             logger.info("Patched Qdrant meta.json: removed unsupported fields")
 
     # ================================================================
-    # Tag Index（per-user tag embedding，供 reader_hybrid_tag 使用）
+    # Tag Index (per-user tag embeddings, used by reader_hybrid_tag)
     # ================================================================
 
     _supports_tag_index = True
 
     def _tag_index_collection(self) -> str:
         """
-        tag_index 独立 collection 名称。与主 memories collection 同库不同表。
+        Name of the separate tag_index collection; same database as the main memories collection, different table.
 
-        命名规则对齐 `_retrieval.config.tag_index_collection_name`。
+        Naming follows `_retrieval.config.tag_index_collection_name`.
         """
         override = str(
             getattr(self.config.vector_store, "tag_index_collection_name", "") or ""
         ).strip()
         if override:
             return override
-        # 延迟 import 避免循环依赖
+        # Deferred import to avoid a circular dependency
         from ..pipelines._retrieval.config import tag_index_collection_name
         return tag_index_collection_name(self._collection_name)
 
     async def _ensure_tag_index_collection(self) -> None:
         """
-        确保 tag_index collection 存在。空 collection 惰性创建，避免启动时就占资源。
+        Ensure the tag_index collection exists. It is created lazily so an empty one does not hold resources at startup.
 
-        幂等：多次调用安全。
+        Idempotent: safe to call repeatedly.
         """
         from qdrant_client.models import VectorParams, Distance, PayloadSchemaType
 
@@ -1862,7 +1862,7 @@ class QdrantVectorStore(VectorStoreBase):
                                 field_schema=field_type,
                             )
                         except Exception:
-                            pass  # 已存在等情况忽略
+                            pass  # ignore conditions such as already existing
                     logger.info(f"Created Qdrant tag_index collection: {coll}")
                 self._tag_index_ready = True
 
@@ -1960,7 +1960,7 @@ class QdrantVectorStore(VectorStoreBase):
                 )
                 return bool(points)
             except Exception:
-                # Collection 不存在也算 False
+                # A missing collection also counts as False
                 return False
 
         return await _run_in_vdb_pool(_retrieve)
@@ -1990,14 +1990,14 @@ class QdrantVectorStore(VectorStoreBase):
         min_score: float = 0.5,
     ) -> List[Dict[str, Any]]:
         """
-        在 per-user tag_index 中做向量检索。
+        Vector search inside the per-user tag_index.
 
-        语义：
-          - **topk 为主**：先按 cosine 取最近的 topk 个 tag
-          - **min_score 为地板线**：从 topk 里软过滤完全不沾边的
-          - tag embedding 本身信噪弱（单词/短语 embedding），若 min_score 用 Qdrant
-            服务端 score_threshold 做硬过滤，会把"仅次于阈值"的相近 tag 也屏蔽掉，
-            导致 user 没有高度相关 tag 时整体空召回。这里改为应用层软过滤。
+        Semantics:
+          - **topk leads**: first take the topk closest tags by cosine
+          - **min_score is a floor**: then softly drop the completely unrelated ones from topk
+          - tag embeddings are weak in signal on their own (single word/phrase embeddings), so applying min_score as a
+            server-side score_threshold would also block tags just under the threshold, producing an empty
+            recall whenever the user has no highly related tag. This is a soft application-layer filter instead.
         """
         from qdrant_client.models import Filter, FieldCondition, MatchValue
 
@@ -2006,7 +2006,7 @@ class QdrantVectorStore(VectorStoreBase):
 
         def _search():
             try:
-                # 不传 score_threshold：topk 在前、min_score 在后（软过滤）
+                # No score_threshold is passed: topk first, min_score afterwards (soft filtering)
                 if hasattr(self._client, "query_points"):
                     resp = self._client.query_points(
                         collection_name=coll,
@@ -2030,7 +2030,7 @@ class QdrantVectorStore(VectorStoreBase):
                 return []
 
         hits = await _run_in_vdb_pool(_search)
-        # 应用层软过滤：topk 已取回，仅剔除完全不沾边（< min_score）的噪声 tag
+        # Application-layer soft filter: topk is already fetched, only noise tags below min_score are dropped
         result: List[Dict[str, Any]] = []
         for h in hits or []:
             score = float(getattr(h, "score", 0.0))
@@ -2049,7 +2049,7 @@ class QdrantVectorStore(VectorStoreBase):
 
         must = [
             FieldCondition(key="user_id", match=MatchValue(value=user_id)),
-            # Qdrant 对 list 类型字段的 MatchValue 等价于 "array contains value"
+            # On a list-valued field, Qdrant's MatchValue means "array contains value"
             FieldCondition(key="tags", match=MatchValue(value=tag)),
             FieldCondition(key="status", match=MatchAny(any=[MemoryStatus.ACTIVE.value])),
         ]
@@ -2070,7 +2070,7 @@ class QdrantVectorStore(VectorStoreBase):
                 return -1
 
         c = await _run_in_vdb_pool(_count)
-        # 若失败返回 -1（调用方可据此跳过清理）
+        # Returns -1 when it fails (the caller can skip cleanup accordingly)
         return c
 
     # ================================================================
@@ -2392,18 +2392,18 @@ class QdrantVectorStore(VectorStoreBase):
         return sorted(best.values(), key=lambda item: item["score"], reverse=True)
 
     # ================================================================
-    # Entity Store（独立 {collection}_entities collection，对齐 mem0）
-    #   - mirror tag_index 的 aux-collection 模式
-    #   - Qdrant payload 原生支持 list，linked_memory_ids 直接存 list（无需 JSON）
+    # Entity Store (a separate {collection}_entities collection, aligned with mem0)
+    #   - mirrors the tag_index aux-collection pattern
+    #   - Qdrant payloads natively support lists, so linked_memory_ids stores a list directly (no JSON)
     # ================================================================
 
     def _entity_collection(self) -> str:
-        """entity store 独立 collection 名称（对齐 _retrieval.config.entity_collection_name）。"""
+        """Name of the separate entity store collection (aligned with _retrieval.config.entity_collection_name)."""
         from ..pipelines._retrieval.config import entity_collection_name
         return entity_collection_name(self._collection_name)
 
     async def _ensure_entity_collection(self) -> None:
-        """惰性创建 entity store collection。幂等。"""
+        """Create the entity store collection lazily. Idempotent."""
         from qdrant_client.models import VectorParams, Distance, PayloadSchemaType
 
         coll = self._entity_collection()
@@ -2463,7 +2463,7 @@ class QdrantVectorStore(VectorStoreBase):
         qf = self._entity_filter(user_id, [agent_id] if agent_id else None)
 
         def _do():
-            # 1) 查最相似的同 user entity
+            # 1) find the most similar entity of the same user
             try:
                 if hasattr(self._client, "query_points"):
                     resp = self._client.query_points(
@@ -2489,7 +2489,7 @@ class QdrantVectorStore(VectorStoreBase):
                         linked = []
                     if memory_id not in linked:
                         linked.append(memory_id)
-                        # set_payload 只更新 payload，不动向量
+                        # set_payload updates the payload only and leaves the vector untouched
                         self._client.set_payload(
                             collection_name=coll,
                             payload={"linked_memory_ids": linked},
@@ -2497,7 +2497,7 @@ class QdrantVectorStore(VectorStoreBase):
                         )
                     return str(top.id)
 
-            # 2) 新建
+            # 2) create a new one
             eid = str(_uuid.uuid4())
             self._client.upsert(
                 collection_name=coll,

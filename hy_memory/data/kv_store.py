@@ -1,29 +1,29 @@
 """
-Agent Memory - KVStore 键值存储
+Agent Memory - KVStore key-value store
 
-提供键值对的快速存取能力。
+Provides fast key-value access.
 
-功能：
-- 键值存取（get/set/delete）
-- 批量操作
-- TTL 支持
-- 多后端支持（Redis、RocksDB、Memory）
+Features:
+- Key-value get/set/delete
+- Batch operations
+- TTL support
+- Multiple backends (Redis, RocksDB, Memory)
 
-用途：
-- 存储用户画像
-- 存储任务状态
-- 缓存热点数据
+Use cases:
+- Storing user profiles
+- Storing task state
+- Caching hot data
 
-示例：
+Example:
     kv = KVStore(config)
     
-    # 存储
-    kv.set("profile:user_123", {"name": "张三", "age": 30})
+    # Store
+    kv.set("profile:user_123", {"name": "Alice", "age": 30})
     
-    # 获取
+    # Get
     profile = kv.get("profile:user_123")
     
-    # 设置 TTL
+    # Set a TTL
     kv.set("session:xxx", {"token": "..."}, ttl=3600)
 """
 
@@ -38,34 +38,34 @@ logger = logging.getLogger(__name__)
 
 
 class KVBackend(Enum):
-    """KV 存储后端"""
+    """KV storage backend"""
     REDIS = "redis"
     ROCKSDB = "rocksdb"
-    MEMORY = "memory"       # 内存存储
+    MEMORY = "memory"       # In-memory storage
 
 
 @dataclass
 class KVStoreConfig:
     """
-    KV 存储配置
+    KV store configuration
     """
     backend: str = "memory"
     
-    # Redis 配置
+    # Redis configuration
     host: str = "localhost"
     port: int = 6379
     db: int = 0
     password: str = ""
     
-    # 通用配置
+    # Common configuration
     prefix: str = "agentmem:"
-    default_ttl: int = 0             # 0 表示永不过期
-    max_size: int = 100000           # 最大键数量
+    default_ttl: int = 0             # 0 means it never expires
+    max_size: int = 100000           # Maximum number of keys
 
 
 @dataclass
 class KVEntry:
-    """KV 条目（含过期时间）"""
+    """KV entry, including its expiry time"""
     value: Any
     expires_at: Optional[datetime] = None
     
@@ -77,17 +77,17 @@ class KVEntry:
 
 class KVStore:
     """
-    键值存储
+    Key-value store
     
-    提供简单的键值存取能力。
+    Provides simple key-value access.
     """
     
     def __init__(self, config: Optional[KVStoreConfig] = None):
         """
-        初始化 KV 存储
+        Initialize the KV store
         
         Args:
-            config: 存储配置
+            config: storage configuration
         """
         self.config = config or KVStoreConfig()
         self._client = None
@@ -96,7 +96,7 @@ class KVStore:
         logger.info(f"KVStore initialized, backend={self.config.backend}")
     
     def _init_client(self) -> None:
-        """初始化存储客户端"""
+        """Initialize the storage client"""
         if self.config.backend == "redis":
             self._init_redis()
         elif self.config.backend == "memory":
@@ -105,7 +105,7 @@ class KVStore:
             raise ValueError(f"Unsupported backend: {self.config.backend}")
     
     def _init_redis(self) -> None:
-        """初始化 Redis 客户端"""
+        """Initialize the Redis client"""
         try:
             import redis
             
@@ -116,30 +116,30 @@ class KVStore:
                 password=self.config.password or None,
                 decode_responses=True,
             )
-            # 测试连接
+            # Test the connection
             self._client.ping()
             
         except ImportError:
             raise ImportError("redis is required. Install with: pip install redis")
     
     def _init_memory(self) -> None:
-        """初始化内存存储"""
+        """Initialize the in-memory store"""
         self._memory_store: Dict[str, KVEntry] = {}
     
     def _make_key(self, key: str) -> str:
-        """生成带前缀的键"""
+        """Build the prefixed key"""
         return f"{self.config.prefix}{key}"
     
     def get(self, key: str, default: Any = None) -> Any:
         """
-        获取值
+        Get a value
         
         Args:
-            key: 键
-            default: 默认值
+            key: key
+            default: default value
         
         Returns:
-            值或默认值
+            The value, or the default
         """
         full_key = self._make_key(key)
         
@@ -170,21 +170,21 @@ class KVStore:
         ttl: int = None,
     ) -> bool:
         """
-        设置值
+        Set a value
         
         Args:
-            key: 键
-            value: 值
-            ttl: 过期时间（秒），None 使用默认值
+            key: key
+            value: value
+            ttl: expiry time in seconds, None uses the default
         
         Returns:
-            是否成功
+            Whether it succeeded
         """
         full_key = self._make_key(key)
         ttl = ttl if ttl is not None else self.config.default_ttl
         
         if self.config.backend == "memory":
-            # 检查大小限制
+            # Enforce the size limit
             if len(self._memory_store) >= self.config.max_size:
                 self._evict_expired()
             
@@ -210,13 +210,13 @@ class KVStore:
     
     def delete(self, key: str) -> bool:
         """
-        删除键
+        Delete a key
         
         Args:
-            key: 键
+            key: key
         
         Returns:
-            是否成功
+            Whether it succeeded
         """
         full_key = self._make_key(key)
         
@@ -232,13 +232,13 @@ class KVStore:
     
     def exists(self, key: str) -> bool:
         """
-        检查键是否存在
+        Check whether a key exists
         
         Args:
-            key: 键
+            key: key
         
         Returns:
-            是否存在
+            Whether it exists
         """
         full_key = self._make_key(key)
         
@@ -258,13 +258,13 @@ class KVStore:
     
     def keys(self, pattern: str = "*") -> List[str]:
         """
-        获取匹配的键列表
+        Get the list of matching keys
         
         Args:
-            pattern: 匹配模式
+            pattern: match pattern
         
         Returns:
-            键列表
+            The list of keys
         """
         full_pattern = self._make_key(pattern)
         prefix_len = len(self.config.prefix)
@@ -285,13 +285,13 @@ class KVStore:
     
     def mget(self, keys: List[str]) -> Dict[str, Any]:
         """
-        批量获取
+        Batch get
         
         Args:
-            keys: 键列表
+            keys: list of keys
         
         Returns:
-            键值字典
+            Dict of key-value pairs
         """
         result = {}
         for key in keys:
@@ -302,21 +302,21 @@ class KVStore:
     
     def mset(self, items: Dict[str, Any], ttl: int = None) -> bool:
         """
-        批量设置
+        Batch set
         
         Args:
-            items: 键值字典
-            ttl: 过期时间
+            items: dict of key-value pairs
+            ttl: expiry time
         
         Returns:
-            是否成功
+            Whether it succeeded
         """
         for key, value in items.items():
             self.set(key, value, ttl)
         return True
     
     def _evict_expired(self) -> int:
-        """清理过期键"""
+        """Evict expired keys"""
         if self.config.backend != "memory":
             return 0
         
@@ -331,7 +331,7 @@ class KVStore:
         return len(expired_keys)
     
     def clear(self) -> None:
-        """清空所有数据"""
+        """Clear all data"""
         if self.config.backend == "memory":
             self._memory_store.clear()
         elif self.config.backend == "redis":
@@ -340,7 +340,7 @@ class KVStore:
                 self._client.delete(*keys)
     
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Get statistics"""
         if self.config.backend == "memory":
             return {
                 "backend": "memory",

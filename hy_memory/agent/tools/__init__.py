@@ -1,18 +1,18 @@
 """
 HY Memory Agent Tools
 
-通用的 LLM "工具"机制（OpenAI function-calling 风格）。当前 SDK 内部已不再
-使用此机制做用户基础画像更新（由 extractor prompt + JSON `basic_info` 字段
-直接表达，避免弱模型乱填）。本模块保留供未来其他 agent 场景使用。
+Generic LLM "tool" mechanism (OpenAI function-calling style). The SDK no longer uses it internally
+for basic user profile updates (expressed directly via the extractor prompt + the JSON `basic_info` field,
+to avoid weak models filling it in arbitrarily). This module is kept for future agent scenarios.
 
-核心组件：
-- ToolDefinition: tool 的 schema 描述（OpenAI function calling 风格）
-- ToolCall:       LLM 发起的一次 tool 调用请求
-- ToolResult:     dispatcher 执行后的结果
-- ToolHandler:    tool 的执行逻辑（抽象接口）
-- ToolRegistry:   tool 注册表 + dispatcher
+Core components:
+- ToolDefinition: schema description of a tool (OpenAI function calling style)
+- ToolCall:       a tool call request issued by the LLM
+- ToolResult:     result after dispatcher execution
+- ToolHandler:    tool execution logic (abstract interface)
+- ToolRegistry:   tool registry + dispatcher
 
-使用方式（自定义场景）::
+Usage (custom scenarios)::
 
     from .tools import ToolRegistry, ToolHandler, ToolDefinition, ToolResult
 
@@ -25,10 +25,10 @@ HY Memory Agent Tools
     registry = ToolRegistry()
     registry.register(MyTool())
 
-    # 传给 LLM
+    # pass to the LLM
     tool_schemas = registry.openai_schemas()
 
-    # LLM 返回 tool_calls 后
+    # after the LLM returns tool_calls
     for call in tool_calls:
         result = await registry.dispatch(call, context={...})
 """

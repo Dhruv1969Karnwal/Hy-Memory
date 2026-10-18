@@ -1,29 +1,29 @@
 """
-Agent Memory - MemoryReconciler 记忆协调器
+Agent Memory - MemoryReconciler
 
-在 Lite pipeline 中，LLM 提取完新 facts/identity 后、入库前，
-与向量库中的现有记忆做 reconcile：
+In the Lite pipeline, after the LLM extracts new facts/identity and before they are persisted,
+they are reconciled against the existing memories in the vector database:
 
-流程:
-  1. （可选）Pre-process: LLM 生成 search queries（MEMORY_ENABLE_SEARCH_QUERY=true，默认关）
-  2. 候选搜索: 默认每条新 memory 做向量 + BM25 融合检索
-     （向量扩池 + 独立 keyword + additive(sem/bm25/max(tag,entity))，min_score=0.4）；
-     开启 search query 时额外用扩写 query 做向量搜索
-  3. 一次 LLM 调用（Reconcile），输入新记忆 + 候选旧记忆
-  4. 返回操作指令列表（ADD / DELETE，按顺序执行）
-  5. 调用方按指令执行入库操作并更新旧节点状态
+Flow:
+  1. (Optional) Pre-process: the LLM generates search queries (MEMORY_ENABLE_SEARCH_QUERY=true, off by default)
+  2. Candidate search: by default every new memory runs fused vector + BM25 retrieval
+     (enlarged vector pool + separate keyword channel + additive(sem/bm25/max(tag,entity)), min_score=0.4);
+     when search queries are enabled, the rewritten queries get an extra vector search
+  3. One LLM call (Reconcile) taking the new memories + the candidate old memories as input
+  4. Returns the list of operation instructions (ADD / DELETE, executed in order)
+  5. The caller performs the persistence operations per instruction and updates the old node statuses
 
-操作 Schema（两种 op 自由组合表达三种语义）:
-  ADD    → 新增节点
-           supersedes=[]         → 场景 A：全新信息（与任何旧记忆无关）
-           supersedes=[id, ...]  → 场景 B：矛盾/取代（旧节点不再成立，进演化链）
-  DELETE → 逻辑删除旧节点（status=SHADOW, is_latest=False，不进演化链）
-           场景 C：合并吸收 — 配合 ADD(supersedes=[]) 使用，表达
-                   "这条 ADD 吸收了某几条旧记忆的内容，旧记忆不再召回"
+Operation schema (two ops freely combined to express three semantics):
+  ADD    → insert a new node
+           supersedes=[]         → case A: entirely new information (unrelated to any old memory)
+           supersedes=[id, ...]  → case B: contradiction/supersede (the old node no longer holds and joins the evolution chain)
+  DELETE → logically delete the old node (status=SHADOW, is_latest=False, not added to the evolution chain)
+           case C: merge absorption -- used together with ADD(supersedes=[]) to express
+                   "this ADD absorbed the content of some old memories, which are no longer retrieved"
 
-  例子：
-    场景 B 矛盾：ADD(content="喝茶", supersedes=[id_coffee])
-    场景 C 合并：ADD(content="有 PI 血统并在音乐中运用", supersedes=[]) + DELETE(id_heritage)
+  Examples:
+    Case B contradiction: ADD(content="drinks tea", supersedes=[id_coffee])
+    Case C merge: ADD(content="has PI heritage and applies it in music", supersedes=[]) + DELETE(id_heritage)
 """
 
 import json
@@ -50,7 +50,7 @@ def is_canonical_state_node(node: Any) -> bool:
 
 
 def _log_ops_detail(ops: List["ReconcileOp"]) -> None:
-    """以单条 INFO（JSON list）输出 reconcile 的逐条结果，便于线上 debug。"""
+    """Log the per-op reconcile results as one INFO line (JSON list) to ease online debugging."""
     if not ops:
         return
     view = [
@@ -74,39 +74,39 @@ def _log_ops_detail(ops: List["ReconcileOp"]) -> None:
 
 
 # ================================================================
-# 操作指令
+# Operation instructions
 # ================================================================
 
 
 @dataclass
 class ReconcileOp:
     """
-    单条操作指令（v2 flat 格式）。
+    A single operation instruction (v2 flat format).
 
-    op = "ADD"：纯新增节点，信息完全新颖，不引用任何现有记忆。
+    op = "ADD": a pure new node, entirely new information that references no existing memory.
 
-    op = "SUPERSEDE"：状态演变/矛盾链。新记忆取代旧记忆成为链头部。
-      - memory_id 指向被取代的旧节点
-      - content 仅描述新/变更的信息（旧节点自动保留在链中）
-      - supersede_reason 描述矛盾原因
-      - 执行：旧节点 → SHADOW + is_latest=False；新节点 supersedes=[old_id]（进演化链）
+    op = "SUPERSEDE": state evolution / contradiction chain. The new memory replaces the old one and becomes the chain head.
+      - memory_id points at the superseded old node
+      - content describes only the new or changed information (the old node stays in the chain automatically)
+      - supersede_reason describes why the statements conflict
+      - execution: old node → SHADOW + is_latest=False; new node supersedes=[old_id] (joins the evolution chain)
 
-    op = "UPDATE"：合并与精炼。新记忆与旧记忆描述同一主题且不矛盾，合并为高密度节点。
-      - memory_id 指向被更新的旧节点
-      - content 是合并后的完整文本
-      - 执行：旧节点 → SHADOW + is_latest=False；新节点独立创建（不进演化链，无 supersedes）
-      - 旧节点作为历史保留在 VDB 中（status=SHADOW），但不形成链关系
+    op = "UPDATE": merge and refine. The new and old memory describe the same topic without contradicting each other, so they merge into one dense node.
+      - memory_id points at the old node being updated
+      - content is the complete merged text
+      - execution: old node → SHADOW + is_latest=False; the new node is created on its own (no evolution chain, no supersedes)
+      - the old node is kept in the VDB as history (status=SHADOW) but forms no chain relation
     """
 
     op: str = "ADD"
-    # --- 共用字段 ---
-    content: Optional[str] = None  # 最终存储内容
+    # --- Shared fields ---
+    content: Optional[str] = None  # Final stored content
     layer: Optional[str] = None  # "L2_FACT" / "L4_IDENTITY"
-    owner: Optional[str] = None  # 'user' / 'agent'（仅 L2_FACT 有意义）
-    tags: List[str] = field(default_factory=list)  # 1-3 keywords；专名保留大小写
-    tag_ners: List[str] = field(default_factory=list)  # 与 tags 等长的 NER label
-    # 写入时显式组织结构。topic_paths 从宽到窄；event_facet 只描述事实语义，
-    # 不携带 future query 的问句类型或路由提示。
+    owner: Optional[str] = None  # 'user' / 'agent' (only meaningful for L2_FACT)
+    tags: List[str] = field(default_factory=list)  # 1-3 keywords; proper nouns keep their capitalization
+    tag_ners: List[str] = field(default_factory=list)  # NER labels aligned one-to-one with tags
+    # Explicit structure at write time. topic_paths go from broad to narrow; event_facet only describes factual semantics
+    # and never carries the question type or routing hint of a future query.
     topic_paths: List[List[str]] = field(default_factory=list)
     event_facet: Dict[str, Any] = field(default_factory=dict)
     topic_assignments: List[Dict[str, Any]] = field(default_factory=list)
@@ -114,45 +114,45 @@ class ReconcileOp:
     topic_paths_provided: bool = False
     event_facet_provided: bool = False
     topic_assignments_provided: bool = False
-    speculate: Optional[str] = None  # 隐性偏好推导（仅 identity）
-    # --- SUPERSEDE / UPDATE 字段 ---
-    memory_id: Optional[str] = None  # 目标旧节点 ID（单节点；多节点链时为链上最新的那个）
-    memory_ids: List[str] = field(default_factory=list)  # SUPERSEDE 多节点链：有序（旧→新）的现有节点 ID 列表；用于把多条同维度旧记忆折叠进同一条演化链
-    supersede_reason: str = ""  # SUPERSEDE 的矛盾描述
-    # --- 关系图（pro 模式，见 docs/pro_graph_design.md）---
-    # LLM 标注的与现有记忆的关系：[{"target_id": <existing memory_id>, "relation_type": ...}]
+    speculate: Optional[str] = None  # Implicit preference inference (identity only)
+    # --- SUPERSEDE / UPDATE fields ---
+    memory_id: Optional[str] = None  # Target old node ID (single node; for a multi-node chain the newest one on it)
+    memory_ids: List[str] = field(default_factory=list)  # SUPERSEDE multi-node chain: ordered (oldest→newest) existing node IDs; folds several old memories on the same dimension into one evolution chain
+    supersede_reason: str = ""  # Contradiction description for SUPERSEDE
+    # --- Relation graph (pro mode, see docs/pro_graph_design.md) ---
+    # LLM-annotated relations to existing memories: [{"target_id": <existing memory_id>, "relation_type": ...}]
     # relation_type ∈ causes / elaborates / contrasts / same_series。
-    # reconcile 本来就同时摊开了 existing 和 new memories，让它多输出这个字段只花输出 token，
-    # 不增加 LLM 调用；而 causes / contrasts 这类边的两端余弦往往很低，向量检索永远发现不了。
+    # reconcile already lays out existing and new memories together, so emitting one more field only costs output tokens
+    # and no extra LLM call; besides, the endpoints of causes / contrasts edges usually have very low cosine similarity, so vector retrieval would never surface them.
     related: List[Dict[str, str]] = field(default_factory=list)
-    # --- 通用 ---
+    # --- Common ---
     reason: str = ""
 
 
 @dataclass
 class ReconcileResult:
-    """Reconcile 结果"""
+    """Reconcile result"""
 
     ops: List[ReconcileOp] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None
-    # True = reconcile 失败后走了「全部 ADD」兜底（见 _fallback_add_ops）。
-    # 结果仍然可用（success=True），但没有做过去重/演化判定，可能引入重复。
+    # True = reconcile failed and the "ADD everything" fallback was used (see _fallback_add_ops).
+    # The result is still usable (success=True), but no dedup or evolution decision ran, so duplicates may be introduced.
     degraded: bool = False
     degraded_reason: Optional[str] = None
-    # reconcile 链路 LLM token 消耗（search-query + reconcile 两次 LLM 调用之和）
+    # LLM token consumption of the reconcile pipeline (sum of the search-query and reconcile LLM calls)
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
-    # 候选池的相似度快照：{新记忆 content: [(existing_node_id, score), ...]}
+    # Similarity snapshot of the candidate pool: {new memory content: [(existing_node_id, score), ...]}
     #
-    # reconcile 本来就为每条新记忆做了 hybrid 检索并算出融合分数，用完就丢。写侧把它
-    # 存成 `semantic_neighbor` 边是**零额外计算**的（见 docs/pro_graph_design.md §2.2）。
-    # 用 content 作 key 而不是 node_id：新记忆此刻还没入库、没有 id。
+    # reconcile already runs hybrid retrieval for every new memory and computes fused scores, then discards them. Storing them
+    # as `semantic_neighbor` edges on the write side costs **zero extra computation** (see docs/pro_graph_design.md §2.2).
+    # Keyed by content instead of node_id: the new memories are not persisted yet and have no id.
     candidate_scores: Dict[str, List[Tuple[str, float]]] = field(default_factory=dict)
-    # reconcile 候选检索已经为每条新 memory 算过 embedding。把原始文本对应向量交回
-    # writer，ADD-all / degraded ADD 可直接落库，避免同一事实再次请求 embedding。
-    # 仅按完全相同 content 复用；LLM 改写后的 UPDATE/SUPERSEDE 会重新计算，防止错配。
+    # reconcile candidate retrieval already embedded every new memory. Handing the vectors of the original texts back to the
+    # writer lets ADD-all / degraded ADD persist directly, avoiding a second embedding request for the same fact.
+    # Reuse only on exactly identical content; LLM-rewritten UPDATE/SUPERSEDE content is recomputed to prevent mismatches.
     new_memory_embeddings: Dict[str, List[float]] = field(default_factory=dict)
 
 
@@ -599,26 +599,26 @@ Same event type happening again → UPDATE the old memory. State the **count** a
 
 class MemoryReconciler:
     """
-    记忆协调器
+    Memory reconciler
 
-    在 lite pipeline 中，提取完新 facts/identity 后，
-    与向量库现有记忆做 reconcile，再决定入库操作。
+    In the lite pipeline, after new facts/identity are extracted,
+    it reconciles them against the existing memories in the vector database and then decides the persistence operations.
     """
 
-    # 每条新 memory hybrid 融合后保留的候选数
+    # Candidates kept per new memory after hybrid fusion
     SEARCH_TOPK = 20
-    # hybrid 向量扩池倍数（limit × 3）
+    # Hybrid vector pool enlargement factor (limit × 3)
     VEC_POOL_MULTIPLIER = 3
-    # 融合分阈值（additive；无 BM25 时 sem 不打折）
+    # Fused score threshold (additive; sem is not discounted when BM25 is absent)
     HYBRID_MIN_SCORE = 0.4
-    # search query 扩写路向量 topk（仅 MEMORY_ENABLE_SEARCH_QUERY=true）
+    # Vector topk for the rewritten search-query path (only with MEMORY_ENABLE_SEARCH_QUERY=true)
     QUERY_SEARCH_TOPK = 20
     SEARCH_THRESHOLD = 0.3
-    # 链条合并后最终保留的候选数（每路）
+    # Candidates finally kept after chain merging (per path)
     FINAL_TOPK = 10
-    # max_tokens for reconcile LLM call（基础值 + 动态扩展）
-    # 每条 ADD 输出大约 200-300 tokens（content + supersedes + reason）
-    # 总上限 8000 tokens，防止单次调用失控
+    # max_tokens for the reconcile LLM call (base value + dynamic expansion)
+    # Each ADD emits roughly 200-300 tokens (content + supersedes + reason)
+    # Hard ceiling of 8000 tokens so a single call cannot run away
     MAX_TOKENS = 2000
     PER_OP_TOKENS = 300
     BASE_OVERHEAD_TOKENS = 500
@@ -631,7 +631,7 @@ class MemoryReconciler:
     ):
         self.config = config
         self._llm: Optional[LLMProvider] = llm_provider
-        # 消融开关：关闭时只用新 memory 直接搜索，不生成 search queries
+        # Ablation switch: when off, only the new memories are searched directly and no search queries are generated
         self._enable_search_query = self._read_enable_search_query()
 
     @staticmethod
@@ -646,8 +646,8 @@ class MemoryReconciler:
 
     async def _generate_search_queries(self, new_memories: List[str]) -> tuple:
         """
-        Pre-process: 从全部新 memory 中提取 search queries，
-        用于补充向量搜索的召回能力。
+        Pre-process: derive search queries from all new memories,
+        used to strengthen the recall of vector search.
 
         Returns:
             (queries: List[str], llm_response: Optional[LLMResponse])
@@ -693,12 +693,12 @@ class MemoryReconciler:
         new_memories: List[str],
         new_memories_with_meta: Optional[List[Dict]] = None,
     ) -> List[ReconcileOp]:
-        """reconcile 彻底失败时的兜底：把抽取结果**原样全部 ADD**。
+        """Fallback when reconcile fails completely: **ADD the extraction results verbatim**.
 
-        为什么必须有这个兜底：reconcile 只是决定「新事实和旧记忆怎么合」。它挂了（网关 500、
-        JSON 解析不出）不代表抽取结果没价值 —— 此前的行为是把一整批完好的事实**全部丢弃**，
-        线上实测因此丢掉过整块内容（含评测题的正确答案）。宁可留重复也不要丢内容：
-        重复还能被后续 dedup / reconcile 收拾，丢了就永远找不回来。
+        Why this fallback is mandatory: reconcile only decides how new facts and old memories combine. It dying (gateway 500,
+        unparseable JSON) does not mean the extraction is worthless -- the previous behaviour discarded an entire batch of intact facts,
+        and production measurements lost whole blocks of content that way (including the correct answers of evaluation questions). Duplicates beat lost content:
+        duplicates can still be cleaned up by later dedup / reconcile, while lost content is gone for good.
         """
         metas = new_memories_with_meta or []
         by_content = {
@@ -739,21 +739,21 @@ class MemoryReconciler:
         vector_store,  # VectorStoreBase
         embed_service,  # EmbedService
         layers=None,  # Optional[List[MemoryLayer]]
-        cache=None,  # Optional[CacheBase], 用于写 pipeline_logs
+        cache=None,  # Optional[CacheBase], used to write pipeline_logs
         request_id: str = "",
         current_time: str = "",
-        new_memories_with_meta: Optional[List[Dict]] = None,  # 含 tags 的完整 meta
-        session_id: str = "",  # 隔离维度，透传到 pipeline_logs
+        new_memories_with_meta: Optional[List[Dict]] = None,  # Full meta including tags
+        session_id: str = "",  # Isolation dimension, passed through to pipeline_logs
         graph_store=None,  # Optional GraphStore：Entity MENTIONS boost
         new_memory_embeddings: Optional[Dict[str, List[float]]] = None,
         source: str = "default",
     ) -> ReconcileResult:
         """
-        对 new_memories 做 reconcile。
+        Reconcile new_memories.
 
         Args:
-            new_memories: 新记忆内容列表（content only，用于 embed 搜索）
-            new_memories_with_meta: 可选，含 tags 的完整 meta
+            new_memories: list of new memory contents (content only, used for embed search)
+            new_memories_with_meta: optional, full meta including tags
         """
         if not new_memories:
             return ReconcileResult(ops=[], success=True)
@@ -767,7 +767,7 @@ class MemoryReconciler:
         try:
             import time as _time
 
-            # ── Step 1: Search Query 生成（可消融）──
+            # -- Step 1: Search query generation (ablatable) --
             search_queries: List[str] = []
             sq_response = None
             t_sq = _time.perf_counter()
@@ -778,12 +778,12 @@ class MemoryReconciler:
                 )
             sq_elapsed = (_time.perf_counter() - t_sq) * 1000
 
-            # token 累计：search-query 这次 LLM 调用的消耗（reconcile 调用稍后追加）
+            # Token accounting: consumption of this search-query LLM call (the reconcile call is added later)
             _tok_pt = sq_response.prompt_tokens if sq_response else 0
             _tok_ct = sq_response.completion_tokens if sq_response else 0
             _tok_total = sq_response.tokens_used if sq_response else 0
 
-            # 写 SEARCH_QUERY pipeline log
+            # Write the SEARCH_QUERY pipeline log
             if cache and request_id:
                 mem_lines = "\n".join(f"{i+1}. {m}" for i, m in enumerate(new_memories))
                 if self._enable_search_query:
@@ -819,7 +819,7 @@ class MemoryReconciler:
                 except Exception as e:
                     logger.warning(f"[reconciler] store SEARCH_QUERY log failed: {e}")
 
-            # ── Step 2: 候选搜索，合并候选池 ──
+            # -- Step 2: candidate search, merged into one candidate pool --
             candidate_map: Dict[str, MemoryNode] = {}
             candidate_scores: Dict[str, float] = {}
 
@@ -938,9 +938,9 @@ class MemoryReconciler:
             _candidate_search_ms = round(
                 (_time.perf_counter() - _t_candidate_search) * 1000, 2,
             )
-            # 关系图用：记下"每条新记忆的 hybrid 候选及其分数"。
-            # 这些分数本来算完就丢，写侧拿它建 semantic_neighbor 边是零额外计算的。
-            # 用 content 作 key —— 新记忆此刻还没入库，没有 node_id。
+            # For the relation graph: remember the hybrid candidates and their scores per new memory.
+            # These scores used to be thrown away after being computed; building semantic_neighbor edges from them is zero extra computation on the write side.
+            # Keyed by content -- the new memories are not persisted yet and have no node_id.
             per_memory_candidates: Dict[str, List[Tuple[str, float]]] = {}
 
             if isinstance(hybrid_result, Exception):
@@ -972,19 +972,19 @@ class MemoryReconciler:
                 f"{len(search_queries)} queries → {len(candidate_map)} raw candidates"
             )
 
-            # ── Step 2.5: 按演化链合并（复用 reader 侧 _trace_full_chain）──
-            # 召回池可能含 SUPERSEDED 旧节点（链身）。对每个候选节点双向追溯
-            # （supersedes / superseded_by）补全整条链，以链头（is_latest）为代表
-            # 去重：同一条链的多个命中（链头+链身）合并为一个候选，链头作代表，
-            # 链头分数取该链所有命中的最高分。
-            # 注：祖先节点仅用于去重/避免重复候选，**不进 prompt**（见 Step 4，
-            # supersede 时只暴露 head 的 id+content，history 不提供，防止 LLM 误操作）。
+            # -- Step 2.5: merge by evolution chain (reuses the reader-side _trace_full_chain) --
+            # The recall pool may contain SUPERSEDED old nodes (chain bodies). Every candidate node is traced in both
+            # directions (supersedes / superseded_by) to complete the whole chain, and the chain head (is_latest) represents it
+            # for deduplication: several hits on one chain (head + bodies) collapse into a single candidate, the head as representative,
+            # and the head score becomes the highest score among all hits on that chain.
+            # Note: ancestor nodes serve deduplication only and never enter the prompt (see Step 4:
+            # on supersede only the head id + content are exposed, history is omitted, so the LLM cannot act on the wrong node).
             from ..pipelines._retrieval.evolution import trace_full_chains
 
             chain_head_node: Dict[str, MemoryNode] = {}   # head_id → head node
-            chain_best_score: Dict[str, float] = {}       # head_id → 链上最高命中分
-            node_to_head: Dict[str, str] = {}             # 任一命中 node_id → 其链头 id
-            chain_members: Dict[str, List[str]] = {}      # head_id → 整条链 node_id（head+bodies）
+            chain_best_score: Dict[str, float] = {}       # head_id → highest hit score on the chain
+            node_to_head: Dict[str, str] = {}             # any hit node_id → its chain head id
+            chain_members: Dict[str, List[str]] = {}      # head_id → all node_ids of the chain (head + bodies)
 
             _t_chain_expand = _time.perf_counter()
             try:
@@ -996,13 +996,13 @@ class MemoryReconciler:
                 traced_chains = {}
             for nid, node in candidate_map.items():
                 if nid in node_to_head:
-                    continue  # 已被某条已展开的链覆盖
+                    continue  # Already covered by an expanded chain
                 chain = traced_chains.get(nid) or [node]
-                head = chain[0]  # _trace_full_chain 保证 [0] 为链头（is_latest 优先）
+                head = chain[0]  # _trace_full_chain guarantees [0] is the chain head (is_latest first)
                 head_id = head.node_id
                 chain_head_node.setdefault(head_id, head)
                 chain_members[head_id] = [cn.node_id for cn in chain]
-                # 该链上所有“恰好被召回”的节点，分数并入链头候选分
+                # Every node on this chain that happened to be recalled contributes its score to the head candidate score
                 for cn in chain:
                     node_to_head[cn.node_id] = head_id
                     if cn.node_id in candidate_scores:
@@ -1011,14 +1011,14 @@ class MemoryReconciler:
                             candidate_scores[cn.node_id],
                         )
 
-            # 按链头候选分排序，取 top（留足余量）
+            # Sort by chain-head candidate score and take the top entries (with generous headroom)
             sorted_chains = sorted(
                 chain_head_node.keys(),
                 key=lambda hid: chain_best_score.get(hid, 0.0),
                 reverse=True,
             )[: self.FINAL_TOPK * 2]
 
-            # 最终候选：以链头为代表（prompt 只展示 head）
+            # Final candidates: one chain head per chain (the prompt only shows the head)
             final_candidates: Dict[str, MemoryNode] = {}
             for head_id in sorted_chains:
                 final_candidates[head_id] = chain_head_node[head_id]
@@ -1033,13 +1033,13 @@ class MemoryReconciler:
                 f"(traced from {len(node_to_head)} recalled chain nodes)"
             )
 
-            # ── Step 2.7: 候选构成埋点 ──
-            # 候选检索已放宽到 user 维度（不再按 agent 收窄），候选池里会混入其他
-            # agent 的记忆。在 topk 不变的前提下，多 agent 用户的本 agent 候选
-            # 可能被挤出去（"稀释"）。这里把构成落进 pipeline log，上线后可直接
-            # 从日志确认稀释是否真的发生，而不必等业务反馈。
+            # -- Step 2.7: candidate composition instrumentation --
+            # Candidate retrieval is now user-scoped (no longer narrowed by agent), so the pool mixes in memories of other
+            # agents. With topk unchanged, this agent's candidates can be squeezed out ("dilution") for multi-agent users.
+            # The composition is therefore persisted to the pipeline log, so after release it can be read
+            # straight from the logs instead of waiting for business feedback.
             #
-            # 单 agent 用户 cross_agent_count 恒为 0 —— 放宽前后捞回的是同一批。
+            # For single-agent users cross_agent_count is always 0 -- the same set is retrieved before and after the widening.
             try:
                 _cand_own_agent = 0
                 _cand_cross_agent = 0
@@ -1067,7 +1067,7 @@ class MemoryReconciler:
                     "owner_agent_count": _cand_owner_agent,
                     "recalled_chain_nodes": len(node_to_head),
                     "final_topk": self.FINAL_TOPK * 2,
-                    # 候选池打满时才可能发生稀释；未打满说明没有竞争
+                    # Dilution can only occur once the candidate pool is saturated; not saturated means no contention
                     "topk_saturated": len(candidate_map) >= self.FINAL_TOPK * 2,
                     "scope": "user",
                     "new_memory_count": len(new_memories),
@@ -1102,14 +1102,14 @@ class MemoryReconciler:
             except Exception as e:
                 logger.debug(f"[reconciler] store RECONCILE_CANDIDATES log failed: {e}")
 
-            # ── Step 2.6: 候选去重（pre-search）──
-            # 候选都是链头（is_latest）。只对 L2_FACT + L4_IDENTITY（重复重灾区）
-            # 判重，其他层不参与（与 search 链路一致）。命中即置 SHADOW（逻辑删除，
-            # 被判重的链头连带其历史链），并从 candidate_map 移除，避免 LLM 看到
-            # 重复候选。
+            # -- Step 2.6: candidate deduplication (pre-search) --
+            # All candidates are chain heads (is_latest). Duplicates are only checked on L2_FACT + L4_IDENTITY (the repeat hotspots);
+            # other layers do not participate (consistent with the search pipeline). A hit is set to SHADOW (logical deletion,
+            # the duplicated chain head together with its history chain) and removed from candidate_map so the LLM never sees
+            # duplicate candidates.
             #
-            # 分批维度由 owner 决定（group_items_by_owner）：owner=user 的记忆属于
-            # 用户这一侧，跨 agent 合并判重；owner=agent 的按 agent 隔离。
+            # Batching is decided by owner (group_items_by_owner): owner=user memories belong to the user side and are
+            # deduplicated across agents, while owner=agent memories stay isolated per agent.
             try:
                 import time as _time
                 from ..pipelines._retrieval.dedup import (
@@ -1138,7 +1138,7 @@ class MemoryReconciler:
                         is_chain_head=True,
                         gmt_created=(node.gmt_created.timestamp() if node.gmt_created else None),
                         chain_node_ids=chain_members.get(hid, [hid]),
-                        # 分批维度：owner 决定跨不跨 agent
+                        # Batching dimension: owner decides whether agents are merged
                         owner=getattr(node, "owner", None),
                         user_id=getattr(node, "user_id", "") or user_id,
                         agent_id=getattr(node, "agent_id", "") or agent_id,
@@ -1146,7 +1146,7 @@ class MemoryReconciler:
                     ))
 
                 if len(dedup_items) >= 2:
-                    # 每批传各自准确的 user_id/agent_id，DEDUP log 归属才正确
+                    # Pass the exact user_id/agent_id of each batch so the DEDUP log attribution is correct
                     for _batch in group_items_by_owner(
                         dedup_items,
                         default_user_id=user_id,
@@ -1176,7 +1176,7 @@ class MemoryReconciler:
             except Exception as e:
                 logger.warning(f"[reconciler] candidate dedup failed: {e}")
 
-            # ── Step 3: 如果没有任何候选，全部 ADD（supersedes=[]）──
+            # -- Step 3: with no candidates at all, everything becomes ADD (supersedes=[]) --
             if not candidate_map:
                 logger.debug(
                     f"[reconciler] no candidates found, all ADD ({len(new_memories)} items)"
@@ -1253,12 +1253,12 @@ class MemoryReconciler:
                     new_memory_embeddings=new_memory_embeddings,
                 )
 
-            # ── Step 4: 构造 prompt ──
+            # -- Step 4: build the prompt --
             _structure_metadata_on = bool(getattr(
                 self.config.llm, "structure_metadata_enabled", False
             ))
 
-            # 收集该 user 下所有已有 tags（去重，供 LLM 复用，减少发散）
+            # Collect all existing tags of this user (deduplicated, so the LLM can reuse them instead of diverging)
             _existing_tags_set: set = set()
             try:
                 for node in candidate_map.values():
@@ -1280,7 +1280,7 @@ class MemoryReconciler:
                         return val
                 return None
 
-            # new_memories 展示（JSON list 格式，与 existing_memories 对齐）
+            # Rendering of new_memories (JSON list format, aligned with existing_memories)
             if new_memories_with_meta:
                 new_mem_list = []
                 for meta in new_memories_with_meta:
@@ -1326,14 +1326,14 @@ class MemoryReconciler:
                         item["event_facet"] = _custom["event_facet"]
                     if _custom.get("topic_assignments"):
                         item["topic_assignments"] = _custom["topic_assignments"]
-                # 每条演化链只暴露链头（head）的 memory_id + content，**不提供
-                # history_versions**：reconcile 只应针对当前有效版本（head）做
-                # ADD/UPDATE/SUPERSEDE，暴露历史旧节点会诱导 LLM 误操作（如去
-                # supersede 一个已经被取代的旧节点）。链的完整展开只发生在 reader 侧。
+                # Each evolution chain exposes only the head memory_id + content; history_versions are deliberately
+                # **omitted**: reconcile should only act on the currently valid version (head), and exposing
+                # ADD/UPDATE/SUPERSEDE; exposing historical old nodes invites wrong ops from the LLM (e.g. trying to
+                # supersede a node that has already been superseded). Full chain expansion only happens on the reader side.
                 existing_mem_list.append(item)
             existing_lines = json.dumps(existing_mem_list, ensure_ascii=False, indent=2)
 
-            # 构建 current_date（精确到分钟）
+            # Build current_date (minute precision)
             _current_date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
             prompt = build_reconcile_prompt(
@@ -1347,7 +1347,7 @@ class MemoryReconciler:
                 structure_metadata_enabled=_structure_metadata_on,
             )
 
-            # ── Step 5: LLM 调用 + 重试 ──
+            # -- Step 5: LLM call + retries --
             if _log_llm_content_enabled():
                 logger.debug(f"[reconciler] full prompt: {prompt!r}")
             else:
@@ -1355,8 +1355,8 @@ class MemoryReconciler:
                     "[reconciler] prompt hidden; len=%d sha256=%s",
                     len(prompt), _content_fingerprint(prompt),
                 )
-            # 动态估算 max_tokens
-            # 取基础值与动态值的较大者，并夹在上限以内。
+            # Estimate max_tokens dynamically
+            # Take the larger of the base and the dynamic value, clamped to the upper bound.
             dyn_max_tokens = min(
                 self.MAX_TOKENS_UPPER_BOUND,
                 max(
@@ -1370,11 +1370,11 @@ class MemoryReconciler:
             raw_response = ""
             ops = []
             _parse_ok = False
-            # JSON 解析失败只重试一次（首次 + 1 次重试 = 共 2 次）。
-            # 配合 _parse_ops 的 json_repair 兜底，多数残缺输出首次即可修复。
-            # 两次用同一温度（此前是 [base, base] 的列表，等价于常量），
-            # 且不再显式传 temperature —— 交给 provider 统一按配置解析，
-            # 否则 omit_temperature 会被这里的显式传参绕过。
+            # A JSON parse failure retries once (first attempt + 1 retry = 2 attempts in total).
+            # Combined with the json_repair fallback in _parse_ops, most truncated outputs are already fixed on the first attempt.
+            # Both attempts use the same temperature (it used to be a [base, base] list, i.e. a constant),
+            # and temperature is no longer passed explicitly -- the provider resolves it from config,
+            # otherwise omit_temperature would be bypassed by the explicit argument here.
             _MAX_PARSE_ATTEMPTS = 2
             _llm_error: Optional[str] = None
 
@@ -1385,13 +1385,13 @@ class MemoryReconciler:
                         max_tokens=dyn_max_tokens,
                     )
                 except Exception as e:
-                    # LLM 彻底不可用（provider 已按 max_retries 重试过，网关 500 /
-                    # 连接错误等）。**不能让它冒泡** —— 冒泡会让整批抽取结果连带丢弃。
-                    # 交给下面的 ADD-all 兜底。
+                    # The LLM is completely unavailable (the provider already retried per max_retries; gateway 500 /
+                    # connection errors and the like). It **must not bubble up** -- that would discard the whole extraction batch.
+                    # Leave it to the ADD-all fallback below.
                     _llm_error = f"{type(e).__name__}: {e}"
                     logger.warning(f"[reconciler] RECONCILE LLM unavailable: {_llm_error}")
                     break
-                # 每次 reconcile LLM 调用（含重试）都计入 token 消耗
+                # Every reconcile LLM call (retries included) counts toward token consumption
                 _tok_pt += response.prompt_tokens
                 _tok_ct += response.completion_tokens
                 _tok_total += response.tokens_used
@@ -1416,7 +1416,7 @@ class MemoryReconciler:
 
             recon_elapsed = (_time.perf_counter() - t_recon) * 1000
 
-            # ── Step 6: 解析仍失败 ──
+            # -- Step 6: parsing still failed --
             if not _parse_ok:
                 _n_attempts = _MAX_PARSE_ATTEMPTS
                 if _llm_error:
@@ -1455,8 +1455,8 @@ class MemoryReconciler:
                                 ensure_ascii=False,
                             ),
                             elapsed_ms=recon_elapsed,
-                            # LLM 彻底不可用时 response 是 None —— 这行本身会抛
-                            # AttributeError，而它正好在兜底路径上，会把兜底也一起废掉
+                            # When the LLM is unavailable response is None -- this very line would raise
+                            # AttributeError, and since it sits on the fallback path it would take the fallback down with it
                             prompt_tokens=getattr(response, "prompt_tokens", 0) or 0,
                             completion_tokens=getattr(response, "completion_tokens", 0) or 0,
                             total_tokens=getattr(response, "tokens_used", 0) or 0,
@@ -1466,7 +1466,7 @@ class MemoryReconciler:
                             f"[reconciler] store failed RECONCILE log failed: {e}"
                         )
 
-                # 兜底：JSON 解析不出来不等于抽取结果没价值 —— 全部 ADD，别丢内容。
+                # Fallback: unparseable JSON does not mean the extraction is worthless -- ADD everything, keep the content.
                 _fb = self._fallback_add_ops(new_memories, new_memories_with_meta)
                 logger.warning(
                     f"[reconciler] falling back to ADD-all: {len(_fb)} memories "
@@ -1484,7 +1484,7 @@ class MemoryReconciler:
                     new_memory_embeddings=new_memory_embeddings,
                 )
 
-            # 写 RECONCILE pipeline log
+            # Write the RECONCILE pipeline log
             if cache and request_id:
                 related_ids = []
                 for op in ops:
@@ -1546,8 +1546,8 @@ class MemoryReconciler:
 
         except Exception as e:
             logger.error(f"[reconciler] failed: {e}", exc_info=True)
-            # 兜底同样适用于「reconcile 链路任意环节炸了」（候选检索、embed、
-            # prompt 组装…）。此前这里返回 ops=[] → writer 直接丢弃整批抽取结果。
+            # The fallback also applies when any other stage of the reconcile pipeline blows up (candidate retrieval, embed,
+            # prompt assembly...). Previously this returned ops=[] and the writer discarded the entire extraction batch.
             _fb = self._fallback_add_ops(new_memories, new_memories_with_meta)
             if _fb:
                 logger.warning(
@@ -1608,11 +1608,11 @@ class MemoryReconciler:
 
     @staticmethod
     def _parse_related(raw: Any) -> List[Dict[str, str]]:
-        """解析 op 上的 `related` 字段（关系图用，见 docs/pro_graph_design.md）。
+        """Parse the `related` field of an op (relation graph, see docs/pro_graph_design.md).
 
-        接受 [{"memory_id": ..., "relation": ...}]，宽容地兼容 target_id / relation_type
-        两种键名。只接受白名单里的 relation_type —— 弱模型会自创关系词，放进去只会污染
-        边类型先验表。非法项静默丢弃（关系是附加信号，不该让它拖垮主流程）。
+        Accepts [{"memory_id": ..., "relation": ...}] and leniently tolerates the target_id / relation_type
+        spellings of those keys. Only whitelisted relation_type values are accepted -- weak models invent their own relation words, and putting them in would only pollute
+        the edge-type prior table. Invalid entries are dropped silently (relations are auxiliary signals and must not drag down the main flow).
         """
         from ..pipelines._graph.projector import LLM_RELATION_TYPES
 
@@ -1660,7 +1660,7 @@ class MemoryReconciler:
 
     @staticmethod
     def _strip_code_fence(text: str) -> str:
-        """剥掉 ```json ... ``` / ``` ... ``` markdown 围栏，返回内层内容。"""
+        """Strip the ```json ... ``` / ``` ... ``` markdown fences and return the inner content."""
         text = (text or "").strip()
         if "```json" in text:
             return text.split("```json")[1].split("```")[0].strip()
@@ -1670,13 +1670,13 @@ class MemoryReconciler:
 
     def _parse_ops(self, text: str) -> List[ReconcileOp]:
         """
-        解析 LLM 返回的 RECONCILE 输出。
+        Parse the RECONCILE output returned by the LLM.
 
-        支持格式：
-        - Flat list（推荐）：[{op, content, ...}, {op, content, ...}]
-        - Group 格式（向后兼容）：[{"reason": ..., "ops": [...]}]
+        Supported formats:
+        - Flat list (preferred): [{op, content, ...}, {op, content, ...}]
+        - Group format (backward compatible): [{"reason": ..., "ops": [...]}]
 
-        支持的 op 类型：ADD, SUPERSEDE, UPDATE
+        Supported op types: ADD, SUPERSEDE, UPDATE
         """
         text = self._strip_code_fence(text)
 
@@ -1691,7 +1691,7 @@ class MemoryReconciler:
                 except json.JSONDecodeError:
                     data = None
             if data is None:
-                # 兜底：json_repair 修复常见 LLM 残缺输出（缺逗号/引号/未闭合等）
+                # Fallback: json_repair repairs common truncated LLM output (missing commas/quotes, unclosed brackets, ...)
                 try:
                     from json_repair import repair_json
 
@@ -1708,18 +1708,18 @@ class MemoryReconciler:
         if not isinstance(data, list):
             data = [data]
 
-        # ── 展平：把 (op_dict, group_reason) 二元组放到 flat 列表里 ──
+        # -- Flatten: collect (op_dict, group_reason) pairs into a flat list --
         flat_items: List[tuple] = []  # (op_dict, group_reason)
         for entry in data:
             if not isinstance(entry, dict):
                 continue
-            # 分支 A：group 结构（向后兼容）— 带 reason + ops 子列表
+            # Branch A: group structure (backward compatible) - reason plus an ops sub-list
             if "ops" in entry and isinstance(entry.get("ops"), list):
                 group_reason = str(entry.get("reason") or "").strip()
                 for op_dict in entry["ops"]:
                     if isinstance(op_dict, dict):
                         flat_items.append((op_dict, group_reason))
-            # 分支 B：扁平 op 结构（推荐）
+            # Branch B: flat op structure (preferred)
             elif "op" in entry:
                 flat_items.append((entry, ""))
             else:
@@ -1727,18 +1727,18 @@ class MemoryReconciler:
                     f"[reconciler] unrecognized entry shape, skipped: {entry}"
                 )
 
-        # Pass 1: 结构解析
+        # Pass 1: structural parsing
         parsed: List[ReconcileOp] = []
         for op_dict, group_reason in flat_items:
             op_type = str(op_dict.get("op", "")).upper()
             op_reason = str(op_dict.get("reason") or "").strip() or group_reason
 
-            # 通用字段提取
+            # Common field extraction
             raw_tags = op_dict.get("tags", []) or []
             if not isinstance(raw_tags, list):
                 raw_tags = [raw_tags]
-            # 保留专名大小写（Jasper / Canada）；只做 strip，不再 lower。
-            # 主题词 LLM 仍可给小写；NER 属性写入 tag_ners。
+            # Keep proper-noun capitalization (Jasper / Canada); only strip, never lower.
+            # Topic words may still come back lowercase from the LLM; NER attributes go into tag_ners.
             tags = [str(t).strip() for t in raw_tags if t and str(t).strip()][:3]
             try:
                 from ..pipelines._retrieval.ner import annotate_tag_ners
@@ -1749,7 +1749,7 @@ class MemoryReconciler:
             if speculate and isinstance(speculate, str):
                 speculate = speculate.strip() or None
 
-            # owner：仅接受 user/agent（assistant→agent），否则 None
+            # owner: only user/agent accepted (assistant→agent), otherwise None
             _raw_owner = op_dict.get("owner")
             owner = None
             if _raw_owner:
@@ -1801,21 +1801,21 @@ class MemoryReconciler:
                 )
 
             elif op_type == "SUPERSEDE":
-                # 接受单 id（memory_id）或多 id 链（memory_ids，有序 旧→新）
+                # Accept a single id (memory_id) or a multi-id chain (memory_ids, ordered oldest→newest)
                 raw_ids = op_dict.get("memory_ids")
                 id_list: List[str] = []
                 if isinstance(raw_ids, list):
                     id_list = [str(x).strip() for x in raw_ids if x and str(x).strip()]
                 mid = str(op_dict.get("memory_id") or "").strip()
                 if mid and mid not in id_list:
-                    # memory_id 视为链上最新的目标，追加到末尾
+                    # memory_id counts as the newest target on the chain and is appended at the end
                     id_list.append(mid)
                 if not id_list:
                     logger.warning(
                         f"[reconciler] SUPERSEDE op missing memory_id(s), skipped: {op_dict}"
                     )
                     continue
-                # memory_id 始终指向链上最新的现有节点（新 head 直接 supersede 它）
+                # memory_id always points at the newest existing node on the chain (the new head supersedes it directly)
                 parsed.append(
                     ReconcileOp(
                         op="SUPERSEDE",
@@ -1872,7 +1872,7 @@ class MemoryReconciler:
                 )
 
             elif op_type == "DELETE":
-                # 向后兼容：旧 prompt 可能仍返回 DELETE，映射为 SHADOW 旧节点
+                # Backward compatibility: old prompts may still return DELETE, mapped to SHADOW for the old node
                 mid = str(op_dict.get("memory_id") or "").strip()
                 if not mid:
                     logger.warning(
@@ -1887,7 +1887,7 @@ class MemoryReconciler:
                     ReconcileOp(
                         op="UPDATE",
                         memory_id=mid,
-                        content=None,  # 标记为无 content 的 shadow-only op
+                        content=None,  # Marks a shadow-only op with no content
                         reason=op_reason,
                     )
                 )
@@ -1898,11 +1898,11 @@ class MemoryReconciler:
                 )
                 continue
 
-        # Pass 2: 校验"同一 existing memory 不得被多处 touch"
+        # Pass 2: verify that no existing memory is touched by more than one op
         touched: Dict[str, str] = {}  # memory_id → first-seen op description
         validated: List[ReconcileOp] = []
         for op in parsed:
-            # SUPERSEDE 多节点链：登记链上所有 id；UPDATE/单节点 SUPERSEDE 登记 memory_id
+            # SUPERSEDE multi-node chain: register every id on the chain; UPDATE and single-node SUPERSEDE register memory_id
             if op.op == "SUPERSEDE" and op.memory_ids:
                 target_ids = list(op.memory_ids)
             elif op.op in ("SUPERSEDE", "UPDATE"):

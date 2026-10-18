@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-HY Memory - Coding Memory 模块
+HY Memory - Coding Memory module
 
-为生产力 / 编码场景设计的独立记忆链路，双层结构：
-- 经验层 CodingMemory（procedural）：可复用的方法，怎么做
-- 事实层 WorkingFact（episodic）：一段 trace 的任务、做法与结果
-- 独立物理存储（SQLite meta + 两个独立 VDB collection）
-- 独立 extractor / 两个 reconciler / store
-- 与现有 chat 链路彻底分轨，chat 路径零回归
+An independent memory pipeline designed for productivity / coding scenarios, with a two-layer structure:
+- Experience layer CodingMemory (procedural): reusable methods, how something was done
+- Fact layer WorkingFact (episodic): the task, approach and outcome of one trace
+- Independent physical storage (SQLite meta + two separate VDB collections)
+- Independent extractor / two reconcilers / store
+- Fully separated from the existing chat pipeline, zero regressions on the chat path
 """
 
 from .types import (

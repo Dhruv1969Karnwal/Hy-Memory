@@ -1,11 +1,11 @@
 """
-Entity store 写入 helper（供 writer 落库时 + client 批量迁移共用）。
+Entity store write helper (shared by writer persistence and client batch migration).
 
-职责：给定一条 memory 的 (memory_id, content)，抽取 entity → embed → upsert
-到 vector_store 的 entity store（独立 {collection}_entities collection）。
+Responsibility: given a memory's (memory_id, content), extract entities → embed → upsert
+into the vector_store entity store (separate {collection}_entities collection).
 
-全部 best-effort：任何异常都吞掉并记 debug，绝不影响主写入/迁移流程。
-spaCy 不可用或抽不到 entity 时静默跳过（与 mem0 行为一致）。
+All best-effort: any exception is swallowed and logged at debug, never affecting the main write/migration flow.
+Silently skips when spaCy is unavailable or no entity is extracted (consistent with mem0 behavior).
 """
 
 from typing import Any
@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 单条 memory 最多刷入的 entity 数（对齐 mem0 query 侧上限）
+# Max entities flushed per memory (aligned with the mem0 query-side limit)
 MAX_ENTITIES_PER_MEMORY = 8
 
 
@@ -27,9 +27,9 @@ async def index_memory_entities(
     agent_id: str = "",
     merge_threshold: float = 0.95,
 ) -> int:
-    """对一条 memory 抽 entity 并刷入 entity store。返回写入/合并的 entity 数。
+    """Extract entities from one memory and flush them into the entity store. Returns the number of entities written/merged.
 
-    best-effort：失败返回 0，不抛异常。
+    best-effort: returns 0 on failure and never raises.
     """
     if not content or not memory_id or not user_id:
         return 0
@@ -75,7 +75,7 @@ async def index_memory_entities(
             )
             done += 1
         except NotImplementedError:
-            # 后端不支持 entity store（非 chroma）→ 整体跳过
+            # backend has no entity store support (non-chroma) → skip entirely
             logger.debug("[entity-index] backend has no entity store; skipping")
             return done
         except Exception as e:

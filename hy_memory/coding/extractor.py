@@ -2,16 +2,16 @@
 """
 Coding Memory - Extractor
 
-一次 LLM 调用，对同一段轨迹产出双层草稿：
+One LLM call produces the two-layer drafts for the same trace:
 
-- 经验层 experiences（有价值才抽）：task / search_keys / solution /
-  boundary_envs / confidence。价值门槛严格，rename a file 这种琐碎操作不该成
-  memory；只抽取未来可能复发的有价值问题。
-- 事实层 fact（模型可返回 0 或 1 条）：statement / files。statement 是这次会话的
-  小结——用户要做什么 / 大致怎么做的 / 结果如何。模型未产出时是否存原文 fallback
-  由 `MEMORY_CODING_VERBATIM_FALLBACK_ENABLED` 控制，默认关闭。
+- Experience layer (extracted only when valuable): task / search_keys / solution /
+  boundary_envs / confidence. The value bar is strict; trivial ops like rename a file should not become
+  memories; only valuable problems likely to recur in the future are extracted.
+- Fact layer (the model may return 0 or 1): statement / files. statement is the summary of this session --
+  what the user wanted / how it went roughly / the outcome. Whether a verbatim-text fallback is stored when the model produces nothing
+  is controlled by `MEMORY_CODING_VERBATIM_FALLBACK_ENABLED`; off by default.
 
-复用 LLMConfig.model（与 chat extractor 共用同一 LLM 配置）。
+Reuses LLMConfig.model (the same LLM config shared with the chat extractor).
 """
 
 import json
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_configured_temperature(llm_provider) -> Optional[float]:
-    """从 MemoryConfig.llm 解析温度；None = 请求里不带该参数。"""
+    """Resolve the temperature from MemoryConfig.llm; None = omit the parameter from the request."""
     config = getattr(llm_provider, "config", None)
     llm = getattr(config, "llm", None) if config is not None else None
     if llm is not None:
@@ -50,14 +50,14 @@ def _resolve_configured_temperature(llm_provider) -> Optional[float]:
     return float(temp) if temp is not None else None
 
 
-# subject 是等值比较的硬键，一句话说明抽取跑偏了，按"没抽到主体"处理。
+# subject is a hard key compared by equality; a whole sentence means extraction went off track -- treat it as "no subject extracted".
 _MAX_SUBJECT_CHARS = 80
-# details 存原文，要装得下一份完整计划表 / 配置块，但不能让单条事实吃掉整个提示词。
+# details stores raw text; it must fit a whole plan table / config block, but one fact must not eat the entire prompt.
 _MAX_DETAILS_CHARS = 4000
-# 兜底 statement 是检索向量，太长会被无关内容稀释；一两段用户原话足够。
-# 同一个理由也约束正常路径的长度：提示词把 statement 的软上限定在 1200 字符左右，
-# 靠"给定量写成数据而非对话原句"来达到，不靠砍覆盖 —— details 不进检索向量，
-# statement 是检索命中后最主要的可读字段。
+# The fallback statement is the retrieval vector; overlength gets diluted by irrelevant content. One or two paragraphs of the user's own words suffice.
+# The same reasoning bounds the normal path's length too: the prompt sets a soft statement cap around 1200 characters,
+# reached by "writing givens as data instead of dialogue sentences", not by cutting coverage -- details is not in the retrieval vector,
+# and statement is the main readable field once retrieval hits.
 _VERBATIM_STATEMENT_CHARS = 600
 
 
@@ -385,8 +385,8 @@ anything at all happen", and a segment reaching you has already cleared that.
 This includes segments that look like setup rather than work: a single
 user message stating requirements, parameters, or a starting state, with no
 tools run, is exactly the material a later session cannot reconstruct on its own
-— 把需求、参数、起始状态连同情形一起写进 `statement`（紧凑记法，不要照抄对话原句），
-不要推给 `details`（`details` 不进检索向量，读取侧也不再注入它）。Use
+— write the requirements, parameters, and starting state together with the situation into `statement` (compact notation, don't copy the dialogue verbatim),
+and don't push them to `details` (`details` is not in the retrieval vector, and the read side no longer injects it). Use
 "fact": null ONLY for greetings and pure chatter with no content whatsoever.
 When in doubt, write the fact: an unneeded record costs one row, while a dropped
 one costs every later session that needed it and has no way to know it existed.
@@ -394,32 +394,32 @@ one costs every later session that needed it and has no way to know it existed.
 
 
 # ================================================================
-# Prompt —— scene="coding"（软件工程场景）
+# Prompt -- scene="coding" (software engineering scene)
 # ================================================================
-# 与上面 EXTRACT_PROMPT(scene="working") 的关系: 同一个抽取器、同一套占位符
-# ({workspace_present}/{branch_present}/{conversation_block})、同一个输出 schema,
-# 只换规范。两份并存而不是改一份, 是因为两个场景对 statement 的要求不同,
-# 共用一份会让其中一个场景的规范被另一个稀释。
+# Relation to EXTRACT_PROMPT(scene="working") above: same extractor, same placeholder set
+# ({workspace_present}/{branch_present}/{conversation_block}), same output schema;
+# only the spec differs. Both files coexist instead of one edited, because the two scenes impose different
+# statement requirements, and sharing one file would let one scene's spec dilute the other's.
 #
-# 这份独有的三块(working 侧没有):
-#   1. HARD CONSTRAINT 头部 —— 前置覆盖后文任何"想要叙事"的措辞: 语法主语必须是
-#      CODE 或 DECISION 而非 "the user"; 不许以 "the session was completed" 收尾;
-#      必须保留具体症状(报错串/失败命令/错误输出), 那是未来检索的命中面。
-#   2. CODE WORK 整节 —— 四件未来 agent 无法从代码反推的东西: 分支名(逐字)、
-#      哪一版赢了(settled on A; interim B dropped)、精确坐标(仓相对路径+符号,
-#      不是贴代码)、verified 还是仅 written。它明确不要求更长, 要求同样预算花在
-#      更高价值的 token 上。
-#   3. statement 的三段式 —— OPEN 症状(用户会怎么报) → THEN 坐标+决策 →
-#      CLOSE 证据状态。硬顶 ~400 latin 字符。
+# The three blocks unique to this file (absent on the working side):
+#   1. HARD CONSTRAINT header -- placed up front to override any later wording that "wants a narrative": the grammatical subject must be
+#      CODE or DECISION, not "the user"; never close with "the session was completed";
+#      keep the concrete symptom (error string / failing command / wrong output): the surface future searches match on.
+#   2. The whole CODE WORK section -- four things a future agent cannot re-derive from code: the branch name (verbatim),
+#      which version won (settled on A; interim B dropped), exact coordinates (repo-relative path + symbol,
+#      not pasted code), and verified vs merely written. It asks not for length but for spending the same budget on
+#      higher-value tokens.
+#   3. The three-part statement -- OPEN with the symptom (how the user would report it) -> THEN coordinates + decision ->
+#      CLOSE with the evidence state. Hard ceiling ~400 latin characters.
 #
-# 这份少掉的(working 侧有、coding 侧刻意不带):
-#   · "问用户"排除段 —— 卡在向用户要参数时强制 experiences: []。coding 场景的
-#     轨迹是 agent 自主执行, 不存在这种停顿。
-#   · statement PART 2 的 TASK-SCOPED GIVENS 逐行记法 —— coding 侧的给定量是
-#     代码坐标, 已由 CODE WORK 节覆盖。
-#   · details 的产物复制规范 —— coding 侧 details 不进检索向量也不注入。
+# What this file drops (present on the working side, deliberately absent here):
+#   · The "ask the user" exclusion -- forcing experiences: [] when stalled asking the user for parameters. Coding-scene traces
+#     come from autonomous agent execution, where no such stall exists.
+#   · The TASK-SCOPED GIVENS per-line notation in statement PART 2 -- on the coding side the givens are
+#     code coordinates, already covered by the CODE WORK section.
+#   · The artifact-copy spec for details -- coding-side details are neither embedded nor injected.
 #
-# 修改 prompt 时应使用代表性 coding traces 做回归，确认坐标、决策与验证状态仍保留。
+# When editing the prompt, run regressions on representative coding traces to confirm coordinates, decisions, and verification states are still kept.
 
 EXTRACT_PROMPT_CODING = """\
 ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -773,13 +773,13 @@ output an empty "experiences" array.
 
 class CodingMemoryExtractor:
     """
-    LLM 驱动的双层抽取器。
+    LLM-driven two-layer extractor.
 
-    输入：本次完整 New Messages + 历史最近 K 个 user-turn；两部分的 LLM 视图均限长
-    输出：(List[CodingMemoryDraft], List[WorkingFactDraft])
+    Input: the full New Messages for this call + the most recent K user turns from history; the LLM view of both parts is length-limited
+    Output: (List[CodingMemoryDraft], List[WorkingFactDraft])
 
-    事实层一段轨迹只产一条，所以返回的 fact 列表长度恒为 0 或 1；用列表而不用
-    Optional 是为了让 writer / reconciler 的签名不必跟着改。
+    The fact layer yields at most one record per trace segment, so the returned fact list length is always 0 or 1; a list rather than
+    Optional keeps writer / reconciler signatures unchanged.
     """
 
     def __init__(
@@ -791,27 +791,27 @@ class CodingMemoryExtractor:
         scene: str = "working",
         verbatim_fallback_enabled: bool = False,
     ):
-        # scene 决定用哪份抽取规范。直接构造 extractor 时默认 working；client 的
-        # scene=None 自动路由会先经三分类 judge，再构造对应 variant。
-        #   "working" → EXTRACT_PROMPT        （办公 / 通用生产力）
-        #   "coding"  → EXTRACT_PROMPT_CODING （软件工程）
-        # 非法值不抛错、退回 working：抽取是一次性的，为一个拼错的参数让整段
-        # 写入失败不值得。
+        # scene decides which extraction spec to use. Direct construction defaults to working; the client's
+        # scene=None auto-routing runs the three-way judge first, then builds the matching variant.
+        #   "working" → EXTRACT_PROMPT        (office / general productivity)
+        #   "coding"  → EXTRACT_PROMPT_CODING (software engineering)
+        # Invalid values don't raise; they fall back to working: extraction is one-shot, and letting the whole
+        # write fail over one misspelled argument is not worth it.
         self.scene = "coding" if str(scene or "").strip().lower() == "coding" else "working"
         self._prompt_tmpl = (
             EXTRACT_PROMPT_CODING if self.scene == "coding" else EXTRACT_PROMPT
         )
         self.llm_provider = llm_provider
         self.max_tokens = max_tokens
-        # 默认关闭：原文兜底可能把 assistant/tool 轨迹直接写进 statement，随后被
-        # 搜索消费者当作记忆正文展示。需要旧行为时由 CodingConfig 显式开启。
+        # Off by default: the verbatim fallback may write assistant/tool traces straight into the statement,
+        # which search consumers would then display as the memory body. CodingConfig opts in explicitly when the old behavior is needed.
         self.verbatim_fallback_enabled = bool(verbatim_fallback_enabled)
-        # cache 非空时落 CODING_EXTRACT pipeline log（best-effort）
+        # When cache is present, persist a CODING_EXTRACT pipeline log (best-effort)
         self.cache = cache
-        # None → 使用 LLMConfig.temperature（避免硬编码触发 kimi/deepseek 的温度硬约束）
+        # None → use LLMConfig.temperature (avoids hardcoded values tripping kimi/deepseek temperature constraints)
         if temperature is None:
-            # None 一路传到 provider = 不带该参数；此前兜 0.1 会绕过用户配置，
-            # 在只接受特定 temperature 的网关上（Opus 5 只收 1 或不传）直接 400
+            # Passing None through to the provider omits the parameter; the previous 0.1 fallback bypassed user config and
+            # returned a hard 400 on gateways that only accept specific temperatures (Opus 5 accepts only 1 or omission)
             temperature = _resolve_configured_temperature(llm_provider)
         self.temperature = temperature
 
@@ -864,25 +864,25 @@ class CodingMemoryExtractor:
     ) -> Tuple[List[CodingMemoryDraft], List[WorkingFactDraft]]:
         """
         Args:
-            messages: 本次 write 的完整新消息；只做单条限长，不裁 turn
-            history_messages: 之前 write 的历史消息；仅取最近 5 个 user-turn 作消解上下文
-            user_id / agent_id / workspace_id / branch / session_id: SDK 注入
+            messages: the complete new messages of this write; per-message length limits only, no turn trimming
+            history_messages: history from previous writes; only the last 5 user turns as coreference context
+            user_id / agent_id / workspace_id / branch / session_id: injected by the SDK
 
         Returns:
-            (经验草稿, 事实草稿)。两层都可能为空。只有显式启用
-            verbatim_fallback_enabled 时，模型没产出 fact 才调用 _verbatim_fact。
+            (experience drafts, fact drafts). Either layer may be empty. Only when
+            verbatim_fallback_enabled is explicitly on does _verbatim_fact run for a missing fact.
         """
         if not messages:
             return [], []
 
-        # New Messages 是本次 write 的抽取主体：无论传入 1 个还是 10 个 user-turn，
-        # 都必须完整进入 prompt；这里只限制每条 tool / assistant 的体积。
+        # New Messages is the extraction subject of this write: whether 1 user-turn or 10 is passed in,
+        # it must enter the prompt complete; this only caps the size of each tool / assistant message.
         new_messages = prepare_extractor_messages(
             messages, tool_max_bytes=tool_result_max_bytes,
         )
 
-        # Last 5 User Turns 是之前 write 的历史，只用于指代消解和上下文。绝不能拿
-        # last-K 去裁本次输入，否则 write(10 turns) 会静默丢掉前 5 个 turn。
+        # Last 5 User Turns is history from previous writes, for coreference resolution and context only. Never use
+        # last-K to trim the current input, or write(10 turns) would silently drop the first 5 turns.
         history_window = keep_last_k_user_turns(
             prepare_extractor_messages(
                 history_messages or [], tool_max_bytes=tool_result_max_bytes,
@@ -895,10 +895,10 @@ class CodingMemoryExtractor:
         prompt_tmpl, prompt_language = self._select_prompt_template(new_messages)
         if prompt_language == "zh":
             conversation_block = (
-                "最近 5 个用户轮次（仅作上下文，不要重复抽取）：\n"
-                + (history_block or "（无）")
-                + "\n\n本次新增消息（只从这次完整写入中抽取）：\n"
-                + (new_block or "（无）")
+                "LAST 5 USER TURNS (context only; do not extract them again):\n"
+                + (history_block or "(none)")
+                + "\n\nNEW MESSAGES THIS TIME (extract only from this complete write):\n"
+                + (new_block or "(none)")
             )
         else:
             conversation_block = (
@@ -922,8 +922,8 @@ class CodingMemoryExtractor:
             )
         except Exception as e:
             logger.warning(f"[coding-extract] LLM call failed: {e}")
-            # 经验层不兜底。事实层原文兜底也默认关闭，避免 assistant/tool 轨迹被
-            # 当作 statement 直接展示；仅在配置显式开启时保留旧行为。
+            # No fallback for the experience layer. The fact-layer verbatim fallback is off by default too, to stop assistant/tool traces from being
+            # shown directly as the statement; the old behavior survives only when config explicitly enables it.
             verbatim = (
                 self._verbatim_fact(messages)
                 if self.verbatim_fallback_enabled else None
@@ -955,8 +955,8 @@ class CodingMemoryExtractor:
 
         raw_experiences, raw_facts = self._parse_output(resp.content)
 
-        # 经验层的 files 走规则抽取（整段轨迹碰过的文件）；事实层的 files 由 LLM
-        # 给，它挑的是"这次真正动过/查过的"，比规则抽取的全集更贴会话小结
+        # Experience files use rule extraction (files touched across the whole trace); fact files come from the
+        # LLM, which picks what was truly touched/inspected this time, matching the session summary better than the rule-extracted superset
         files = extract_files(messages)
 
         drafts: List[CodingMemoryDraft] = []
@@ -979,20 +979,20 @@ class CodingMemoryExtractor:
             if f is not None:
                 fact_drafts.append(f)
 
-        # details 不信 LLM 的抄写，改从未压缩的 messages 直接取。
+        # For details, don't trust the LLM's transcription; take it directly from the uncompressed messages.
         #
-        # 抽取提示词里的对话是窗口化、截断过的（见 preproc），长 assistant 文本的
-        # 中段在建 prompt 时已经不在了。让模型"逐字抄写"一段它看不到的原文，只能
-        # 抄出带省略标记的头尾。
+        # The conversation in the extraction prompt is windowed and truncated (see preproc); the middle of a long assistant
+        # text is already gone when the prompt is built. Asking the model to "copy verbatim" a source it cannot see
+        # can only produce a head and tail with ellipsis markers.
         #
-        # details 的意义是留住被摘要丢掉的可寻址产物（计划表、配置块等）。它不进
-        # 检索向量（见 store._upsert_fact_vec），长度不影响召回，没有理由再走一遍
-        # 有损通道——直接取原文，只受 details 自己的上限约束。
+        # details exists to keep the addressable artifacts a summary drops (plan tables, config blocks). It is not in the
+        # retrieval vector (see store._upsert_fact_vec) and its length does not affect recall, so there is no reason to route it through
+        # another lossy channel -- take the raw text, bounded only by details' own limit.
         #
-        # 注意：绕过一个有损环节不等于修好它。输入侧的截断阈值同样会影响 statement，
-        # 见 preproc.DEFAULT_ASSISTANT_HEAD_CHARS。
+        # Note: bypassing one lossy stage does not fix it. The input-side truncation thresholds affect statement too;
+        # see preproc.DEFAULT_ASSISTANT_HEAD_CHARS.
         #
-        # LLM 给的 details 仍然留着当兜底：messages 为空这种情况下它是唯一来源。
+        # The LLM's details stay as a fallback: when messages are empty it is the only source.
         verbatim_details = self._verbatim_details(messages)
         if verbatim_details:
             fact_drafts = [
@@ -1024,8 +1024,8 @@ class CodingMemoryExtractor:
             f"{' (verbatim fallback disabled)' if fact_source == 'verbatim_fallback_disabled' else ''}"
             f" (workspace={workspace_id!r}, branch={branch!r})"
         )
-        # CODING_EXTRACT：无论产出几条 draft（含 0 条）都落一条，便于排查"没抽到"。
-        # 双层架构下 parsed 同时记录经验草稿与事实草稿，方便追查两层各自产出。
+        # CODING_EXTRACT: log one record no matter how many drafts were produced (including 0), for debugging "nothing extracted".
+        # With the two-layer architecture, parsed records both experience and fact drafts, so each layer's output stays traceable.
         await _store_coding_log(
             self.cache, request_id=request_id, user_id=user_id, agent_id=agent_id,
             session_id=session_id or "", step="CODING_EXTRACT", prompt=prompt,
@@ -1051,14 +1051,14 @@ class CodingMemoryExtractor:
 
     @classmethod
     def _verbatim_details(cls, messages: List[ChatMessage]) -> str:
-        """整段轨迹的原文，作为 details 的权威来源。
+        """The raw text of the whole trace, the authoritative source for details.
 
-        取的是未经 keep_last_k_user_turns 压缩的 messages：details 存在的理由就是
-        留住摘要会丢掉的可寻址产物（第 N 天第 M 餐这种格子），而压缩正是丢它的那一步。
-        它不进检索向量（store._upsert_fact_vec 只 embed subject + statement），所以
-        长度只影响存储，不影响召回质量，唯一的上限是 _MAX_DETAILS_CHARS。
+        It reads messages un-compressed by keep_last_k_user_turns: details exists precisely to
+        keep the addressable artifacts a summary loses (the "day N, meal M" cells), and compression is the step that loses them.
+        It is not embedded into the retrieval vector (store._upsert_fact_vec embeds only subject + statement), so its
+        length affects storage only, never recall quality; the sole cap is _MAX_DETAILS_CHARS.
 
-        从尾部截断：头部是结构化产物的开头（Day 1、配置首行），信息密度最高。
+        Truncate from the tail: the head starts the structured artifact (Day 1, first config line) and carries the highest density.
         """
         if not messages:
             return ""
@@ -1073,16 +1073,16 @@ class CodingMemoryExtractor:
     def _verbatim_fact(
         cls, messages: List[ChatMessage]
     ) -> Optional[WorkingFactDraft]:
-        """LLM 没给 fact 时的兜底：把轨迹原文存成一条事实。
+        """Fallback when the LLM produced no fact: store the raw trace as one fact.
 
-        只在真的一个字都没有时返回 None（空消息、全空内容）。这是最后一道闸门，
-        判据必须是"有没有内容"，不能是"内容够不够好"——够不够好是上面那次 LLM
-        调用的判断，它已经判错过了，兜底再复读一遍同样的判断就没有意义。
+        It returns None only when there is literally not a single character (empty messages, all-empty content). This is the last gate;
+        the test must be "is there any content", never "is the content good enough" -- goodness was already judged by the LLM call
+        above, which misjudged once; making the fallback echo the same judgment adds nothing.
 
-        statement 用于检索，所以取用户说的话（用户的话就是未来查询的措辞，
-        assistant 的复述和工具输出不是）；details 放整段原文，供命中后读取。
-        subject 留空——主体只能靠语义判断，规则抽不出来，空串会让 reconciler 退回
-        改动前的纯语义判覆盖，而不是拿一个猜错的锚点去卡。
+        statement feeds retrieval, so it takes the user's own words (they are the phrasing future queries will use;
+        assistant restatements and tool output are not); details holds the full raw trace for reading after a hit.
+        subject stays empty -- identifying the subject is a semantic judgment rules cannot make; an empty string sends the reconciler back to
+        the pre-change pure-semantic overwrite decision, rather than gating on a misguessed anchor.
         """
         if not messages:
             return None
@@ -1098,7 +1098,7 @@ class CodingMemoryExtractor:
         if not details:
             return None
 
-        # 用户原话优先，一句都没有（纯工具回放）就退回整段轨迹的开头
+        # Prefer the user's own words; with not one sentence (pure tool replay), fall back to the start of the trace
         head = "\n".join(user_texts).strip() or details
         statement = head[:_VERBATIM_STATEMENT_CHARS]
         if len(head) > _VERBATIM_STATEMENT_CHARS:
@@ -1108,7 +1108,7 @@ class CodingMemoryExtractor:
 
     @staticmethod
     def _format_conversation(messages: List[ChatMessage]) -> str:
-        """渲染整段对话给 LLM 读。"""
+        """Render the whole conversation for the LLM to read."""
         rows: List[str] = []
         for i, m in enumerate(messages):
             if m.role == "user" and not m.is_tool_message():
@@ -1135,11 +1135,11 @@ class CodingMemoryExtractor:
     def _parse_output(
         cls, text: str
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """宽松解析 LLM 输出 JSON，返回 (experiences, facts) 两个原始列表。"""
+        """Leniently parse the LLM output JSON into the raw (experiences, facts) lists."""
         if not text:
             return [], []
         s = text.strip()
-        # 去 markdown fence
+        # Strip the markdown fence
         if s.startswith("```"):
             lines = s.split("\n")
             body, in_fence = [], False
@@ -1151,11 +1151,11 @@ class CodingMemoryExtractor:
             s = "\n".join(body).strip() or s
 
         obj = None
-        # 尝试纯 JSON
+        # Try plain JSON first
         try:
             obj = json.loads(s)
         except Exception:
-            # 找第一个 {...} 块
+            # Find the first {...} block
             start = s.find("{")
             end = s.rfind("}")
             if start != -1 and end > start:
@@ -1168,7 +1168,7 @@ class CodingMemoryExtractor:
             logger.warning(f"[coding-extract] failed to parse output: {text!r}")
             return [], []
 
-        # "memories" 是双层化之前的 key，老 prompt 缓存 / 旧模型可能还这么回
+        # "memories" is the pre-two-layer key; cached old prompts / old models may still return it
         experiences = cls._as_dict_list(obj.get("experiences"))
         if not experiences:
             experiences = cls._as_dict_list(obj.get("memories"))
@@ -1176,11 +1176,11 @@ class CodingMemoryExtractor:
 
     @classmethod
     def _as_fact_list(cls, obj: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """取出这一段的唯一事实，返回长度 0 或 1 的列表。
+        """Extract the segment's single fact, returning a list of length 0 or 1.
 
-        现契约是单个 "fact" 对象。"facts" 数组是一段轨迹多条事实那版的形状，老
-        模型和缓存住的老 prompt 还会这么回，所以继续认，但只留第一条——多出来的
-        本来就不该存在，丢掉比让它们各自成为一条会话记录更接近本意。
+        The current contract is one "fact" object. The "facts" array is the shape from the multi-fact-per-segment version;
+        old models and the old prompts cached in them still reply that way, so it stays accepted, but only the first entry is kept -- the extras
+        should never have existed, and dropping them is truer to the intent than letting each become its own session record.
         """
         fact = obj.get("fact")
         if isinstance(fact, dict):
@@ -1212,9 +1212,9 @@ class CodingMemoryExtractor:
         files: List[str],
     ) -> Optional[CodingMemoryDraft]:
         """
-        把 LLM 输出的单条 memory 字典规范化为 CodingMemoryDraft。
+        Normalize one memory dict from the LLM output into a CodingMemoryDraft.
 
-        返回 None 表示该条无效（缺 task 或 solution）。
+        Returning None marks the entry invalid (missing task or solution).
         """
         task = (raw.get("task") or "").strip()
         solution = (raw.get("solution") or "").strip()
@@ -1222,12 +1222,12 @@ class CodingMemoryExtractor:
             logger.debug(f"[coding-extract] drop draft missing task/solution: {raw}")
             return None
 
-        # search_keys 规范化
+        # Normalize search_keys
         sk_raw = raw.get("search_keys") or []
         if not isinstance(sk_raw, list):
             sk_raw = []
         search_keys = [str(s).strip() for s in sk_raw if str(s).strip()]
-        # 去重 + 与 task 同名的 key 去掉
+        # Deduplicate + drop keys identical to task
         seen = set()
         deduped = []
         for k in search_keys:
@@ -1237,9 +1237,9 @@ class CodingMemoryExtractor:
                 continue
             seen.add(k)
             deduped.append(k)
-        search_keys = deduped[:5]  # 软上限 5
+        search_keys = deduped[:5]  # Soft cap of 5
 
-        # confidence 规范化
+        # Normalize confidence
         try:
             confidence = float(raw.get("confidence", 0.7))
         except Exception:
@@ -1265,7 +1265,7 @@ class CodingMemoryExtractor:
 
     @staticmethod
     def _normalize_fact_draft(raw: Dict[str, Any]) -> Optional[WorkingFactDraft]:
-        """把 LLM 输出的单条 fact 规范化。返回 None 表示 statement 为空。"""
+        """Normalize one fact from the LLM output. Returns None when statement is empty."""
         statement = (raw.get("statement") or "").strip()
         if not statement:
             logger.debug(f"[coding-extract] drop fact missing statement: {raw}")
@@ -1282,8 +1282,8 @@ class CodingMemoryExtractor:
                 files.append(f)
 
         subject = " ".join(str(raw.get("subject") or "").split())
-        # subject 是硬键而不是散文，一句话说明整段跑偏了，宁可当"没定出主体"处理
-        # （退回纯语义判覆盖）也不要拿一句话去比对相等。
+        # subject is a hard key, not prose; a whole sentence means the segment went off track, so prefer treating it as "no subject"
+        # (fall back to pure-semantic overwrite decisions) over comparing a sentence for equality.
         if len(subject) > _MAX_SUBJECT_CHARS:
             logger.debug(
                 f"[coding-extract] subject too long, treated as absent: {subject!r}"
@@ -1292,7 +1292,7 @@ class CodingMemoryExtractor:
 
         details = str(raw.get("details") or "").strip()
         if len(details) > _MAX_DETAILS_CHARS:
-            # 从尾部截，头部是结构化产物的开头（Day 1、配置首行），信息密度最高
+            # Truncate from the tail; the head starts the structured artifact (Day 1, first config line), highest density
             details = details[:_MAX_DETAILS_CHARS] + "\n…(truncated)"
 
         return WorkingFactDraft(
@@ -1305,10 +1305,10 @@ class CodingMemoryExtractor:
 # ================================================================
 
 def _compact_args(args: Dict[str, Any], max_chars: int = 600) -> str:
-    """单行展示 tool args，并为关键命令参数保留足够证据窗口。
+    """Render tool args on one line while keeping an evidence window wide enough for key command arguments.
 
-    仍设上限，避免整段脚本/大 payload 撑爆 prompt；但 80 字符会在常见 PowerShell
-    命令的 ``-Depth`` / ``-ErrorAction`` 等参数前截断，与 fact 的证据忠实度契约冲突。
+    A cap remains so whole scripts / big payloads cannot blow up the prompt; but 80 characters would truncate
+    common PowerShell commands before parameters like ``-Depth`` / ``-ErrorAction``, breaking the fact's evidence-fidelity contract.
     """
     if not args:
         return ""

@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-HY Memory - Intention (L7) 召回 + 惰性过期转换 + 复本判定
+HY Memory - Intention (L7) recall + lazy expiry conversion + duplicate detection
 
-意图（L7_INTENTION）由 extractor（System 1）直接写入 VDB，带可选 `valid_until`
-截止日。reader 在 proactive 路调用本模块召回意图：
+Intentions (L7_INTENTION) are written straight into the VDB by the extractor (System 1) with an optional `valid_until`
+deadline. The reader calls this module on the proactive channel to recall them:
 
-  - 召回 status=ACTIVE 的 L7 节点（**超采样**，见下）；
-  - 对每条命中检查 `valid_until`：若已过期（now > valid_until），则**惰性**把该
-    节点的 layer 改写为 l2_fact（持久化 update_payload），并从意图结果里剔除——
-    过期意图变成普通历史事实，下次走 normal 召回；
-  - **判重（重点）**：对幸存意图按下述规则分组，同组只留一条本次返回：
-        同 user_id + 同一天 memory_at + valid_until 相同（都为 None 或都相等）
-        + cosine 相似度 ≥ MEMORY_DEDUP_THRESHOLD (默认 0.95)
-    → 视为同一个意图的复本（extractor 复读机 / 多 session 重复表达）。
-    保留组里 `gmt_created` 最早的（老的先来先得，稳定 id）；
-  - **异步删库**：其余复本 fire-and-forget 从 VDB 删除，不影响本次调用 RT。
+  - Recall L7 nodes with status=ACTIVE (**oversampled**, see below);
+  - Check `valid_until` on every hit: once expired (now > valid_until) the node's layer is **lazily** rewritten
+    to l2_fact (persisted through update_payload) and it is dropped from the intention results --
+    an expired intention becomes an ordinary historical fact and goes through normal recall next time;
+  - **Dedup (the key part)**: surviving intentions are grouped by the rule below, and only one per group is returned:
+        same user_id + same memory_at day + identical valid_until (both None or equal)
+        + cosine similarity >= MEMORY_DEDUP_THRESHOLD (default 0.95)
+    -> treated as duplicates of one intention (an echoing extractor / the same intention restated across sessions).
+    The member with the earliest `gmt_created` survives (first come first served, stable id);
+  - **Async delete**: the remaining duplicates are removed from the VDB fire-and-forget, without affecting this call's RT.
 
-Q: 为什么要看 memory_at 和 valid_until？
-A: 意图是 point-in-time 信号。同一句"我周五要开会"，如果一条 memory_at 在
-   本周一（valid_until=本周五）、另一条 memory_at 在下周一（valid_until=下
-   周五），指向的是**两次不同的会议**，绝不能合并。所以只看 cosine 会误伤。
+Q: Why look at memory_at and valid_until at all?
+A: An intention is a point-in-time signal. The same sentence "I have a meeting on Friday" can refer to
+   two distinct events: one with memory_at on this Monday (valid_until=this Friday) and another with
+   memory_at on next Monday (valid_until=next Friday), those are **two different meetings** that must never be merged; cosine alone would cause false merges.
 
-best-effort：过期转换 / dedup / 异步删除任何异常都不影响主 search 流程。
+Best-effort: any exception in expiry conversion / dedup / async deletion leaves the main search flow untouched.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_dedup_threshold() -> float:
-    """去重 cosine 阈值：沿用 dedup 内核的 MEMORY_DEDUP_THRESHOLD，默认 0.95。"""
+    """Dedup cosine threshold: reuses MEMORY_DEDUP_THRESHOLD from the dedup core, default 0.95."""
     try:
         return float(os.environ.get("MEMORY_DEDUP_THRESHOLD", 0.95))
     except (TypeError, ValueError):
@@ -47,13 +47,13 @@ def _get_dedup_threshold() -> float:
 
 
 def _memory_at_day(node: Any) -> Optional[date]:
-    """取 node.memory_at 的日期部分；None 返回 None。"""
+    """Date part of node.memory_at; returns None for None."""
     if node is None:
         return None
     ma = getattr(node, "memory_at", None)
     if ma is None:
         return None
-    # datetime 或 date 都兼容
+    # Both datetime and date are accepted
     try:
         return ma.date() if hasattr(ma, "date") else ma
     except Exception:
@@ -61,9 +61,9 @@ def _memory_at_day(node: Any) -> Optional[date]:
 
 
 def _valid_until_key(node: Any) -> Any:
-    """valid_until 归一化到"比较键"：datetime→date，None→None。
+    """Normalize valid_until into a "comparison key": datetime→date, None→None.
 
-    只要求日粒度一致（valid_until 本身在 writer 里被 pin 到当天日末，同天视为等）。
+    Only day-level agreement is required (the writer pins valid_until to the end of that day, so the same day counts as equal).
     """
     if node is None:
         return None
@@ -77,10 +77,10 @@ def _valid_until_key(node: Any) -> Any:
 
 
 def _cosine(a: List[float], b: List[float]) -> float:
-    """朴素 cosine（同事说"从 VDB 拿现成 embed，不重算"，这里只是对拿到的向量比一次）。
+    """Plain cosine (agreed: "take the ready-made embeddings from the VDB, do not recompute"; this just compares the vectors we received once).
 
-    重复调用量级：每次 search 内 fetch_limit ≤ 30，两两比较 O(n²) 也就 <500 次
-    浮点内积，无需 numpy。返回 [-1, 1]，向量为空返回 -inf 避免误判。
+    Call volume: fetch_limit <= 30 per search, so the O(n²) pairwise comparison stays under ~500 float
+    dot products and numpy is not needed. Returns [-1, 1], with -inf for empty vectors to avoid false matches.
     """
     if not a or not b:
         return float("-inf")
@@ -96,23 +96,23 @@ def _partition_duplicates(
     hits: List[Dict[str, Any]],
     threshold: float,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """把 hits 分成"保留列表"和"待删 node_id 列表"。
+    """Split hits into a "kept list" and a "node_ids to delete" list.
 
-    分组键：(memory_at.day, valid_until.day)；每组内两两比 cosine，
-    ≥ threshold 视为复本。复本组保留 gmt_created 最早的（gmt 缺失视为 +inf
-    最晚），其余进入 delete_ids。
+    Grouping key: (memory_at.day, valid_until.day); inside a group cosine is compared pairwise,
+    and pairs >= threshold are duplicates. A duplicate group keeps the earliest gmt_created (a missing
+    gmt counts as +inf, i.e. latest); the rest go into delete_ids.
 
     Args:
-        hits: recall + 未过期过滤后的 L7 命中
-        threshold: cosine 复本阈值
+        hits: L7 hits after recall and the not-expired filter
+        threshold: cosine duplicate threshold
 
     Returns:
-        (kept_hits, delete_ids) — kept_hits 保序（保留项按原顺序）
+        (kept_hits, delete_ids) -- kept_hits preserves the original order of the retained items
     """
     if len(hits) < 2:
         return list(hits), []
 
-    # 1. 按 (memory_at day, valid_until day) 分桶
+    # 1. Bucket by (memory_at day, valid_until day)
     buckets: Dict[Tuple[Any, Any], List[int]] = {}
     for idx, h in enumerate(hits):
         node = h.get("node")
@@ -131,7 +131,7 @@ def _partition_duplicates(
 
     dropped_idx: set = set()
 
-    # 2. 每桶内两两比 cosine → 并查集
+    # 2. Within each bucket compare cosine pairwise → union-find
     for key, idx_list in buckets.items():
         if len(idx_list) < 2:
             continue
@@ -149,7 +149,7 @@ def _partition_duplicates(
             if ra != rb:
                 parent[rb] = ra
 
-        # 提取 embedding
+        # Collect embeddings
         embs: Dict[int, List[float]] = {}
         for i in idx_list:
             node = hits[i].get("node")
@@ -157,7 +157,7 @@ def _partition_duplicates(
             if emb:
                 embs[i] = emb
 
-        # 两两比较
+        # Pairwise comparison
         candidates = [i for i in idx_list if i in embs]
         for a_pos in range(len(candidates)):
             for b_pos in range(a_pos + 1, len(candidates)):
@@ -165,15 +165,15 @@ def _partition_duplicates(
                 if _cosine(embs[ia], embs[ib]) >= threshold:
                     union(ia, ib)
 
-        # 3. 每个连通分量保留 gmt 最早的
+        # 3. Keep the earliest gmt in each connected component
         groups: Dict[int, List[int]] = {}
         for i in idx_list:
             groups.setdefault(find(i), []).append(i)
 
         for members in groups.values():
             if len(members) < 2:
-                continue  # 单点，非复本
-            # 保留 gmt 最早
+                continue  # single node, not a duplicate
+            # Keep the earliest gmt
             keeper = min(members, key=lambda i: _gmt(hits[i]))
             for i in members:
                 if i != keeper:
@@ -193,11 +193,11 @@ def _spawn_async_delete(
     *,
     user_id_for_log: str = "",
 ) -> None:
-    """fire-and-forget 从 VDB 删除复本，不影响主 search RT。
+    """Delete duplicates from the VDB fire-and-forget, without affecting main search RT.
 
-    - 用 asyncio.create_task 挂到当前 loop（recall 已经在 async 上下文）；
-    - 失败逐条 swallow，最后一条日志汇总；
-    - 若拿不到 loop（极少见），静默跳过。
+    - Attached to the current loop with asyncio.create_task (recall already runs in an async context);
+    - Per-item failures are swallowed, with one summary log line at the end;
+    - If no loop can be obtained (very rare), it silently skips.
     """
     if not delete_ids or vector_store is None:
         return
@@ -219,7 +219,7 @@ def _spawn_async_delete(
     try:
         asyncio.create_task(_run())
     except RuntimeError:
-        # 无 running loop：静默跳过（recall 本身在 async 环境，一般不会走到）
+        # No running loop: skip silently (recall itself runs in async, so this is normally unreachable)
         logger.debug("[intention] no running loop for async delete; skipped")
 
 
@@ -236,32 +236,32 @@ async def recall_intentions(
     exclude_sources: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    召回未过期的 L7_INTENTION 节点（VDB），惰性过期转 L2_FACT，判重并异步删复本。
+    Recall non-expired L7_INTENTION nodes (VDB), lazily convert expired ones to L2_FACT, dedup and delete duplicates asynchronously.
 
     Args:
-        vector_store: VectorStoreBase 实例
-        query_embedding: 查询向量
-        user_ids: 用户隔离（单/多用户）
-        agent_ids: 可选 agent 过滤
-        limit: 召回上限（返回给上游的条数）
-        now: 当前时间（默认 datetime.now()，测试可注入）
-        stats_out: 可选 dict，本函数把分段耗时与数量**原地回填**进去，供调用方落
-            READ_INTENTION pipeline log。传 None 则完全不统计（零开销）。
+        vector_store: VectorStoreBase instance
+        query_embedding: query vector
+        user_ids: user isolation (single or multiple users)
+        agent_ids: optional agent filter
+        limit: recall cap (how many rows are returned upstream)
+        now: current time (defaults to datetime.now(), injectable for tests)
+        stats_out: optional dict this function **fills in place** with per-stage timings and counts, so the caller
+            can persist the READ_INTENTION pipeline log. Passing None disables measurement entirely (zero overhead).
 
     Returns:
         [{"node_id", "score", "node", "layer": "l7_intention", "source": "vdb_intention"}, ...]
 
-    实现细节:
-      - **超采样**：VDB 侧多拿一些，扛住 L7 复读机；判重后截取 limit
-      - **判重规则**：同一天 memory_at + valid_until 同日 + cosine≥0.95。
-      - **异步删库**：待删复本 fire-and-forget 从 VDB 删，不影响返回 RT。
+    Implementation details:
+      - **Oversampling**: fetch more from the VDB to absorb echoing L7 writes; trimmed to limit after dedup
+      - **Dedup rule**: same memory_at day + same valid_until day + cosine>=0.95.
+      - **Async delete**: duplicates to remove are deleted from the VDB fire-and-forget, without affecting response RT.
 
-    埋点字段（回填进 stats_out）:
-      耗时(ms): vdb_search_ms / expire_ms / backfill_embed_ms / dedup_ms / total_ms
-      数量: fetched / expired / survivors / dedup_dropped / returned
-      配置: fetch_limit / out_limit / dedup_threshold
-      说明: expire_ms、backfill_embed_ms 只有真的发生了对应操作才非 0，
-            借此可判断慢在 VDB 检索、逐条过期转换、补拉向量还是判重计算。
+    Instrumentation fields (filled into stats_out):
+      Timings (ms): vdb_search_ms / expire_ms / backfill_embed_ms / dedup_ms / total_ms
+      Counts: fetched / expired / survivors / dedup_dropped / returned
+      Config: fetch_limit / out_limit / dedup_threshold
+      Notes: expire_ms and backfill_embed_ms are non-zero only when the corresponding work really happened,
+            which shows whether the slowness is in VDB search, per-node expiry conversion, embedding backfill or dedup compute.
     """
     if limit <= 0:
         return []
@@ -269,11 +269,11 @@ async def recall_intentions(
     _t_total = time.perf_counter()
 
     def _stat(**kv: Any) -> None:
-        """回填埋点字段；stats_out 为 None 时是 no-op。"""
+        """Fill instrumentation fields; a no-op when stats_out is None."""
         if stats_out is not None:
             stats_out.update(kv)
 
-    # 超采样：VDB 侧多拿一些，扛住 L7 复读机；判重后截取 limit
+    # Oversampling: fetch more from the VDB to absorb echoing L7 writes; trimmed to limit after dedup
     fetch_limit = max(limit * 6, limit + 15)
     _stat(fetch_limit=fetch_limit, out_limit=limit)
 
@@ -285,7 +285,7 @@ async def recall_intentions(
             agent_ids=agent_ids,
             layers=[MemoryLayer.L7_INTENTION],
             limit=fetch_limit,
-            score_threshold=0.0,  # intention 不设语义门槛
+            score_threshold=0.0,  # intentions set no semantic threshold
             status_filter=[MemoryStatus.ACTIVE],
             only_latest=True,
             include_sources=include_sources,
@@ -301,7 +301,7 @@ async def recall_intentions(
         return []
     _stat(vdb_search_ms=round((time.perf_counter() - _t) * 1000, 2), fetched=len(hits))
 
-    # 1. 惰性过期转换：valid_until 已过的 → 转 L2_FACT + 剔除
+    # 1. Lazy expiry conversion: past valid_until → convert to L2_FACT + drop from results
     _t = time.perf_counter()
     survivors: List[Dict[str, Any]] = []
     expired_count = 0
@@ -327,19 +327,19 @@ async def recall_intentions(
             "layer": MemoryLayer.L7_INTENTION.value,
             "retrieval_source": "vdb_intention",
         })
-    # 无过期节点时这段是纯内存循环、耗时≈0；非 0 即为逐条 update_payload 的开销
+    # With no expired node this is a pure in-memory loop costing ~0; any non-zero value is per-node update_payload overhead
     _stat(
         expire_ms=round((time.perf_counter() - _t) * 1000, 2),
         expired=expired_count,
         survivors=len(survivors),
     )
 
-    # 1.5. 关键补丁：不同 VDB 后端的 search() 是否携带 embedding 不一致
-    #    - Qdrant/Faiss 部分场景 hit 带 embedding
-    #    - Chroma search() 默认 include 不含 embeddings → node.embedding=None
-    # 若判重时拿不到 embedding，_partition_duplicates 会静默降级为"不去重"。
-    # 这里对缺失 embedding 的节点，用 get_embeddings 批量补拉（VDB 已有向量，
-    # 不重算 embed 服务）。失败 → 保持 None → dedup 自然降级，不影响主流程。
+    # 1.5. Key patch: backends disagree on whether search() returns embeddings
+    #    - Qdrant/Faiss return embeddings on hits in some situations
+    #    - Chroma search() does not include embeddings by default → node.embedding=None
+    # If no embedding is available at dedup time, _partition_duplicates silently degrades to "no dedup".
+    # Nodes missing an embedding are backfilled in bulk with get_embeddings (the vectors already live in the VDB,
+    # no embedding service recomputation). On failure they stay None → dedup degrades naturally, main flow unaffected.
     _t = time.perf_counter()
     _backfilled = 0
     _missing_cnt = 0
@@ -368,37 +368,37 @@ async def recall_intentions(
                     )
             except Exception as e:
                 logger.debug(f"[intention] get_embeddings failed (skip backfill): {e}")
-    # 只有真的补拉过才非 0；非 0 且很大 → get_embeddings 是瓶颈
+    # Non-zero only when a backfill really happened; a large value means get_embeddings is the bottleneck
     _stat(
         backfill_embed_ms=round((time.perf_counter() - _t) * 1000, 2),
         embed_missing=_missing_cnt,
         embed_backfilled=_backfilled,
     )
 
-    # 2. 判重：同 user + 同天 memory_at + valid_until 同日 + cosine≥threshold
+    # 2. Dedup: same user + same memory_at day + same valid_until day + cosine>=threshold
     _t = time.perf_counter()
     threshold = _get_dedup_threshold()
     try:
         kept, delete_ids = _partition_duplicates(survivors, threshold)
     except Exception as e:
-        # 任何 dedup 异常 → 降级为不去重（返回全部 survivors 截断 limit）
+        # Any dedup exception → degrade to no dedup (all survivors, truncated to limit)
         logger.warning(f"[intention] dedup partition failed, degrade to raw: {e}")
         kept, delete_ids = survivors, []
-    # 纯 CPU（cosine 两两比较）；survivors 多时可能显著
+    # Pure CPU (pairwise cosine); can become significant with many survivors
     _stat(
         dedup_ms=round((time.perf_counter() - _t) * 1000, 2),
         dedup_dropped=len(delete_ids),
         dedup_threshold=threshold,
     )
 
-    # 3. 截断到调用方要求的 limit
+    # 3. Truncate to the limit the caller asked for
     result = kept[:limit]
     _stat(
         returned=len(result),
         total_ms=round((time.perf_counter() - _t_total) * 1000, 2),
     )
 
-    # 4. 异步删库（fire-and-forget）
+    # 4. Async delete (fire-and-forget)
     if delete_ids:
         user_id_for_log = (user_ids[0] if user_ids else "") or ""
         _spawn_async_delete(vector_store, delete_ids, user_id_for_log=user_id_for_log)

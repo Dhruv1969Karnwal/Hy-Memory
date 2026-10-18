@@ -2,15 +2,15 @@
 """
 Coding Memory Reconciler
 
-输入：List[CodingMemoryDraft]（来自 extractor）
-输出：List[ReconcileOp] —— ADD / UPDATE / DELETE / SKIP，**ops 数可超过 drafts 数**
-        （DELETE 由 LLM 在 draft 与 candidate 关系中观察到"明确否定/作废"时附带产出）
+Input: List[CodingMemoryDraft] (from the extractor)
+Output: List[ReconcileOp] -- ADD / UPDATE / DELETE / SKIP, **the op count may exceed the draft count**
+        (DELETE is emitted as a side output when the LLM observes an "explicit negation/invalidation" between a draft and a candidate)
 
-执行端：reconcile() 调用 store 完成实际 ADD / UPDATE / DELETE 持久化操作。
+Executor: reconcile() calls the store to carry out the actual ADD / UPDATE / DELETE persistence.
 
-复用 LLMConfig.model（与 chat reconciler 共用）。
+Reuses LLMConfig.model (shared with the chat reconciler).
 
-对外 scene 与调用方式见 docs/scene_coding_usage.md。
+For the public scene and how to call it, see docs/scene_coding_usage.md.
 """
 
 import json
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_configured_temperature(llm_provider) -> Optional[float]:
-    """从 MemoryConfig.llm 解析温度；None = 请求里不带该参数。"""
+    """Resolve the temperature from MemoryConfig.llm; None = the parameter is omitted from the request."""
     config = getattr(llm_provider, "config", None)
     llm = getattr(config, "llm", None) if config is not None else None
     if llm is not None:
@@ -145,12 +145,12 @@ def build_experience_reconcile_prompt(
 
 class CodingMemoryReconciler:
     """
-    Reconcile + 持久化执行器。
+    Reconcile + persistence executor.
 
-    一次调用：
-      1. 为每个 draft 用 task embedding 检索 top-3 candidates
-      2. 单次 LLM 决策产出 ReconcileOp[]
-      3. 调 store 执行 ADD / UPDATE / DELETE
+    One call:
+      1. Retrieve the top-3 candidates for each draft by task embedding
+      2. Produce ReconcileOp[] from a single LLM decision
+      3. Call the store to execute ADD / UPDATE / DELETE
     """
 
     def __init__(
@@ -168,12 +168,12 @@ class CodingMemoryReconciler:
         self.embed_service = embed_service
         self.llm_provider = llm_provider
         self.max_tokens = max_tokens
-        # cache 非空时落 CODING_RECONCILE pipeline log（best-effort）
+        # When cache is set, persist a CODING_RECONCILE pipeline log (best-effort)
         self.cache = cache
-        # None → 复用 LLMConfig.temperature（避免硬编码触发 kimi/deepseek 的温度硬约束）
+        # None → reuse LLMConfig.temperature (avoids a hardcoded value tripping the kimi/deepseek temperature constraint)
         if temperature is None:
-            # None 一路传到 provider = 不带该参数；此前兜 0.1 会绕过用户配置，
-            # 在只接受特定 temperature 的网关上（Opus 5 只收 1 或不传）直接 400
+            # Passing None all the way to the provider = the parameter is omitted; the previous 0.1 fallback bypassed user config,
+            # and gateways that accept only specific temperatures (Opus 5 accepts 1 or nothing) would answer 400 directly
             temperature = _resolve_configured_temperature(llm_provider)
         self.temperature = temperature
         self.candidates_per_draft = candidates_per_draft
@@ -188,26 +188,26 @@ class CodingMemoryReconciler:
         session_id: str = "",
     ) -> List[ReconcileOp]:
         """
-        执行 reconcile + 持久化。返回执行的 ReconcileOp[]（含成功执行的 ADD/UPDATE/DELETE/SKIP）。
+        Run reconcile + persistence. Returns the executed ReconcileOp[] (the ADD/UPDATE/DELETE/SKIP ops that succeeded).
 
-        执行错误（如 LLM 失败）会 fail-safe 回退到对每个 draft 直接 ADD。
+        Execution errors (e.g. an LLM failure) fail safe to a plain ADD for every draft.
 
-        cache 非空时落 CODING_RECONCILE pipeline log——在 LLM 决策后、执行入库前打点，
-        这样即使 store 入库崩溃，reconcile 决策仍已可见（crash 不丢）。
+        When cache is set, a CODING_RECONCILE pipeline log is written after the LLM decision and before persistence,
+        so the reconcile decision is already visible even if the store insert crashes.
         """
         if not drafts:
             return []
 
-        # 从 draft 回填 trace 身份（writer 通常显式传，这里兜底）
+        # Backfill trace identity from the draft (the writer usually passes it explicitly; this is a fallback)
         if drafts:
             user_id = user_id or drafts[0].user_id
             agent_id = agent_id or drafts[0].agent_id
             session_id = session_id or (drafts[0].session_id or "")
 
-        # 1. 检索 candidates
+        # 1. Retrieve candidates
         candidates_per_draft: List[List[CodingMemory]] = await self._retrieve_candidates(drafts)
 
-        # 2. LLM 决策
+        # 2. LLM decision
         _t0 = time.perf_counter()
         _decide_prompt = ""
         _decide_raw = ""
@@ -222,12 +222,12 @@ class CodingMemoryReconciler:
             _decide_raw = f"[LLM error] {type(e).__name__}: {str(e)[:300]}"
 
         if not ops:
-            # LLM 输出无 ops，但有 drafts → fallback ADD-all
+            # LLM returned no ops although drafts exist → fallback ADD-all
             logger.info("[coding-reconcile] LLM returned no ops, fallback to ADD-all")
             ops = [ReconcileOp(action="ADD", draft_idx=i) for i in range(len(drafts))]
 
         _decide_elapsed = round((time.perf_counter() - _t0) * 1000, 2)
-        # CODING_RECONCILE：LLM 决策完成即打点（执行入库之前，crash 不丢）
+        # CODING_RECONCILE: logged as soon as the LLM decides (before persistence, so a crash loses nothing)
         await _store_coding_log(
             self.cache, request_id=request_id, user_id=user_id, agent_id=agent_id,
             session_id=session_id, step="CODING_RECONCILE",
@@ -239,7 +239,7 @@ class CodingMemoryReconciler:
             total_tokens=getattr(_decide_resp, "tokens_used", 0) if _decide_resp else 0,
         )
 
-        # 3. 校验 + 执行
+        # 3. Validate + execute
         executed = await self._execute(ops, drafts)
         logger.info(
             f"[coding-reconcile] drafts={len(drafts)} ops={len(executed)} "
@@ -249,26 +249,26 @@ class CodingMemoryReconciler:
         return executed
 
     # ------------------------------------------------------------
-    # 检索 candidates
+    # Retrieve candidates
     # ------------------------------------------------------------
 
     async def _retrieve_candidates(
         self, drafts: List[CodingMemoryDraft]
     ) -> List[List[CodingMemory]]:
-        """每个 draft 用 task + search_keys 多路 embedding 检索同 user 的 top-N candidates。
+        """For each draft, retrieve the top-N candidates of the same user via multi-path embedding over task + search_keys.
 
-        只用 task 检索时，若新 draft 的 task 措辞与旧记忆差异较大（同一件事换个
-        说法），会漏召回本应合并的候选。这里把 search_keys 一并作为检索入口，
-        多路召回后按 experience_id 去重（保留最高分），扩大候选覆盖面，降低漏判 ADD。
+        Retrieving by task alone misses candidates that should be merged when the new draft words the same task
+        differently (one thing, different wording). So search_keys are used as extra query entries, and the
+        multi-path results are deduplicated by experience_id (keeping the highest score) to widen coverage and reduce missed ADDs.
         """
         result: List[List[CodingMemory]] = []
         for d in drafts:
             try:
-                # task 为主入口，search_keys 为附加入口（去重、去空）
+                # task is the primary query entry, search_keys are extra entries (deduplicated, blanks dropped)
                 queries = [d.task] + [k for k in (d.search_keys or []) if k and k != d.task]
                 embs = await self.embed_service.embed_batch(queries)
 
-                # 多路检索 → 按 experience_id 聚合，保留最高分
+                # Multi-path retrieval → aggregate by experience_id, keeping the highest score
                 best: Dict[str, float] = {}
                 for emb in embs:
                     hits = await self.store.search_by_query_embedding(
@@ -284,7 +284,7 @@ class CodingMemoryReconciler:
                         sc = h.get("score", 0.0)
                         if eid not in best or sc > best[eid]:
                             best[eid] = sc
-                # 按分数排序取 top-N
+                # Sort by score and take the top-N
                 cand_ids = [eid for eid, _ in sorted(best.items(), key=lambda x: -x[1])][
                     : self.candidates_per_draft
                 ]
@@ -296,7 +296,7 @@ class CodingMemoryReconciler:
         return result
 
     # ------------------------------------------------------------
-    # LLM 决策
+    # LLM decision
     # ------------------------------------------------------------
 
     async def _llm_decide(
@@ -304,7 +304,7 @@ class CodingMemoryReconciler:
         drafts: List[CodingMemoryDraft],
         candidates_per_draft: List[List[CodingMemory]],
     ) -> Tuple[List[ReconcileOp], str, str, Any]:
-        """返回 (ops, prompt, raw_response, llm_resp)，供上层打 CODING_RECONCILE log。"""
+        """Return (ops, prompt, raw_response, llm_resp) so the caller can write the CODING_RECONCILE log."""
         prompt, _ = build_experience_reconcile_prompt(drafts, candidates_per_draft)
 
         resp = await self.llm_provider.complete(
@@ -351,11 +351,11 @@ class CodingMemoryReconciler:
 
     @staticmethod
     def _parse_ops(text: str) -> List[ReconcileOp]:
-        """宽松解析 ops 列表。"""
+        """Parse the ops list leniently."""
         if not text:
             return []
         s = text.strip()
-        # 去 markdown fence
+        # Strip the markdown fence
         if s.startswith("```"):
             lines = s.split("\n")
             body, in_fence = [], False
@@ -407,7 +407,7 @@ class CodingMemoryReconciler:
         return ops
 
     # ------------------------------------------------------------
-    # 执行
+    # Execution
     # ------------------------------------------------------------
 
     async def _execute(
@@ -416,16 +416,16 @@ class CodingMemoryReconciler:
         drafts: List[CodingMemoryDraft],
     ) -> List[ReconcileOp]:
         """
-        校验 + 执行 ops。返回成功执行的 ops（filter 掉无效 op）。
+        Validate + execute ops. Returns the ops that executed successfully (invalid ops are filtered out).
 
-        校验规则：
-        - ADD     需 draft_idx 合法
-        - UPDATE  需 draft_idx 合法 + target_experience_id 非空
-        - DELETE  需 target_experience_id 非空
-        - SKIP    不执行任何 store 操作
+        Validation rules:
+        - ADD     requires a valid draft_idx
+        - UPDATE  requires a valid draft_idx + a non-empty target_experience_id
+        - DELETE  requires a non-empty target_experience_id
+        - SKIP    performs no store operation
         """
         executed: List[ReconcileOp] = []
-        # 已被 UPDATE 占用的 draft_idx → 防止同 draft 被重复 ADD/UPDATE
+        # draft_idx values already consumed by UPDATE → prevents the same draft from being ADDed/UPDATEd twice
         consumed: set = set()
 
         for op in ops:
@@ -440,7 +440,7 @@ class CodingMemoryReconciler:
                 memory = self._draft_to_new_memory(d)
                 try:
                     await self.store.insert(memory)
-                    op.target_experience_id = memory.experience_id  # 回写 id 供 caller 读
+                    op.target_experience_id = memory.experience_id  # write the id back for the caller to read
                     executed.append(op)
                     consumed.add(op.draft_idx)
                 except Exception as e:
@@ -458,7 +458,7 @@ class CodingMemoryReconciler:
                     continue
                 d = drafts[op.draft_idx]
                 memory = self._draft_to_new_memory(d, experience_id=op.target_experience_id)
-                # UPDATE 覆盖正文不留痕，但事实链是元数据，得保下来（§4：UPDATE 取并集）
+                # UPDATE overwrites the body without keeping a trace, but the fact chain is metadata and must survive (§4: UPDATE takes the union)
                 prev = await self.store.get_by_id(
                     op.target_experience_id, user_id=d.user_id
                 )
@@ -475,7 +475,7 @@ class CodingMemoryReconciler:
                 if not op.target_experience_id:
                     logger.warning(f"[coding-reconcile] drop DELETE missing target: {op.to_dict()}")
                     continue
-                # DELETE 需要知道 user_id；通过 draft_idx（如有）或第一个 draft 推断
+                # DELETE needs to know the user_id; infer it from draft_idx (when present) or the first draft
                 user_id = self._infer_user_id(op, drafts)
                 if not user_id:
                     logger.warning(f"[coding-reconcile] drop DELETE no user_id context: {op.to_dict()}")
@@ -492,7 +492,7 @@ class CodingMemoryReconciler:
                     consumed.add(op.draft_idx)
                 executed.append(op)
 
-        # 兜底：每个 draft 至少要被处理一次
+        # Fallback: every draft must be handled least once
         for i in range(len(drafts)):
             if i in consumed:
                 continue
@@ -517,7 +517,7 @@ class CodingMemoryReconciler:
     ) -> Optional[str]:
         if op.draft_idx is not None and 0 <= op.draft_idx < len(drafts):
             return drafts[op.draft_idx].user_id
-        # 后备：用 drafts 里第一个非空 user_id（同一 reconcile 调用通常同 user）
+        # Fallback: use the first non-empty user_id in drafts (one reconcile call is usually one user)
         for d in drafts:
             if d.user_id:
                 return d.user_id

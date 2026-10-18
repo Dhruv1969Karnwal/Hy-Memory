@@ -2,18 +2,18 @@
 """
 Coding Memory - Scene Judge
 
-两个职责（同模块、共用 LLMConfig.model）：
+Two responsibilities (same module, sharing LLMConfig.model):
 
 1. classify_messages_scene(messages, llm)
-   写入端：基于 user query + tool 名称的简化视图，对整段 messages 做
-   chat / working / coding 三分类。不切 segment、不分 turn。
+   Write side: a chat / working / coding three-way classification of the whole
+   messages list, based on a simplified view of user queries + tool names. No segmentation, no turn splitting.
 
 2. classify_queries_scene(queries, llm)
-   搜索端：以 queries 中末尾为目标 query，前置 queries 作为上下文，判定具体 scene。
+   Search side: with the last query as the target and the earlier queries as context, decides the concrete scene.
 
-旧的 classify_*_is_coding API 保留兼容：working/coding 都返回 True。
+The legacy classify_*_is_coding API stays for compatibility: both working/coding return True.
 
-对外 scene 与自动路由语义见 docs/scene_coding_usage.md。
+See docs/scene_coding_usage.md for the public scene and auto-routing semantics.
 """
 
 import json
@@ -49,9 +49,9 @@ async def _store_coding_log(
     completion_tokens: int = 0,
     total_tokens: int = 0,
 ) -> None:
-    """coding 链路统一打点 helper：best-effort，失败只 warning，绝不影响主流程。
+    """Unified coding-pipeline logging helper: best-effort, warning-only on failure, never affecting the main flow.
 
-    cache 为 None（未注入）时直接跳过，coding 模块可独立使用/单测。
+    When cache is None (not injected) it skips outright, so the coding module works standalone / under unit tests.
     """
     if cache is None:
         return
@@ -77,11 +77,11 @@ async def _store_coding_log(
 def _resolve_llm_temperature(
     llm_provider: LLMProvider, default: Optional[float] = None,
 ) -> Optional[float]:
-    """解析温度；返回 None 表示**不传该参数**，由 provider 统一决定。
+    """Resolve the temperature; returning None means **do not send the parameter**, leaving the decision to the provider.
 
-    此前这里 fallback 到 0.1，会绕过用户配置（kimi 等平台对 temperature 有硬约束，
-    Opus 5 更是只接受 1 或不传）。现在配置要求省略时返回 None，一路传到 provider
-    就不会出现在请求里。
+    The old fallback to 0.1 here bypassed user config (kimi-class platforms impose hard temperature
+    constraints, and Opus 5 accepts only 1 or omission). Now a config that requires omitting returns None, so it
+    never appears in the request when propagated all the way to the provider.
     """
     config = getattr(llm_provider, "config", None)
     if config is not None:
@@ -100,7 +100,7 @@ def _resolve_llm_temperature(
 
 
 # ================================================================
-# 写入端：整段三分类
+# Write side: whole-segment three-way classification
 # ================================================================
 
 CLASSIFY_MESSAGES_PROMPT = """\
@@ -161,14 +161,14 @@ async def classify_messages_scene(
     session_id: str = "",
 ) -> str:
     """
-    对整段 messages 做 chat / working / coding 单一场景判定。
+    Decide the single chat / working / coding scene for the whole messages list.
 
-    复用 LLMConfig.model（不引入独立 classifier 配置）。
-    temperature=None 时使用 config.llm.temperature（与 MemAgent 路径一致），
-    避免硬编码 0.0 触发 kimi/deepseek 等模型的温度硬约束。
-    fail-safe：LLM 调用失败或解析失败，返回 "chat"。
+    Reuses LLMConfig.model (no separate classifier config introduced).
+    With temperature=None it uses config.llm.temperature (matching the MemAgent path)
+    to avoid a hardcoded 0.0 tripping kimi/deepseek temperature constraints.
+    fail-safe: an LLM or parse failure returns "chat".
 
-    cache 非空时落 CODING_JUDGE pipeline log（无论判 coding 还是 chat 都记录一条）。
+    With cache present, log a CODING_JUDGE pipeline entry (recorded whether the verdict is coding or chat).
     """
     if not messages:
         return "chat"
@@ -231,12 +231,12 @@ async def classify_messages_is_coding(
     llm_provider: LLMProvider,
     **kwargs: Any,
 ) -> bool:
-    """兼容旧 API：working/coding 都表示应走生产力记忆链路。"""
+    """Legacy API: both working and coding mean the productivity memory pipeline applies."""
     return (await classify_messages_scene(messages, llm_provider, **kwargs)) != "chat"
 
 
 # ================================================================
-# 搜索端：用 queries 上下文判类
+# Search side: classify using the query context
 # ================================================================
 
 CLASSIFY_QUERIES_PROMPT = """\
@@ -272,7 +272,7 @@ async def classify_queries_scene(
     max_tokens: int = 100,
     temperature: Optional[float] = None,
 ) -> str:
-    """对 queries 判定 chat / working / coding；失败时回退 chat。"""
+    """Classify the queries as chat / working / coding; fall back to chat on failure."""
     if not queries:
         return "chat"
 
@@ -310,11 +310,11 @@ async def classify_queries_is_coding(
     temperature: Optional[float] = None,
 ) -> bool:
     """
-    对一组 queries（末尾为目标）判类。
+    Classify a group of queries (the last one is the target).
 
-    单 query 输入也支持（前置上下文为空）。
-    temperature=None 时使用 config.llm.temperature。
-    fail-safe：LLM 调用失败或解析失败，返回 False（走现有 chat 召回）。
+    Single-query input is supported too (empty preceding context).
+    With temperature=None it uses config.llm.temperature.
+    fail-safe: an LLM or parse failure returns False (the existing chat recall path).
     """
     return (await classify_queries_scene(
         queries, llm_provider, max_tokens=max_tokens, temperature=temperature,
@@ -322,7 +322,7 @@ async def classify_queries_is_coding(
 
 
 # ================================================================
-# 搜索端：极简判类 + 改写（单次 LLM，搜索路径必须低时延）
+# Search side: minimal classify + rewrite (one LLM call; the search path must stay low-latency)
 # ================================================================
 
 CLASSIFY_AND_REWRITE_PROMPT = """\
@@ -352,19 +352,19 @@ async def classify_and_rewrite_queries(
     temperature: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    单次 LLM 调用同时做：
-    1) 判定 target query (queries[-1]) 是 chat / working / coding
-    2) 用前置 queries 上下文做改写（消除指代 / 补全省略），返回 rewrite_query
+    One LLM call that does both:
+    1) Classify the target query (queries[-1]) as chat / working / coding
+    2) Rewrite it with the earlier queries' context (resolve references / restore omissions), returning rewrite_query
 
-    输出格式刻意保持极简（避免 JSON 解析开销 + 让 LLM 输出短）：
-        第一行: chat / working / coding（兼容旧 0/1）
-        第二行: rewritten query
+    The output format is deliberately minimal (no JSON parse overhead, short LLM output):
+        Line 1: chat / working / coding (legacy 0/1 compatible)
+        Line 2: rewritten query
 
     Returns:
         {"scene": str, "is_coding": bool, "rewrite_query": str, "ok": bool}
-        失败时 scene=chat、ok=False，rewrite_query 等于 queries[-1]
+        On failure: scene=chat, ok=False, rewrite_query equals queries[-1]
 
-    fail-safe：LLM 失败 / 解析失败一律 ok=False（caller 应回退默认 chat 路径）。
+    fail-safe: LLM or parse failures always yield ok=False (the caller should fall back to the default chat path).
     """
     target = queries[-1] if queries else ""
     fallback = {"scene": "chat", "is_coding": False, "rewrite_query": target, "ok": False}
@@ -396,7 +396,7 @@ async def classify_and_rewrite_queries(
         logger.warning("[coding-judge] classify_and_rewrite empty content; falling back to chat")
         return fallback
 
-    # 去 markdown fence（保险）
+    # Strip the markdown fence (belt and braces)
     if text.startswith("```"):
         lines = text.split("\n")
         body = []
@@ -408,12 +408,12 @@ async def classify_and_rewrite_queries(
             body.append(line)
         text = "\n".join(body).strip() or text
 
-    # 拆解：第一行 = scene（兼容旧 0/1），剩下的 = rewrite
+    # Split: first line = scene (legacy 0/1 compatible), the rest = rewrite
     lines = text.split("\n", 1)
     head = lines[0].strip().rstrip(",.").rstrip("。，")
     rewrite = (lines[1].strip() if len(lines) > 1 else "").strip()
     if not rewrite:
-        rewrite = target  # 没改写就用原 target
+        rewrite = target  # no rewrite produced; keep the original target
 
     scene = _parse_scene_label(head)
     if scene is None:
@@ -431,15 +431,15 @@ async def classify_and_rewrite_queries(
 
 
 # ================================================================
-# 搜索端：合并分析（判类 + 改写 + 时间跨度），单次 LLM
+# Search side: combined analysis (classify + rewrite + time span), one LLM call
 #
-# 支持三种组合（由 caller 通过 want_classify / want_rewrite 控制）：
-#   - want_classify + want_rewrite : working memory + query rewrite 同开，一次 LLM
-#   - want_rewrite only            : 只 query rewrite（恒 chat / 不判类）
-#   - want_classify only 走旧的 classify_and_rewrite_queries / classify_queries_is_coding
+# Three combinations are supported (the caller picks via want_classify / want_rewrite):
+#   - want_classify + want_rewrite : working memory + query rewrite both on, one LLM call
+#   - want_rewrite only            : query rewrite only (always chat / no classification)
+#   - want_classify only   uses the legacy classify_and_rewrite_queries / classify_queries_is_coding
 #
-# 时间：LLM 只输出相对锚点（today / N days ago / an ISO date），由本函数结合
-# current_time 换算成 created_after（unix 秒，下界）。无上界。
+# Time: the LLM emits only relative anchors (today / N days ago / an ISO date); this function converts them with
+# current_time into created_after (unix seconds, lower bound). No upper bound.
 # ================================================================
 
 ANALYZE_QUERIES_PROMPT = """\
@@ -453,7 +453,7 @@ R) Rewrite the target into ONE short, clear, standalone query. Resolve pronouns 
    restore omitted context from earlier queries. Keep the same language. No time words
    in the rewrite (time goes in SINCE).
 S) SINCE: if the target refers to a time range (e.g. "yesterday", "last week",
-   "刚才", "上个月"), output the START date as YYYY-MM-DD. If none, output NONE.
+   "just now", "last month"), output the START date as YYYY-MM-DD. If none, output NONE.
 
 Output STRICTLY these lines, nothing else:
 {output_lines}
@@ -474,23 +474,23 @@ async def analyze_queries(
     temperature: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    单次 LLM：按需 (判类) + 改写 + 时间跨度。
+    One LLM call: (classify) + rewrite + time span, as requested.
 
     Args:
-        want_classify: 是否要 is_coding（working memory 开启时）
-        want_rewrite:  是否要 rewrite + timespan（query rewrite 开启时）
-        current_time:  系统当前时间（ISO），用于把相对时间换算成 created_after
+        want_classify: whether is_coding is wanted (when working memory is enabled)
+        want_rewrite:  whether rewrite + timespan are wanted (when query rewrite is enabled)
+        current_time:  current system time (ISO), used to convert relative times into created_after
 
     Returns:
         {
           "scene": str,               # chat / working / coding
-          "is_coding": bool,          # 兼容字段：scene != chat
-          "rewrite_query": str,       # 失败/未改写时 = queries[-1]
-          "created_after": float|None,# SINCE 换算的 unix 秒下界，无则 None
-          "since_raw": str,           # LLM 原始 SINCE（调试用）
+          "is_coding": bool,          # compatibility field: scene != chat
+          "rewrite_query": str,       # equals queries[-1] when failed / not rewritten
+          "created_after": float|None,# unix-seconds lower bound converted from SINCE, None if absent
+          "since_raw": str,           # raw SINCE from the LLM (debugging)
           "ok": bool,
         }
-    fail-safe：LLM / 解析失败 → ok=False，is_coding=False，rewrite=target，created_after=None
+    fail-safe: LLM / parse failure -> ok=False, is_coding=False, rewrite=target, created_after=None
     """
     target = queries[-1] if queries else ""
     fallback = {
@@ -498,7 +498,7 @@ async def analyze_queries(
         "created_after": None, "since_raw": "", "ok": False,
     }
     if not queries or not want_rewrite:
-        # 不需要 rewrite 就不该调这个函数；防御性返回 fallback
+        # without a rewrite need this function should not run; return the fallback defensively
         return fallback
 
     bounded_queries = _bounded_queries(queries)
@@ -549,7 +549,7 @@ async def analyze_queries(
     if not text:
         return fallback
 
-    # 去 markdown fence
+    # Strip the markdown fence
     if text.startswith("```"):
         body = [ln for ln in text.split("\n") if not ln.startswith("```")]
         text = "\n".join(body).strip() or text
@@ -571,7 +571,7 @@ async def analyze_queries(
         scene = parsed_scene
         idx = 1
 
-    # 找 SINCE 行；其余行拼成 rewrite
+    # Locate the SINCE line; join the remaining lines into rewrite
     since_raw = ""
     rewrite_lines: List[str] = []
     for ln in lines[idx:]:
@@ -595,14 +595,14 @@ async def analyze_queries(
 
 
 def _since_to_created_after(since_raw: str, current_time: str) -> Optional[float]:
-    """把 LLM 输出的 SINCE（YYYY-MM-DD 或 NONE）换算成 unix 秒下界。"""
+    """Convert the LLM's SINCE output (YYYY-MM-DD or NONE) into a unix-seconds lower bound."""
     if not since_raw:
         return None
     s = since_raw.strip().strip('"').strip("'").rstrip(".,。，")
     if not s or s.upper() in ("NONE", "N/A", "NULL", "-"):
         return None
     from datetime import datetime
-    # 只取前 10 个字符（YYYY-MM-DD），容忍 LLM 带时间
+    # Keep only the first 10 characters (YYYY-MM-DD), tolerating an LLM time suffix
     candidate = s[:10]
     for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
         try:
@@ -619,7 +619,7 @@ def _since_to_created_after(since_raw: str, current_time: str) -> Optional[float
 # ================================================================
 
 def _format_turns(summary: List[Dict[str, Any]]) -> str:
-    """渲染 turn 简化视图给 LLM 看。"""
+    """Render the simplified turn view for the LLM."""
     if not summary:
         return "(empty)"
     if len(summary) > _JUDGE_MAX_TURNS:
@@ -631,7 +631,7 @@ def _format_turns(summary: List[Dict[str, Any]]) -> str:
     rows = []
     for t in summary:
         user = t.get("user", "") or ""
-        # 单 turn 用户文本截到 200 字符
+        # Clamp each turn's user text to 200 characters
         if len(user) > 200:
             user = user[:200] + "..."
         tools = t.get("tools", []) or []
@@ -643,7 +643,7 @@ def _format_turns(summary: List[Dict[str, Any]]) -> str:
 
 
 def _bounded_queries(queries: List[str]) -> List[str]:
-    """给快速 search judge 的有界 query 视图；始终保留 target query。"""
+    """Bounded query view for the fast search judge; the target query is always kept."""
     bounded = [str(q)[:_JUDGE_MAX_QUERY_CHARS] for q in queries]
     if len(bounded) <= _JUDGE_MAX_QUERIES:
         return bounded
@@ -653,13 +653,13 @@ def _bounded_queries(queries: List[str]) -> List[str]:
 
 
 def _parse_scene_label(value: Any) -> Optional[str]:
-    """解析三分类标签，并兼容旧二分类的 0/1 与 true/false 输出。"""
+    """Parse the three-way label, also compatible with legacy binary 0/1 and true/false output."""
     raw = str(value or "").strip().strip('"').strip("'").lower()
     raw = raw.rstrip(",.，。")
     if raw in ("chat", "working", "coding"):
         return raw
     if raw in ("1", "true", "yes", "y") or raw.startswith("1 "):
-        # 旧协议只有 productivity/chat；productivity 对应历史默认 working variant。
+        # The old protocol had only productivity/chat; productivity maps to the default working variant.
         return "working"
     if raw in ("0", "false", "no", "n") or raw.startswith("0 "):
         return "chat"
@@ -667,7 +667,7 @@ def _parse_scene_label(value: Any) -> Optional[str]:
 
 
 def _parse_scene_json(text: str) -> Optional[Dict[str, Any]]:
-    """宽松解析 {scene: ...}，并兼容旧 {is_coding: bool}。"""
+    """Leniently parse {scene: ...}, also accepting the legacy {is_coding: bool}."""
     if not text:
         return None
     text = text.strip()
@@ -686,7 +686,7 @@ def _parse_scene_json(text: str) -> Optional[Dict[str, Any]]:
             except Exception:
                 obj = None
     if not isinstance(obj, dict):
-        # query 快速路径可能只回一个裸标签。
+        # The fast query path may return a bare label only.
         scene = _parse_scene_label(text.splitlines()[0] if text else "")
         return {"scene": scene} if scene else None
     scene = _parse_scene_label(obj.get("scene"))
@@ -699,8 +699,8 @@ def _parse_scene_json(text: str) -> Optional[Dict[str, Any]]:
 
 def _parse_is_coding_json(text: str) -> Optional[Dict[str, Any]]:
     """
-    宽松解析 LLM 输出。先试纯 JSON，再试在文本里找第一个 {...} 块。
-    返回 None 表示无法解析。
+    Leniently parse LLM output: try plain JSON first, then find the first {...} block in the text.
+    Returns None when unparseable.
     """
     if not text:
         return None
@@ -720,7 +720,7 @@ def _parse_is_coding_json(text: str) -> Optional[Dict[str, Any]]:
             except Exception:
                 obj = None
     if isinstance(obj, dict) and "is_coding" in obj:
-        # 保持旧 helper 的精确返回形状；新三分类逻辑走 _parse_scene_json。
+        # Keep the legacy helper's exact return shape; the new three-way logic uses _parse_scene_json.
         return obj
     parsed = _parse_scene_json(text)
     if parsed is None:

@@ -1,9 +1,9 @@
 """
-Agent Memory V2 - Cache 工厂
+Agent Memory V2 - Cache factory
 
-根据配置选择缓存后端:
-- sqlite (默认): 零依赖，单机开箱即用
-- mysql: 标准 MySQL 持久化，需安装 aiomysql 包
+Selects the cache backend from the configuration:
+- sqlite (default): zero dependencies, works out of the box on a single machine
+- mysql: standard MySQL persistence, requires the aiomysql package
 
 Usage:
     from hy_memory.data.cache import create_cache
@@ -22,20 +22,20 @@ _SUPPORTED_BACKENDS = ("sqlite", "mysql")
 
 def create_cache(config: MemoryConfig) -> CacheBase:
     """
-    根据配置创建缓存后端实例。
+    Create a cache backend instance from the configuration.
 
-    支持的后端:
-    - "sqlite": SqliteCache (默认，零依赖本地持久化)
-    - "mysql":  MysqlCache (标准 MySQL，需安装 aiomysql 包)
+    Supported backends:
+    - "sqlite": SqliteCache (default, zero-dependency local persistence)
+    - "mysql":  MysqlCache (standard MySQL, requires the aiomysql package)
 
     Args:
-        config: MemoryConfig 实例
+        config: MemoryConfig instance
 
     Returns:
-        CacheBase 子类实例
+        A CacheBase subclass instance
 
     Raises:
-        ValueError: backend 缺失或不在 sqlite/mysql 之内
+        ValueError: backend is missing or not one of sqlite/mysql
     """
     backend_raw = getattr(getattr(config, "cache", None), "backend", None)
     if not backend_raw or not str(backend_raw).strip():

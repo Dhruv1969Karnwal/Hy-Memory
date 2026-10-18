@@ -1,36 +1,36 @@
 """
-Agent Memory - RDB 关系数据库存储
+Agent Memory - RDB relational database storage
 
-【红色模块 - 待实现】
+[RED MODULE - not implemented yet]
 
-提供关系数据库的存储和查询能力。
+Provides storage and query capabilities for a relational database.
 
-功能（计划）：
-- 连接池管理
-- CRUD 操作
-- 事务支持
-- 迁移管理
+Features (planned):
+- Connection pool management
+- CRUD operations
+- Transaction support
+- Migration management
 
-用途（计划）：
-- 存储任务状态
-- 存储租户配置
-- 存储审计日志
+Intended use (planned):
+- Store task state
+- Store tenant configuration
+- Store audit logs
 
-支持的后端（计划）：
+Supported backends (planned):
 - MySQL
 - PostgreSQL
 - SQLite
 
-示例（计划）：
+Example (planned):
     rdb = RDB(config)
     
-    # 查询
+    # Query
     tasks = await rdb.query(
         "SELECT * FROM tasks WHERE status = ?",
         ["pending"]
     )
     
-    # 插入
+    # Insert
     await rdb.execute(
         "INSERT INTO tasks (id, type, status) VALUES (?, ?, ?)",
         ["task_123", "memory_add", "pending"]
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class RDBBackend(Enum):
-    """数据库后端"""
+    """Database backend"""
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
     SQLITE = "sqlite"
@@ -55,9 +55,9 @@ class RDBBackend(Enum):
 @dataclass
 class RDBConfig:
     """
-    RDB 配置
+    RDB configuration
     
-    TODO: 实现配置类
+    TODO: implement the configuration class
     """
     backend: RDBBackend = RDBBackend.SQLITE
     host: str = "localhost"
@@ -66,7 +66,7 @@ class RDBConfig:
     username: str = ""
     password: str = ""
     
-    # 连接池配置
+    # Connection pool configuration
     pool_size: int = 10
     max_overflow: int = 20
     pool_timeout: int = 30
@@ -74,35 +74,35 @@ class RDBConfig:
 
 class RDB:
     """
-    关系数据库存储
+    Relational database storage
     
-    TODO: 待实现
-    - 多后端支持（MySQL/PostgreSQL/SQLite）
-    - 连接池管理
-    - 异步查询
-    - 事务支持
-    - ORM 集成（可选）
+    TODO: to be implemented
+    - Multi-backend support (MySQL/PostgreSQL/SQLite)
+    - Connection pool management
+    - Asynchronous queries
+    - Transaction support
+    - ORM integration (optional)
     """
     
     def __init__(self, config: Optional[RDBConfig] = None):
-        """初始化 RDB"""
+        """Initialize the RDB"""
         self.config = config or RDBConfig()
         self._pool = None
         logger.info(f"RDB initialized (placeholder), backend={self.config.backend.value}")
     
     async def connect(self) -> None:
         """
-        建立数据库连接
+        Establish the database connection
         
-        TODO: 实现连接池初始化
+        TODO: implement connection pool initialization
         """
         raise NotImplementedError("RDB.connect is not implemented yet")
     
     async def close(self) -> None:
         """
-        关闭数据库连接
+        Close the database connection
         
-        TODO: 实现连接池关闭
+        TODO: implement connection pool shutdown
         """
         raise NotImplementedError("RDB.close is not implemented yet")
     
@@ -112,16 +112,16 @@ class RDB:
         params: List[Any] = None
     ) -> List[Dict[str, Any]]:
         """
-        执行查询
+        Execute a query
         
-        TODO: 实现 SQL 查询
+        TODO: implement SQL querying
         
         Args:
-            sql: SQL 语句
-            params: 参数列表
+            sql: SQL statement
+            params: list of parameters
         
         Returns:
-            结果列表
+            List of result rows
         """
         raise NotImplementedError("RDB.query is not implemented yet")
     
@@ -131,16 +131,16 @@ class RDB:
         params: List[Any] = None
     ) -> int:
         """
-        执行语句（INSERT/UPDATE/DELETE）
+        Execute a statement (INSERT/UPDATE/DELETE)
         
-        TODO: 实现 SQL 执行
+        TODO: implement SQL execution
         
         Args:
-            sql: SQL 语句
-            params: 参数列表
+            sql: SQL statement
+            params: list of parameters
         
         Returns:
-            受影响的行数
+            Number of affected rows
         """
         raise NotImplementedError("RDB.execute is not implemented yet")
     
@@ -150,24 +150,24 @@ class RDB:
         params_list: List[List[Any]]
     ) -> int:
         """
-        批量执行
+        Execute in batch
         
-        TODO: 实现批量执行
+        TODO: implement batch execution
         
         Args:
-            sql: SQL 语句
-            params_list: 参数列表的列表
+            sql: SQL statement
+            params_list: list of parameter lists
         
         Returns:
-            受影响的总行数
+            Total number of affected rows
         """
         raise NotImplementedError("RDB.execute_many is not implemented yet")
     
     async def transaction(self):
         """
-        事务上下文管理器
+        Transaction context manager
         
-        TODO: 实现事务支持
+        TODO: implement transaction support
         
         Usage:
             async with rdb.transaction():
@@ -182,12 +182,12 @@ class RDB:
         params: List[Any] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        获取单条记录
+        Fetch a single record
         
-        TODO: 实现单条查询
+        TODO: implement single-row queries
         """
         raise NotImplementedError("RDB.get_one is not implemented yet")
     
     def get_stats(self) -> Dict[str, Any]:
-        """获取连接池统计信息"""
+        """Get connection pool statistics"""
         raise NotImplementedError("RDB.get_stats is not implemented yet")

@@ -1,25 +1,25 @@
 """
-Agent Memory - MemAgent 智能体协调器
+Agent Memory - MemAgent coordinator
 
-统一入口，协调调度其他智能体（Extractor、Reflector）。
+Unified entry point that coordinates and schedules the other agents (Extractor, Reflector).
 
-功能：
-- 接收处理请求
-- 根据任务类型调度对应智能体
-- 聚合处理结果
-- 错误处理和降级
+Capabilities:
+- Receive processing requests
+- Dispatch the right agent per task type
+- Aggregate processing results
+- Error handling and degradation
 
-示例：
+Example:
     agent = MemAgent()
     
-    # 处理添加记忆请求
+    # Handle an add-memory request
     result = await agent.process_add(
-        content="用户说他喜欢川菜，尤其是麻婆豆腐",
+        content="The user said they like Sichuan food, especially mapo tofu",
         context={"uid": "user_456"}
     )
     
-    # 结果包含提取的信息
-    print(result.extracted_info)  # {"preferences": {"food": "川菜"}}
+    # The result carries the extracted information
+    print(result.extracted_info)  # {"preferences": {"food": "Sichuan food"}}
     print(result.suggested_layer)  # "profile"
 """
 
@@ -38,39 +38,39 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessMode(Enum):
-    """处理模式"""
-    FULL = "full"           # 完整处理（提取+摘要+反思）
-    EXTRACT_ONLY = "extract"  # 仅提取
-    SKIP = "skip"           # 跳过 Agent 处理
+    """Processing modes."""
+    FULL = "full"           # Full processing (extract + summary + reflect)
+    EXTRACT_ONLY = "extract"  # Extraction only
+    SKIP = "skip"           # Skip Agent processing
 
 
 @dataclass
 class AgentResult:
     """
-    智能体处理结果
+    Agent processing result
     """
     success: bool
     
-    # 提取结果
+    # Extraction results
     extracted_info: Dict[str, Any] = field(default_factory=dict)
     suggested_layer: Optional[str] = None
     
-    # 摘要结果
-    summary: Optional[str] = None  # LLM 原始摘要文本（已 strip），直接用于存储
+    # Summary results
+    summary: Optional[str] = None  # raw LLM summary text (already stripped), stored directly
     
-    # 反思结果
+    # Reflection results
     conflicts: List[Dict[str, Any]] = field(default_factory=list)
     should_merge: bool = False
     merge_target_id: Optional[str] = None
     
-    # 元信息
+    # Metadata
     processing_time_ms: float = 0
     tokens_used: int = 0
     error: Optional[str] = None
     error_code: Optional[str] = None        # "EMPTY_RESPONSE" / "JSON_PARSE_FAILED" / "LLM_ERROR"
-    extract_raw_response: Optional[str] = None  # LLM 原始返回（失败时保留）
+    extract_raw_response: Optional[str] = None  # raw LLM response (kept on failure)
 
-    # 细分统计（各步骤的 token 和耗时）
+    # Fine-grained stats (tokens and latency per step)
     extract_tokens_used: int = 0
     extract_prompt_tokens: int = 0
     extract_completion_tokens: int = 0
@@ -104,9 +104,9 @@ class AgentResult:
 
 class MemAgent:
     """
-    记忆智能体协调器
+    Memory agent coordinator
     
-    负责协调 Extractor、Reflector 完成记忆处理。
+    Coordinates the Extractor and Reflector to carry out memory processing.
     """
     
     def __init__(
@@ -115,16 +115,16 @@ class MemAgent:
         llm_provider: Optional[LLMProvider] = None,
     ):
         """
-        初始化 MemAgent
+        Initialize MemAgent
         
         Args:
-            config: 配置对象
-            llm_provider: LLM 提供器
+            config: the configuration object
+            llm_provider: the LLM provider
         """
         self.config = config or MemoryConfig.from_env()
         self.llm_provider = llm_provider or LLMProvider(self.config)
         
-        # 初始化子智能体（传入 llm_config 以支持各场景 max_tokens 配置）
+        # Initialize sub-agents (llm_config is passed in to support per-scene max_tokens settings)
         llm_config = self.config.llm
         self.extractor = Extractor(self.llm_provider, llm_config)
         self.reflector = Reflector(self.llm_provider, llm_config)
@@ -146,35 +146,35 @@ class MemAgent:
         basic_profile_fields: Optional[Dict[str, str]] = None,
     ) -> AgentResult:
         """
-        处理添加记忆请求
+        Handle an add-memory request
 
         Args:
-            content: 记忆内容
-            context: 上下文信息（uid, agent_id 等）
-            mode: 处理模式
-            existing_memories: 已有相似记忆（用于冲突检测）
-            memory_at: 记忆发生时间（用作 extract prompt 的 current_time 基准）
-            existing_tags: 可选，该用户已有的所有 tags（供 extractor 传给 LLM 优先复用）
-            tools:   **DEPRECATED** v0.1.5.13+ 不再透传到 LLM；保留参数仅向后兼容
-            tool_registry: **DEPRECATED** 同上
-            tool_context:  保留（未使用）
+            content: the memory content
+            context: context information (uid, agent_id, etc.)
+            mode: the processing mode
+            existing_memories: similar existing memories (for conflict detection)
+            memory_at: when the memory happened (the current_time baseline for the extract prompt)
+            existing_tags: optional, all tags the user already has (the extractor lets the LLM prefer reusing them)
+            tools:   **DEPRECATED** not forwarded to the LLM since v0.1.5.13+; kept only for backward compatibility
+            tool_registry: **DEPRECATED** same as above
+            tool_context:  kept (unused)
             basic_profile_fields:
-                {field_name: description} 字段表，由调用方从 MemoryConfig.basic_profile.fields
-                透传过来，extractor 会渲染到 prompt 中要求 LLM 在 JSON basic_info 字段返回。
+                {field_name: description} field table passed through by the caller from MemoryConfig.basic_profile.fields;
+                the extractor renders it into the prompt, asking the LLM to return it in the JSON basic_info field.
 
         Returns:
-            处理结果
+            the processing result
         """
         start_time = datetime.now()
         total_tokens = 0
 
-        # 确定 extract prompt 的时间基准：memory_at 优先，不传则为空字符串（prompt 中留空）
+        # Pick the time baseline for the extract prompt: memory_at first, otherwise an empty string (left blank in the prompt)
         current_time_str = memory_at.isoformat(timespec="seconds") if memory_at else ""
 
         try:
             result = AgentResult(success=True)
 
-            # 提取结构化信息；旧 rolling-summary 路径已移除。
+            # Extract structured information; the old rolling-summary path was removed.
             _do_extract = mode in (ProcessMode.FULL, ProcessMode.EXTRACT_ONLY)
 
             async def _run_extract():
@@ -193,7 +193,7 @@ class MemAgent:
 
             extract_result = await _run_extract() if _do_extract else None
 
-            # 处理 extract 结果
+            # Handle the extract result
             if _do_extract and extract_result:
                 _extract_elapsed = (datetime.now() - _t_parallel).total_seconds() * 1000
                 result.extracted_info = extract_result.info
@@ -204,9 +204,9 @@ class MemAgent:
                 result.extract_completion_tokens = extract_result.completion_tokens
                 result.extract_elapsed_ms = _extract_elapsed
                 result.extract_raw_response = extract_result.raw_response
-                result._extract_result = extract_result  # 保留完整结果供 trace 日志使用
+                result._extract_result = extract_result  # keep the full result for trace logging
 
-                # Extract 失败时提前返回
+                # Return early when extraction failed
                 if not extract_result.success:
                     result.success = False
                     result.error = extract_result.error
@@ -221,7 +221,7 @@ class MemAgent:
                     )
                     return result
 
-                # INFO: 提取结果摘要
+                # INFO: extraction result summary
                 info = extract_result.info or {}
                 identity = info.get("identity", []) or []
                 facts = info.get("facts", []) or []
@@ -236,7 +236,7 @@ class MemAgent:
                 )
                 logger.info(f"MemAgent: extracted_info={extract_result.info}")
 
-            # 3. 冲突检测（如果有已有记忆）
+            # 3. Conflict detection (if existing memories are present)
             if mode == ProcessMode.FULL and existing_memories:
                 reflect_result = await self.reflector.check_conflicts(
                     content,
@@ -253,7 +253,7 @@ class MemAgent:
                     f"should_merge={reflect_result.should_merge}"
                 )
             
-            # 计算处理时间
+            # Compute processing time
             result.processing_time_ms = (
                 datetime.now() - start_time
             ).total_seconds() * 1000
@@ -278,32 +278,32 @@ class MemAgent:
         context: Dict[str, Any],
     ) -> AgentResult:
         """
-        处理召回请求（可选的后处理）
+        Handle a recall request (optional post-processing)
         
-        可以对召回结果进行：
-        - 重排序
-        - 摘要生成
-        - 答案生成
+        Post-processing can:
+        - reorder results
+        - generate a summary
+        - generate an answer
         
         Args:
-            query: 查询内容
-            memories: 召回的记忆列表
-            context: 上下文信息
+            query: the query text
+            memories: the recalled memory list
+            context: context information
         
         Returns:
-            处理结果
+            the processing result
         """
         start_time = datetime.now()
         
         try:
-            # 生成综合摘要
+            # Build the combined summary
             combined_content = "\n".join([m.get("content", "") for m in memories])
             
             if combined_content:
                 abstract_result = await self.abstractor.abstract(
                     combined_content,
                     context,
-                    focus=query  # 聚焦于查询内容
+                    focus=query  # focus on the query content
                 )
                 
                 return AgentResult(
@@ -326,7 +326,7 @@ class MemAgent:
             )
     
     def get_stats(self) -> Dict[str, Any]:
-        """获取智能体统计信息"""
+        """Return agent statistics."""
         return {
             "extractor": self.extractor.get_stats(),
             "reflector": self.reflector.get_stats(),

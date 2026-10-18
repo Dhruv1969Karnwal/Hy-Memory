@@ -1,15 +1,15 @@
 """
-Agent Memory V2 - Reflector 反思智能体 (增强版)
+Agent Memory V2 - Reflector agent (enhanced edition)
 
-V2 设计文档:
+V2 design document:
 
-  反思智能体负责:
-  1. UpdateType 分类: 判断新信息与已有信息的关系 (OVERRIDE/SUPPLEMENT/TEMPORAL/NEGATE/CONFLICT)
-  2. 冲突检测:       识别矛盾、时间变化、粒度不匹配等冲突类型
-  3. 隐式推断:       从行为/态度/选择信号中推断用户属性
+  The reflector agent is responsible for:
+  1. UpdateType classification: how the new information relates to what is already known (OVERRIDE/SUPPLEMENT/TEMPORAL/NEGATE/CONFLICT)
+  2. Conflict detection:       identify contradiction, temporal change, granularity mismatch and other conflict types
+  3. Implicit inference:       infer user attributes from behaviour/attitude/choice signals
 
-  保留 V1 接口 (check_conflicts, suggest_merge)
-  新增 V2 接口 (classify_update_type, detect_conflicts_v2, extract_implicit_signals)
+  V1 interfaces retained (check_conflicts, suggest_merge)
+  New V2 interfaces (classify_update_type, detect_conflicts_v2, extract_implicit_signals)
 """
 
 from typing import Dict, Any, Optional, List
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 # ================================================================
-# 枚举与数据结构
+# Enums and data structures
 # ================================================================
 
 class ConflictType(Enum):
-    """冲突类型 (V1 兼容)"""
+    """Conflict types (V1 compatible)"""
     CONTRADICTION = "contradiction"
     UPDATE = "update"
     DUPLICATE = "duplicate"
@@ -38,7 +38,7 @@ class ConflictType(Enum):
 
 
 class ConflictAction(Enum):
-    """冲突处理建议 (V1 兼容)"""
+    """Conflict handling suggestions (V1 compatible)"""
     KEEP_NEW = "keep_new"
     KEEP_OLD = "keep_old"
     MERGE = "merge"
@@ -46,7 +46,7 @@ class ConflictAction(Enum):
 
 
 class V2ConflictType(str, Enum):
-    """V2 冲突类型"""
+    """V2 conflict types"""
     TEMPORAL_CHANGE = "temporal_change"
     CONTEXT_DEPENDENT = "context_dependent"
     CONTRADICTION = "contradiction"
@@ -55,7 +55,7 @@ class V2ConflictType(str, Enum):
 
 @dataclass
 class ReflectResult:
-    """反思结果 (V1 兼容)"""
+    """Reflection result (V1 compatible)"""
     success: bool
     conflicts: List[Dict[str, Any]] = field(default_factory=list)
     should_merge: bool = False
@@ -67,7 +67,7 @@ class ReflectResult:
 
 @dataclass
 class UpdateTypeResult:
-    """UpdateType 分类结果 (V2)"""
+    """UpdateType classification result (V2)"""
     success: bool
     update_type: str = ""  # OVERRIDE/SUPPLEMENT/TEMPORAL/NEGATE/CONFLICT
     target_fact_id: Optional[str] = None
@@ -80,7 +80,7 @@ class UpdateTypeResult:
 
 @dataclass
 class ConflictDetectionResult:
-    """冲突检测结果 (V2)"""
+    """Conflict detection result (V2)"""
     success: bool
     conflicts: List[Dict[str, Any]] = field(default_factory=list)
     tokens_used: int = 0
@@ -89,7 +89,7 @@ class ConflictDetectionResult:
 
 @dataclass
 class ImplicitSignal:
-    """隐式信号"""
+    """Implicit signal"""
     signal_type: str = ""   # behavior / attitude / choice
     content: str = ""
     possible_traits: List[str] = field(default_factory=list)
@@ -98,7 +98,7 @@ class ImplicitSignal:
 
 @dataclass
 class ImplicitInferenceResult:
-    """隐式推断结果 (V2)"""
+    """Implicit inference result (V2)"""
     success: bool
     signals: List[ImplicitSignal] = field(default_factory=list)
     tokens_used: int = 0
@@ -106,126 +106,126 @@ class ImplicitInferenceResult:
 
 
 # ================================================================
-# Prompt 模板
+# Prompt templates
 # ================================================================
 
-UPDATE_TYPE_PROMPT = """分析新信息与已有信息的关系，判断更新类型。
+UPDATE_TYPE_PROMPT = """Analyze how the new information relates to the existing information and determine the update type.
 
-新信息:
+New information:
 {new_fact}
 
-已有的相关信息:
+Related information already known:
 {existing_facts}
 
-判断更新类型:
-- OVERRIDE: 明确替代（年龄变化、搬家、换工作）
-- SUPPLEMENT: 补充（新增爱好、新的经历）
-- TEMPORAL: 临时性变化（"今天想吃..."、"最近在..."）
-- NEGATE: 否定旧信息（"不再喜欢..."、"已经离开..."）
-- CONFLICT: 无法判断的矛盾（需要人工/LLM进一步确认）
+Determine the update type:
+- OVERRIDE: explicit replacement (age change, moved house, changed job)
+- SUPPLEMENT: supplement (a new hobby, a new experience)
+- TEMPORAL: temporary change ("today I feel like eating ...", "lately I have been ...")
+- NEGATE: negation of the old information ("no longer likes ...", "has already left ...")
+- CONFLICT: a contradiction that cannot be decided (needs human/LLM follow-up confirmation)
 
-输出JSON:
+Output JSON:
 {{
-  "update_type": "类型",
-  "target_fact_id": "被影响的旧信息ID(如有,否则null)",
+  "update_type": "type",
+  "target_fact_id": "id of the affected old information (or null)",
   "confidence": 0.0-1.0,
-  "reasoning": "判断理由",
-  "temporal_scope": "TEMPORAL时的有效范围(如有,否则null)"
+  "reasoning": "reason for the decision",
+  "temporal_scope": "valid range when TEMPORAL (or null)"
 }}"""
 
-CONFLICT_DETECT_PROMPT = """检测以下新信息与已有记忆之间的冲突。
+CONFLICT_DETECT_PROMPT = """Detect conflicts between the new information below and the existing memories.
 
-新信息:
+New information:
 {new_content}
 
-已有记忆:
+Existing memories:
 {existing_memories}
 
-冲突类型说明:
-- TEMPORAL_CHANGE: 用户状态随时间真实变化 (搬家、换工作)
-- CONTEXT_DEPENDENT: 不同场景下的不同表现 (工作时严肃，朋友间活泼)
-- CONTRADICTION: 逻辑矛盾 (同一时间的矛盾陈述)
-- GRANULARITY_MISMATCH: 粒度不同但可共存 ("喜欢水果" vs "喜欢苹果")
+Conflict type legend:
+- TEMPORAL_CHANGE: the user state genuinely changed over time (moved house, changed job)
+- CONTEXT_DEPENDENT: different behaviour in different contexts (serious at work, lively among friends)
+- CONTRADICTION: logical contradiction (conflicting statements about the same time)
+- GRANULARITY_MISMATCH: different granularity that can coexist ("likes fruit" vs "likes apples")
 
-输出JSON:
+Output JSON:
 {{
   "conflicts": [
     {{
-      "existing_memory_id": "冲突记忆的ID",
+      "existing_memory_id": "id of the conflicting memory",
       "conflict_type": "TEMPORAL_CHANGE/CONTEXT_DEPENDENT/CONTRADICTION/GRANULARITY_MISMATCH",
-      "description": "冲突描述",
+      "description": "conflict description",
       "severity": "high/medium/low",
       "suggested_action": "override/contextualize/both_valid/flag_for_review"
     }}
   ]
 }}
 
-如无冲突返回: {{"conflicts": []}}"""
+If there is no conflict return: {{"conflicts": []}}"""
 
-IMPLICIT_INFERENCE_PROMPT = """分析以下对话内容中的隐式信号，推断用户可能的属性或偏好。
+IMPLICIT_INFERENCE_PROMPT = """Analyze the implicit signals in the conversation below and infer the user's likely attributes or preferences.
 
-对话内容:
+Conversation:
 ---
 {content}
 ---
 
-隐式信号类型:
-- behavior: 行为信号 (如 "每天跑步" → 自律/健康意识)
-- attitude: 态度信号 (如 "这个太贵了" → 价格敏感)
-- choice: 选择信号 (如 "还是选简约风格" → 简约主义)
+Implicit signal types:
+- behavior: behavioural signal (e.g. "runs every day" → self-disciplined / health-conscious)
+- attitude: attitude signal (e.g. "that is too expensive" → price-sensitive)
+- choice: choice signal (e.g. "I'll still go for the minimal style" → minimalism)
 
-输出JSON:
+Output JSON:
 {{
   "signals": [
     {{
       "signal_type": "behavior/attitude/choice",
-      "content": "原始信号内容",
-      "possible_traits": ["可能推断出的特质1", "特质2"],
+      "content": "original signal content",
+      "possible_traits": ["inferable trait 1", "trait 2"],
       "strength": "weak/moderate/strong"
     }}
   ]
 }}
 
-只输出有依据的推断，不要猜测。如无信号返回: {{"signals": []}}"""
+Only output inferences backed by evidence, do not guess. If there is no signal return: {{"signals": []}}"""
 
 
 # ================================================================
-# 核心实现
+# Core implementation
 # ================================================================
 
 class Reflector:
     """
-    反思智能体 (V2)
+    Reflector agent (V2)
 
-    保留 V1 冲突检测 + 合并建议能力，
-    新增 V2 的 UpdateType 分类、V2 冲突检测、隐式推断。
+    Retains the V1 conflict detection and merge suggestion capabilities,
+    and adds V2 UpdateType classification, V2 conflict detection and implicit inference.
     """
 
     # V1 Prompt
-    CONFLICT_CHECK_PROMPT = """请分析新记忆与已有记忆之间是否存在冲突。
+    CONFLICT_CHECK_PROMPT = """Analyze whether the new memory conflicts with the existing memories.
 
-新记忆：
+New memory:
 {new_content}
 
-已有记忆：
+Existing memories:
 {existing_memories}
 
-请以 JSON 格式输出分析结果：
+Output the analysis in JSON format:
 {{
     "conflicts": [
         {{
-            "memory_id": "冲突的记忆ID",
+            "memory_id": "id of the conflicting memory",
             "conflict_type": "contradiction/update/duplicate/related",
-            "description": "冲突描述",
+            "description": "conflict description",
             "suggestion": "keep_new/keep_old/merge/both"
         }}
     ],
     "should_merge": true/false,
-    "merge_target_id": "建议合并到的记忆ID（如果需要合并）",
-    "merged_content": "合并后的内容（如果需要合并）"
+    "merge_target_id": "id of the memory to merge into (if a merge is needed)",
+    "merged_content": "the merged content (if a merge is needed)"
 }}
 
-只输出 JSON，不要其他解释："""
+Output JSON only, with no other explanation:"""
 
     def __init__(
         self,
@@ -239,7 +239,7 @@ class Reflector:
         logger.info("Reflector V2 initialized")
 
     # ================================================================
-    # V1 兼容接口
+    # V1 compatible interfaces
     # ================================================================
 
     async def check_conflicts(
@@ -248,7 +248,7 @@ class Reflector:
         existing_memories: List[Dict[str, Any]],
         context: Dict[str, Any] = None,
     ) -> ReflectResult:
-        """V1 兼容: 检测冲突"""
+        """V1 compatible: detect conflicts"""
         try:
             if not existing_memories:
                 return ReflectResult(success=True)
@@ -285,16 +285,16 @@ class Reflector:
     async def suggest_merge(
         self, memory1: Dict[str, Any], memory2: Dict[str, Any],
     ) -> Optional[str]:
-        """V1 兼容: 生成合并建议"""
-        prompt = f"""请将以下两条记忆合并为一条，保留所有有用信息，解决冲突。
+        """V1 compatible: produce a merge suggestion"""
+        prompt = f"""Merge the following two memories into one, keeping all useful information and resolving the conflict.
 
-记忆1：
+Memory 1:
 {memory1.get('content', '')}
 
-记忆2：
+Memory 2:
 {memory2.get('content', '')}
 
-请直接输出合并后的内容："""
+Output the merged content directly:"""
 
         try:
             response = await self.llm.complete(
@@ -309,7 +309,7 @@ class Reflector:
             return None
 
     # ================================================================
-    # V2 UpdateType 分类
+    # V2 UpdateType classification
     # ================================================================
 
     async def classify_update_type(
@@ -318,19 +318,19 @@ class Reflector:
         existing_facts: List[Dict[str, Any]],
     ) -> UpdateTypeResult:
         """
-        判断新事实与已有事实的更新关系。
-        由 System 2 Deep Extraction / Write Path 调用。
+        Determine how the new fact updates the existing facts.
+        Called by System 2 Deep Extraction / Write Path.
         """
         try:
             facts_text = "\n".join([
                 f"[{f.get('id', '?')}] {f.get('content', '')} "
-                f"(时间: {f.get('created_at', '?')}, 置信度: {f.get('confidence', '?')})"
+                f"(time: {f.get('created_at', '?')}, confidence: {f.get('confidence', '?')})"
                 for f in existing_facts
             ])
 
             prompt = UPDATE_TYPE_PROMPT.format(
                 new_fact=new_fact,
-                existing_facts=facts_text or "(无已有信息)",
+                existing_facts=facts_text or "(no existing information)",
             )
             response = await self.llm.complete(
                 prompt=prompt,
@@ -355,7 +355,7 @@ class Reflector:
             return UpdateTypeResult(success=False, error=str(e))
 
     # ================================================================
-    # V2 冲突检测
+    # V2 conflict detection
     # ================================================================
 
     async def detect_conflicts_v2(
@@ -364,7 +364,7 @@ class Reflector:
         existing_memories: List[Dict[str, Any]],
     ) -> ConflictDetectionResult:
         """
-        V2 冲突检测: 区分四种冲突类型。
+        V2 conflict detection: distinguishes the four conflict types.
         """
         try:
             if not existing_memories:
@@ -372,7 +372,7 @@ class Reflector:
 
             memories_text = "\n".join([
                 f"[{m.get('id', '?')}] {m.get('content', '')} "
-                f"(时间: {m.get('created_at', '?')})"
+                f"(time: {m.get('created_at', '?')})"
                 for m in existing_memories
             ])
 
@@ -399,7 +399,7 @@ class Reflector:
             return ConflictDetectionResult(success=False, error=str(e))
 
     # ================================================================
-    # V2 隐式推断
+    # V2 implicit inference
     # ================================================================
 
     async def extract_implicit_signals(
@@ -407,8 +407,8 @@ class Reflector:
         content: str,
     ) -> ImplicitInferenceResult:
         """
-        从对话内容中提取隐式信号。
-        由 System 2 Trait Inferencer 调用。
+        Extract implicit signals from the conversation content.
+        Called by the System 2 Trait Inferencer.
         """
         try:
             prompt = IMPLICIT_INFERENCE_PROMPT.format(content=content)
@@ -441,12 +441,12 @@ class Reflector:
             return ImplicitInferenceResult(success=False, error=str(e))
 
     # ================================================================
-    # 工具方法
+    # Utility methods
     # ================================================================
 
     @staticmethod
     def _parse_json(text: str) -> Dict[str, Any]:
-        """从 LLM 输出中解析 JSON"""
+        """Parse JSON out of the LLM output"""
         text = text.strip()
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
@@ -464,7 +464,7 @@ class Reflector:
         return {"conflicts": [], "should_merge": False}
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Get statistics"""
         return {
             "call_count": self._call_count,
             "total_tokens": self._total_tokens,

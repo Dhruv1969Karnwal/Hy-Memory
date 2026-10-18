@@ -1,20 +1,20 @@
 """
-Entity 抽取（移植 mem0 OSS `mem0/utils/entity_extraction.py`）。
+Entity extraction (ported from mem0 OSS `mem0/utils/entity_extraction.py`).
 
-从文本中抽取四类 entity：
-- PROPER:   专有名词序列（人名/地名/品牌，连续首字母大写）
-- QUOTED:   引号内文本（标题/特定术语）
-- COMPOUND: 名词复合短语（如 "machine learning"）
-- NOUN:     从环境状语复合模式回退出的单名词
+Extracts four kinds of entity from text:
+- PROPER:   proper noun sequences (person/place/brand names, consecutive capitalised words)
+- QUOTED:   text inside quotes (titles/specific terms)
+- COMPOUND: compound noun phrases (e.g. "machine learning")
+- NOUN:     a single noun recovered as fallback from adverbial compound patterns
 
-公开 API：
+Public API:
     extract_entities(text) -> List[Tuple[entity_type, entity_text]]
 
-设计要点：
-- 用 spaCy **完整管线**（含 tagger/parser，区别于 lemmatize.py 里 disable 掉的精简版），
-  因为 entity 抽取依赖 POS / dep / noun_chunks。
-- spaCy 不可用（未装或模型缺失）时返回 []，entity 路自动整体降级（与 mem0 一致）。
-- 中文场景下 spaCy 英文模型几乎抽不到 entity，符合预期（mem0 同样如此）。
+Design notes:
+- Uses the spaCy **full pipeline** (including tagger/parser, unlike the stripped variant disabled in lemmatize.py),
+  because entity extraction depends on POS / dep / noun_chunks.
+- When spaCy is unavailable (not installed or the model is missing) it returns [], and the entity channel degrades as a whole (same as mem0).
+- With Chinese text the English spaCy model barely extracts any entity, which is expected (mem0 behaves the same).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from typing import List, Tuple
 logger = logging.getLogger(__name__)
 
 # ========================================================================
-# spaCy 完整管线 lazy 加载（独立于 lemmatize.py 的精简管线）
+# Lazy loading of the spaCy full pipeline (separate from the stripped pipeline in lemmatize.py)
 # ========================================================================
 
 _nlp_full = None
@@ -36,9 +36,9 @@ _lock = threading.Lock()
 
 
 def get_nlp_full():
-    """返回带完整管线（tagger/parser/NER）的 spaCy 模型，用于 entity 抽取。
+    """Return the spaCy model with the full pipeline (tagger/parser/NER) used for entity extraction.
 
-    未安装 spaCy 或模型 en_core_web_sm 缺失时返回 None（调用方降级为无 entity）。
+    Returns None when spaCy is not installed or the en_core_web_sm model is missing (callers degrade to no entities).
     """
     global _nlp_full, _load_failed
     if _load_failed:
@@ -64,7 +64,7 @@ def get_nlp_full():
 
 
 # ========================================================================
-# 词表（移植自 mem0）
+# Word lists (ported from mem0)
 # ========================================================================
 
 _GENERIC_HEADS = {
@@ -123,7 +123,7 @@ _FORMATTING_MARKERS = {"*", "-", "+", "•", "–", "—", "#", "##", "###", "**
 
 
 # ========================================================================
-# 内部 helper（移植自 mem0）
+# Internal helpers (ported from mem0)
 # ========================================================================
 
 def _is_sentence_start(tokens: list, idx: int) -> bool:
@@ -160,13 +160,13 @@ def _has_artifacts(txt: str) -> bool:
 
 
 # ========================================================================
-# 公开 API
+# Public API
 # ========================================================================
 
 def extract_entities(text: str) -> List[Tuple[str, str]]:
-    """从文本抽取 entity，返回去重后的 (entity_type, entity_text) 列表。
+    """Extract entities from text, returning a deduplicated list of (entity_type, entity_text).
 
-    entity_type ∈ {PROPER, QUOTED, COMPOUND, NOUN}。spaCy 不可用时返回 []。
+    entity_type ∈ {PROPER, QUOTED, COMPOUND, NOUN}. Returns [] when spaCy is unavailable.
     """
     if not text or not text.strip():
         return []

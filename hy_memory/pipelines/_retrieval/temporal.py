@@ -1,24 +1,24 @@
-"""读侧时间过滤（created_after）的统一口径。
+"""One agreed reading of read-side time filtering (created_after).
 
-`created_after` 的语义是「记忆描述的事件发生在该时间之后」，因此按**事件时间**
-`memory_at` 过滤，`memory_at` 为空才回退落库时间 `gmt_created`。
-按 gmt_created 过滤在批量灌入场景下等于失效（一次导入的记忆 gmt_created 几乎同一时刻），
-详见 `data/vector_store_base.node_effective_time`。
+`created_after` means "the event described by the memory happened after that time", so filtering runs on the **event time**
+`memory_at` and only falls back to the persist time `gmt_created` when `memory_at` is empty.
+Filtering by gmt_created is effectively void in bulk import scenarios (memories from one import share almost the same gmt_created),
+see `data/vector_store_base.node_effective_time`.
 
-分工：
-- **能下推的下推**：`vector_store.search()` 接 `created_after`，让 VDB 侧先过滤，省召回量。
-- **末端统一兜底**：`keyword_search()`（BM25）、graph 通道等并不都支持该参数，
-  所以每个 reader 在产出最终结果前再统一过一遍本模块的 gate，保证没有通道能绕过过滤。
+Division of work:
+- **Push down what can be pushed down**: `vector_store.search()` accepts `created_after` so the VDB filters first, saving recall volume.
+- **Uniform fallback at the end**: `keyword_search()` (BM25), the graph channel and the others do not all support that parameter,
+  so every reader passes its final results through the gate in this module once more, ensuring no channel can bypass the filter.
 """
 
 from typing import Any, Dict, List, Optional
 
 
 def hit_effective_ts(hit: Dict[str, Any]) -> Optional[float]:
-    """取一条召回结果的有效时间戳（unix 秒）。
+    """Return the effective timestamp of one recall hit, in unix seconds.
 
-    优先 `node.memory_at`，回退 `node.gmt_created`；node 为 None（graph 通道结果）
-    时退回 hit dict 上的同名字段。都取不到返回 None。
+    Prefers `node.memory_at` and falls back to `node.gmt_created`; when node is None (graph channel result)
+    the fields with the same names on the hit dict are used instead. Returns None when neither is available.
     """
     node = hit.get("node")
 
@@ -43,10 +43,10 @@ def filter_hits_by_created_after(
     hits: List[Dict[str, Any]],
     created_after: Optional[float],
 ) -> List[Dict[str, Any]]:
-    """按 created_after 过滤召回结果。
+    """Filter recall hits by created_after.
 
-    时间字段完全取不到的结果**保留** —— 宁可多召回，也不因为缺字段静默丢数据
-    （graph 通道结果、历史数据都可能没有时间字段）。
+    Hits whose time field cannot be resolved at all are **kept** -- recalling too much is better than silently
+    dropping data over a missing field (graph channel results and legacy data may carry no time field).
     """
     if not created_after or not hits:
         return hits

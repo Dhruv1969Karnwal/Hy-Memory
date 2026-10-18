@@ -1,20 +1,20 @@
 """
-System 2 Agent — 统一认知加工引擎
+System 2 Agent -- unified cognitive processing engine
 
-替代旧的 SchemaInductor + IntentionDetector，改为单一 Agent + Tools 架构。
+Replaces the legacy SchemaInductor + IntentionDetector with a single Agent + Tools architecture.
 
-流程:
-  Phase 1 (硬编码预处理):
-    ① VDB 取未处理的 L2_FACT + L4_IDENTITY
-    ② DBSCAN 聚类 → clusters
-    ③ Graph 正向搜索: 按 cluster 主题 query Graph
-    ④ Graph 反向查找: VDB node_id → find_referencing_memories
+Flow:
+  Phase 1 (hardcoded preprocessing):
+    ① VDB: fetch unprocessed L2_FACT + L4_IDENTITY
+    ② DBSCAN clustering → clusters
+    ③ Graph forward search: query Graph by cluster topic
+    ④ Graph reverse lookup: VDB node_id → find_referencing_memories
 
-  Phase 2 (Agent LLM，仅当 clusters_found > 0):
-    输入: 聚类结果为主；unprocessed_facts = 未进任一 cluster 的 fresh facts（加菜，有上限）
-    无聚类时不触发 Agent（减轻冷启动/散事实场景的 LLM 负担）
+  Phase 2 (Agent LLM, only when clusters_found > 0):
+    Input: mostly cluster results; unprocessed_facts = fresh facts in no cluster (supplemental, capped)
+    No clusters means the Agent is not triggered (reduces LLM load for cold-start and scattered-fact cases)
 
-  工具: 8 个 tools — 演化高级认知 (Schema + Intent + 关系)
+  Tools: 8 tools -- evolve higher-order cognition (Schema + Intent + relations)
 """
 
 import json
@@ -46,7 +46,7 @@ def _evoling_env(name: str, default: str) -> str:
 
 
 _S2_SUMMARY_ENABLED = os.getenv("MEMORY_SUMMARY_ENABLED_IN_SYS2", "false").lower() == "true"
-# 有聚类时，未聚类事实作为加菜；超过此数量截断，避免 1 cluster + 30 条 noise
+# When clusters exist, unclustered facts are a supplement; truncate above this count to avoid 1 cluster + 30 noise items
 _S2_MAX_UNCLUSTERED_FACTS = int(os.getenv("MEMORY_S2_MAX_UNCLUSTERED_FACTS", "15"))
 # Bound the number of candidate facts sent in one System 2 call. A semantic
 # cluster can legitimately span most of a long-lived user's bank; asking the LLM
@@ -55,7 +55,7 @@ _S2_MAX_UNCLUSTERED_FACTS = int(os.getenv("MEMORY_S2_MAX_UNCLUSTERED_FACTS", "15
 # so reviewing a deterministic slice is a safe checkpoint and the remaining facts
 # are picked up by the next iteration/cycle.
 _S2_MAX_FACTS_PER_BATCH = int(_evoling_env("MAX_FACTS_PER_BATCH", "24"))
-# 簇内 embedding 余弦相似度 ≥ 此阈值视为重复，只保留一条（防系统重复写入闯关）
+# Intra-cluster embedding cosine similarity >= this threshold counts as a duplicate; only one is kept (blocks repeated system writes)
 _S2_CLUSTER_DEDUP_COSINE = float(os.getenv("MEMORY_S2_CLUSTER_DEDUP_COSINE", "0.92"))
 _S2_SOURCE_GROUPS_ENABLED = _evoling_env(
     "SOURCE_FACTS_ENABLED", "false",
@@ -588,7 +588,7 @@ _FORGET_EN_RE = re.compile(
     r"(?:that\s+(?:they|the user)\b|(?:their|the user's)\b)",
     re.I,
 )
-_FORGET_ZH_RE = re.compile(r"用户.{0,30}(?:请|要求|让).{0,20}忘记.{0,10}(?:自己|其|他们|她|他)")
+_FORGET_ZH_RE = re.compile(r"\u7528\u6237.{0,30}(?:\u8bf7|\u8981\u6c42|\u8ba9).{0,20}\u5fd8\u8bb0.{0,10}(?:\u81ea\u5df1|\u5176|\u4ed6\u4eec|\u5979|\u4ed6)")
 
 
 def is_explicit_forget_marker(text: str) -> bool:
@@ -597,7 +597,7 @@ def is_explicit_forget_marker(text: str) -> bool:
     if not value:
         return False
     lowered = value.lower()
-    if not (lowered.startswith("the user ") or value.startswith("用户")):
+    if not (lowered.startswith("the user ") or value.startswith("\u7528\u6237")):
         return False
     return bool(_FORGET_EN_RE.search(value) or _FORGET_ZH_RE.search(value))
 
@@ -621,7 +621,7 @@ def extract_raw_forget_directives(raw_text: str) -> List[str]:
             r"\b(?:please\s+)?forget\s+(?:that\s+)?(?:i\b|i'm\b|i’ve\b|i've\b|my\b|me\b)",
             lowered,
         )
-        chinese = re.search(r"(?:请)?忘记.{0,12}(?:我|我的|本人)", utterance)
+        chinese = re.search(r"(?:\u8bf7)?\u5fd8\u8bb0.{0,12}(?:\u6211|\u6211\u7684|\u672c\u4eba)", utterance)
         if english or chinese:
             directives.append(utterance)
     return directives
@@ -933,7 +933,7 @@ def _dedupe_group_indices(
     sim_threshold: float,
 ) -> tuple:
     """
-    簇内去重：与已保留条目的 embedding 相似度 ≥ threshold 则丢弃。
+    Intra-cluster dedup: drop an entry whose embedding similarity to an already kept entry is >= threshold.
     Returns:
         (deduped_indices, removed_count)
     """
@@ -966,10 +966,10 @@ def _dedupe_group_indices(
 
 def s2_agent_skip_reason(materials: Dict[str, Any]) -> Optional[str]:
     """
-    返回跳过 S2 Agent 的原因；None 表示应运行 Agent。
+    Return the reason to skip the S2 Agent; None means the Agent should run.
 
-    - no_facts: 聚类池为空（全已被 schema 引用或 VDB 无 fact）
-    - no_clusters: DBSCAN 未形成任何 cluster（散事实，不触发 Agent）
+    - no_facts: the clustering pool is empty (everything is already referenced by a schema or the VDB holds no facts)
+    - no_clusters: DBSCAN formed no cluster at all (scattered facts do not trigger the Agent)
     """
     stats = materials.get("stats") or {}
     if stats.get("total_facts_pool", 0) == 0:
@@ -982,75 +982,75 @@ def s2_agent_skip_reason(materials: Dict[str, Any]) -> Optional[str]:
 # System Prompt (dual language)
 # ====================================================================
 
-SYSTEM2_AGENT_PROMPT_ZH = """你是一个认知加工 Agent，负责从用户的记忆数据中演化高层认知结构。
+SYSTEM2_AGENT_PROMPT_ZH = """You are a cognitive processing Agent. Your job is to evolve higher-order cognitive structures from the user's memory data.
 
-## 记忆分层架构
+## Memory Architecture
 
-用户的记忆存储在两个系统中：
+The user's memory lives in two systems:
 
-### VDB（向量数据库）— 你只能读取，不能修改
-| 层级 | 说明 |
+### VDB (Vector Database) -- you may only read it, never modify it
+| Layer | Description |
 |------|------|
-| L0 BASIC_INFO | 用户基础属性（姓名、年龄、职业等）|
-| L1 RAW | 原始对话记录 |
-| L2 FACT | 原子事实（从对话中提取的客观事实）|
-| L3 SUMMARY | 会话摘要 |
-| L4 IDENTITY | 身份画像（性格特征、偏好、习惯）|
-| L5 KNOWLEDGE | 领域知识 |
+| L0 BASIC_INFO | User base attributes (name, age, occupation, etc.) |
+| L1 RAW | Original conversation transcripts |
+| L2 FACT | Atomic facts (objective facts extracted from conversations) |
+| L3 SUMMARY | Session summaries |
+| L4 IDENTITY | Identity profile (personality traits, preferences, habits) |
+| L5 KNOWLEDGE | Domain knowledge |
 
-### Graph（知识图谱）— 你是唯一的写入者
-| 层级 | 说明 |
+### Graph (Knowledge Graph) — you are the sole writer
+| Layer | Description |
 |------|------|
-| L6 SCHEMA | 行为模式 — 域内、原子化、创建后不可变 |
+| L6 SCHEMA | Behavioral patterns — domain-bound, atomic, immutable once created |
 
-## L6 Schema 是什么？
+## What is an L6 Schema?
 
-Schema 是从多次独立经历归纳出的长期行为模式，包含以下三个要素：
+A Schema is a long-term behavioral pattern induced from multiple independent experiences, made of these three components:
 
-- **Circumstance（场景）**：该模式发生的领域/话题/场景。Schema 必须限定在其场景内，不要跨域泛化。
-- **Pattern（模式）**：用户在该场景下的惯常行为、思维方式或行动倾向。
-- **Insight（洞察）**：底层心理驱动力或心智模型。
+- **Circumstance**: The domain/topic/situation where the pattern occurs. A Schema must stay inside its circumstance; do not generalize across domains.
+- **Pattern**: The user's habitual behavior, thinking style, or action tendency in that circumstance.
+- **Insight**: The underlying psychological driver or mental model.
 
-### 内容格式
-行为模式用一句话组合三要素：
-"当[场景]时，用户[模式]——反映了[洞察]。"
+### Content format
+Express the behavioral pattern in one sentence combining all three components:
+"When [circumstance], the user [pattern] -- reflecting [insight]."
 
-对与情绪、治疗、压力、哀伤或创伤有关的长期模式，不要把具体人生背景压缩成
-空泛人格词。优先保留这三部分：
-"Trigger/background（持久触发背景） → emotional response（反复情绪反应） → observed coping resource（用户已实际使用的应对资源）。"
-只能写入 user-owned 证据中出现的触发背景、反应和应对方式；助手建议不是用户已观察到的应对资源。
+For durable emotional, therapy, stress, grief, or trauma-related patterns, do not compress the specific
+autobiographical background into a generic personality label. Prefer preserving these three parts:
+"Trigger/background (durable triggering background) → emotional response (recurring emotional response) → observed coping resource (what the user actually uses to cope)."
+Only write triggers, responses, and coping methods that appear in user-owned evidence; assistant advice is not an observed user coping resource.
 
-### 规则
-- **原子化**：一个 Schema 只包含一个模式。两个不同模式 → 两个 Schema。
-- **不可变**：Schema 创建后内容永远不变。不要修改已有 Schema 的内容。
-- **累积证据**：新事实只是在支持已有表述 → 调 `add_evidence`。如果新证据会让旧画像的当前状态产生实质遗漏、错误或误导，使用 `revise_schema` 创建新版本，让旧版本保留审计但退出 active 检索。
-- **域内约束**：不要跨域。跨域抽象由系统的其他流程处理。
-- **事实与模式分层**：单条明确身份、健康状态、设备使用、隶属关系、项目或偏好属于 L2 状态，不创建 L6。L6 必须由至少两个独立 raw/session 中的 user-owned 证据支持。
-- **主体安全**：同一原始写入可能包含他人资料或示例。只有材料明确归因于当前用户时才创建用户 Schema；否则对该材料不执行任何操作。
-- **候选覆盖**：source-context 审查时，每条候选事实必须二选一：用于 `create_schema`/`add_evidence` 的 evidence，或用 `skip_fact` 明确跳过。原始上下文只用于确认主体或补回该事实遗漏的细节，不得据此创建无关 Schema。
-- **证据门槛**：创建 L6 必须有 user-owned evidence，且这些证据合计代表至少两个独立 raw/session。
-  一个被 S1 合并的 L2 事实可以代表多次独立写入，应检查它的 `source_raw_memory_ids`，不要只数节点。
-  助手建议不能作为用户模式的独立证据。
+### Rules
+- **Atomic**: One Schema holds exactly one pattern. Two distinct patterns → two Schemas.
+- **Immutable**: Schema content never changes once created. Do not modify the content of an existing Schema.
+- **Cumulative evidence**: A new fact that merely supports existing wording → call `add_evidence`. If new evidence would make the old profile's current state materially incomplete, wrong, or misleading, use `revise_schema` to create a new version so the old one is kept for audit but leaves active retrieval.
+- **Domain-bound**: Do not cross domains. Cross-domain abstraction is handled by other system processes.
+- **Separate facts from patterns**: A single explicit identity, health state, equipment use, affiliation, project, or preference belongs to L2 state; do not create L6. L6 must be backed by user-owned evidence from at least two independent raw/session records.
+- **Subject safety**: The same raw write may contain material about other people or examples. Create a user Schema only when the material is explicitly attributed to the current user; otherwise emit no operation for that material.
+- **Candidate coverage**: In a source-context review every candidate fact must do one of two things: serve as evidence for `create_schema`/`add_evidence`, or be explicitly skipped with `skip_fact`. Raw context may only confirm the subject or restore detail the fact omitted; it must never seed an unrelated Schema.
+- **Evidence threshold**: Creating L6 requires user-owned evidence that together represents at least two independent raw/session records.
+  An L2 fact merged by S1 can stand for multiple independent writes; check its `source_raw_memory_ids` instead of just counting nodes.
+  Assistant advice is not standalone evidence of a user pattern.
 
-## 工作流程
+## Your Workflow
 
-输入材料分两部分（仅当已形成聚类时才会调用你）：
-- **聚类结果（Cluster Results）**：主输入，按语义相似度归组的事实
-- **未聚类事实（补充）**：未进入任一聚类的事实，优先级低于聚类结果，酌情审视即可
+Input materials come in two parts (you are invoked only once clusters exist):
+- **Cluster Results**: primary input, facts grouped by semantic similarity
+- **Unclustered Facts (supplemental)**: facts in no cluster, lower priority than cluster results; review them at your discretion
 
-对于每组事实（无论聚类还是未聚类）：
-1. **搜索已有 Schema**：如果已有 Schema 已覆盖该模式，使用 `add_evidence`。只有加入新证据后旧表述会产生实质遗漏、错误或误导时才使用 `revise_schema`。
-2. **创建新 Schema**：仅当没有已有 Schema 覆盖时。一句话，三要素。
-3. **建立关系**：两个 Schema 主题相关 → 用 `add_edge`（RELATED_TO）。
+For each group of facts (clustered or unclustered):
+1. **Search existing Schemas**: If an existing Schema already covers this pattern, call `add_evidence`. Use `revise_schema` only when the old wording would become materially incomplete, wrong, or misleading once the new evidence is added.
+2. **Create a new Schema**: Only when no existing Schema covers it. One sentence, three components.
+3. **Build relationships**: If two Schemas are thematically related, use `add_edge` (RELATED_TO).
 
-## 原则
+## Principles
 
-- 所有 Graph 操作必须通过 tools 执行
-- Schema 内容创建后不可变——绝不重新创建已存在的 Schema
-- 优先 `add_evidence` 而非创建重复节点
-- 宁可不创建，也不要创建低质量节点
-- 一个 Schema = 一个域内原子模式
-- 打标签时优先使用已有标签列表中的标签"""
+- All Graph operations MUST go through tools
+- Schema content is immutable once created -- never recreate a Schema that already exists
+- Prefer `add_evidence` over creating duplicate nodes
+- Prefer not creating over creating low-quality nodes
+- One Schema = one atomic pattern in one domain
+- When tagging, prefer tags from the existing tags list"""
 
 
 SYSTEM2_AGENT_PROMPT_EN = """You are a cognitive processing Agent. Your job is to evolve higher-order cognitive structures from a user's raw memory data.
@@ -1162,7 +1162,7 @@ async def prepare_materials(
     config: MemoryConfig,
 ) -> Dict[str, Any]:
     """
-    Phase 1: 硬编码预处理 — 聚类 + Graph 正反向搜索 → materials
+    Phase 1: hardcoded preprocessing -- clustering + Graph forward/reverse search → materials
 
     Returns:
         {
@@ -1179,17 +1179,17 @@ async def prepare_materials(
         "2" if _S2_SCHEMA_EVIDENCE_GATE_ENABLED else "4",
     ))
     _CLUSTERING_THRESHOLD = float(os.getenv("MEMORY_S2_CLUSTER_THRESHOLD", "0.55"))
-    # Stage 2：大簇（>12）内再切；阈值比 Stage1 略严即可，0.75 过严难拆出合法子簇
+    # Stage 2: split again inside large clusters (>12); slightly stricter than the Stage1 threshold suffices, 0.75 is too strict to yield valid sub-clusters
     _REFINE_THRESHOLD = float(os.getenv("MEMORY_S2_REFINE_CLUSTER_THRESHOLD", "0.65"))
-    _MAX_CLUSTER_SIZE = 12             # 超过此 size 的 cluster 触发二阶段细分
+    _MAX_CLUSTER_SIZE = 12             # Clusters above this size trigger two-stage refinement
     _REFINE_MIN_SAMPLES = _MIN_FACTS_FOR_INDUCTION
 
-    # Graph 正向搜索 config
-    _GRAPH_SEARCH_TOPK_PER_CLUSTER = 8  # 每个 cluster centroid 召回的 Graph 节点数
+    # Graph forward search config
+    _GRAPH_SEARCH_TOPK_PER_CLUSTER = 8  # Graph nodes recalled per cluster centroid
 
     isolation_key = MemoryNode.build_isolation_key(user_id, agent_id or "default")
 
-    # ① VDB: 取 L2_FACT + L4_IDENTITY（可选 L3_SUMMARY）
+    # ① VDB: fetch L2_FACT + L4_IDENTITY (optionally L3_SUMMARY)
     _s2_layers = [MemoryLayer.L2_FACT, MemoryLayer.L4_IDENTITY]
     if _S2_SUMMARY_ENABLED:
         _s2_layers.append(MemoryLayer.L3_SUMMARY)
@@ -1223,10 +1223,10 @@ async def prepare_materials(
         except Exception as exc:
             logger.warning("[S2-preprocess] raw lifecycle scan failed: %s", exc)
 
-    # ①b 按已审查的 raw provenance 过滤。S1 可能把多次近义事件
-    # 合并到同一 L2 节点；节点已被 Schema 引用不代表后续新来源也已审查。
-    fresh_facts = []       # evidence_count/review_count = 0 → 待处理
-    evidenced_facts = []   # evidence_count >= 1 → 已被引用，排除
+    # ①b Filter by reviewed raw provenance. S1 may merge several near-duplicate events
+    # into one L2 node; a node already referenced by a Schema does not mean later new sources were reviewed too.
+    fresh_facts = []       # evidence_count/review_count = 0 → pending
+    evidenced_facts = []   # evidence_count >= 1 → already referenced, excluded
     for fact in all_facts:
         if fact_has_unreviewed_sources(fact):
             fresh_facts.append(fact)
@@ -1254,7 +1254,7 @@ async def prepare_materials(
         ))
     forget_marker_ids = {fact.node_id for fact in forget_markers}
 
-    # 聚类池 = 仅全新 facts
+    # Clustering pool = brand-new facts only
     clustering_pool = [
         fact for fact in fresh_facts if fact.node_id not in forget_marker_ids
     ]
@@ -1265,7 +1265,7 @@ async def prepare_materials(
         f"(pool={len(clustering_pool)})"
     )
 
-    # ② 两阶段聚类（只对 clustering_pool 做聚类，排除已充分消化的 facts）
+    # ② Two-stage clustering (cluster only clustering_pool, excluding well-digested facts)
     import numpy as np
     clusters = []
     valid_facts = []
@@ -1296,7 +1296,7 @@ async def prepare_materials(
         if len(embeddings) >= _MIN_FACTS_FOR_INDUCTION:
             X = np.array(embeddings)
 
-            # --- Stage 1: 粗分 ---
+            # --- Stage 1: coarse split ---
             dist_matrix = cosine_distances(X)
             db = DBSCAN(eps=1.0 - _CLUSTERING_THRESHOLD, min_samples=_MIN_FACTS_FOR_INDUCTION, metric="precomputed")
             labels = db.fit_predict(dist_matrix)
@@ -1307,13 +1307,13 @@ async def prepare_materials(
                     continue
                 stage1_clusters.setdefault(lbl, []).append(i)
 
-            # --- Stage 2: 对大 cluster 细分 ---
+            # --- Stage 2: refine large clusters ---
             final_index_groups = []
             for lbl, indices in stage1_clusters.items():
                 if len(indices) <= _MAX_CLUSTER_SIZE:
                     final_index_groups.append(indices)
                 else:
-                    # 子矩阵上用更高 threshold 再跑一次 DBSCAN
+                    # Run DBSCAN once more on the sub-matrix with a higher threshold
                     sub_X = X[indices]
                     sub_dist = cosine_distances(sub_X)
                     sub_db = DBSCAN(
@@ -1334,9 +1334,9 @@ async def prepare_materials(
                     for sg in sub_groups.values():
                         final_index_groups.append(sg)
 
-                    # noise 归入最近的子 cluster（或保留为独立 cluster）
+                    # Assign noise to the nearest sub-cluster (or keep it as its own cluster)
                     if noise_indices and sub_groups:
-                        # 计算每个 noise 到各子 cluster centroid 的距离，归入最近的
+                        # Distance from each noise item to each sub-cluster centroid; assign it to the nearest
                         sub_centroids = {
                             sl: np.mean(X[[indices[si] for si, sll in enumerate(sub_labels) if sll == sl]], axis=0)
                             for sl in sub_groups
@@ -1345,7 +1345,7 @@ async def prepare_materials(
                             best_sl = min(sub_centroids, key=lambda sl: float(cosine_distances(
                                 X[ni:ni+1], sub_centroids[sl].reshape(1, -1)
                             )[0, 0]))
-                            # 找到对应的 final group 并 append
+                            # Find the matching final group and append
                             for fg in final_index_groups:
                                 if any(indices[si] in fg for si, sl in enumerate(sub_labels) if sl == best_sl):
                                     fg.append(ni)
@@ -1358,7 +1358,7 @@ async def prepare_materials(
                         f"→ {len(sub_groups)} sub-clusters + {len(noise_indices)} noise"
                     )
 
-            # --- 构建 cluster 输出（簇内去重 + 最小 N 条，N=_MIN_FACTS_FOR_INDUCTION）---
+            # --- Build cluster output (intra-cluster dedup + minimum N items, N=_MIN_FACTS_FOR_INDUCTION) ---
             dedup_removed_total = 0
             for group_indices in final_index_groups:
                 if len(group_indices) < _REFINE_MIN_SAMPLES:
@@ -1455,8 +1455,8 @@ async def prepare_materials(
                 group["raw_contexts"] = excerpts
         clusters.extend(source_groups)
 
-    # ③ Graph 正向搜索: 用 cluster centroid 向量召回相关 Schema
-    #    不再全列所有 Graph 节点 — 只召回与当前 clusters 语义相关的
+    # ③ Graph forward search: recall relevant Schemas with cluster centroid vectors
+    #    No longer lists every Graph node -- only what is semantically related to the current clusters
     graph_forward = []
     seen_node_ids = set()
     try:
@@ -1465,7 +1465,7 @@ async def prepare_materials(
                 centroid_emb = c.get("centroid_embedding")
                 if not centroid_emb:
                     continue
-                # 搜索 L6_SCHEMA
+                # Search L6_SCHEMA
                 hits = await graph_store.vector_search(
                     query_embedding=centroid_emb,
                     isolation_key=isolation_key,
@@ -1496,7 +1496,7 @@ async def prepare_materials(
     except Exception as e:
         logger.warning(f"[S2-preprocess] graph forward search failed: {e}")
 
-    # ③b 查 Graph 真实节点总数（不依赖 vector_search 结果判断 Graph 是否为空）
+    # ③b Query the real Graph node total (do not judge emptiness from vector_search results)
     graph_total_schemas = 0
     all_active_schemas: List[Any] = []
     try:
@@ -1526,7 +1526,7 @@ async def prepare_materials(
         active_schemas=all_active_schemas,
     ) if _S2_CANONICAL_STATE_ENABLED else []
 
-    # ④ Graph 反向查找: 从 VDB node_id 找到引用它的 Graph 节点
+    # ④ Graph reverse lookup: from a VDB node_id find the Graph nodes referencing it
     graph_reverse = []
     try:
         vdb_ids = [f.node_id for f in valid_facts[:100]]
@@ -1537,7 +1537,7 @@ async def prepare_materials(
     except Exception as e:
         logger.warning(f"[S2-preprocess] graph reverse search failed: {e}")
 
-    # ⑤ 已有 Topic 列表（供 Agent 复用 tag，减少发散）
+    # ⑤ Existing Topic list (lets the Agent reuse tags and reduce sprawl)
     existing_tags = []
     try:
         from ..models.memory import MemoryNode as _MN
@@ -2400,36 +2400,36 @@ def _build_single_call_system_prompt(lang: str) -> str:
     if lang == "zh":
         output_instructions = """
 
-## 输出格式
+## Output Format
 
-不要调用 tools。直接输出一个 JSON 数组，包含你决定执行的操作。用 ```json 代码块包裹。
+Do NOT call tools. Output a JSON array of the operations you decided on, wrapped in a ```json code block.
 
-可用操作：
+Available operations:
 
-1. **create_schema** — 创建新的 L6 行为 Schema
-   ```{"op": "create_schema", "schema_kind": "behavior_pattern", "content": "供用户阅读的简洁画像", "retrieval_text": "用于检索的行为与适用场景", "evidence_list": ["fact_node_id_1", "fact_node_id_2"], "tags": ["tag1"]}```
+1. **create_schema** — Create a new L6 behavioral Schema
+   ```{"op": "create_schema", "schema_kind": "behavior_pattern", "content": "concise user-facing pattern", "retrieval_text": "behavior plus relevant situations", "evidence_list": ["fact_node_id_1", "fact_node_id_2"], "tags": ["tag1"]}```
 
-2. **add_evidence** — 给已有 Schema 追加证据（不修改内容）
+2. **add_evidence** — Add evidence to an existing Schema (content is not modified)
    ```{"op": "add_evidence", "node_id": "existing_schema_node_id", "evidence_list": ["new_fact_id_1"]}```
 
-3. **revise_schema** — 新证据使已有 Schema 的当前状态发生实质变化时，创建新版本并让旧版本退出默认检索。不要用于可共存的细节补充。
-   ```{"op": "revise_schema", "node_id": "old_schema_id", "schema_kind": "explicit_state", "content": "更新后的当前画像", "retrieval_text": "更新后的检索文本", "evidence_list": ["new_fact_id_1"], "tags": ["tag1"], "reason": "明确说明旧画像为何会误导"}```
+3. **revise_schema** — When new evidence materially changes the current state of an existing Schema, create a new version and retire the old one from default retrieval. Do not use it for detail that can coexist.
+   ```{"op": "revise_schema", "node_id": "old_schema_id", "schema_kind": "explicit_state", "content": "updated current profile", "retrieval_text": "updated retrieval text", "evidence_list": ["new_fact_id_1"], "tags": ["tag1"], "reason": "why the old wording would mislead"}```
 
-4. **add_edge** — 建立两个 Schema 之间的关系
-   ```{"op": "add_edge", "source_id": "schema_id_1", "target_id": "schema_id_2", "reason": "关系原因"}```
+4. **add_edge** — Create a relationship between two Schemas
+   ```{"op": "add_edge", "source_id": "schema_id_1", "target_id": "schema_id_2", "reason": "relationship reason"}```
 
-5. **skip_fact** — 明确标记某条候选事实已审查但不创建 Schema。仅用于他人事实、临时事件、不能证明用户特征的助手建议，或已被现有 Schema 完整覆盖的事实。
-   ```{"op": "skip_fact", "node_id": "candidate_fact_id", "reason": "不是稳定的用户模式"}```
+5. **skip_fact** — Explicitly mark a candidate fact as reviewed without creating a Schema. Use only for facts about other people, transient events, assistant advice that proves no user trait, or facts already fully covered by an existing Schema.
+   ```{"op": "skip_fact", "node_id": "candidate_fact_id", "reason": "not a durable user pattern"}```
 
-## 输出约定
+## Output Contract
 
-1. 输出必须是 JSON 数组，用 ```json 代码块包裹。
-2. 如果数据不足以得出可靠结论，输出 `[]`。在 source-context review 中，
-   `[]` 表示已审查该组全部候选，且都不足以支持稳定 Schema。
-3. 代码块外不要有任何其他文字。
-4. evidence_list 中的 id 必须来自材料中提供的 fact node_id。
-5. add_evidence / revise_schema 的 node_id 必须来自已有 Graph 节点的 id。
-6. 对 source-context 审查，必须让每条候选事实出现在 evidence_list 或 skip_fact 中。"""
+1. Output MUST be a JSON array wrapped in a ```json code block.
+2. If the data is insufficient for reliable conclusions, output `[]`. In a source-context review,
+   `[]` means every candidate in that group was reviewed and none supports a durable Schema.
+3. NO text outside the code block.
+4. IDs in evidence_list must come from the fact node_ids provided in the materials.
+5. The node_id of add_evidence / revise_schema must come from an existing Graph node id.
+6. For a source-context review, every candidate fact must appear in an evidence_list or in skip_fact."""
     else:
         output_instructions = """
 
@@ -2471,8 +2471,8 @@ Available operations:
         if lang == "zh":
             output_instructions += """
 
-7. L6 只表示跨事件行为模式。create_schema 必须使用 user-owned 证据，且证据合计代表至少两个独立 raw/session。当 `source_raw_memory_ids` 包含多个独立写入时，一个合并后的 L2 事实也可以满足门槛。
-8. 单条明确身份、健康状态、设备使用、隶属关系、项目或偏好不要创建 L6；这些由 canonical L2 状态通道维护。"""
+7. L6 represents cross-event behavioral patterns only. create_schema must use user-owned evidence representing at least two independent raw/session records; when `source_raw_memory_ids` contains multiple independent writes, one merged L2 fact can satisfy the threshold.
+8. Do not create L6 for a single explicit identity, health state, equipment use, affiliation, project, or preference; the canonical L2 state channel maintains those."""
         else:
             output_instructions += """
 
@@ -2480,13 +2480,13 @@ Available operations:
 8. Do not create L6 for a single explicit identity, health state, equipment use, affiliation, project, or preference. Canonical L2 state projection owns those facts."""
 
     # Remove the old "All Graph operations MUST go through tools" principle
-    base = base.replace("- 所有 Graph 操作必须通过 tools 执行\n", "")
+    base = base.replace("- \u6240\u6709 Graph \u64cd\u4f5c\u5fc5\u987b\u901a\u8fc7 tools \u6267\u884c\n", "")
     base = base.replace("- All Graph operations MUST go through tools\n", "")
     # Remove old tool-calling instructions from workflow
-    base = base.replace("调 `add_evidence` 添加证据", "使用 add_evidence 操作")
+    base = base.replace("\u8c03 `add_evidence` \u6dfb\u52a0\u8bc1\u636e", "\u4f7f\u7528 add_evidence \u64cd\u4f5c")
     base = base.replace("call `add_evidence`", "use add_evidence operation")
-    base = base.replace("调 `add_evidence`", "使用 add_evidence")
-    base = base.replace("用 `add_edge`（RELATED_TO）", "使用 add_edge 操作")
+    base = base.replace("\u8c03 `add_evidence`", "\u4f7f\u7528 add_evidence")
+    base = base.replace("\u7528 `add_edge`\uff08RELATED_TO\uff09", "\u4f7f\u7528 add_edge \u64cd\u4f5c")
     base = base.replace("use `add_edge` (RELATED_TO)", "use add_edge operation")
 
     return base + output_instructions
@@ -2522,10 +2522,10 @@ def _parse_operations_json(text: str) -> Optional[List[Dict[str, Any]]]:
 
 def _detect_language(materials: Dict[str, Any]) -> str:
     """
-    从 materials 的 fact content 检测语言。
+    Detect the language from the fact content in materials.
     
-    扫描所有聚类中的 fact content，计算中文字符占比。
-    中文比例 >= 70% → "zh"，否则 → "en"。
+    Scans the fact content of every cluster and computes the share of Chinese characters.
+    Chinese share >= 70% → "zh", otherwise → "en".
     """
     import re
     all_text = ""
@@ -2538,9 +2538,9 @@ def _detect_language(materials: Dict[str, Any]) -> str:
     if not all_text.strip():
         return "en"
 
-    # 统计中文字符（CJK Unified Ideographs）
+    # Count Chinese characters (CJK Unified Ideographs)
     zh_chars = len(re.findall(r'[\u4e00-\u9fff]', all_text))
-    # 统计所有非空白字符
+    # Count all non-whitespace characters
     total_chars = len(re.findall(r'\S', all_text))
 
     if total_chars == 0:
@@ -2553,29 +2553,29 @@ def _detect_language(materials: Dict[str, Any]) -> str:
 
 
 def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str:
-    """将预处理好的 materials 格式化为 Agent 能理解的 user message"""
+    """Format the preprocessed materials into a user message the Agent can understand."""
     is_zh = (lang == "zh")
 
-    parts = [("## 预处理材料\n" if is_zh else "## Preprocessed Materials\n")]
+    parts = [("## Preprocessed Materials\n" if is_zh else "## Preprocessed Materials\n")]
 
     stats = materials.get("stats", {})
     fresh = stats.get("fresh_facts", 0)
     evidenced = stats.get("evidenced_excluded", 0)
-    # 用真实 Graph 节点数判断是否为空（不依赖 vector_search 召回结果）
+    # Use the real Graph node count to decide emptiness (not the vector_search recall)
     graph_total = stats.get("graph_total_schemas", 0)
     recalled_schemas = stats.get("graph_schemas_recalled", 0)
 
     if is_zh:
-        parts.append(f"### 统计\n- VDB 事实总数: {stats.get('total_facts_all', 0)}")
-        parts.append(f"- 新鲜事实（待处理）: {fresh}（已被引用排除={evidenced}）")
-        parts.append(f"- 聚类数: {stats.get('clusters_found', 0)}")
+        parts.append(f"### Statistics\n- Total VDB facts: {stats.get('total_facts_all', 0)}")
+        parts.append(f"- Fresh facts (to process): {fresh} (evidenced_excluded={evidenced})")
+        parts.append(f"- Clusters found: {stats.get('clusters_found', 0)}")
         parts.append(
-            f"- 聚类内事实: {stats.get('clustered_facts_count', 0)}，"
-            f"未聚类补充: {stats.get('unclustered_facts_count', 0)}"
+            f"- Facts in clusters: {stats.get('clustered_facts_count', 0)}, "
+            f"unclustered supplement: {stats.get('unclustered_facts_count', 0)}"
         )
-        parts.append(f"- Graph Schema 总数: {stats.get('graph_total_schemas', 0)}（本次召回={recalled_schemas}）")
+        parts.append(f"- Graph Schemas total: {stats.get('graph_total_schemas', 0)} (recalled={recalled_schemas})")
         if graph_total == 0:
-            parts.append("- Graph 状态: **空**（首次认知加工）\n")
+            parts.append("- Graph status: **EMPTY** (first cognitive processing run)\n")
         else:
             parts.append("")
     else:
@@ -2596,24 +2596,24 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
     clusters = materials.get("clusters", [])
     clustered_ids = set()
     if clusters:
-        parts.append(("### 聚类结果\n" if is_zh else "### Cluster Results\n"))
+        parts.append(("### Cluster Results\n" if is_zh else "### Cluster Results\n"))
         for i, c in enumerate(clusters):
             n_facts = len(c['facts'])
             group_type = c.get("group_type", "semantic_cluster")
             if group_type == "holistic_therapy_review":
                 label = (
-                    f"{n_facts} 条跨会话用户事实；只归纳有证据的长期情绪/治疗模式"
+                    f"{n_facts} cross-session user facts; only evidence-backed durable emotional/therapy patterns"
                     if is_zh else
                     f"{n_facts} cross-session user facts; only evidence-backed durable emotional/therapy patterns"
                 )
             elif group_type == "source_context_review":
                 label = (
-                    f"{n_facts} 条候选事实；原始写入仅用于主体与细节核验"
+                    f"{n_facts} candidate facts; raw write is only for subject/detail validation"
                     if is_zh else
                     f"{n_facts} candidate facts; raw write is only for subject/detail validation"
                 )
             else:
-                label = f"{n_facts} 条，主题" if is_zh else f"{n_facts} facts, topic"
+                label = f"{n_facts} facts, topic" if is_zh else f"{n_facts} facts, topic"
             parts.append(f"**Cluster {i}** ({label}: {c['centroid_text']})")
             for f in c["facts"]:
                 source_ids = list(f.get("source_raw_memory_ids") or [])
@@ -2627,7 +2627,7 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
                 )
                 clustered_ids.add(f['node_id'])
             if group_type == "source_context_review" and c.get("raw_contexts"):
-                raw_label = "候选事实对应的原始片段" if is_zh else "Relevant raw excerpt per candidate"
+                raw_label = "Relevant raw excerpt per candidate" if is_zh else "Relevant raw excerpt per candidate"
                 parts.append(f"\n**{raw_label}:**")
                 for item in c["raw_contexts"]:
                     parts.append(
@@ -2639,11 +2639,11 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
         if materials.get("holistic_therapy_review"):
             parts.append(
                 (
-                    "这是一次有边界的夜间全局整理。最多创建 "
-                    f"{_S2_HOLISTIC_THERAPY_MAX_SCHEMAS} 条 anchored therapy Schema。"
-                    "优先联合不同 raw/session 中的持久 trigger/background、"
-                    "反复 emotional response 和用户已实际使用的 coping resource/decision constraint。"
-                    "证据不足时输出 []。\n"
+                    "This is one bounded nightly holistic consolidation pass. Create at most "
+                    f"{_S2_HOLISTIC_THERAPY_MAX_SCHEMAS} anchored therapy Schemas. "
+                    "Prefer joining durable trigger/background and recurring emotional response "
+                    "with coping resources or decision constraints the user actually used across different raw writes/sessions. "
+                    "Output [] when evidence is insufficient.\n"
                     if is_zh else
                     "This is one bounded nightly holistic consolidation pass. Create at most "
                     f"{_S2_HOLISTIC_THERAPY_MAX_SCHEMAS} anchored therapy Schemas. "
@@ -2657,7 +2657,7 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
             companion_hints = materials.get("independent_source_companions") or {}
             if companion_hints:
                 parts.append(
-                    "**独立来源 companion 提示（只是候选，不是结论）:**"
+                    "**Independent-source companion hints (candidates, not conclusions):**"
                     if is_zh else
                     "**Independent-source companion hints (candidates, not conclusions):**"
                 )
@@ -2671,14 +2671,14 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
                         )
                     )
                 parts.append("")
-    # 无聚类时不应进入 Agent；此处不输出「未聚类」大块（避免误导读成主输入）
-    # Unclustered facts — 仅在有聚类时作为加菜
+    # Without clusters the Agent should not run; do not emit the "Unclustered" block here (it could be misread as the primary input)
+    # Unclustered facts -- supplemental only when clusters exist
     all_facts = materials.get("unprocessed_facts", [])
     unclustered = [f for f in all_facts if f["node_id"] not in clustered_ids]
     if clusters and unclustered:
-        header = "### 未聚类事实（补充，次要）\n" if is_zh else "### Unclustered Facts (supplemental)\n"
+        header = "### Unclustered Facts (supplemental)\n" if is_zh else "### Unclustered Facts (supplemental)\n"
         hint = (
-            "以下事实未进入上述任一聚类，可在完成聚类主题加工后酌情审视；优先级低于聚类结果。\n"
+            "Facts below were not grouped into any cluster above. Review them at your discretion once the cluster themes are done; lower priority than cluster results.\n"
             if is_zh
             else "Facts below were not grouped into any cluster above. Review after cluster themes; lower priority than cluster results.\n"
         )
@@ -2692,7 +2692,7 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
     forward = materials.get("graph_forward", [])
     if forward:
         if is_zh:
-            parts.append(f"### 相关 Graph 节点（通过 cluster centroid 向量召回，共 {len(forward)} 条）\n")
+            parts.append(f"### Related Graph Nodes (retrieved via cluster centroid search, {len(forward)} hits)\n")
         else:
             parts.append(f"### Related Graph Nodes (retrieved via cluster centroid search, {len(forward)} hits)\n")
         for g in forward:
@@ -2705,16 +2705,16 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
         parts.append("")
     elif graph_total == 0:
         if is_zh:
-            parts.append("### 已有 Graph 节点\n当前 Graph 为空，这是首次认知加工。无需搜索 Graph，直接根据聚类结果创建 Schema。\n")
+            parts.append("### Existing Graph Nodes\nThe Graph is currently empty; this is the first cognitive processing run. No need to search the Graph -- create Schemas directly from the cluster results.\n")
         else:
             parts.append("### Existing Graph Nodes\nThe Graph is currently EMPTY — this is the first cognitive processing run. Do NOT search the Graph (it will return nothing). Proceed directly to create Schemas from the cluster results.\n")
     else:
-        # Graph 有节点但 centroid search 没召回（可能 threshold 太高或语义距离远）
+        # Graph has nodes but centroid search recalled nothing (threshold too high or semantic distance too large)
         if is_zh:
             parts.append(
-                f"### 已有 Graph 节点\n"
-                f"Graph 中共有 {stats.get('graph_total_schemas', 0)} 个 Schema，"
-                f"但 centroid 向量召回未命中相关节点。请根据聚类结果判断是否需要创建新 Schema。\n"
+                f"### Existing Graph Nodes\n"
+                f"The Graph has {stats.get('graph_total_schemas', 0)} Schemas, "
+                f"but centroid-based vector recall found no matching nodes. Decide from the cluster results whether new Schemas are needed.\n"
             )
         else:
             parts.append(
@@ -2726,7 +2726,7 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
     # Reverse hits
     reverse = materials.get("graph_reverse", [])
     if reverse:
-        parts.append(("### Graph 反向引用（已有 Schema 引用的 VDB 事实）\n" if is_zh
+        parts.append(("### Graph Reverse References (VDB facts referenced by existing Schemas)\n" if is_zh
                        else "### Graph Reverse References (VDB facts referenced by existing Schemas)\n"))
         for r in reverse:
             parts.append(
@@ -2735,11 +2735,11 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
             )
         parts.append("")
 
-    # Existing tags（指导 Agent 复用已有 tag，减少发散）
+    # Existing tags (guide the Agent to reuse existing tags and reduce sprawl)
     existing_tags = materials.get("existing_tags", [])
     if existing_tags:
         if is_zh:
-            parts.append("### 已有标签（请优先从中选择，避免创建同义标签）\n")
+            parts.append("### Existing Tags (prefer reusing these over creating synonyms)\n")
             parts.append(f"  {', '.join(existing_tags)}\n")
         else:
             parts.append("### Existing Tags (prefer reusing these over creating synonyms)\n")
@@ -2747,10 +2747,10 @@ def _build_materials_message(materials: Dict[str, Any], lang: str = "zh") -> str
 
     if is_zh:
         parts.append(
-            "请分析以上材料，输出操作 JSON 数组。"
-            "决定是否需要创建新的 Schema，或为已有 Schema 追加 evidence。"
-            "如果数据不足以得出可靠结论，输出空数组 `[]`。"
-            "打标签时请优先使用已有标签列表中的标签。"
+            "Analyze the materials above and output a JSON array of operations. "
+            "Decide whether to create new Schemas, or add evidence to existing ones. "
+            "If the data is insufficient for reliable conclusions, output an empty array `[]`. "
+            "When tagging, prefer reusing tags from the existing tags list above."
         )
     else:
         parts.append(

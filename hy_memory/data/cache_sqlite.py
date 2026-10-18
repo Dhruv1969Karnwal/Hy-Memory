@@ -1,16 +1,16 @@
 """
 Agent Memory V2 - SqliteCache
 
-基于 Python 标准库 sqlite3 的零依赖审计/观测落库后端。
-单机开箱即用。
+Zero-dependency audit/observability persistence backend built on the Python standard library sqlite3.
+Works out of the box on a single machine.
 
-设计模式跟随 history_store.py:
-- 标准库 sqlite3 + _run_in_sqlite_pool()
-- WAL 模式 + check_same_thread=False
-- threading.Lock 保护写操作
+Design pattern follows history_store.py:
+- Standard library sqlite3 + _run_in_sqlite_pool()
+- WAL mode + check_same_thread=False
+- threading.Lock guards write operations
 
-三张表:
-- memory_operations / pipeline_logs / system_metrics: 审计与观测
+Three tables:
+- memory_operations / pipeline_logs / system_metrics: auditing and observability
 """
 
 import concurrent.futures
@@ -29,7 +29,7 @@ from ..utils.async_executor import run_in_executor_guarded
 
 logger = logging.getLogger(__name__)
 
-# SQLite 独立线程池（不与 VDB/Graph 竞争）
+# Dedicated SQLite thread pool (does not contend with the VDB/Graph pools)
 _SQLITE_POOL_SIZE = 32
 _sqlite_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=_SQLITE_POOL_SIZE, thread_name_prefix="sqlite"
@@ -37,13 +37,13 @@ _sqlite_executor = concurrent.futures.ThreadPoolExecutor(
 
 
 async def _run_in_sqlite_pool(func, *args, **kwargs):
-    """在 SQLite 独立线程池中执行同步函数"""
+    """Run a synchronous function in the dedicated SQLite thread pool"""
     call = functools.partial(func, *args, **kwargs) if args or kwargs else func
     return await run_in_executor_guarded(_sqlite_executor, call)
 
 
 # DDL
-# 表名 / 列与 MySQL 分区版对齐（含 created_date），SQLite 不支持分区，仅普通建表。
+# Table names / columns align with the MySQL partitioned version (including created_date); SQLite has no partitions, so these are plain CREATE TABLE statements.
 _CREATE_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS memory_operations_v2 (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,9 +51,9 @@ CREATE TABLE IF NOT EXISTS memory_operations_v2 (
     user_id      TEXT NOT NULL,
     agent_id     TEXT NOT NULL DEFAULT '',
     op           TEXT NOT NULL,       -- ADD / UPDATE
-    memory_id    TEXT NOT NULL,       -- 操作后的节点 ID（ADD: 新节点 ID；UPDATE: 新节点 ID）
-    old_memory_id TEXT,               -- UPDATE 时的旧节点 ID
-    content      TEXT NOT NULL,       -- 最终写入的内容
+    memory_id    TEXT NOT NULL,       -- Node ID after the operation (ADD: new node ID; UPDATE: new node ID)
+    old_memory_id TEXT,               -- Old node ID on UPDATE
+    content      TEXT NOT NULL,       -- Content finally written
     layer        TEXT NOT NULL DEFAULT '',
     reason       TEXT NOT NULL DEFAULT '',
     supersedes   TEXT NOT NULL DEFAULT '',
@@ -72,15 +72,15 @@ CREATE TABLE IF NOT EXISTS pipeline_logs_v2 (
     agent_id     TEXT NOT NULL DEFAULT '',
     session_id   TEXT NOT NULL DEFAULT '',
     step         TEXT NOT NULL,       -- EXTRACT / SEARCH_QUERY / RECONCILE / SUMMARY
-    prompt       TEXT NOT NULL,       -- LLM prompt 原文
-    response     TEXT NOT NULL,       -- LLM response 原文
-    parsed       TEXT NOT NULL DEFAULT '',  -- 解析后的结构化结果 (JSON)
-    memory_ids   TEXT NOT NULL DEFAULT '',  -- 关联的 memory_id 列表 (JSON array)，reconcile 阶段有值
+    prompt       TEXT NOT NULL,       -- Raw LLM prompt
+    response     TEXT NOT NULL,       -- Raw LLM response
+    parsed       TEXT NOT NULL DEFAULT '',  -- Parsed structured result (JSON)
+    memory_ids   TEXT NOT NULL DEFAULT '',  -- Related memory_id list (JSON array); populated during the reconcile step
     elapsed_ms   REAL NOT NULL DEFAULT 0,
     prompt_tokens    INTEGER NOT NULL DEFAULT 0,
     completion_tokens INTEGER NOT NULL DEFAULT 0,
     total_tokens     INTEGER NOT NULL DEFAULT 0,
-    event_at_ms  INTEGER NOT NULL DEFAULT 0,  -- step 发生时刻（epoch 毫秒，与 JSONL log 同源，消费方自行转可读）
+    event_at_ms  INTEGER NOT NULL DEFAULT 0,  -- When the step happened (epoch ms, same source as the JSONL log; consumers format it themselves)
     created_at   TEXT NOT NULL,
     created_date TEXT NOT NULL DEFAULT ''
 );
@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS system_metrics (
 CREATE INDEX IF NOT EXISTS idx_metrics_ts ON system_metrics(minute_ts);
 
 
--- Episode（内部会话）状态：跨 write 批次把"一件事"归到同一个 episode_id。
--- 只存三个值；划分规则（时间间隔）在 writer 侧，此处不含业务逻辑。
+-- Episode (internal session) state: groups "one thing" under the same episode_id across write batches.
+-- Only three values are stored; the segmentation rule (time gap) lives on the writer side, so no business logic here.
 CREATE TABLE IF NOT EXISTS episode_state (
     episode_key    TEXT PRIMARY KEY,   -- user::agent::session
     user_id        TEXT NOT NULL DEFAULT '',
@@ -113,10 +113,10 @@ CREATE INDEX IF NOT EXISTS idx_episode_user ON episode_state(user_id);
 
 class SqliteCache(CacheBase):
     """
-    SQLite 审计/观测落库后端（memory_operations / pipeline_logs / system_metrics）。
+    SQLite audit/observability persistence backend (memory_operations / pipeline_logs / system_metrics).
 
-    零依赖本地后端，适用于单机 / 开发环境。
-    使用标准库 sqlite3，通过 _run_in_sqlite_pool() 包装为异步。
+    Zero-dependency local backend for single-machine / development environments.
+    Uses the standard library sqlite3, wrapped as async through _run_in_sqlite_pool().
     """
 
     def __init__(self, config: MemoryConfig):
@@ -124,7 +124,7 @@ class SqliteCache(CacheBase):
         self._conn: Optional[sqlite3.Connection] = None
         self._lock = threading.Lock()
 
-        # 读取 db_path
+        # Read db_path
         cache_cfg = getattr(config, "cache", None)
         if cache_cfg and getattr(cache_cfg, "db_path", None):
             self._db_path = cache_cfg.db_path
@@ -136,7 +136,7 @@ class SqliteCache(CacheBase):
             )
 
     # ================================================================
-    # 生命周期
+    # Lifecycle
     # ================================================================
 
     async def initialize(self) -> None:
@@ -155,7 +155,7 @@ class SqliteCache(CacheBase):
         self._conn.commit()
 
     def _migrate_pipeline_logs_columns(self) -> None:
-        """给旧库的 pipeline_logs_v2 补 namespace/session/event time 列。"""
+        """Add the namespace/session/event time columns to pipeline_logs_v2 on older databases."""
         try:
             cols = {
                 row["name"]
@@ -185,7 +185,7 @@ class SqliteCache(CacheBase):
             self._conn = None
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     async def get_stats(self) -> Dict[str, Any]:
@@ -211,7 +211,7 @@ class SqliteCache(CacheBase):
         reason: str = "",
         supersedes: Optional[List[str]] = None,
     ) -> bool:
-        """记录一条知识库变动操作（ADD / EVOLVE）"""
+        """Record one knowledge-base mutation (ADD / EVOLVE)"""
         from ..utils.pipeline_observability import is_memory_operations_enabled
         if not is_memory_operations_enabled():
             return True
@@ -250,8 +250,8 @@ class SqliteCache(CacheBase):
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """
-        查询知识库变动记录，支持按 request_id / memory_id / user_id 过滤。
-        至少指定一个过滤条件。
+        Query knowledge-base mutation records, filterable by request_id / memory_id / user_id.
+        At least one filter must be given.
         """
         try:
             def _query():
@@ -279,7 +279,7 @@ class SqliteCache(CacheBase):
                 result = []
                 for r in rows:
                     row = dict(r)
-                    # 反序列化 supersedes JSON 字符串 → list
+                    # Deserialize the supersedes JSON string → list
                     import json as _json
                     raw_sup = row.get("supersedes", "")
                     try:
@@ -295,7 +295,7 @@ class SqliteCache(CacheBase):
             return []
 
     # ================================================================
-    # Pipeline Logs (LLM 调用链中间结果)
+    # Pipeline Logs (intermediate results of the LLM call chain)
     # ================================================================
 
     async def store_pipeline_log(
@@ -316,10 +316,10 @@ class SqliteCache(CacheBase):
         event_at_ms: int = 0,
     ) -> bool:
         """
-        记录一条 pipeline 中间结果（EXTRACT / SEARCH_QUERY / RECONCILE / SUMMARY）。
+        Record one intermediate pipeline result (EXTRACT / SEARCH_QUERY / RECONCILE / SUMMARY).
 
-        user_id 按 "__" 拆出 namespace 单独落库；session_id 与 user/agent 同为隔离维度。
-        event_at_ms: step 发生时刻（epoch 毫秒，与 JSONL log timestamp 同源）；缺省回落入库时刻。
+        user_id is split on "__" so the namespace is persisted separately; session_id, like user/agent, is an isolation dimension.
+        event_at_ms: when the step happened (epoch ms, same source as the JSONL log timestamp); falls back to the insert time when omitted.
         """
         try:
             from datetime import datetime as dt
@@ -363,9 +363,9 @@ class SqliteCache(CacheBase):
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """
-        查询 pipeline 中间结果日志。
+        Query intermediate pipeline result logs.
 
-        支持按 request_id / user_id / step 过滤，至少指定一个。
+        Filterable by request_id / user_id / step; at least one must be given.
         """
         try:
             def _query():
@@ -391,7 +391,7 @@ class SqliteCache(CacheBase):
                     params + [limit],
                 ).fetchall()
                 out = [dict(r) for r in rows]
-                # 派生可读的 event_at（ISO ms）供查询接口直接用；event_at_ms 为 0 时留空
+                # Derive a human-readable event_at (ISO ms) for the query API; left empty when event_at_ms is 0
                 from datetime import datetime as _dt
                 for _r in out:
                     _ms = _r.get("event_at_ms") or 0
@@ -407,15 +407,15 @@ class SqliteCache(CacheBase):
             return []
 
     # ================================================================
-    # System Metrics（分钟粒度落盘）
+    # System Metrics (persisted at minute granularity)
     # ================================================================
 
     async def store_metrics_minute(self, minute_ts: str, data: dict) -> None:
-        """存储一个分钟桶的增量指标数据（UPSERT: 同一分钟多次写入会合并）"""
+        """Store the incremental metrics for one minute bucket (UPSERT: repeated writes in the same minute are merged)"""
         try:
             def _store():
                 now = datetime.now().isoformat()
-                # UPSERT: 如果同一分钟已存在，合并数据
+                # UPSERT: merge the data when this minute already exists
                 existing = self._conn.execute(
                     "SELECT data FROM system_metrics WHERE minute_ts = ?",
                     (minute_ts,),
@@ -439,7 +439,7 @@ class SqliteCache(CacheBase):
             logger.warning(f"store_metrics_minute failed: {e}")
 
     async def load_metrics_range(self, start_ts: str, end_ts: str) -> list:
-        """读取指定时间范围内的分钟指标数据"""
+        """Read minute metric data within the given time range"""
         try:
             def _load():
                 rows = self._conn.execute(
@@ -459,7 +459,7 @@ class SqliteCache(CacheBase):
             return []
 
     async def cleanup_old_metrics(self, before_ts: str) -> None:
-        """删除指定时间之前的 metrics 数据"""
+        """Delete metric data before the given timestamp"""
         try:
             def _cleanup():
                 self._conn.execute(
@@ -543,7 +543,7 @@ class SqliteCache(CacheBase):
 
     @staticmethod
     def _merge_metric_buckets(old: dict, new: dict) -> dict:
-        """合并两个 metric bucket（同一分钟多次 flush）"""
+        """Merge two metric buckets (multiple flushes within the same minute)"""
         merged = dict(old)
         for key in ("sys1_started", "sys1_completed", "sys1_failed",
                     "sys2_started", "sys2_completed", "sys2_failed",

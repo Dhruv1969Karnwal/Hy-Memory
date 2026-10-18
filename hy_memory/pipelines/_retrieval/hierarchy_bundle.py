@@ -394,7 +394,7 @@ def hierarchy_query_subjects(
         if not subject:
             continue
         normalized = subject.casefold()
-        is_owner_alias = normalized in {"the user", "user", "用户"}
+        is_owner_alias = normalized in {"the user", "user", "\u7528\u6237"}
         if _contains_entity(query, subject) or (is_owner_alias and owner_mentioned):
             if normalized not in matched:
                 matched.append(normalized)
@@ -402,9 +402,9 @@ def hierarchy_query_subjects(
 
 
 _QUERY_STATE_TERMS = {
-    "planned": ("planned", "planning", "plans", "intends", "intended", "打算", "计划", "即将"),
-    "ongoing": ("ongoing", "currently", "in progress", "正在", "仍在"),
-    "completed": ("completed", "finished", "already done", "已完成", "完成了", "结束了"),
+    "planned": ("planned", "planning", "plans", "intends", "intended", "\u6253\u7b97", "\u8ba1\u5212", "\u5373\u5c06"),
+    "ongoing": ("ongoing", "currently", "in progress", "\u6b63\u5728", "\u4ecd\u5728"),
+    "completed": ("completed", "finished", "already done", "\u5df2\u5b8c\u6210", "\u5b8c\u6210\u4e86", "\u7ed3\u675f\u4e86"),
 }
 
 

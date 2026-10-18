@@ -65,7 +65,7 @@ def _check_jieba():
 # ========================================================================
 
 # CJK Unicode ranges
-_CJK_PATTERN = re.compile(r'[一-鿿㐀-䶿豈-﫿]')
+_CJK_PATTERN = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]')
 _EN_PATTERN = re.compile(r'[a-zA-Z]{2,}')
 
 
@@ -100,7 +100,7 @@ def _split_mixed_text(text: str) -> Tuple[str, str]:
 # Lemmatization
 # ========================================================================
 
-# 月份名：spaCy 把 May 标成 AUX stopword 会丢掉时间线索；一律保留。
+# Month names: spaCy tags May as an AUX stopword, which would drop the time cue; always keep them.
 _MONTH_TOKENS = {
     "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
@@ -114,7 +114,7 @@ def _lemmatize_english(text: str) -> str:
     English lemmatization via spaCy.
 
     - Lowercases text
-    - Removes stopwords and punctuation（**保留月份名**，避免 May→modal 被滤）
+    - Removes stopwords and punctuation (**keeping month names**, so May is not filtered as a modal)
     - Lemmatizes remaining tokens
     - Preserves -ing forms alongside lemma for ambiguity (meeting/meet)
     """
@@ -131,7 +131,7 @@ def _lemmatize_english(text: str) -> str:
 
     for token in doc:
         raw = token.text
-        # 月份优先保留（即使 is_stop）
+        # Month names are kept first (even when is_stop)
         if raw in _MONTH_TOKENS:
             tokens.append(raw)
             continue

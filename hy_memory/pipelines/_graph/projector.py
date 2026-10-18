@@ -1,31 +1,31 @@
-"""写侧：把 VDB 里的 L2_FACT 投影进图，并建立记忆之间的关系边。
+"""Write side: project the L2_FACT entries of the VDB into the graph and create the relation edges between memories.
 
-## 为什么投影成 `Memory(layer=l2_fact)` 而不是扩展 `VdbRef`
+## Why project into `Memory(layer=l2_fact)` instead of extending `VdbRef`
 
-`VdbRef` 只有 `node_id` + `layer`，挂不上 tag 也挂不上 related；而 Kuzu 的 REL TABLE 是
-**强类型**的（`TAGGED_WITH` 声明为 `FROM Memory TO Topic`、`RELATED_TO` 为 `FROM Memory
-TO Memory`），给 `VdbRef` 加边意味着新增 rel table。投影成 `Memory` 则**零 schema 改动** ——
-在 Kuzu 没有 schema 迁移能力（新 DDL 只对全新 DB 生效）的前提下这一点很值钱。
+`VdbRef` only has `node_id` + `layer`: it can carry neither tags nor related edges, and Kuzu REL TABLEs are
+**strongly typed** (`TAGGED_WITH` is declared as `FROM Memory TO Topic`, `RELATED_TO` as `FROM Memory
+TO Memory`), so adding edges to `VdbRef` would mean new rel tables. Projecting into `Memory` needs **zero schema changes** --
+which is valuable given that Kuzu has no schema migration capability (new DDL only takes effect on a brand-new DB).
 
-不会和 System 2 撞车：S2 的读写都按 `layer=l6_schema` 过滤。
+There is no collision with System 2: S2 reads and writes both filter on `layer=l6_schema`.
 
-**投影不写 embedding**：图侧不做向量检索（那是 VDB 的事），而且 Kuzu 带 HNSW 索引的列
-CREATE 之后不能 SET，写了就意味着 UPDATE 时必须删节点重建。
+**Projection does not write embeddings**: the graph side performs no vector retrieval (that is the VDB's job), and Kuzu columns
+under an HNSW index cannot be SET after CREATE, so writing one would force a delete-and-recreate on UPDATE.
 
-## 边的四个来源
+## The four sources of edges
 
-| 类型 | 来源 | 额外成本 |
+| Type | Source | Extra cost |
 |---|---|---|
-| `co_occurs` | 同一次写入批次内的 facts 两两相连 | 0（纯本地） |
-| `semantic_neighbor` | reconcile 候选池里分数 ≥ 阈值、且未被 merge/supersede 的候选 | 0（池子已在内存里） |
-| `causes` / `elaborates` / `contrasts` / `same_series` | reconcile 输出的 `related` 字段（LLM 标注） | 仅输出 token |
-| `TAGGED_WITH` → Topic | 每条 fact 已有的 tags | 1 次 embed / 新 tag |
-| `MENTIONS` → Entity | 正文 spaCy NER（BOOST 白名单） | 0 embed（精确名归一） |
+| `co_occurs` | facts inside one write batch linked pairwise | 0 (purely local) |
+| `semantic_neighbor` | candidates in the reconcile pool scoring >= the threshold and not merged/superseded | 0 (the pool is already in memory) |
+| `causes` / `elaborates` / `contrasts` / `same_series` | the `related` field of the reconcile output (LLM annotated) | output tokens only |
+| `TAGGED_WITH` → Topic | the tags each fact already carries | 1 embed per new tag |
+| `MENTIONS` → Entity | body-text spaCy NER (BOOST whitelist) | 0 embed (exact-name normalization) |
 
-关于 `semantic_neighbor`：它零成本，但记录的正是"A 和 B 语义相近"，而这件事向量索引本来
-就知道 —— 所以它对召回的增量很小，价值主要在用法 A（识别"这是一个连贯的簇"）。
-真正带来新信息的是 `co_occurs`（共现与相似度正交）和 LLM 标注的 `causes` / `contrasts`
-（两端余弦往往很低，向量检索永远发现不了）。详见 `docs/pro_graph_design.md` §3.4。
+About `semantic_neighbor`: it costs nothing, but all it records is that A and B are semantically similar, which the vector index
+already knows -- so its recall gain is small and its value lies mainly in use A (recognizing a coherent cluster).
+The real new information comes from `co_occurs` (co-occurrence is orthogonal to similarity) and the LLM-annotated `causes` / `contrasts`
+edges (their endpoints usually have very low cosine similarity, so vector retrieval never finds them). See `docs/pro_graph_design.md` §3.4.
 """
 
 import logging
@@ -33,12 +33,12 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
-# 确定性边
+# Deterministic edges
 RELATION_CO_OCCURS = "co_occurs"
 RELATION_SEMANTIC_NEIGHBOR = "semantic_neighbor"
-RELATION_TEMPORAL_NEXT = "temporal_next"  # 有向，走独立的 TEMPORAL_NEXT 边表
+RELATION_TEMPORAL_NEXT = "temporal_next"  # Directed, uses its own TEMPORAL_NEXT edge table
 
-# LLM 可标注的关系类型（词表刻意保持小：弱模型 + 大本体 = 垃圾）
+# Relation types the LLM may annotate (the vocabulary is deliberately small: weak model + large ontology = garbage)
 # `same_series` is deliberately not `same_event`: it links independent dated
 # occurrences of one concrete activity/event type while preserving separate L2s.
 # The reader may assemble these references into a query-time timeline without
@@ -46,18 +46,18 @@ RELATION_TEMPORAL_NEXT = "temporal_next"  # 有向，走独立的 TEMPORAL_NEXT 
 LLM_RELATION_TYPES = ("causes", "elaborates", "contrasts", "same_series")
 
 def _co_occurs_weight(batch_size: int) -> float:
-    """co_occurs 边权按批大小归一化：批越大，单条共现关系越不具区分度。
+    """Normalize the co_occurs edge weight by batch size: the larger the batch, the less discriminative one co-occurrence is.
 
-    一批 2-3 条（最常见）几乎必然真的相关 → 给满权；一批 9 条则每条只 0.25。
-    这比统一压低先验好 —— 跨话题共现本身是**信号**（"去公园/骑车/吃饭"一起写下来，
-    三者向量互不相似但关联真实），不该因为大批次里有噪声就把小批次也一起贬值。
+    A batch of 2-3 items (the most common case) is almost certainly genuinely related and gets full weight; in a batch of 9 each edge gets only 0.25.
+    That beats uniformly lowering the prior -- cross-topic co-occurrence is itself a **signal** ("went to the park / cycling / ate out" written down together,
+    their vectors mutually dissimilar yet the relation real), and small batches must not be devalued because large ones carry noise.
     """
     n = max(2, int(batch_size))
     return min(1.0, 2.0 / (n - 1))
 
 
 def _pairs(items: Sequence[str]) -> List[Tuple[str, str]]:
-    """两两组合（无序、不含自环）。"""
+    """All unordered pairs, without self-loops."""
     out: List[Tuple[str, str]] = []
     for i in range(len(items)):
         for j in range(i + 1, len(items)):
@@ -80,21 +80,21 @@ async def project_memories_to_graph(
     temporal_spine_bulk: bool = False,
     hierarchy_topic_write: bool = False,
 ) -> Dict[str, int]:
-    """把本次写入的 MemoryNode 投影进图并建边。
+    """Project the MemoryNodes of this write into the graph and create the edges.
 
     Args:
-        nodes: 本次落库的 MemoryNode 列表（调用方应只传 L2_FACT）
+        nodes: MemoryNodes persisted by this write (callers should only pass L2_FACT)
         related_by_node: {node_id: [{"target_id", "relation_type"}, ...]}
-            来自 reconcile 输出的 LLM 标注关系
+            LLM-annotated relations from the reconcile output
         neighbors_by_node: {node_id: [(candidate_node_id, score), ...]}
-            来自 reconcile 候选池 → `semantic_neighbor` 边
-        edge_min_score: `semantic_neighbor` 的建边阈值
-        co_occurs_max_batch: 批内 facts 超过该数量就不建 co_occurs（避免 O(n²) 爆炸）
-        vector_store: 建时序脊时用来取事件时间 memory_at（图里没有该字段）
-        temporal_spine: 是否建 Topic 内的 TEMPORAL_NEXT 有向链
+            from the reconcile candidate pool, producing `semantic_neighbor` edges
+        edge_min_score: edge creation threshold for `semantic_neighbor`
+        co_occurs_max_batch: skip co_occurs when the batch holds more facts than this (avoids O(n²) blowup)
+        vector_store: used by the temporal spine to read the event time memory_at (the graph lacks that field)
+        temporal_spine: whether to build the directed within-Topic TEMPORAL_NEXT chain
 
     Returns:
-        统计 dict（nodes / tags / co_occurs / semantic / typed / errors）
+        statistics dict (nodes / tags / co_occurs / semantic / typed / errors)
     """
     stats = {
         "nodes": 0, "tags": 0, "entities": 0, "co_occurs": 0, "semantic": 0,
@@ -114,14 +114,14 @@ async def project_memories_to_graph(
     )
     hierarchy_scopes = set()
 
-    # 正文 NER → Entity（与 Topic 并列；PERSON 等已在 BOOST 白名单外）
+    # Body-text NER -> Entity (parallel to Topic; PERSON and friends are outside the BOOST whitelist)
     try:
         from .._retrieval.ner import extract_entities
     except Exception:
         extract_entities = None  # type: ignore
     _MAX_ENTITIES_PER_MEM = 8
 
-    # ── 1. 节点投影 + TAGGED_WITH + MENTIONS ──
+    # -- 1. Node projection + TAGGED_WITH + MENTIONS --
     projectable_nodes = [node for node in nodes if getattr(node, "node_id", "")]
     batch_memory_nodes = bool(
         getattr(graph_store, "_supports_batch_memory_nodes", False)
@@ -199,9 +199,9 @@ async def project_memories_to_graph(
                 tag_assignments.append((nid, str(tag), scope_key))
                 continue
             try:
-                # Topic 的隔离键**不含 session**（见 MemoryNode.get_topic_scope_key）：
-                # 主题是跨会话累积的概念。用带 session 的 isolation_key 会让同名 tag
-                # 在每个 session 各建一个互不相识的 Topic，连带饿死时序脊和
+                # The Topic isolation key **excludes session** (see MemoryNode.get_topic_scope_key):
+                # topics are concepts accumulated across sessions. A session-bearing isolation_key would
+                # create a separate, mutually unaware Topic per session for the same tag, starving the temporal spine and
                 # topic summary。
                 _tid = await graph_store.add_topic_tag(
                     nid, str(tag), scope_key,
@@ -211,7 +211,7 @@ async def project_memories_to_graph(
                     topics_by_node.setdefault(nid, []).append(_tid)
                 stats["tags"] += 1
             except TypeError:
-                # 后端 add_topic_tag 不接 embed_service（老签名）→ 退化为不归一化
+                # The backend add_topic_tag does not accept embed_service (old signature) -> degrade to no normalization
                 try:
                     await graph_store.add_topic_tag(
                         nid, str(tag), scope_key,
@@ -224,7 +224,7 @@ async def project_memories_to_graph(
                 stats["errors"] += 1
                 logger.debug(f"[graph] add_topic_tag({nid}, {tag}) failed: {e}")
 
-        # 正文 NER → Entity + MENTIONS（UPDATE 时先清再建，避免残留）
+        # Body-text NER -> Entity + MENTIONS (cleared before rebuilding on UPDATE, so nothing stale remains)
         if extract_entities is not None and hasattr(graph_store, "add_entity_mention"):
             try:
                 content = getattr(node, "content", None) or ""
@@ -290,9 +290,9 @@ async def project_memories_to_graph(
                 stats["errors"] += 1
                 logger.debug(f"[graph] hierarchy prune({scope_key}) failed: {e}")
 
-    # ── 2. co_occurs：批内两两相连 ──
-    # 同一轮对话里一起被说出来的事实之间有情节性关联，这是多跳里最有用的一类
-    # （"朋友推荐的那家餐厅" —— 朋友和餐厅共现于同一批）。
+    # -- 2. co_occurs: link every pair inside the batch --
+    # Facts stated together in one turn of conversation carry a plot-level relation, the most useful class for multi-hop traversal
+    # ("the restaurant a friend recommended" -- friend and restaurant co-occur in the same batch).
     pending_edges: List[Tuple[str, str, str, float, str]] = []
     if len(node_ids) > 1:
         if len(node_ids) <= co_occurs_max_batch:
@@ -307,7 +307,7 @@ async def project_memories_to_graph(
                 f"co_occurs_max_batch={co_occurs_max_batch}, skipping co_occurs edges"
             )
 
-    # ── 3. semantic_neighbor：把 reconcile 候选池里被丢掉的相似度存下来 ──
+    # -- 3. semantic_neighbor: persist the similarity the reconcile candidate pool threw away --
     for nid, neighbors in (neighbors_by_node or {}).items():
         if nid not in node_ids:
             continue
@@ -318,7 +318,7 @@ async def project_memories_to_graph(
                 nid, cand_id, RELATION_SEMANTIC_NEIGHBOR, float(score), "semantic",
             ))
 
-    # ── 4. LLM 标注的 typed 关系 ──
+    # -- 4. LLM-annotated typed relations --
     for nid, rels in (related_by_node or {}).items():
         if nid not in node_ids:
             continue
@@ -331,8 +331,8 @@ async def project_memories_to_graph(
 
     await _add_edges(graph_store, pending_edges, stats)
 
-    # ── 5. 时序脊 ──
-    # 增量写入和全量回填的前驱来源不同，见各自的 docstring
+    # -- 5. Temporal spine --
+    # Incremental writes and full backfills take their predecessors from different places; see the respective docstrings
     if temporal_spine_bulk:
         stats["temporal"] += await _build_temporal_spine_bulk(
             graph_store, nodes, node_ids, topics_by_node, stats,
@@ -362,7 +362,7 @@ async def _upsert_nodes_individually(
     for node in nodes:
         nid = getattr(node, "node_id", "")
         try:
-            # 不写 embedding：图侧不做向量检索，且 Kuzu 索引列 CREATE 后不能 SET
+            # Do not write embeddings: the graph side performs no vector retrieval, and Kuzu indexed columns cannot be SET after CREATE
             await graph_store.upsert_memory_node(node)
             node_ids.append(nid)
             stats["nodes"] += 1
@@ -396,12 +396,12 @@ async def _replace_entity_mentions_individually(
 async def resolve_memory_times(
     vector_store, node_ids: List[str],
 ) -> Dict[str, float]:
-    """回 VDB 取这些节点的**事件时间** `memory_at`（unix 秒），缺失回退 `gmt_created`。
+    """Go back to the VDB for the **event time** `memory_at` (unix seconds) of these nodes, falling back to `gmt_created` when absent.
 
-    为什么必须回 VDB：图里的 `Memory` 表只有 `created_at`（落库时间），**没有
-    `memory_at`**，而 Kuzu 新增列对已有 DB 不生效。所以事件时间一律以 VDB 为准 ——
-    这也和 `created_after` 按事件时间过滤的口径一致
-    （见 `data/vector_store_base.node_effective_time`）。
+    Why the VDB is required: the `Memory` table in the graph only has `created_at` (persist time) and **no
+    `memory_at`**, and new Kuzu columns do not take effect on an existing DB. So the VDB is always authoritative for event time --
+    which also matches the way `created_after` filters by event time
+    (see `data/vector_store_base.node_effective_time`).
     """
     if vector_store is None or not node_ids:
         return {}
@@ -431,14 +431,14 @@ async def _build_temporal_spine_bulk(
     topics_by_node: Dict[str, List[str]],
     stats: Dict[str, int],
 ) -> int:
-    """全量回填用：整批按 Topic 分组、按事件时间排序，逐对相连成链。
+    """For full backfills: group the whole batch by Topic, order it by event time, and connect consecutive pairs into a chain.
 
-    和增量版（`_build_temporal_spine`）的区别在**前驱从哪来**：
-    - 增量写入：本批只有一两条，前驱在库里 → 要查图 + 回 VDB 取时间，
-      且批内两两关系由 `co_occurs` 表达，不能当成时序前驱；
-    - 全量回填：整批就是全部历史，前驱就在批内 → 直接排序连边，一次 I/O 都不用查。
+    The difference from the incremental version (`_build_temporal_spine`) is **where the predecessor comes from**:
+    - Incremental write: the batch holds one or two nodes and the predecessor lives in the store, so the graph plus VDB times must be queried,
+      and intra-batch relations are expressed by `co_occurs`, which must not be treated as temporal predecessors;
+    - Full backfill: the batch is the entire history and its predecessors are inside it, so sorting and linking needs no I/O at all.
 
-    如果回填走增量版，会因为"排除批内节点"而找不到任何前驱、一条边都建不出来。
+    If a backfill used the incremental version, excluding in-batch nodes would leave no predecessor at all and not one edge would be created.
     """
     by_topic: Dict[str, List[Tuple[float, str]]] = {}
     new_ids = set(node_ids)
@@ -473,15 +473,15 @@ async def _build_temporal_spine(
     stats: Dict[str, int],
     max_topic_members: int = 200,
 ) -> int:
-    """把每条新记忆接到同 Topic 下事件时间更早的最近一条之后。
+    """Attach every new memory after the nearest earlier one in event time under the same Topic.
 
-    实现分两步：图给出同 Topic 的成员 id，VDB 给出这些成员的 `memory_at`
-    （图里没有事件时间，见 `resolve_memory_times`），前驱在 Python 侧选。
+    The implementation is two steps: the graph yields the member ids of the same Topic, the VDB yields those members' `memory_at`
+    (the graph has no event time, see `resolve_memory_times`), and the predecessor is selected on the Python side.
 
-    ⚠️ 已知局限：只往回接（prev → new），**不修复乱序插入**。记忆基本按时间顺序写入，
-    所以链多数正确；但如果补写了一条落在链中间的旧记忆，它只会接到自己的前驱后面，
-    原本的 prev → next 边不会被拆开，链会出现分叉。
-    时序问答除了走脊，读侧还有按 memory_at 排序兜底，所以这个不完美是可接受的。
+    ⚠️ Known limitation: it only links backwards (prev → new) and **never repairs out-of-order insertion**. Memories are written roughly in time order,
+    so most chains are correct; but if an older memory is written late into the middle of a chain, it only attaches behind its own predecessor,
+    the original prev → next edge is not split apart, and the chain forks.
+    Besides walking the spine, the read side still falls back to sorting by memory_at for temporal questions, so this imperfection is acceptable.
     """
     edges: List[Tuple[str, str, str]] = []
     new_ids = set(node_ids)
@@ -497,7 +497,7 @@ async def _build_temporal_spine(
             continue
         try:
             ts = memory_at.timestamp()
-            # 同 Topic 的候选成员（排除自己和本批其他节点 —— 批内关系由 co_occurs 表达）
+            # Candidate members of the same Topic (excluding itself and the other nodes of this batch -- intra-batch relations use co_occurs)
             members: List[str] = []
             for tid in topic_ids:
                 for m in await graph_store.get_topic_memories(
@@ -607,26 +607,26 @@ async def _add_edges(
 
 
 # ================================================================
-# 同步契约：VDB 侧状态变化必须反映到图，否则图会腐烂
+# Sync contract: VDB-side status changes must be reflected in the graph, otherwise the graph rots
 # ================================================================
 #
-# | VDB 动作 | 图侧 |
+# | VDB action | Graph side |
 # |---|---|
-# | ADD               | project_memories_to_graph（建节点 + 边） |
-# | UPDATE（原地）     | project_memories_to_graph（upsert 覆盖 content/tags） |
-# | SUPERSEDE         | 新节点入图；旧节点标 superseded，**边保留**（历史仍可走） |
-# | dedup → SHADOW    | 标 shadow，读侧扩展时过滤掉 |
-# | delete / purge    | graph_store.delete_node / delete_by_metadata（已有实现） |
+# | ADD               | project_memories_to_graph (create nodes + edges) |
+# | UPDATE (in place) | project_memories_to_graph (upsert overwrites content/tags) |
+# | SUPERSEDE         | new node enters the graph; old node marked superseded, **edges kept** (history remains walkable) |
+# | dedup -> SHADOW   | marked shadow and filtered out during read-side expansion |
+# | delete / purge    | graph_store.delete_node / delete_by_metadata (already implemented) |
 #
-# 读侧必须过滤 status，否则被判重删掉的记忆会从图里绕回来。
+# The read side must filter on status, otherwise memories deleted by deduplication would circle back through the graph.
 
 async def sync_graph_on_supersede(graph_store, old_node_ids: List[str]) -> int:
-    """SUPERSEDE：把旧节点标记为 superseded（边保留，历史链仍可遍历）。"""
+    """SUPERSEDE: mark the old nodes as superseded (edges kept, the history chain stays traversable)."""
     return await _mark_status(graph_store, old_node_ids, "superseded")
 
 
 async def sync_graph_on_shadow(graph_store, node_ids: List[str]) -> int:
-    """判重/逻辑删除：标记为 shadow，读侧一律过滤。"""
+    """Deduplication / logical deletion: mark as shadow, and the read side always filters them out."""
     return await _mark_status(graph_store, node_ids, "shadow")
 
 

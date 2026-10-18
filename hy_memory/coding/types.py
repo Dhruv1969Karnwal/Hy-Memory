@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Coding Memory 数据结构
+Coding Memory data structures
 
-设计原则：
-- 与 chat 链路完全分轨，独立 schema
-- task + search_keys 多 key 召回
-- boundary_envs 记录经验依赖的环境，供消费方判断是否仍适用
-- 覆盖式 update（不留历史），可携带 DELETE op
+Design principles:
+- Fully separate from the chat pipeline, with its own schema
+- Multi-key retrieval via task + search_keys
+- boundary_envs records the environment an experience depends on, so consumers can judge whether it still applies
+- Overwriting update (no history kept), may carry a DELETE op
 
-对外 scene 与返回结构见 docs/scene_coding_usage.md。
+See docs/scene_coding_usage.md for the public scene and response structures.
 """
 
 from dataclasses import dataclass, field
@@ -16,27 +16,27 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any, Literal
 
 
-# 事实层 status 取值
+# Fact-layer status values
 FACT_STATUSES = ("active", "superseded")
 FactStatus = Literal["active", "superseded"]
 
-# 写演变总结时最多往回追几代。不设上限的话，长命事实每次覆盖都要顺着 fact_link
-# 走完整条链，既多查库又把提示词撑爆。超出的部分在提示词里标一句"更早若干代已略"。
+# How many generations back to walk when writing the evolution summary. Without a cap, every overwrite of a long-lived fact
+# would traverse the whole fact_link chain, costing extra queries and blowing up the prompt; the excess is marked as "earlier generations omitted".
 MAX_FACT_CHAIN_ENTRIES = 8
 
 
 # ================================================================
-# 草稿（LLM extract 阶段输出）
+# Draft (output of the LLM extract stage)
 # ================================================================
 
 @dataclass
 class CodingMemoryDraft:
     """
-    LLM extractor 产出的草稿，未经 reconcile / 持久化。
+    Draft produced by the LLM extractor, not yet reconciled or persisted.
 
-    字段用于 coding/working 链路内部抽取与 reconcile。
+    Fields serve extraction and reconcile inside the coding/working pipeline.
     """
-    # 检索主键
+    # Retrieval primary keys
     task: str
     search_keys: List[str] = field(default_factory=list)
     solution: str = ""
@@ -44,7 +44,7 @@ class CodingMemoryDraft:
 
     confidence: float = 0.7
 
-    # 上下文（SDK 注入）
+    # Context (injected by the SDK)
     user_id: str = ""
     agent_id: str = "default_agent"
     workspace_id: Optional[str] = None
@@ -77,40 +77,40 @@ class CodingMemoryDraft:
 
 
 # ================================================================
-# 已持久化记忆
+# Persisted memory
 # ================================================================
 
 @dataclass
 class CodingMemory:
-    """已持久化的经验层记忆（SQLite + VDB 双层共同表示一条）"""
-    # 主键
+    """Persisted experience-layer memory (one record shared by the SQLite and VDB layers)."""
+    # Primary keys
     experience_id: str
     user_id: str
     agent_id: str = "default_agent"
 
-    # 检索主键
+    # Retrieval primary keys
     task: str = ""
     search_keys: List[str] = field(default_factory=list)
     solution: str = ""
     boundary_envs: str = ""
 
-    # 作用域（随结果透出，同时作为 search / list 的可选筛选条件）
+    # Scope (exposed in results and also optional filters for search / list)
     workspace_id: Optional[str] = None
     branch: Optional[str] = None
 
-    # 上下文
+    # Context
     session_id: Optional[str] = None
     files: List[str] = field(default_factory=list)
 
-    # 两层互链：本经验由哪些 fact 衍生（同批全互链回填）
+    # Cross-layer links: which facts this experience derives from (backfilled across the whole batch)
     source_fact_ids: List[str] = field(default_factory=list)
 
-    # 元数据
+    # Metadata
     confidence: float = 0.7
     source: str = "default"
     extraction_source: str = "auto_extract"
 
-    # 时间
+    # Time
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -141,60 +141,60 @@ class CodingMemory:
 
 
 # ================================================================
-# 事实层（episodic）：WorkingFact
+# Fact layer (episodic): WorkingFact
 #
-# 与经验层（procedural）并排的第二层。经验层存"怎么干"（可复用方法，跨会话），
-# 事实层存"这次怎么推进的"（一段 trace/session 的整体记录，为对话连贯服务）。
+# A second layer beside the experience layer (procedural). The experience layer stores "how to do it" (reusable methods, cross-session);
+# the fact layer stores "how this one went" (the whole record of one trace/session, serving conversational continuity).
 #
-# 设计决策（见对话记录）：
-#   - 无 TTL：靠 embed 召回 top-K + 独立 FactReconciler(LLM) 判覆盖来保新鲜，
-#             而非过期淘汰。覆盖时旧 fact status→superseded 并回填 fact_link。
-#   - session_id 只存不强隔离（同经验层），检索按 user 召回。
-#   - 两层互链：fact.derived_experience_ids ↔ experience.source_fact_ids（同批全互链）。
-#   - subject 硬锚点（可开关，见 fact_reconciler._SUBJECT_GATE_DEFAULT）：开启时覆盖
-#     判定先过 subject 闸门，再走语义召回 + LLM。
-#     没有这个锚点时（纯语义 + LLM 判覆盖），"同一 workspace 下有多个并列主体"的
-#     场景容易出错：多人共用一份行程、多台机器共用一套部署脚本时，各主体的
-#     statement 语义高度相似，LLM 可能把它们判成同一任务的先后版本，一次写入顶掉
-#     别人的事实。subject 不同就禁止覆盖可以避免这一点：措辞相近顶多多留一条，
-#     跨主体覆盖则是直接把别人的状态删掉。
+# Design decisions (see the discussion log):
+#   - No TTL: freshness comes from embed top-K recall plus a separate FactReconciler(LLM) overwrite decision,
+#             not from expiry eviction. On overwrite the old fact goes status→superseded and fact_link is backfilled.
+#   - session_id is stored but not a hard isolation boundary (same as the experience layer); retrieval recalls per user.
+#   - Cross-layer links: fact.derived_experience_ids ↔ experience.source_fact_ids (full linking within a batch).
+#   - subject hard anchor (switchable, see fact_reconciler._SUBJECT_GATE_DEFAULT): when on, an overwrite
+#     decision must pass the subject gate first, then semantic recall + LLM.
+#     Without this anchor (pure semantics + LLM overwrite decisions), "several parallel subjects in one workspace"
+#     goes wrong easily: when several people share one itinerary or several machines share one deployment script, the
+#     subjects' statements are semantically very close, so the LLM may read them as earlier/later versions of the same task and one write
+#     replaces someone else's fact. Forbidding overwrite when subject differs avoids that: near-identical wording at worst keeps one extra row,
+#     while cross-subject overwrite deletes someone else's state outright.
 #
-#     为什么做成开关：这个闸门是精确字符串相等（见下面 normalize_subject），
-#     它的正确性完全取决于 subject 是不是稳定实体名。subject 是自由文本或位置
-#     标签时，同一实体会被写成不同 subject 而互相拦截；如果后续步骤依赖前一步
-#     的结果，拦掉一次真实更新会让它读到过期值。所以默认关闭，需要时用
-#     HY_FACT_SUBJECT_GATE=1 开启。
+#     Why it is a switch: the gate compares strings exactly (see normalize_subject below),
+#     so its correctness depends entirely on subject being a stable entity name. When subject is free text or a location
+#     label, one entity gets written as several subjects that block each other; if a later step depends on an earlier
+#     result, blocking a real update makes it read a stale value. Hence it is off by default and enabled with
+#     HY_FACT_SUBJECT_GATE=1 when needed.
 
 # ================================================================
 
 
 def normalize_subject(subject: Optional[str]) -> str:
-    """subject 的比较形式：去空白、折叠内部空格、小写。
+    """Comparison form of subject: stripped, inner whitespace collapsed, lowercased.
 
-    锚点只用来判"是不是同一个主体"，所以 `Dylan` / `dylan ` / `DYLAN` 必须同值；
-    但不做同义词归并（`auth/middleware.ts` 与 `middleware` 是两个主体），那属于
-    语义判断，是 LLM 那一步的事。空 subject 返回空串，调用方按"没有锚点"处理。
+    The anchor only decides "is this the same subject", so `Dylan` / `dylan ` / `DYLAN` must compare equal;
+    but no synonym merging is done (`auth/middleware.ts` and `middleware` are two subjects) -- that is a
+    semantic judgement and belongs to the LLM step. An empty subject returns an empty string; callers treat it as "no anchor".
     """
     return " ".join((subject or "").split()).lower()
 
 
 @dataclass
 class WorkingFactDraft:
-    """LLM extractor 产出的会话级事实草稿，未经 reconcile / 持久化。
+    """Session-level fact draft produced by the LLM extractor, not yet reconciled or persisted.
 
-    上下文（user_id / session_id 等）不在草稿里，由 FactReconciler 落库时注入。
-    每段 trace 最多一条；statement 是可恢复状态记录，简洁覆盖用户任务、实际处理、
-    证据边界与当前结束状态，并保留文件/目录路径、符号、命令、错误字符串、版本和
-    配置值等检索锚点。
+    Context (user_id / session_id, etc.) is not part of the draft; FactReconciler injects it when persisting.
+    At most one per trace segment; statement is a resumable state record that concisely covers the user's task, what was actually done,
+    the evidence boundary and the current ending state, while keeping retrieval anchors such as file/directory paths, symbols, commands,
+    error strings, versions and configuration values.
     """
     statement: str = ""
     files: List[str] = field(default_factory=list)
-    # 这段会话的主体：被操作的那个人 / 文件 / 服务 / 组件。覆盖判定的硬锚点。
+    # The subject of this session segment: the person / file / service / component being operated on. Hard anchor for overwrite decisions.
     subject: str = ""
-    # 会话产出的可寻址原文：计划表、配置块、命令输出、结构化结果。statement 是
-    # 摘要（检索向量），details 是被摘要掉的那些具体取值——按原样保留，供检索
-    # 命中之后真正读取。摘要天然会丢"第二天午餐吃什么、多少钱"这种被寻址的格子，
-    # 而那正是下游唯一需要的东西。
+    # Addressable source text the session produced: plan tables, config blocks, command output, structured results. statement is
+    # the summary (the retrieval vector); details holds the concrete values that summarizing dropped -- kept verbatim so they can be
+    # read for real after a retrieval hit. Summaries inherently lose addressed cells such as "what for lunch on day two and how much",
+    # which is exactly the part downstream consumers need.
     details: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -208,48 +208,48 @@ class WorkingFactDraft:
 
 @dataclass
 class WorkingFact:
-    """一段 trace/session 的整体记录（SQLite working_fact + 独立 facts 集合）。"""
-    # 主键
+    """The whole record of one trace/session (SQLite working_fact plus a separate facts collection)."""
+    # Primary keys
     fact_id: str
     user_id: str
     agent_id: str = "default_agent"
 
-    # 上下文（存但不强隔离，同经验层）
+    # Context (stored but not a hard isolation boundary, same as the experience layer)
     session_id: Optional[str] = None
     workspace_id: Optional[str] = None
     branch: Optional[str] = None
     source: str = "default"
 
-    # 内容
-    statement: str = ""                    # 会话摘要（任务/做法/结果）= 检索向量
-    files: List[str] = field(default_factory=list)  # 本次 trace 实际操作或调查的文件/目录路径
+    # Content
+    statement: str = ""                    # Session summary (task/approach/result) = retrieval vector
+    files: List[str] = field(default_factory=list)  # File/directory paths actually operated on or investigated in this trace
 
-    # 这段会话的主体（人 / 文件 / 服务 / 组件）。覆盖判定的硬闸门：subject 不同
-    # 一律不许覆盖，见模块头注释。空串表示抽取时没能定出主体，此时退回纯语义 + LLM
-    # 判定（老库里的行也是空串，行为与改动前一致）。
+    # Subject of this session segment (person / file / service / component). Hard gate for overwrite decisions: a different
+    # subject may never overwrite, see the module header comment. An empty string means extraction did not settle on a subject, and we
+    # fall back to pure semantics + LLM (rows in old databases are empty strings too, so behaviour matches the pre-change code).
     subject: str = ""
 
-    # 会话产出的可寻址原文，不进检索向量，命中后随 statement 一起交给下游读取。
-    # statement 负责"能被找到"，details 负责"找到之后真的有那个值"。
+    # Addressable source text the session produced; excluded from the retrieval vector and handed to downstream readers with statement after a hit.
+    # statement makes the record findable; details makes the found value actually present.
     details: str = ""
 
-    # 覆盖 / 互链
-    fact_link: Optional[str] = None        # 被哪条新 fact 覆盖（覆盖后回填，追溯用）
-    derived_experience_ids: List[str] = field(default_factory=list)  # 衍生了哪些经验
-    status: FactStatus = "active"          # active / superseded（软删除）
+    # Overwrite / cross-links
+    fact_link: Optional[str] = None        # Which newer fact overwrote this one (backfilled after overwrite, for tracing)
+    derived_experience_ids: List[str] = field(default_factory=list)  # Which experiences were derived from it
+    status: FactStatus = "active"          # active / superseded (soft delete)
 
-    # LLM 写的进展总结："同一任务怎样跨 session 推进到当前状态"，每次 SUPERSEDE 重写。
-    # 空串表示没有演变可讲（从没被覆盖过），或那次 LLM 调用失败了。
+    # LLM-written progress summary: "how the same task advanced across sessions to the current state", rewritten on every SUPERSEDE.
+    # An empty string means there is no evolution to tell (never superseded) or that LLM call failed.
     #
-    # 历史本身不存在这里——被覆盖的事实原样留在库里，fact_link 指向后继，顺着
-    # 反向走就能还原历代说法。这里只放提炼过的那句话。
+    # The history itself is not stored here -- superseded facts stay in the database as they are, fact_link points at the successor, and
+    # walking it in reverse reconstructs every past wording. Only the distilled sentence lives here.
     #
-    # 不进向量库：检索认的是 statement 的当前值，把历史说法一起 embed 会让已经
-    # 作废的措辞重新具备召回力。
+    # Kept out of the vector database: retrieval matches the current value of statement, and embedding past wordings would give
+    # already voided phrasing recall power again.
     fact_chain_summary: str = ""
 
-    # 时间
-    created_at: Optional[datetime] = None  # 产生时间，新的优先
+    # Time
+    created_at: Optional[datetime] = None  # Creation time; newer records take precedence
 
     def __post_init__(self) -> None:
         from ..utils.source_filter import normalize_source
@@ -277,11 +277,11 @@ class WorkingFact:
 
 
 # ================================================================
-# 事实血统
+# Fact lineage
 # ================================================================
 
 def short_date(iso: str) -> str:
-    """ISO 时间取到日。解析不了就原样返回，宁可难看也别丢信息。"""
+    """ISO timestamp truncated to the day. Returned as-is when it cannot be parsed: ugly beats losing information."""
     s = (iso or "").strip()
     return s[:10] if len(s) >= 10 else s
 
@@ -296,15 +296,15 @@ ReconcileAction = Literal["ADD", "UPDATE", "DELETE", "SKIP"]
 @dataclass
 class ReconcileOp:
     """
-    Reconciler 决策出的单个操作。
+    A single operation decided by the Reconciler.
 
-    - ADD     ← 由某 draft 触发新增；draft_idx 必填，target_experience_id 不填
-    - UPDATE  ← 由某 draft 触发更新；draft_idx + target_experience_id 都必填
-    - DELETE  ← 新内容明确否定/作废了某 candidate；draft_idx 记录"由哪条 draft 触发"
-                可空（少数情况），target_experience_id 必填
-    - SKIP    ← duplicate；draft_idx 必填，target_experience_id 不填
+    - ADD     ← insert triggered by a draft; draft_idx required, target_experience_id unset
+    - UPDATE  ← update triggered by a draft; both draft_idx and target_experience_id required
+    - DELETE  ← new content explicitly denies or voids a candidate; draft_idx records "which draft triggered it"
+                and may be empty (rare cases), target_experience_id required
+    - SKIP    ← duplicate; draft_idx required, target_experience_id unset
 
-    注：一次 reconcile 调用产出的 ops 数 *可以超过* drafts 数（一个 draft 可能伴随多条 DELETE）。
+    Note: one reconcile call may emit *more* ops than there are drafts (a draft can come with several DELETE ops).
     """
     action: ReconcileAction
     draft_idx: Optional[int] = None
@@ -321,10 +321,10 @@ class ReconcileOp:
 
 
 # ================================================================
-# 事实层 op
+# Fact-layer op
 #
-# 会话级事实不设价值门槛，所以每条 draft 必定产出一个 INSERT；若它继续推进
-# 某个旧 fact 所记录的同一用户任务，还会额外产出 SUPERSEDE（软删并过继经验链）。
+# Session-level facts have no value threshold, so every draft always yields one INSERT; if it continues the same user task recorded by
+# an older fact, it additionally yields SUPERSEDE (soft delete plus adoption of the experience chain).
 # ================================================================
 
 FactReconcileAction = Literal["INSERT", "SUPERSEDE"]
@@ -333,9 +333,9 @@ FactReconcileAction = Literal["INSERT", "SUPERSEDE"]
 @dataclass
 class FactReconcileOp:
     """
-    - INSERT     ← 新事实入库 active；draft_idx + fact_id 必填
-    - SUPERSEDE  ← 旧 session fact 与新 fact 属于同一用户任务的连续推进；
-                   fact_id 是旧记录，superseded_by 是新的进展记录
+    - INSERT     ← new fact persisted as active; draft_idx + fact_id required
+    - SUPERSEDE  ← the old session fact and the new fact are consecutive progress on the same user task;
+                   fact_id is the old record, superseded_by is the new progress record
     """
     action: FactReconcileAction
     draft_idx: Optional[int] = None

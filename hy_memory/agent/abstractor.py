@@ -1,12 +1,12 @@
 """
-Agent Memory V2 - Abstractor 摘要智能体 (System 2 Pro Pipeline)
+Agent Memory V2 - Abstractor summarization agent (System 2 Pro Pipeline)
 
-负责 System 2 pro pipeline 的高阶摘要能力：
-  1. Session 摘要生成 (L3 层 — System 2 Sleep Replay 调用)
-  2. Schema 归纳 (L5 层 — System 2 Schema Miner 调用)
-  3. Profile 摘要生成 (Context Assembly 调用)
+Owns the higher-order summarization capabilities of the System 2 pro pipeline:
+  1. Session summary generation (L3 layer — called by the System 2 Sleep Replay)
+  2. Schema induction (L5 layer — called by the System 2 Schema Miner)
+  3. Profile summary generation (called by Context Assembly)
 
-注意：L3_SUMMARY 由 Episode / Topic summary 机制负责，本模块不生成摘要。
+Note: L3_SUMMARY is handled by the Episode / Topic summary mechanism; this module does not produce it.
 """
 
 from typing import Dict, Any, Optional, List
@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 # ================================================================
-# 数据结构
+# Data structures
 # ================================================================@dataclass
 class SessionSummaryResult:
-    """Session 摘要结果 (V2)"""
+    """Session summary result (V2)"""
     success: bool
     summary: str = ""
     key_topics: List[str] = field(default_factory=list)
@@ -36,7 +36,7 @@ class SessionSummaryResult:
 
 @dataclass
 class SchemaAbstractResult:
-    """Schema 归纳结果 (V2)"""
+    """Schema induction result (V2)"""
     success: bool
     central_proposition: str = ""
     supporting_summary: str = ""
@@ -48,7 +48,7 @@ class SchemaAbstractResult:
 
 @dataclass
 class ProfileSummaryResult:
-    """Profile 摘要结果 (V2)"""
+    """Profile summary result (V2)"""
     success: bool
     core: str = ""
     personality: str = ""
@@ -60,7 +60,7 @@ class ProfileSummaryResult:
 
 
 # ================================================================
-# Prompt 模板
+# Prompt templates
 # ================================================================
 
 SESSION_SUMMARY_PROMPT = """Generate a summary of the following conversation session. The summary language MUST match the conversation language.
@@ -123,15 +123,15 @@ Output in JSON format:
 
 
 # ================================================================
-# 核心实现
+# Core implementation
 # ================================================================
 
 class Abstractor:
     """
-    摘要智能体 (System 2 Pro Pipeline)
+    Summarization agent (System 2 Pro Pipeline)
 
-    负责 System 2 的高阶摘要：Session 摘要 / Schema 归纳 / Profile 摘要。
-    L3_SUMMARY 由 Episode / Topic summary 机制负责。
+    Owns the higher-order System 2 summaries: session summary / schema induction / profile summary.
+    L3_SUMMARY is handled by the Episode / Topic summary mechanism.
     """
 
     def __init__(
@@ -149,17 +149,17 @@ class Abstractor:
         self,
         session_content: str,
         user_profile: str = "",
-        current_time: str = "",  # 由调用方传入，不传则为空字符串
+        current_time: str = "",  # passed in by the caller; empty string when omitted
     ) -> SessionSummaryResult:
         """
-        生成 Session 摘要 (L3 层)。
-        由 System 2 Sleep Replay Worker 调用。
+        Generate a session summary (L3 layer).
+        Called by the System 2 Sleep Replay Worker.
         """
         try:
             prompt = SESSION_SUMMARY_PROMPT.format(
                 session_content=session_content,
-                user_profile=user_profile or "(暂无画像)",
-                current_time=current_time,  # 由调用方决定，不传则为空字符串
+                user_profile=user_profile or "(no profile yet)",
+                current_time=current_time,  # decided by the caller; empty string when omitted
             )
             response = await self.llm.complete(
                 prompt=prompt,
@@ -174,7 +174,7 @@ class Abstractor:
                 success=True,
                 summary=data.get("summary", response.content.strip()),
                 key_topics=data.get("key_topics", []),
-                emotional_tone=data.get("emotional_tone", "中性"),
+                emotional_tone=data.get("emotional_tone", "neutral"),
                 new_facts_count=data.get("new_facts_count", 0),
                 tokens_used=response.tokens_used,
             )
@@ -183,7 +183,7 @@ class Abstractor:
             return SessionSummaryResult(success=False, error=str(e))
 
     # ================================================================
-    # V2 Schema 归纳 (L4.5)
+    # V2 Schema induction (L4.5)
     # ================================================================
 
     async def abstract_schema(
@@ -191,8 +191,8 @@ class Abstractor:
         facts: List[str],
     ) -> SchemaAbstractResult:
         """
-        从一组关联事实中归纳 Schema (心智模型)。
-        由 System 2 Schema Miner 调用。
+        Induce a Schema (mental model) from a set of related facts.
+        Called by the System 2 Schema Miner.
         """
         try:
             facts_text = "\n".join(f"  - {f}" for f in facts)
@@ -220,7 +220,7 @@ class Abstractor:
             return SchemaAbstractResult(success=False, error=str(e))
 
     # ================================================================
-    # V2 Profile 摘要 (L5)
+    # V2 Profile summary (L5)
     # ================================================================
 
     async def generate_profile_summary(
@@ -230,14 +230,14 @@ class Abstractor:
         gotchas: str = "",
     ) -> ProfileSummaryResult:
         """
-        生成 Profile 摘要，用于 Memory Context Package 的 Layer 0。
-        由 Context Assembly 调用。
+        Generate the profile summary used by Layer 0 of the Memory Context Package.
+        Called by Context Assembly.
         """
         try:
             prompt = PROFILE_SUMMARY_PROMPT.format(
-                profile_data=profile_data or "(暂无画像数据)",
-                active_schemas=active_schemas or "(无)",
-                gotchas=gotchas or "(无)",
+                profile_data=profile_data or "(no profile data)",
+                active_schemas=active_schemas or "(none)",
+                gotchas=gotchas or "(none)",
             )
             response = await self.llm.complete(
                 prompt=prompt,
@@ -262,12 +262,12 @@ class Abstractor:
             return ProfileSummaryResult(success=False, error=str(e))
 
     # ================================================================
-    # 工具方法
+    # Utility methods
     # ================================================================
 
     @staticmethod
     def _parse_json(text: str) -> Dict[str, Any]:
-        """从 LLM 输出中解析 JSON"""
+        """Parse JSON out of LLM output"""
         text = text.strip()
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
@@ -286,7 +286,7 @@ class Abstractor:
         return {}
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Return usage statistics"""
         return {
             "call_count": self._call_count,
             "total_tokens": self._total_tokens,

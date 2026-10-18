@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Qdrant BM25 稀疏向量编码器（fastembed Qdrant/bm25）单例封装。
+Qdrant BM25 sparse-vector encoder wrapper (fastembed Qdrant/bm25), process-wide singleton.
 
-Qdrant 原生 BM25 走 sparse vector：
-  - 写入：文档文本 → fastembed .embed() → sparse(indices, values)，含 IDF/TF 权重
-  - 检索：query → .query_embed() → sparse，query_points(using="bm25")
+Qdrant-native BM25 uses sparse vectors:
+  - Write: document text → fastembed .embed() → sparse(indices, values), with IDF/TF weights
+  - Search: query → .query_embed() → sparse, query_points(using="bm25")
 
-BM25 是非对称的：文档侧用 embed()（带 IDF×TF 权重），查询侧用 query_embed()
-（权重为 1）。两者不可混用。
+BM25 is asymmetric: the document side uses embed() (with IDF×TF weights), the query side uses query_embed()
+(weights all 1). The two must not be used interchangeably.
 
-SparseTextEmbedding('Qdrant/bm25') 首次会下载 ONNX 模型（数百 MB）并加载
-~4.4s，必须进程内单例缓存。fastembed 缺失时优雅降级：返回 None，调用方据此
-关闭 qdrant sparse 能力。
+The first SparseTextEmbedding('Qdrant/bm25') call downloads the ONNX model (hundreds of MB) and takes
+~4.4s to load, so it must be cached as a process-wide singleton. Graceful degradation when fastembed is missing: return None so
+callers disable qdrant sparse capability accordingly.
 """
 
 from __future__ import annotations
@@ -22,17 +22,17 @@ from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# (indices, values)：可直接用于 qdrant SparseVector(indices=, values=)
+# (indices, values): usable directly as qdrant SparseVector(indices=, values=)
 SparseTuple = Tuple[List[int], List[float]]
 
-_encoder = None            # SparseTextEmbedding | None | False(=不可用)
+_encoder = None            # SparseTextEmbedding | None | False(=unavailable)
 _lock = threading.Lock()
 
 _MODEL_NAME = "Qdrant/bm25"
 
 
 def _get_encoder():
-    """懒加载 fastembed BM25 单例。不可用时返回 False。"""
+    """Lazily load the fastembed BM25 singleton. Returns False when unavailable."""
     global _encoder
     if _encoder is not None:
         return _encoder
@@ -55,7 +55,7 @@ def _get_encoder():
 
 
 def is_available() -> bool:
-    """fastembed BM25 编码器是否可用。"""
+    """Whether the fastembed BM25 encoder is available."""
     return bool(_get_encoder())
 
 
@@ -73,7 +73,7 @@ def _to_tuple(sparse_embedding) -> Optional[SparseTuple]:
 
 
 def encode_doc(text: str) -> Optional[SparseTuple]:
-    """文档侧编码（含 IDF×TF 权重）；不可用或空文本返回 None。"""
+    """Document-side encoding (with IDF×TF weights); returns None when unavailable or for empty text."""
     enc = _get_encoder()
     if not enc or not text:
         return None
@@ -86,7 +86,7 @@ def encode_doc(text: str) -> Optional[SparseTuple]:
 
 
 def encode_docs(texts: List[str]) -> List[Optional[SparseTuple]]:
-    """批量文档编码；与输入等长，空文本对应 None。"""
+    """Batch document encoding; same length as input, empty texts map to None."""
     enc = _get_encoder()
     if not enc:
         return [None] * len(texts)
@@ -105,7 +105,7 @@ def encode_docs(texts: List[str]) -> List[Optional[SparseTuple]]:
 
 
 def encode_query(text: str) -> Optional[SparseTuple]:
-    """查询侧编码（query_embed，权重为 1）；不可用或空文本返回 None。"""
+    """Query-side encoding (query_embed, weights all 1); returns None when unavailable or for empty text."""
     enc = _get_encoder()
     if not enc or not text:
         return None

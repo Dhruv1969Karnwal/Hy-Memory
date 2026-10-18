@@ -1,25 +1,25 @@
 """
-基础画像（L0_BASIC_INFO）upsert 模块。
+Basic profile (L0_BASIC_INFO) upsert module.
 
-把用户稳定的结构化属性（name / age / location / occupation / employer，可配置）
-合并写入 L0_BASIC_INFO memory 演化链。
+Merges the user's stable structured attributes (name / age / location / occupation / employer, configurable)
+into the L0_BASIC_INFO memory evolution chain.
 
-特点：
-- 每次更新只存 diff 字段，创建新版本节点。
-- 旧版本标记为 superseded，通过 supersedes/superseded_by 链关联。
-- 用户通过 get_user_profile() 单独读取 L0_BASIC_INFO；Search 不再返回 L0。
-- 字段表（fields schema）由 MemoryConfig.basic_profile.fields 配置。
+Properties:
+- Each update stores only the diff fields and creates a new version node.
+- Old versions are marked superseded and linked through the supersedes/superseded_by chain.
+- Users read L0_BASIC_INFO separately via get_user_profile(); Search no longer returns L0.
+- The field table (fields schema) is configured by MemoryConfig.basic_profile.fields.
 
-设计变更（2026-06）：
-- 删除原 LLM function-calling tool `update_basic_user_profile`（弱模型乱填）。
-- 改为：extractor prompt 直接要求 LLM 在 JSON 输出中返回 basic_info；writer
-  收到 basic_info 后调用本模块 upsert_basic_profile() 入库。
-- 字段表可配置，效果不绑死 5 个固定字段。
+Design change (2026-06):
+- Removed the LLM function-calling tool `update_basic_user_profile` (weak models filled it in arbitrarily).
+- Instead, the extractor prompt asks the LLM to return basic_info directly in its JSON output, and the
+  writer calls this module's upsert_basic_profile() once it receives basic_info.
+- The field table is configurable, so behaviour is not pinned to 5 fixed fields.
 
-公共 API：
-- upsert_basic_profile(...)        — 主入口，writer 直接调
-- basic_info_node_id(...)          — deterministic id（仍保留，便于回退查询）
-- render_l0_evolution_chain(...)   — L0 演化链渲染
+Public API:
+- upsert_basic_profile(...)        — main entry, called directly by the writer
+- basic_info_node_id(...)          — deterministic id (still kept, for fallback lookups)
+- render_l0_evolution_chain(...)   — renders the L0 evolution chain
 """
 
 from __future__ import annotations
@@ -36,24 +36,24 @@ logger = logging.getLogger(__name__)
 
 
 # ================================================================
-# 默认字段顺序（用于 _render_content 内容拼接顺序）
-# 注：实际接受哪些字段由调用方传入 allowed_fields 决定。
+# Default field order (controls how _render_content concatenates fields)
+# Note: which fields are actually accepted is decided by the allowed_fields the caller passes in.
 # ================================================================
 
 BASIC_FIELDS: List[str] = ["name", "age", "location", "occupation", "employer"]
 
 
 # ================================================================
-# deterministic node id（保留，便于回退查询历史数据）
+# Deterministic node id (kept so historical data can still be looked up as a fallback)
 # ================================================================
 
 _BASIC_INFO_NAMESPACE = uuid.UUID("00000000-0000-0000-0000-000000babb1e")  # stable sentinel
 USER_LEVEL_AGENT_ID = ""
 USER_LEVEL_SESSION_ID = ""
 
-# 同进程、同事件循环内串行化同一用户的 L0 更新，避免并发请求同时创建多个
-# latest 链头。Lock 按 event loop 分桶，防止多 client/loop 复用同一 Lock 报错。
-# 向量库没有跨进程事务/CAS，因此召回侧仍会对历史或跨副本分叉做防御性折叠。
+# Serializes L0 updates for one user inside a process and event loop, so concurrent requests cannot create
+# several latest chain heads at once. Locks are bucketed per event loop, so several clients/loops never share one Lock.
+# The VDB has no cross-process transaction or CAS, so the read side still defensively folds history and cross-replica forks.
 _LOOP_USER_LOCKS = weakref.WeakKeyDictionary()
 
 
@@ -71,21 +71,21 @@ def _user_lock(user_id: str) -> asyncio.Lock:
 
 
 def basic_info_node_id(user_id: str) -> str:
-    """返回只由 user_id 决定的 user-level L0 deterministic id。"""
+    """Return the user-level L0 deterministic id derived from user_id alone."""
     key = f"basic_info::{user_id or 'default'}"
     return str(uuid.uuid5(_BASIC_INFO_NAMESPACE, key))
 
 
 # ================================================================
-# content 渲染
+# Content rendering
 # ================================================================
 
 def _render_content(kv: Dict[str, Any], field_order: Optional[List[str]] = None) -> str:
     """
-    把 KV 渲染成人类可读的自然语言串。
-    与其他 memory 保持 "The user's ..." 风格一致。
+    Render a KV mapping into a human-readable natural-language string.
+    Stays consistent with the "The user's ..." style of other memories.
 
-    field_order: 可选，控制字段拼接顺序。未指定时按 kv 字典序。
+    field_order: optional, controls the concatenation order; defaults to kv's lexicographic order.
     """
     order = field_order or sorted(kv.keys())
     parts: List[str] = []
@@ -106,23 +106,23 @@ def _render_content(kv: Dict[str, Any], field_order: Optional[List[str]] = None)
 
 def render_l0_evolution_chain(l0_nodes: list) -> str:
     """
-    按属性分组、时间正序展示 L0 全部历史版本。
+    Show all historical L0 versions grouped by attribute, in chronological order.
 
-    输入：L0_BASIC_INFO 节点列表（含 superseded 的旧版本）
-    输出：格式化的字符串，例如：
-        用户姓名: 张三
-        用户年龄: (2026-01-15 用户称年龄25) → (2026-05-10 用户称年龄26)
-        用户职业: (2026-01-15 用户说自己是程序员) → (2026-03-20 用户说自己是架构师)
+    Input: a list of L0_BASIC_INFO nodes (including superseded older versions)
+    Output: a formatted string, for example:
+        User name: Alice
+        User age: (2026-01-15 user said age 25) → (2026-05-10 user said age 26)
+        User occupation: (2026-01-15 user said they are a programmer) → (2026-03-20 user said they are an architect)
     """
     from datetime import datetime as _dt
 
-    # 按时间正序排列
+    # Sort chronologically ascending
     sorted_nodes = sorted(
         l0_nodes,
         key=lambda n: (getattr(n, 'gmt_created', None) or getattr(n, 'valid_from', None) or _dt.min),
     )
 
-    # 收集每个属性的历史版本（动态发现 key，不再绑死 BASIC_FIELDS）
+    # Collect every historical version per attribute (keys discovered dynamically, not fixed to BASIC_FIELDS)
     field_history: Dict[str, List[tuple]] = {}
     for node in sorted_nodes:
         kv = {}
@@ -133,15 +133,15 @@ def render_l0_evolution_chain(l0_nodes: list) -> str:
         for field_name, val in kv.items():
             field_history.setdefault(field_name, []).append((ts_str, val))
 
-    # 渲染：内置 5 字段使用中文 label，其余使用原 key
+    # Rendering: the 5 built-in fields use friendly labels, everything else uses the raw key
     field_labels = {
-        "name": "用户姓名",
-        "age": "用户年龄",
-        "location": "用户所在地",
-        "occupation": "用户职业",
-        "employer": "用户雇主",
+        "name": "User name",
+        "age": "User age",
+        "location": "User location",
+        "occupation": "User occupation",
+        "employer": "User employer",
     }
-    # 顺序：先 BASIC_FIELDS 中已知的，再剩下的按字母序
+    # Order: known BASIC_FIELDS first, then the remainder alphabetically
     ordered_keys: List[str] = [k for k in BASIC_FIELDS if k in field_history]
     for k in sorted(field_history.keys()):
         if k not in ordered_keys:
@@ -163,7 +163,7 @@ def render_l0_evolution_chain(l0_nodes: list) -> str:
 
 
 # ================================================================
-# 输入 sanitize
+# Input sanitization
 # ================================================================
 
 def _sanitize_kv(
@@ -171,8 +171,8 @@ def _sanitize_kv(
     allowed_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    只保留 allowed_fields 中的 key；丢弃 null / 空串 / "null" / "none"。
-    age 字段强制 int。
+    Keeps only keys present in allowed_fields; drops null / empty strings / "null" / "none".
+    The age field is coerced to int.
     """
     if allowed_fields is None:
         allowed_fields = BASIC_FIELDS
@@ -190,7 +190,7 @@ def _sanitize_kv(
                 continue
             result[k] = s
         elif isinstance(v, bool):
-            # bool 是 int 子类，特判排在前面
+            # bool is a subclass of int, so it is special-cased first
             result[k] = "yes" if v else "no"
         elif isinstance(v, int):
             result[k] = int(v)
@@ -203,18 +203,18 @@ def _sanitize_kv(
             except (TypeError, ValueError):
                 continue
         else:
-            # 其他非预期类型（list/dict）忽略
+            # Other unexpected types (list/dict) are ignored
             continue
     return result
 
 
 # ================================================================
-# 公共入口：upsert_basic_profile
+# Public entry point: upsert_basic_profile
 # ================================================================
 
 @dataclass
 class BasicProfileUpsertResult:
-    """upsert 结果。failed 时 node_id="" 且 error 非 None。"""
+    """Upsert result. On failure node_id="" and error is not None."""
     success: bool
     node_id: str = ""
     content: str = ""
@@ -248,7 +248,7 @@ async def upsert_basic_profile(
     allowed_fields: Optional[List[str]] = None,
     client_meta: Optional[Dict[str, Any]] = None,
 ) -> BasicProfileUpsertResult:
-    """按 user_id 串行更新全局唯一的 L0 Basic Info 链。"""
+    """Serially update the single global L0 Basic Info chain for a user_id."""
     normalized_user_id = (user_id or "").strip()
     if not normalized_user_id:
         return BasicProfileUpsertResult(success=False, error="user_id required")
@@ -273,18 +273,18 @@ async def _upsert_basic_profile_unlocked(
     client_meta: Optional[Dict[str, Any]] = None,
 ) -> BasicProfileUpsertResult:
     """
-    把 LLM 提取出的 basic_info kv 入库到 user-level L0_BASIC_INFO 演化链。
+    Persist the LLM-extracted basic_info kv into the user-level L0_BASIC_INFO evolution chain.
 
-    kv 中字段不在 allowed_fields 里的会被丢弃（防止 LLM 编出多余字段）。
-    新版本节点：deterministic node_id，新 UUID。
-    旧版本：is_latest=False, status=SUPERSEDED, superseded_by 指向新节点。
+    kv fields outside allowed_fields are dropped (so the LLM cannot invent extra fields).
+    A new version node: deterministic node_id plus a fresh UUID.
+    Old versions: is_latest=False, status=SUPERSEDED, superseded_by pointing at the new node.
 
-    client_meta 是调用方写入时透传的业务 meta。L0 每次变更都新建节点、旧节点转
-    SUPERSEDED，与 writer 的 SUPERSEDE 同构，故同样只带本次 meta 不继承旧链，
-    避免长链上无限累积。历史 meta 随旧节点留在演化链里仍可查。
+    client_meta is the business meta the caller passes through on write. Every L0 change creates a new node and turns
+    the old one SUPERSEDED, structurally the same as the writer's SUPERSEDE, so it likewise carries only this write's
+    meta instead of inheriting the old chain, avoiding unbounded accumulation on long chains. Historical meta stays queryable on the old nodes.
     """
     user_id = (user_id or "").strip()
-    # L0 Basic Info 从输入、唯一性到落盘都只属于 user_id。
+    # L0 Basic Info belongs to user_id alone, from input through uniqueness to persistence.
 
     new_kv = _sanitize_kv(kv or {}, allowed_fields=allowed_fields)
     if not new_kv:
@@ -292,9 +292,9 @@ async def _upsert_basic_profile_unlocked(
             success=True, changed=False, reason="no valid fields after sanitize"
         )
 
-    # 按 user_id 一次取回全部 L0，再同时计算链头和完整 KV。旧实现连续执行
-    # list_by_user(limit=100) 与 list_by_user(limit=1000)，远端 Qdrant 拥塞时一次
-    # basic_info 更新会白白多等一轮网络请求。
+    # Fetch all L0 nodes for the user once, then compute both the chain head and the full KV. The old implementation
+    # ran list_by_user(limit=100) followed by list_by_user(limit=1000), so whenever remote Qdrant was congested a single
+    # basic_info update waited on one extra network round trip for nothing.
     all_l0_nodes = await _list_l0_nodes(vector_store, user_id)
     latest_nodes = _latest_l0_heads_from_nodes(all_l0_nodes)
     existing_full_kv = _assemble_full_kv_from_nodes(
@@ -307,8 +307,8 @@ async def _upsert_basic_profile_unlocked(
         if old_v is None or str(v) != str(old_v):
             diff_kv[k] = v
 
-    # 历史 agent-level L0 或多链头即使没有字段变化，也创建一个 canonical user-level
-    # 节点并 supersede 全部旧链头，完成惰性迁移和去重。
+    # Legacy agent-level L0 or several chain heads create one canonical user-level node and supersede every old head
+    # even with no field change, completing the lazy migration and deduplication.
     needs_migration = (
         (not latest_nodes and bool(existing_full_kv))
         or len(latest_nodes) > 1
@@ -327,7 +327,7 @@ async def _upsert_basic_profile_unlocked(
     if not content:
         return BasicProfileUpsertResult(success=False, error="rendered content is empty")
 
-    # 重算 embedding
+    # Recompute the embedding
     try:
         embedding = await embed_service.embed_queued(content)
     except Exception as e:
@@ -352,8 +352,8 @@ async def _upsert_basic_profile_unlocked(
         session_id=USER_LEVEL_SESSION_ID,
         layer=MemoryLayer.L0_BASIC_INFO,
         content=content,
-        # L0 走的是旁路写入（不经 MemoryWriter），显式补齐事件时间，保证
-        # created_after 在所有后端都使用同一字段语义。
+        # L0 is written out of band (not through MemoryWriter), so the event time is filled in explicitly to keep
+        # created_after on identical field semantics across all backends.
         memory_at=datetime.now(),
         source_type=SourceType.EXPLICIT,
         status=MemoryStatus.ACTIVE,
@@ -369,7 +369,7 @@ async def _upsert_basic_profile_unlocked(
     except Exception as e:
         return BasicProfileUpsertResult(success=False, error=f"upsert failed: {e}")
 
-    # 把全部历史 active/latest 链头标记为 superseded，收敛为一个 user-level 链头。
+    # Mark every historical active/latest chain head superseded, converging onto one user-level head.
     supersede_failures: List[str] = []
     for old_head in latest_nodes:
         try:
@@ -406,15 +406,15 @@ async def _upsert_basic_profile_unlocked(
 
 
 # ================================================================
-# 内部：查找 L0 节点 / 组装 full kv
+# Internal: locating L0 nodes / assembling the full kv
 # ================================================================
 
 def _is_valid_l0_head(node) -> bool:
-    """链头必须是合法 L0 节点：layer==L0_BASIC_INFO 且带 basic_info_kv 结构。
+    """A chain head must be a valid L0 node: layer==L0_BASIC_INFO carrying a basic_info_kv structure.
 
-    防御 defense-in-depth：即便上游查询（list_by_user / get_by_id）因后端
-    layer 过滤失效等原因返回了非 L0 节点（如 l1_raw），也不把它当链头去
-    supersede，避免生成跨层脏链（raw 被串进 L0 演化链）。
+    Defence in depth: even if an upstream query (list_by_user / get_by_id) returns a non-L0 node because the backend's
+    layer filter failed (for example l1_raw), it is never treated as a chain head to supersede, which would produce a
+    dirty cross-layer chain (raw stitched into the L0 evolution chain).
     """
     from ...models.memory import MemoryLayer
     if node is None:
@@ -436,13 +436,13 @@ def _node_timestamp(node) -> float:
 
 
 async def _find_latest_l0_heads(vector_store, user_id: str) -> List[Any]:
-    """按 user_id 返回全部合法 active L0 链头，canonical user-level 节点优先。"""
+    """Return all valid active L0 chain heads for a user_id, canonical user-level nodes first."""
     nodes = await _list_l0_nodes(vector_store, user_id)
     return _latest_l0_heads_from_nodes(nodes)
 
 
 async def _list_l0_nodes(vector_store, user_id: str) -> List[Any]:
-    """一次取回用户的全部 L0 节点，供 head 选择和 KV 组装共同复用。"""
+    """Fetch all of a user's L0 nodes once, reused by both head selection and KV assembly."""
     from ...models.memory import MemoryLayer
     return await vector_store.list_by_user(
         user_id=user_id,
@@ -471,12 +471,12 @@ def _latest_l0_heads_from_nodes(nodes: List[Any]) -> List[Any]:
 
 
 async def _find_latest_l0(vector_store, user_id: str):
-    """返回该用户唯一/优先 L0 链头。"""
+    """Return this user's single or highest-priority L0 chain head."""
     heads = await _find_latest_l0_heads(vector_store, user_id)
     if heads:
         return heads[0]
 
-    # 极旧后端可能无法通过 list_by_user 找到 canonical deterministic 节点。
+    # Very old backends may fail to find the canonical deterministic node through list_by_user.
     legacy = await vector_store.get_by_id(basic_info_node_id(user_id))
     if _is_valid_l0_head(legacy):
         return legacy
@@ -489,7 +489,7 @@ async def _assemble_full_kv(
     user_id: str,
     allowed_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """按 user_id 跨历史 Agent 链组装完整 KV。"""
+    """Assemble the full KV for a user_id across historical agent chains."""
     all_nodes = await _list_l0_nodes(vector_store, user_id)
     return _assemble_full_kv_from_nodes(all_nodes, allowed_fields=allowed_fields)
 
@@ -499,7 +499,7 @@ def _assemble_full_kv_from_nodes(
     *,
     allowed_fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """由已读取的 L0 节点组装完整 KV，不再触发第二次远端查询。"""
+    """Assemble the full KV from the L0 nodes already read, without triggering a second remote query."""
     all_nodes.sort(key=_node_timestamp)
 
     allowed_set = set(allowed_fields) if allowed_fields else None

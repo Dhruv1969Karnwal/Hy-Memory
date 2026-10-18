@@ -1,13 +1,13 @@
 """
 Agent Memory V2 - VectorStore (FAISS)
 
-基于 FAISS 的向量存储层。
+FAISS-based vector storage layer.
 
-特点:
-- 使用 faiss-cpu，纯 CPU 计算
-- 内存 dict 存 payload，search 后手动过滤 metadata
-- faiss.write_index() + JSON 持久化 payload
-- 同步 API → _run_in_vdb_pool() 包装为异步
+Properties:
+- Uses faiss-cpu, pure CPU computation
+- Payloads live in an in-memory dict, metadata is filtered manually after search
+- faiss.write_index() plus JSON to persist payloads
+- Sync API wrapped into async by _run_in_vdb_pool()
 """
 
 from typing import Optional, List, Dict, Any
@@ -28,12 +28,12 @@ from .vector_store_base import VectorStoreBase, passes_created_after
 
 logger = logging.getLogger(__name__)
 
-# VDB 独立线程池
+# Dedicated VDB thread pool
 from .vector_store_chroma import _vdb_executor
 
 
 def _run_in_vdb_pool(func, *args, **kwargs):
-    """在 VDB 独立线程池中执行同步函数"""
+    """Run a sync function in the dedicated VDB thread pool."""
     import functools
     call = functools.partial(func, *args, **kwargs) if args or kwargs else func
     return run_in_executor_guarded(_vdb_executor, call)
@@ -41,10 +41,10 @@ def _run_in_vdb_pool(func, *args, **kwargs):
 
 class FaissVectorStore(VectorStoreBase):
     """
-    FAISS 向量存储实现
+    FAISS vector store implementation
 
-    使用 faiss-cpu 做相似度检索，内存 dict 存储 payload，
-    持久化到磁盘（faiss index 文件 + JSON payload 文件）。
+    Similarity search with faiss-cpu, payloads kept in an in-memory dict,
+    persisted to disk (faiss index file + JSON payload file).
     """
 
     def __init__(self, config: MemoryConfig):
@@ -52,14 +52,14 @@ class FaissVectorStore(VectorStoreBase):
         self._index = None
         # point_id (str) → { "payload": dict, "embedding": list, "idx": int }
         self._data: Dict[str, Dict[str, Any]] = {}
-        # faiss 内部索引 int → point_id str 的映射
+        # mapping from the faiss internal int index → point_id str
         self._idx_to_id: Dict[int, str] = {}
         self._next_idx: int = 0
         self._lock = threading.Lock()
         self._dims = config.vector_store.embedding_dims
 
     async def initialize(self) -> None:
-        """初始化 FAISS 索引"""
+        """Initialise the FAISS index."""
         try:
             import faiss
         except ImportError:
@@ -76,7 +76,7 @@ class FaissVectorStore(VectorStoreBase):
             payload_path = persist_dir / f"{self._collection_name}.json"
 
             if index_path.exists() and payload_path.exists():
-                # 从磁盘加载
+                # load from disk
                 self._index = faiss.read_index(str(index_path))
                 with open(payload_path, "r", encoding="utf-8") as f:
                     saved = json.load(f)
@@ -88,7 +88,7 @@ class FaissVectorStore(VectorStoreBase):
                     f"points={self._index.ntotal}"
                 )
             else:
-                # 创建新索引 (使用 IndexFlatIP，余弦相似度需先归一化)
+                # create a new index (IndexFlatIP; cosine similarity requires normalising vectors first)
                 self._index = faiss.IndexFlatIP(self._dims)
                 logger.info(f"Created new FAISS index, dims={self._dims}")
 
@@ -96,11 +96,11 @@ class FaissVectorStore(VectorStoreBase):
         logger.debug(f"VectorStore initialized (FAISS), collection={self._collection_name}")
 
     # ================================================================
-    # 持久化
+    # Persistence
     # ================================================================
 
     def _persist(self) -> None:
-        """持久化索引和 payload 到磁盘"""
+        """Persist the index and payloads to disk."""
         import faiss
 
         persist_dir = Path(self.config.vector_store.persist_directory)
@@ -120,7 +120,7 @@ class FaissVectorStore(VectorStoreBase):
 
     @staticmethod
     def _normalize(vec: List[float]) -> np.ndarray:
-        """L2 归一化，用于余弦相似度"""
+        """L2 normalisation, used for cosine similarity."""
         arr = np.array(vec, dtype=np.float32).reshape(1, -1)
         norm = np.linalg.norm(arr)
         if norm > 0:
@@ -128,11 +128,11 @@ class FaissVectorStore(VectorStoreBase):
         return arr
 
     # ================================================================
-    # 写入
+    # Writes
     # ================================================================
 
     async def upsert(self, node: MemoryNode) -> str:
-        """写入或更新一个 MemoryNode"""
+        """Write or update one MemoryNode."""
         if node.embedding is None:
             raise ValueError(f"Node {node.node_id} has no embedding, cannot upsert to vector store")
 
@@ -144,9 +144,9 @@ class FaissVectorStore(VectorStoreBase):
                 vec = self._normalize(node.embedding)
 
                 if point_id in self._data:
-                    # 更新: FAISS 不支持原地更新，记录新索引位置
+                    # update: FAISS has no in-place update, record the new index position
                     old_idx = self._data[point_id]["idx"]
-                    # 标记旧索引无效
+                    # mark the old index entry invalid
                     if old_idx in self._idx_to_id:
                         del self._idx_to_id[old_idx]
 
@@ -170,7 +170,7 @@ class FaissVectorStore(VectorStoreBase):
         return node.node_id
 
     async def upsert_batch(self, nodes: List[MemoryNode]) -> List[str]:
-        """批量写入"""
+        """Batch write."""
         valid_nodes = [n for n in nodes if n.embedding is not None]
         if not valid_nodes:
             return []
@@ -213,7 +213,7 @@ class FaissVectorStore(VectorStoreBase):
         return await _run_in_vdb_pool(_upsert_batch)
 
     async def update_embedding(self, node_id: str, embedding: List[float]) -> bool:
-        """仅更新向量（payload 不变）"""
+        """Update only the vector (payload unchanged)."""
         point_id = self._node_id_to_point_id(node_id)
         try:
             def _update():
@@ -240,21 +240,21 @@ class FaissVectorStore(VectorStoreBase):
             return False
 
     async def update_payload(self, node_id: str, updates: Dict[str, Any]) -> bool:
-        """更新 payload 字段；若 updates 含 'embedding'，同时更新向量（重建索引项）。"""
+        """Update payload fields; if updates contains 'embedding', update the vector as well (re-index the entry)."""
         if not updates:
             return True
         point_id = self._node_id_to_point_id(node_id)
         updates = dict(updates)
-        new_embedding = updates.pop("embedding", None)  # 取出向量单独处理
+        new_embedding = updates.pop("embedding", None)  # pull the vector out and handle it separately
         try:
             def _update():
                 with self._lock:
                     if point_id not in self._data:
                         return False
-                    # 1) payload 字段
+                    # 1) payload fields
                     for k, v in updates.items():
                         self._data[point_id]["payload"][k] = v
-                    # 2) 向量：重新 add（FaissFlat 不支持原地改，沿用 update_embedding 思路）
+                    # 2) vector: add it again (FaissFlat cannot change it in place, same approach as update_embedding)
                     if new_embedding is not None:
                         old_idx = self._data[point_id]["idx"]
                         if old_idx in self._idx_to_id:
@@ -280,7 +280,7 @@ class FaissVectorStore(VectorStoreBase):
             return False
 
     # ================================================================
-    # 检索
+    # Retrieval
     # ================================================================
 
     async def search(
@@ -298,12 +298,12 @@ class FaissVectorStore(VectorStoreBase):
         score_threshold: float = 0.0,
         status_filter: Optional[List[MemoryStatus]] = None,
         only_latest: bool = True,
-        tags_match_any: Optional[List[str]] = None,  # reader_hybrid_tag 路 B；faiss 暂未实现，忽略
+        tags_match_any: Optional[List[str]] = None,  # reader_hybrid_tag route B; not implemented in faiss yet, ignored
         created_after: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
-        """语义检索（FAISS 搜索 + 手动 metadata 过滤）"""
+        """Semantic retrieval (FAISS search + manual metadata filtering)."""
 
-        # 预处理过滤集合
+        # precompute the filter sets
         keys_set = set(isolation_keys) if isolation_keys else None
         effective_uids = user_ids if user_ids else ([user_id] if user_id else [])
         uids_set = set(effective_uids) if effective_uids else None
@@ -323,9 +323,9 @@ class FaissVectorStore(VectorStoreBase):
                     return []
 
                 vec = self._normalize(query_embedding)
-                # IndexFlatIP 支持 IDSelector：先由 metadata 构造允许的内部 ID，
-                # 再让 FAISS 在该子集内做精确 top-k。不能先取 limit*N 再过滤，
-                # 否则黑白名单会吃掉名额并改变召回语义。
+                # IndexFlatIP supports IDSelector: build the allowed internal IDs from metadata first,
+                # then let FAISS produce an exact top-k within that subset. Taking limit*N and filtering afterwards
+                # would let the allow/deny lists eat the result quota and change retrieval semantics.
                 import faiss
                 allowed_indices = []
                 for point_id, entry in self._data.items():
@@ -373,7 +373,7 @@ class FaissVectorStore(VectorStoreBase):
                         continue
                     point_id = self._idx_to_id.get(int(idx))
                     if point_id is None:
-                        # 已被删除或更新的旧索引
+                        # index entry already deleted or superseded
                         continue
 
                     entry = self._data.get(point_id)
@@ -382,7 +382,7 @@ class FaissVectorStore(VectorStoreBase):
 
                     payload = entry["payload"]
 
-                    # metadata 过滤: 精确 keys > 单 key > user_ids/user_id + agent 级
+                    # metadata filtering: exact keys > single key > user_ids/user_id + agent level
                     if keys_set:
                         if payload.get("isolation_key") not in keys_set:
                             continue
@@ -398,14 +398,14 @@ class FaissVectorStore(VectorStoreBase):
                         continue
                     if payload.get("status") not in status_values:
                         continue
-                    # 只搜索演化链末端节点
+                    # only search the tail nodes of evolution chains
                     if only_latest and not payload.get("is_latest", True):
                         continue
-                    # 时间过滤：事件时间 memory_at 优先，为空回退 gmt_created
+                    # time filter: event time memory_at wins, falling back to gmt_created when it is empty
                     if not passes_created_after(payload, created_after):
                         continue
 
-                    # score 是内积（归一化后 = cosine similarity）
+                    # score is the inner product (after normalisation = cosine similarity)
                     sim = float(score)
                     if sim < score_threshold:
                         continue
@@ -448,21 +448,21 @@ class FaissVectorStore(VectorStoreBase):
         return output
 
     async def get_by_id(self, node_id: str) -> Optional[MemoryNode]:
-        """按 ID 获取"""
+        """Get by id."""
         point_id = self._node_id_to_point_id(node_id)
         try:
             entry = self._data.get(point_id)
             if entry is None:
                 return None
             node = self._payload_to_node(entry["payload"])
-            # FAISS 不方便按 ID 取向量，跳过 embedding
+            # FAISS cannot look a vector up by id cheaply, skip embedding
             return node
         except Exception as e:
             logger.warning(f"Failed to get vector point {node_id}: {e}")
             return None
 
     async def get_embeddings(self, node_ids: List[str]) -> Dict[str, List[float]]:
-        """批量取向量（in-memory _data 直接读 embedding），供去重算 cosine。"""
+        """Batch fetch vectors (reading embeddings straight from the in-memory _data) so dedup can compute cosine."""
         out: Dict[str, List[float]] = {}
         for nid in node_ids:
             point_id = self._node_id_to_point_id(nid)
@@ -472,11 +472,11 @@ class FaissVectorStore(VectorStoreBase):
         return out
 
     # ================================================================
-    # 删除
+    # Deletions
     # ================================================================
 
     async def delete(self, node_id: str) -> bool:
-        """删除单个向量点"""
+        """Delete a single vector point."""
         point_id = self._node_id_to_point_id(node_id)
         try:
             def _delete():
@@ -495,7 +495,7 @@ class FaissVectorStore(VectorStoreBase):
             return False
 
     async def delete_by_isolation_key(self, isolation_key: str) -> int:
-        """删除某隔离键下的所有向量"""
+        """Delete every vector under one isolation key."""
         try:
             def _delete():
                 with self._lock:
@@ -524,7 +524,7 @@ class FaissVectorStore(VectorStoreBase):
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> int:
-        """按 metadata 字段组合删除向量"""
+        """Delete vectors by a combination of metadata fields."""
         try:
             def _delete():
                 with self._lock:
@@ -554,7 +554,7 @@ class FaissVectorStore(VectorStoreBase):
             return 0
 
     # ================================================================
-    # 枚举
+    # Enumeration
     # ================================================================
 
     async def list_by_user(
@@ -572,9 +572,9 @@ class FaissVectorStore(VectorStoreBase):
         with_vectors: bool = True,
         allow_raw_layer: bool = False,
     ) -> List[MemoryNode]:
-        """枚举用户的记忆节点，支持多 user / 多 agent
+        """Enumerate a user's memory nodes, supporting multiple users / multiple agents
 
-        allow_raw_layer: 默认 False，即不返回 L1_RAW（对外读路径）。
+        allow_raw_layer: defaults to False, i.e. L1_RAW is not returned (external read path).
         """
         import asyncio
         import numpy as np
@@ -594,7 +594,7 @@ class FaissVectorStore(VectorStoreBase):
         if layer_values is not None and not allow_raw_layer:
             layer_values.discard(_raw_value)
             if not layer_values:
-                # 只点名了 raw：置为不可能命中的空白名单，结果必然为空集
+                # only raw was named: use an empty allow-list that can never match, so the result is necessarily empty
                 layer_values = {"__blocked__"}
 
         def _list():
@@ -620,7 +620,7 @@ class FaissVectorStore(VectorStoreBase):
                     if not allow_raw_layer and payload.get("layer", "") == _raw_value:
                         continue
                     node = self._payload_to_node(payload)
-                    # 从 FAISS index 取向量
+                    # read the vector from the FAISS index
                     idx = entry.get("idx")
                     if with_vectors and idx is not None and self._index is not None:
                         try:
@@ -641,11 +641,11 @@ class FaissVectorStore(VectorStoreBase):
         return result
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     async def get_stats(self) -> Dict[str, Any]:
-        """获取集合统计"""
+        """Get collection statistics."""
         try:
             return {
                 "collection": self._collection_name,
@@ -703,7 +703,7 @@ class FaissVectorStore(VectorStoreBase):
         return await _run_in_vdb_pool(_list)
 
     async def count(self, isolation_key: str) -> int:
-        """统计某隔离键下的向量数量"""
+        """Count the vectors under one isolation key."""
         try:
             c = 0
             for entry in self._data.values():
@@ -715,7 +715,7 @@ class FaissVectorStore(VectorStoreBase):
             return 0
 
     async def close(self) -> None:
-        """关闭并持久化"""
+        """Close and persist."""
         if self._index is not None:
             try:
                 await _run_in_vdb_pool(self._persist)

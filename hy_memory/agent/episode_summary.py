@@ -1,30 +1,30 @@
-"""Episode-scoped summary：一次讨论结束时总结一次，而不是每攒够 N 轮就重写一遍。
+"""Episode-scoped summary: summarize once when a discussion ends, instead of rewriting it every N accumulated turns.
 
-与固定窗口摘要的区别
+Difference from fixed-window summaries
 --------------------------------------------------
 
-固定窗口摘要按 user turn 数积累：每达到一个窗口就触发一次，
-并且要把**上一条摘要文本喂回 LLM** 做延续/合并，旧摘要置 SHADOW。
-对一次长讨论（十几二十轮、跨几次 write）来说这意味着：
+A fixed-window summary accumulates by user turn count: each window reached triggers one run,
+and it must **feed the previous summary text back into the LLM** to continue or merge it, setting the old summary to SHADOW.
+For one long discussion (a dozen or twenty turns, spread over several writes) that means:
 
-    turn 10 → 调 LLM（输入 10 轮）
-    turn 20 → 调 LLM（输入 prev_summary + 10 轮），把 turn 10 的产出作废
-    turn 30 → 调 LLM（输入 prev_summary + 10 轮），把 turn 20 的产出作废
+    turn 10 → LLM call (input: 10 turns)
+    turn 20 → LLM call (input: prev_summary + 10 turns), invalidating the turn 10 output
+    turn 30 → LLM call (input: prev_summary + 10 turns), invalidating the turn 20 output
 
-付了 3 次 token、上下文还越来越长，最终只留下 1 条摘要。
+Three rounds of tokens paid, context ever longer, and only 1 summary survives in the end.
 
-Episode 划分是**免费的**（按写入时间间隔切，不用 LLM），而且天然对应"一件事"。
-于是可以换成：**等这件事结束了，总结一次**。
+Episode segmentation is **free** (cut by write-time gaps, no LLM), and it naturally corresponds to one single thing.
+So the approach becomes: **wait until the thing is over, then summarize once**.
 
-    episode 关闭 → 调 LLM（输入该 episode 的全部记忆）→ 1 条摘要，无需 merge
+    episode closed → LLM call (input: all memories of that episode) → 1 summary, no merge needed
 
-一次讨论只付一次 token，也不产生"写了又作废"的中间摘要。
+One discussion pays tokens exactly once and produces no write-then-invalidate intermediate summaries.
 
-摘要从**已抽取的记忆**出发（而不是原始对话轮），这和 topic summary 的做法一致：
-记忆本身就是我们要留下的东西，且比原始轮次省 token。代价是没进记忆的闲聊细节不会进摘要 ——
-对检索用途来说这是想要的行为。
+Summaries start from the **already extracted memories** (not the raw conversation turns), which matches how topic summary works:
+memories are exactly what we want to keep, and they cost fewer tokens than raw turns. The price is that small-talk details that never became memories stay out of the summary --
+for retrieval purposes that is the desired behaviour.
 
-状态不额外建表，存在摘要节点自己的 `custom` 里：
+State needs no extra table; it lives in the summary node's own `custom`:
 
     custom = {
         "summary_kind": "episode",
@@ -141,29 +141,29 @@ Rules:
 Return ONLY the summary text, no preamble, no JSON, no quotes."""
 
 
-EPISODE_SUMMARY_PROMPT_ZH = """你在为**一段讨论**（一个 episode）做总结。
+EPISODE_SUMMARY_PROMPT_ZH = """You are summarizing **one discussion** (one episode).
 
-一个 episode 是一段连续的讨论 —— 围绕一件事，可能跨越好几次写入。
+An episode is one continuous stretch of discussion -- around a single thing, possibly spanning several writes.
 
-## 这段讨论中抽取到的记忆（时间正序）
+## Memories extracted during this discussion (oldest → newest)
 
 {memories}
 
 ---
 
-写一段关于这次讨论内容的高密度摘要。
+Write one dense summary of what this discussion was about.
 
-要求：
+Rules:
 
-* 2–4 句，第三人称，以"用户…"开头（若记忆讲的是别人，则以那个人的名字开头）。
-* 把这些记忆串成一个连贯的叙述 —— 一段讨论通常有一根主线（一个计划、一个问题、
-  一次出行、一个决定）。
-* 保留具体细节：人名、地点、数字、日期。
-* 绝不编造记忆里没有的内容。
-* 不要逐条罗列记忆，要综合成一段。
-* 输出语言与记忆的语言一致。
+* 2-4 sentences, third person, starting with "The user ..." (or with the named person's name if the memories are about someone else).
+* Weave the memories into one coherent account -- a discussion usually has a thread running through it (a plan, a problem,
+  an outing, a decision).
+* Preserve concrete details: names, places, numbers, dates.
+* Never invent anything that is not in the memories.
+* Do not enumerate the memories one by one; synthesize them into one passage.
+* Output language must match the language of the memories.
 
-只返回摘要正文，不要任何前言、不要 JSON、不要引号。"""
+Return only the summary text: no preamble, no JSON, no quotes."""
 
 
 SESSION_EPISODE_PROMPT = """Convert this complete conversation session into one retrieval-friendly episode narrative.
@@ -1265,10 +1265,10 @@ async def summarize_closed_episode(
     temperature: Optional[float] = None,
     trace=None,
 ) -> Optional[str]:
-    """总结一个**刚刚关闭**的 episode，返回摘要节点 id（跳过则 None）。
+    """Summarize an episode that **has just closed** and return the summary node id (None when skipped).
 
-    由 writer 在检测到 episode 滚动时 fire-and-forget 调用：此时上一个 episode
-    不会再有新内容进来，所以这一次总结就是最终产物，不需要后续 merge / 重写。
+    Called fire-and-forget by the writer when it detects the episode rolling over: at that point the previous episode
+    can receive no further content, so this one summary is the final artifact and needs no later merge or rewrite.
     """
     if not episode_id or not user_id:
         return None
@@ -1286,9 +1286,9 @@ async def summarize_closed_episode(
         logger.debug(f"[episode-summary] fetch members failed: {e}")
         return None
 
-    # 只喂 user 侧记忆：agent 侧记忆（助手说过什么）对用户画像价值低，喂进去纯是烧 token。
-    # 与 user-turn 计数口径一致，episode 只统计 user 侧记忆。
-    # owner 缺省视为 user（与落库时的默认一致）。
+    # Feed user-side memories only: agent-side memories (what the assistant said) are worth little for the user profile and only burn tokens.
+    # Consistent with the user-turn counting rule, an episode only counts user-side memories.
+    # A missing owner is treated as user (matching the default used at persistence time).
     nodes = [
         n for n in (nodes or [])
         if (getattr(n, "owner", None) or "user") == "user"
@@ -1299,7 +1299,7 @@ async def summarize_closed_episode(
         if (getattr(n, "content", "") or "").strip()
     ]
     if len(contents) < max(2, min_memories):
-        # 一两条记忆的 episode 不值得单独摘要 —— 原记忆本身就够检索了
+        # An episode of one or two memories is not worth a standalone summary -- the memories themselves already retrieve well enough
         return None
 
     from datetime import datetime as _dt
@@ -1342,7 +1342,7 @@ async def summarize_closed_episode(
 async def _generate(
     *, llm_provider, memories: List[str], temperature: Optional[float] = None,
 ) -> tuple:
-    """返回 (摘要文本, 实际 prompt, token 用量) —— 后两个供埋点，线上要能复盘。"""
+    """Return (summary text, actual prompt, token usage) -- the last two feed instrumentation, so production runs can be reviewed."""
     from ..utils.lang_detect import is_chinese
 
     body = "\n".join(f"- {c}" for c in memories if c)
@@ -1361,7 +1361,7 @@ async def _generate(
         "total": getattr(resp, "total_tokens", 0) or 0,
     }
     text = (getattr(resp, "content", "") or "").strip()
-    # LLM 偶尔会包一层 markdown 围栏或引号
+    # The LLM occasionally wraps the answer in a markdown fence or quotes
     if text.startswith("```"):
         parts = text.split("```")
         text = parts[1] if len(parts) > 1 else text
@@ -1388,8 +1388,8 @@ async def _store(
         MemoryLayer, MemoryNode, MemoryStatus, SourceType,
     )
 
-    # 摘要的事件时间取该 episode 最后一条记忆的时间，让时间过滤把它归到讨论发生的时点，
-    # 而不是"总结这一刻"。
+    # The summary's event time is the time of the last memory in the episode, so time filters place it at the moment of the discussion
+    # rather than at the moment the summary was produced.
     memory_at = datetime.now()
     times = [
         getattr(n, "memory_at", None) for n in (nodes or [])
@@ -1398,7 +1398,7 @@ async def _store(
     if times:
         memory_at = max(times)
 
-    # 沿用 episode 内记忆的 tag，让主题词也能召回到这条摘要
+    # Reuse the tags of the memories inside the episode so topic words can retrieve this summary too
     tags: List[str] = []
     for n in (nodes or []):
         for t in (getattr(n, "tags", None) or []):
@@ -1427,5 +1427,5 @@ async def _store(
             "source_memory_ids": list(source_memory_ids),
         },
     )
-    # 一个 episode 只总结一次 → 没有旧摘要要 SHADOW，也不进 supersedes 演化链
+    # One episode is summarized exactly once -> no old summary to SHADOW and no entry in a supersedes evolution chain
     return await vector_store.upsert(node)

@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-History Store - SQLite 审计追踪
+History Store - SQLite audit trail
 
-基于 Python 标准库 sqlite3（零额外依赖），通过 _run_in_sqlite_pool() 包装为异步。
-记录所有内存操作（ADD/UPDATE/DELETE/SEARCH）的完整历史，用于审计追踪和版本控制。
+Built on sqlite3 from the Python standard library (zero extra dependency), wrapped as async through _run_in_sqlite_pool().
+Records the full history of every memory operation (ADD/UPDATE/DELETE/SEARCH) for audit trails and versioning.
 
-设计决策:
-- 独立于 rdb.py 抽象，history 只需 SQLite，不需要 MySQL/PG 切换
-- 通过 _run_in_sqlite_pool() 包装同步 sqlite3 调用，避免阻塞事件循环
-- 所有写入操作都是 try-except 安全的，失败不影响主流程
+Design decisions:
+- Independent of the rdb.py abstraction: history only needs SQLite, no MySQL/PG switching
+- Sync sqlite3 calls are wrapped by _run_in_sqlite_pool() so the event loop is never blocked
+- Every write is try-except safe; a failure never affects the main flow
 """
 
 import functools
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 async def _run_in_sqlite_pool(func, *args, **kwargs):
-    """在 SQLite 独立线程池中执行同步函数"""
+    """Run a sync function in the dedicated SQLite thread pool"""
     call = functools.partial(func, *args, **kwargs) if args or kwargs else func
     return await run_in_executor_guarded(_sqlite_executor, call)
 
-# SQL: 创建表
+# SQL: create table
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS memory_history (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS memory_history (
 );
 """
 
-# SQL: 创建索引
+# SQL: create indexes
 _CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_history_memory_id ON memory_history(memory_id);",
     "CREATE INDEX IF NOT EXISTS idx_history_isolation_key ON memory_history(isolation_key);",
@@ -61,13 +61,13 @@ _CREATE_INDEXES_SQL = [
 
 
 def _now_iso() -> str:
-    """返回当前 UTC 时间的 ISO 格式字符串"""
+    """Return the current UTC time as an ISO format string"""
     return datetime.now(timezone.utc).isoformat()
 
 
 class HistoryStore:
     """
-    SQLite 历史存储 - 记录所有内存操作的审计日志。
+    SQLite history store - audit log of every memory operation.
 
     Usage:
         store = HistoryStore(config)
@@ -85,26 +85,26 @@ class HistoryStore:
     def __init__(self, config):
         """
         Args:
-            config: MemoryConfig 实例，从 config.history 读取配置
+            config: MemoryConfig instance; settings are read from config.history
         """
         self._db_path = config.history.db_path
         self._conn: Optional[sqlite3.Connection] = None
 
     async def initialize(self) -> None:
-        """创建表和索引（如果不存在）"""
+        """Create the table and indexes if they do not exist"""
         await _run_in_sqlite_pool(self._init_sync)
         logger.info(f"[HistoryStore] initialized: {self._db_path}")
 
     def _init_sync(self) -> None:
-        """同步初始化：创建目录、连接数据库、建表建索引"""
-        # 确保目录存在
+        """Sync init: create the directory, connect the database, create table and indexes"""
+        # Make sure the directory exists
         db_dir = os.path.dirname(self._db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
 
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        # 开启 WAL 模式，提高并发读写性能
+        # Enable WAL mode for better concurrent read/write performance
         self._conn.execute("PRAGMA journal_mode=WAL;")
 
         self._conn.execute(_CREATE_TABLE_SQL)
@@ -113,7 +113,7 @@ class HistoryStore:
         self._conn.commit()
 
     # ================================================================
-    # 记录操作
+    # Recording operations
     # ================================================================
 
     async def record_add(
@@ -125,7 +125,7 @@ class HistoryStore:
         actor_id: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """记录 ADD 事件"""
+        """Record an ADD event"""
         return await self._insert(
             memory_id=memory_id,
             isolation_key=isolation_key,
@@ -148,7 +148,7 @@ class HistoryStore:
         actor_id: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """记录 UPDATE 事件"""
+        """Record an UPDATE event"""
         return await self._insert(
             memory_id=memory_id,
             isolation_key=isolation_key,
@@ -170,7 +170,7 @@ class HistoryStore:
         actor_id: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """记录 DELETE 事件"""
+        """Record a DELETE event"""
         return await self._insert(
             memory_id=memory_id,
             isolation_key=isolation_key,
@@ -188,7 +188,7 @@ class HistoryStore:
         actor_id: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """记录 SEARCH 事件"""
+        """Record a SEARCH event"""
         search_extra = {"query": query, "results_count": results_count}
         if extra:
             search_extra.update(extra)
@@ -202,18 +202,18 @@ class HistoryStore:
         )
 
     # ================================================================
-    # 查询
+    # Queries
     # ================================================================
 
     async def get_history(self, memory_id: str) -> List[Dict[str, Any]]:
         """
-        获取某条记忆的完整变更历史。
+        Get the full change history of a memory.
 
         Args:
-            memory_id: 记忆 ID
+            memory_id: memory ID
 
         Returns:
-            按时间排序的历史记录列表
+            History records sorted by time
         """
         return await _run_in_sqlite_pool(self._get_history_sync, memory_id)
 
@@ -232,14 +232,14 @@ class HistoryStore:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """
-        获取某用户/隔离键的最近操作。
+        Get the most recent operations of a user / isolation key.
 
         Args:
-            isolation_key: 调用方定义的隔离键
-            limit: 返回数量上限
+            isolation_key: isolation key defined by the caller
+            limit: maximum number of rows to return
 
         Returns:
-            按时间倒序的最近操作列表
+            Recent operations in reverse chronological order
         """
         return await _run_in_sqlite_pool(self._get_recent_sync, isolation_key, limit)
 
@@ -255,13 +255,13 @@ class HistoryStore:
 
     async def count(self, isolation_key: str = "") -> int:
         """
-        统计历史记录数量。
+        Count the history records.
 
         Args:
-            isolation_key: 可选，按隔离键过滤。为空则统计全部。
+            isolation_key: optional isolation key filter; empty counts everything.
 
         Returns:
-            记录数量
+            The record count
         """
         return await _run_in_sqlite_pool(self._count_sync, isolation_key)
 
@@ -278,7 +278,7 @@ class HistoryStore:
         return cursor.fetchone()[0]
 
     async def close(self) -> None:
-        """关闭数据库连接"""
+        """Close the database connection"""
         if self._conn is not None:
             await _run_in_sqlite_pool(self._close_sync)
             logger.info("[HistoryStore] closed")
@@ -289,7 +289,7 @@ class HistoryStore:
             self._conn = None
 
     # ================================================================
-    # 内部
+    # Internal
     # ================================================================
 
     async def _insert(
@@ -307,7 +307,7 @@ class HistoryStore:
         role: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> int:
-        """插入一条历史记录，返回记录 ID"""
+        """Insert one history record and return its ID"""
         return await _run_in_sqlite_pool(
             self._insert_sync,
             memory_id=memory_id,

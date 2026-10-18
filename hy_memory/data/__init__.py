@@ -1,15 +1,15 @@
 """
-Agent Memory V2 - 数据层 (Data Layer)
+Agent Memory V2 - Data Layer
 
-三引擎存储架构:
-- VectorStore (Chroma/Qdrant/FAISS):  向量存储，L1 Raw / L2 Fact / Schema / Intention 语义检索
-- GraphStore  (Kuzu/Neo4j): 图存储，实体关系 / 图遍历 / 时间线 / 知识缺口
-- Cache       (SQLite/MySQL): 审计/观测落库（memory_operations / pipeline_logs / system_metrics）
+Three-engine storage architecture:
+- VectorStore (Chroma/Qdrant/FAISS):  vector storage, semantic retrieval for L1 Raw / L2 Fact / Schema / Intention
+- GraphStore  (Kuzu/Neo4j): graph storage, entity relations / graph traversal / timeline / knowledge gaps
+- Cache       (SQLite/MySQL): audit/observability persistence (memory_operations / pipeline_logs / system_metrics)
 
-缓存后端:
-- SqliteCache: 零依赖本地（默认）
-- MysqlCache:  标准 MySQL 持久化（需 aiomysql 包）
-- create_cache(): 工厂函数，根据配置选择后端
+Cache backends:
+- SqliteCache: dependency-free local (default)
+- MysqlCache:  standard MySQL persistence (requires the aiomysql package)
+- create_cache(): factory function that selects the backend from configuration
 """
 
 from .vector_store import VectorStore, create_vector_store
@@ -22,11 +22,11 @@ from .cache_mysql import MysqlCache
 from .cache import create_cache
 from .history_store import HistoryStore
 
-# 保留旧接口兼容
+# Legacy interface compatibility kept
 from .kv_store import KVStore, KVStoreConfig, KVBackend
 
 __all__ = [
-    # V2 核心
+    # V2 core
     "VectorStore",
     "VectorStoreBase",
     "create_vector_store",
@@ -39,7 +39,7 @@ __all__ = [
     "create_cache",
     "HistoryStore",
 
-    # V1 兼容
+    # V1 compat
     "KVStore",
     "KVStoreConfig",
     "KVBackend",

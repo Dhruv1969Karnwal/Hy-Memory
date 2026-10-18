@@ -1,12 +1,12 @@
 """
-Agent Memory V2 - 数据模型
+Agent Memory V2 - Data models
 
-核心数据结构，包含 V2 新模型和 V1 兼容类型。
+Core data structures, covering the new V2 models and the V1 compatibility types.
 """
 
-# === V2 核心模型 ===
+# === V2 core models ===
 from .memory import (
-    # 枚举类型
+    # Enum types
     MemoryLayer,
     ContentType,
     MemoryStatus,
@@ -17,17 +17,17 @@ from .memory import (
     IntentionPriority,
     MetaCognitionTag,
     GapType,
-    # 核心节点
+    # Core node
     MemoryNode,
     VersionedFact,
     SchemaNode,
     IntentionNode,
-    # 辅助模型
+    # Auxiliary models
     KnowledgeGap,
     LifeStage,
     TemporalEvent,
     UserTimeline,
-    # 输出协议
+    # Output protocol
     ProfileSummary,
     MemoryIndexEntry,
     MemorySummaryEntry,
@@ -36,45 +36,45 @@ from .memory import (
     ActivatedSchema,
     TemporalContext,
     MemoryContextPackage,
-    # V1 兼容
+    # V1 compatibility
     MemoryEntry,
     MemoryMetadata,
     MemoryScore,
 )
 
-# === 请求/响应模型 ===
+# === Request/response models ===
 from .requests import (
-    # 枚举
+    # Enums
     DeleteScope,
     MemoryInputType,
     TaskStatus,
     AgentProcessMode,
-    # QA 对
+    # QA pairs
     QAPair,
-    # 添加记忆
+    # Add memory
     AddRequest,
     AddResponse,
     AsyncAddResponse,
     AsyncTask,
     TaskStatusRequest,
     TaskStatusResponse,
-    # 召回记忆
+    # Recall memory
     RecallRequest,
     RecallResponse,
-    # 更新记忆
+    # Update memory
     UpdateRequest,
     UpdateResponse,
-    # 删除记忆
+    # Delete memory
     DeleteRequest,
     DeleteResponse,
     BatchDeleteRequest,
     BatchDeleteResponse,
-    # 获取/列出记忆
+    # Get/list memory
     GetRequest,
     GetResponse,
     ListRequest,
     ListResponse,
-    # 用户画像
+    # User profile
     UserProfile,
     GetProfileRequest,
     GetProfileResponse,
@@ -82,7 +82,7 @@ from .requests import (
     UpdateProfileResponse,
     RebuildProfileRequest,
     RebuildProfileResponse,
-    # 异步任务管理
+    # Async task management
     SubmitTaskRequest,
     SubmitTaskResponse,
     GetTaskRequest,
@@ -94,7 +94,7 @@ from .requests import (
 )
 
 __all__ = [
-    # === V2 枚举 ===
+    # === V2 enums ===
     "MemoryLayer",
     "ContentType",
     "MemoryStatus",
@@ -105,17 +105,17 @@ __all__ = [
     "IntentionPriority",
     "MetaCognitionTag",
     "GapType",
-    # === V2 核心节点 ===
+    # === V2 core nodes ===
     "MemoryNode",
     "VersionedFact",
     "SchemaNode",
     "IntentionNode",
-    # === V2 辅助模型 ===
+    # === V2 auxiliary models ===
     "KnowledgeGap",
     "LifeStage",
     "TemporalEvent",
     "UserTimeline",
-    # === V2 输出协议 ===
+    # === V2 output protocol ===
     "ProfileSummary",
     "MemoryIndexEntry",
     "MemorySummaryEntry",
@@ -124,41 +124,41 @@ __all__ = [
     "ActivatedSchema",
     "TemporalContext",
     "MemoryContextPackage",
-    # === V1 兼容 ===
+    # === V1 compatibility ===
     "MemoryEntry",
     "MemoryMetadata",
     "MemoryScore",
-    # === 请求/响应枚举 ===
+    # === Request/response enums ===
     "DeleteScope",
     "MemoryInputType",
     "TaskStatus",
     "AgentProcessMode",
     # === QA ===
     "QAPair",
-    # === 添加 ===
+    # === Add ===
     "AddRequest",
     "AddResponse",
     "AsyncAddResponse",
     "AsyncTask",
     "TaskStatusRequest",
     "TaskStatusResponse",
-    # === 召回 ===
+    # === Recall ===
     "RecallRequest",
     "RecallResponse",
-    # === 更新 ===
+    # === Update ===
     "UpdateRequest",
     "UpdateResponse",
-    # === 删除 ===
+    # === Delete ===
     "DeleteRequest",
     "DeleteResponse",
     "BatchDeleteRequest",
     "BatchDeleteResponse",
-    # === 获取/列出 ===
+    # === Get/list ===
     "GetRequest",
     "GetResponse",
     "ListRequest",
     "ListResponse",
-    # === 用户画像 ===
+    # === User profile ===
     "UserProfile",
     "GetProfileRequest",
     "GetProfileResponse",
@@ -166,7 +166,7 @@ __all__ = [
     "UpdateProfileResponse",
     "RebuildProfileRequest",
     "RebuildProfileResponse",
-    # === 异步任务 ===
+    # === Async tasks ===
     "SubmitTaskRequest",
     "SubmitTaskResponse",
     "GetTaskRequest",

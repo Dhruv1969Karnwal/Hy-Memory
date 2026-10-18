@@ -1,14 +1,14 @@
 """
-Agent Memory V2 - 核心数据模型
+Agent Memory V2 - Core data models
 
-包含：
-- 枚举类型: MemoryLayer, MemoryStatus, SourceType, UpdateType,
+Contents:
+- Enums: MemoryLayer, MemoryStatus, SourceType, UpdateType,
             SchemaStatus, TriggerType, IntentionPriority, MetaCognitionTag, GapType
-- 核心模型: MemoryNode (统一基类)
-- 子类模型: VersionedFact, SchemaNode, IntentionNode
-- 辅助模型: KnowledgeGap, TemporalEvent, UserTimeline, LifeStage
-- 输出协议: MemoryContextPackage 及其子结构
-- 兼容别名: MemoryEntry, MemoryMetadata, MemoryScore (保留旧接口)
+- Core model: MemoryNode (unified base class)
+- Subclass models: VersionedFact, SchemaNode, IntentionNode
+- Auxiliary models: KnowledgeGap, TemporalEvent, UserTimeline, LifeStage
+- Output protocol: MemoryContextPackage and its sub-structures
+- Compat aliases: MemoryEntry, MemoryMetadata, MemoryScore (legacy interfaces kept)
 """
 
 from enum import Enum
@@ -19,22 +19,22 @@ import uuid
 
 
 # ============================================================
-# 枚举类型
+# Enums
 # ============================================================
 
 class MemoryLayer(str, Enum):
     """
-    七层记忆模型 (V2 Memory Hierarchy)
+    Seven-layer memory model (V2 Memory Hierarchy)
 
-    L1 RAW       — 原始对话层 (Append-Only, 向量数据库)
-    L2 FACT      — 原子事实层 (版本化不可变记录)
-    L3 SUMMARY   — 会话摘要层
-    L4 IDENTITY  — 身份画像层 (核心画像)
-    L5 KNOWLEDGE — 知识图谱层 (实体/关系/主题, Graph 层, 暂未实现)
-    L6 SCHEMA    — 心智模型层 (抽象叙事模板, Graph 层)
-    L7 INTENTION — 前瞻意图层 (未来待触发的意图, Graph 层)
+    L1 RAW       — Raw dialogue layer (Append-Only, vector database)
+    L2 FACT      — Atomic fact layer (versioned immutable records)
+    L3 SUMMARY   — Session summary layer
+    L4 IDENTITY  — Identity profile layer (core profile)
+    L5 KNOWLEDGE — Knowledge graph layer (entities/relations/topics, Graph layer, not implemented yet)
+    L6 SCHEMA    — Mental model layer (abstract narrative templates, Graph layer)
+    L7 INTENTION — Prospective intention layer (intentions awaiting a future trigger, Graph layer)
 
-    存储分界: L0-L4 在 VDB, L5-L7 在 Graph (ultra 模式)
+    Storage split: L0-L4 in the VDB, L5-L7 in Graph (ultra mode)
     """
     L0_BASIC_INFO = "l0_basic_info"
     L1_RAW = "l1_raw"
@@ -45,17 +45,17 @@ class MemoryLayer(str, Enum):
     L6_SCHEMA = "l6_schema"
     L7_INTENTION = "l7_intention"
 
-    # --- 旧编号兼容别名（已存储数据中的值） ---
-    # v2 → v3 重编号兼容
-    L6_IDENTITY = "l4_identity"     # 旧 l6_identity → 新 l4_identity
-    L4_KNOWLEDGE = "l5_knowledge"   # 旧 l4_knowledge → 新 l5_knowledge
-    L5_SCHEMA = "l6_schema"         # 旧 l5_schema → 新 l6_schema
-    # v1 → v2 旧兼容（仍需保留）
-    L4_5_SCHEMA = "l6_schema"       # 旧 l4_5_schema → 新 l6_schema
-    L5_IDENTITY = "l4_identity"     # 旧 l5_identity → 新 l4_identity
-    L6_INTENTION = "l7_intention"   # 旧 l6_intention → 新 l7_intention
+    # --- Legacy numbering compat aliases (values found in stored data) ---
+    # v2 → v3 renumbering compat
+    L6_IDENTITY = "l4_identity"     # old l6_identity → new l4_identity
+    L4_KNOWLEDGE = "l5_knowledge"   # old l4_knowledge → new l5_knowledge
+    L5_SCHEMA = "l6_schema"         # old l5_schema → new l6_schema
+    # v1 → v2 legacy compat (still required)
+    L4_5_SCHEMA = "l6_schema"       # old l4_5_schema → new l6_schema
+    L5_IDENTITY = "l4_identity"     # old l5_identity → new l4_identity
+    L6_INTENTION = "l7_intention"   # old l6_intention → new l7_intention
 
-    # --- V1 兼容别名 ---
+    # --- V1 compat aliases ---
     PROFILE = "l4_identity"
     DIALOGUE = "l2_fact"
     SUMMARY = "l3_summary"
@@ -64,9 +64,9 @@ class MemoryLayer(str, Enum):
 
     @classmethod
     def from_string(cls, value: str) -> "MemoryLayer":
-        """从字符串创建 MemoryLayer，支持 V1/V2/V3 命名和旧编号"""
+        """Build a MemoryLayer from a string; supports V1/V2/V3 names and legacy numbering."""
         value = value.lower().strip()
-        # 旧编号 → 新编号映射（兼容已存储数据的 payload）
+        # Legacy → new numbering map (compat with payloads in stored data)
         legacy_mapping = {
             # v2 → v3
             "l6_identity": cls.L4_IDENTITY,
@@ -79,7 +79,7 @@ class MemoryLayer(str, Enum):
         }
         if value in legacy_mapping:
             return legacy_mapping[value]
-        # V1 兼容映射
+        # V1 compat mapping
         v1_mapping = {
             "profile": cls.L4_IDENTITY,
             "dialogue": cls.L2_FACT,
@@ -96,7 +96,7 @@ class MemoryLayer(str, Enum):
 
     @classmethod
     def all_layers(cls) -> List["MemoryLayer"]:
-        """返回所有记忆层 (不含别名)"""
+        """Return all memory layers (aliases excluded)"""
         return [
             cls.L0_BASIC_INFO,
             cls.L1_RAW, cls.L2_FACT, cls.L3_SUMMARY,
@@ -107,7 +107,7 @@ class MemoryLayer(str, Enum):
 
 
 class ContentType(str, Enum):
-    """记忆内容类型（保留用于旧代码兼容，MemoryNode 不再使用此字段）"""
+    """Memory content types (kept for legacy compat; MemoryNode no longer uses this field)"""
     FACT = "fact"
     SUMMARY = "summary"
     ENTITY = "entity"
@@ -119,48 +119,48 @@ class ContentType(str, Enum):
 
 
 class MemoryStatus(str, Enum):
-    """记忆状态"""
-    ACTIVE = "active"               # 当前有效
-    SUPERSEDED = "superseded"       # 已被新版本取代（EVOLVE 演化链上的旧节点）
-    NEGATED = "negated"             # 已被否定
-    CONFLICTED = "conflicted"       # 存在冲突
-    SHADOW = "shadow"               # 影子状态：低置信度推断 或 reconcile DELETE 逻辑删除
-                                    # 两种场景都不参与召回（is_latest 通常为 False）
-    ARCHIVED = "archived"           # 已归档
+    """Memory status."""
+    ACTIVE = "active"               # Currently valid
+    SUPERSEDED = "superseded"       # Replaced by a newer version (old node on an EVOLVE evolution chain)
+    NEGATED = "negated"             # Negated
+    CONFLICTED = "conflicted"       # In conflict
+    SHADOW = "shadow"               # Shadow state: low-confidence inference or reconcile DELETE soft delete
+                                    # Neither case takes part in retrieval (is_latest is usually False)
+    ARCHIVED = "archived"           # Archived
 
 
 class SourceType(str, Enum):
-    """信息来源类型"""
-    EXPLICIT = "explicit"           # 用户明确陈述
-    INFERRED = "inferred"           # 系统推断
-    COMPOSITE = "composite"         # 多证据综合
+    """Information source types."""
+    EXPLICIT = "explicit"           # Stated explicitly by the user
+    INFERRED = "inferred"           # Inferred by the system
+    COMPOSITE = "composite"         # Synthesis over multiple pieces of evidence
 
 
 class UpdateType(str, Enum):
-    """版本化事实的更新类型"""
-    OVERRIDE = "override"           # 新值替代旧值
-    SUPPLEMENT = "supplement"       # 补充信息
-    TEMPORAL = "temporal"           # 时间窗口变化
-    NEGATE = "negate"               # 否定旧信息
-    CONFLICT = "conflict"           # 新旧冲突
+    """Update types for versioned facts."""
+    OVERRIDE = "override"           # New value replaces the old one
+    SUPPLEMENT = "supplement"       # Supplementary information
+    TEMPORAL = "temporal"           # Time window changed
+    NEGATE = "negate"               # Negates the old information
+    CONFLICT = "conflict"           # Conflict between old and new
 
 
 class SchemaStatus(str, Enum):
-    """Schema 状态"""
-    FORMING = "forming"             # 形成中 (证据不足)
-    STABLE = "stable"               # 稳定 (多证据支撑)
-    EVOLVING = "evolving"           # 演化中 (有新证据修改)
-    DEPRECATED = "deprecated"       # 已过时
+    """Schema status."""
+    FORMING = "forming"             # Forming (insufficient evidence)
+    STABLE = "stable"               # Stable (supported by multiple pieces of evidence)
+    EVOLVING = "evolving"           # Evolving (new evidence modifies it)
+    DEPRECATED = "deprecated"       # Deprecated
 
 
 class TriggerType(str, Enum):
-    """意图触发类型"""
-    TIME_BASED = "time_based"       # 时间触发
-    EVENT_BASED = "event_based"     # 事件触发
+    """Intention trigger types."""
+    TIME_BASED = "time_based"       # Time trigger
+    EVENT_BASED = "event_based"     # Event trigger
 
 
 class IntentionPriority(str, Enum):
-    """意图优先级"""
+    """Intention priority."""
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -168,47 +168,47 @@ class IntentionPriority(str, Enum):
 
 class MetaCognitionTag(str, Enum):
     """
-    元认知信号标记
+    Meta-cognition signal tags
 
-    附加在记忆条目上，让调用方 LLM 感知记忆的可靠程度和特殊性质。
+    Attached to memory entries so the calling LLM can sense how reliable a memory is and what is special about it.
     """
-    # 置信度相关
+    # Confidence
     HIGH_CONFIDENCE = "high_confidence"
     LOW_CONFIDENCE = "low_confidence"
     INFERRED_NOT_STATED = "inferred_not_stated"
     STALE = "stale"
 
-    # 冲突与不确定
+    # Conflict and uncertainty
     NEEDS_CLARIFICATION = "needs_clarification"
     CONFLICTED = "conflicted"
     CONTEXT_DEPENDENT = "context_dependent"
 
-    # 情绪与敏感
+    # Emotion and sensitivity
     EMOTIONALLY_SENSITIVE = "emotionally_sensitive"
     POSITIVE_MEMORY = "positive_memory"
     NEGATIVE_MEMORY = "negative_memory"
     GOTCHA = "gotcha"
 
-    # 时间特殊性
+    # Temporal specifics
     RECENTLY_CHANGED = "recently_changed"
     HISTORICAL = "historical"
     TEMPORAL_CONTEXT = "temporal_context"
 
-    # 知识缺口
+    # Knowledge gaps
     KNOWLEDGE_GAP = "knowledge_gap"
     INCOMPLETE = "incomplete"
 
-    # 价值标记
+    # Value tags
     LONG_TAIL = "long_tail"
     SCHEMA_ACTIVATED = "schema_activated"
 
-    # 前瞻标记
+    # Prospective tags
     PROACTIVE_CARE = "proactive_care"
     FOLLOW_UP = "follow_up"
 
 
 class GapType(str, Enum):
-    """知识缺口的四种类型"""
+    """The four kinds of knowledge gaps."""
     PROFILE_INCOMPLETE = "profile_incomplete"
     UNRESOLVED_CONFLICT = "unresolved_conflict"
     INFERRED_UNVERIFIED = "inferred_unverified"
@@ -216,115 +216,115 @@ class GapType(str, Enum):
 
 
 # ============================================================
-# 核心模型: MemoryNode (统一基类)
+# Core model: MemoryNode (unified base class)
 # ============================================================
 
 @dataclass
 class MemoryNode:
     """
-    所有层级记忆的统一基类 (V2)
+    Unified base class for memory at every layer (V2)
 
-    字段分组：
-    - 基础标识 (node_id, user_id, layer, content)
-    - 业务隔离 (agent_id, session_id)
-    - 时空维度 (memory_at, temporal_anchor, valid_from/until, gmt_created/modified)
-    - 演化图谱 (supersedes, superseded_by, is_latest) — EVOLVE 语义
-    - 推断注解 (speculate) — 不参与 embed
-    - Summary 锚点 (source_raw_memory_id) — L3_SUMMARY/L4_IDENTITY 专用
-    - 状态 (status)
-    - 置信与校准 (confidence, evidence_count, source_type)
-    - 情绪标记 (emotional_valence, emotional_arousal)
-    - 检索元数据 (access_count, last_accessed_at, embedding)
-    - 长尾标记 (specificity_score, rarity_score, longtail_flag)
-    - 元认知标记 (meta_tags, meta_hints)
-    - 出处追溯 (source_session_id, source_turn_index, evidence_chain)
-    - 扩展 (custom, tags)
+    Field groups:
+    - Identity (node_id, user_id, layer, content)
+    - Business isolation (agent_id, session_id)
+    - Time and space (memory_at, temporal_anchor, valid_from/until, gmt_created/modified)
+    - Evolution graph (supersedes, superseded_by, is_latest) -- EVOLVE semantics
+    - Inference annotation (speculate) -- excluded from embedding
+    - Summary anchor (source_raw_memory_id) -- specific to L3_SUMMARY/L4_IDENTITY
+    - Status (status)
+    - Confidence and calibration (confidence, evidence_count, source_type)
+    - Emotion tags (emotional_valence, emotional_arousal)
+    - Retrieval metadata (access_count, last_accessed_at, embedding)
+    - Long-tail tags (specificity_score, rarity_score, longtail_flag)
+    - Meta-cognition tags (meta_tags, meta_hints)
+    - Provenance (source_session_id, source_turn_index, evidence_chain)
+    - Extensions (custom, tags)
     """
 
-    # === 基础标识 ===
+    # === Identity ===
     node_id: str = ""
     user_id: str = ""
     layer: MemoryLayer = MemoryLayer.L1_RAW
-    content: str = ""                        # 核心语义内容，embed 只用此字段
+    content: str = ""                        # Core semantic content; embedding uses only this field
 
-    # === 业务隔离 ===
+    # === Business isolation ===
     agent_id: str = ""
     session_id: str = ""
-    # 产生该记忆的调用来源（openclaw / cursor / codex 等）。不要与
-    # source_type（显式/推断/复合）或检索通道混用。
+    # Call source that produced this memory (openclaw / cursor / codex, etc.). Do not mix it with
+    # source_type (explicit/inferred/composite) or with retrieval channels.
     source: str = "default"
 
-    # === 归属（owner）===
-    # 该记忆属于谁：'user'（关于用户/用户陈述）| 'agent'（assistant 提供/用户要 agent 做的事）。
-    # 仅 L2_FACT / L7_INTENTION 写入；其他层（L0/L1/L3/L5/L6）留空（None）。
+    # === Ownership (owner) ===
+    # Who this memory belongs to: 'user' (about the user / stated by the user) | 'agent' (assistant input / what the user asks the agent to do).
+    # Only written for L2_FACT / L7_INTENTION; other layers (L0/L1/L3/L5/L6) stay empty (None).
     owner: Optional[str] = None
 
-    # === 时空维度 ===
-    memory_at: Optional[datetime] = None     # 记忆发生时间（用户指定，可为空）
-    temporal_anchor: Optional[str] = None    # 保留字段兼容历史数据；v0.3.45_v0 post8 起不再写入
+    # === Time and space ===
+    memory_at: Optional[datetime] = None     # When the remembered event happened (caller-supplied, may be empty)
+    temporal_anchor: Optional[str] = None    # Kept for compatibility with historical data; not written since v0.3.45_v0 post8
     valid_from: Optional[datetime] = None
     valid_until: Optional[datetime] = None
 
-    # === 数据管理时间 ===
-    gmt_created: Optional[datetime] = None   # 数据写入时间（系统自动）
-    gmt_modified: Optional[datetime] = None  # 数据最后修改时间（系统自动）
+    # === Data management timestamps ===
+    gmt_created: Optional[datetime] = None   # Row write time (set automatically by the system)
+    gmt_modified: Optional[datetime] = None  # Last modification time (set automatically by the system)
 
-    # === 演化图谱（EVOLVE 语义）===
-    supersedes: Optional[List[str]] = None       # 本节点取代的旧节点 ID 列表，全新信息为 None
-    superseded_by: Optional[List[str]] = None    # 被哪些新节点取代（系统写入，不透出给调用方）
-    is_latest: bool = True                       # 是否链条末端；被取代时系统自动置 False
+    # === Evolution graph (EVOLVE semantics) ===
+    supersedes: Optional[List[str]] = None       # Old node IDs this node supersedes; None for brand-new information
+    superseded_by: Optional[List[str]] = None    # Which newer nodes superseded it (written by the system, not exposed to callers)
+    is_latest: bool = True                       # Whether this is the chain tip; the system sets it to False when superseded
 
-    # === 推断注解（不参与 embed）===
-    speculate: Optional[str] = None              # LLM 对复杂/模糊信号的推断注解
+    # === Inference annotation (excluded from embedding) ===
+    speculate: Optional[str] = None              # LLM inference annotation for complex or ambiguous signals
 
-    # === Summary 锚点（L3_SUMMARY / L4_IDENTITY）===
-    source_raw_memory_id: Optional[str] = None   # 对应的 L1_RAW 节点 ID
+    # === Summary anchor (L3_SUMMARY / L4_IDENTITY) ===
+    source_raw_memory_id: Optional[str] = None   # Corresponding L1_RAW node ID
 
-    # === 状态 ===
+    # === Status ===
     status: MemoryStatus = MemoryStatus.ACTIVE
 
-    # === 置信与校准 ===
+    # === Confidence and calibration ===
     confidence: float = 1.0
     evidence_count: int = 1
     source_type: SourceType = SourceType.EXPLICIT
 
-    # === 情绪标记 ===
-    emotional_valence: float = 0.0      # [-1, 1] 情感效价
-    emotional_arousal: float = 0.0      # [0, 1] 情感唤醒度
+    # === Emotion tags ===
+    emotional_valence: float = 0.0      # [-1, 1] emotional valence
+    emotional_arousal: float = 0.0      # [0, 1] emotional arousal
 
-    # === 检索元数据 ===
+    # === Retrieval metadata ===
     access_count: int = 0
     last_accessed_at: Optional[datetime] = None
     embedding: Optional[List[float]] = None
 
-    # === 长尾标记 ===
-    specificity_score: float = 0.0      # [0, 1] 具体度
-    rarity_score: float = 0.0           # [0, 1] 稀有度
+    # === Long-tail tags ===
+    specificity_score: float = 0.0      # [0, 1] specificity
+    rarity_score: float = 0.0           # [0, 1] rarity
     longtail_flag: bool = False
 
-    # === 元认知标记 ===
+    # === Meta-cognition tags ===
     meta_tags: List[MetaCognitionTag] = field(default_factory=list)
     meta_hints: Dict[str, str] = field(default_factory=dict)
 
-    # === Episode（内部会话）===
-    # 一件事往往跨越好几次 write（十几二十轮），从中抽出的 memory 属于同一次讨论。
-    # 打同一个 episode_id，读侧就能用它**框出一片候选**做加权 —— 比建 O(n²) 时间边
-    # 便宜得多，也比"同一天"语义准确。
+    # === Episode (internal session) ===
+    # One matter usually spans several write calls (a dozen or twenty turns); memories extracted from them belong to one discussion.
+    # Tagging them with the same episode_id lets the read side **bound a candidate set** for weighting -- far cheaper
+    # than building O(n²) temporal edges, and more accurate than "same day".
     #
-    # 注意与 session_id 的区别：session_id 是**调用方给的业务隔离键**（进 isolation_key），
-    # 可能很长（整段会话）或干脆是 default；episode_id 是 SDK **内部按时间间隔切**的
-    # "一次讨论"，粒度更细，且不参与隔离。
+    # Note the difference from session_id: session_id is a **caller-supplied business isolation key** (part of isolation_key),
+    # possibly very long (a whole conversation) or simply default; episode_id is one the SDK cuts **by time interval**
+    # into a "single discussion", so it is finer-grained and takes no part in isolation.
     episode_id: str = ""
 
-    # === 出处追溯 ===
+    # === Provenance ===
     source_session_id: str = ""
     source_turn_index: Optional[int] = None
     evidence_chain: List[str] = field(default_factory=list)
 
-    # === 扩展字段 ===
+    # === Extension fields ===
     custom: Dict[str, Any] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
-    # 与 tags 等长的 NER label（GPE/PERSON/...）；主题词为空串。写入时标注，读侧 boost 用。
+    # NER labels (GPE/PERSON/...) aligned with tags; empty string for topic words. Tagged at write time, used for read-side boosts.
     tag_ners: List[str] = field(default_factory=list)
 
     def __post_init__(self):
@@ -333,57 +333,57 @@ class MemoryNode:
         if not self.node_id:
             self.node_id = str(uuid.uuid4())
         now = datetime.now()
-        # gmt_created/gmt_modified 是系统时间，自动填写
+        # gmt_created/gmt_modified are system timestamps, filled automatically
         if self.gmt_created is None:
             self.gmt_created = now
         if self.gmt_modified is None:
             self.gmt_modified = now
-        # memory_at 是记忆发生时间，由调用方指定，不自动填写
-        # valid_from 用 gmt_created 作为默认（数据有效从写入时开始）
+        # memory_at is when the event happened, supplied by the caller, never filled automatically
+        # valid_from defaults to gmt_created (data is valid from the moment it is written)
         if self.valid_from is None:
             self.valid_from = now
 
     @property
     def memory_id(self) -> str:
-        """V1 兼容: memory_id == node_id"""
+        """V1 compat: memory_id == node_id"""
         return self.node_id
 
     @property
     def uid(self) -> str:
-        """V1 兼容: uid == user_id"""
+        """V1 compat: uid == user_id"""
         return self.user_id
 
     def get_isolation_key(self) -> str:
-        """隔离键: {user_id}::{agent_id}::{session_id}
+        """Isolation key: {user_id}::{agent_id}::{session_id}
 
-        session_id 为空时使用 'default_session'，与 build_isolation_key 对齐。
+        An empty session_id falls back to 'default_session', aligned with build_isolation_key.
         """
         sid = self.session_id or "default_session"
         return f"{self.user_id}::{self.agent_id}::{sid}"
 
     def get_topic_scope_key(self) -> str:
-        """Topic 的隔离键: {user_id}::{agent_id} —— **不含 session_id**。
+        """Topic isolation key: {user_id}::{agent_id} -- **excludes session_id**.
 
-        为什么 Topic 要比记忆本身更宽：主题是**跨会话累积**的概念。"关于你的健康我知道
-        这些"不该按会话切开。而 `get_isolation_key()` 带 session，用它当 Topic 的
-        隔离键会让同名 tag 在每个 session 里各建一个互不相识的 Topic 节点。
+        Why a Topic is wider than a memory: topics are **accumulated across sessions**. "What I know about your
+        health" should not be cut apart per session, while `get_isolation_key()` carries a session, and using it as
+        the Topic isolation key makes every session build its own unrelated Topic node per tag name.
 
-        如果按 session 隔离，同名 Topic 会分裂成多个节点，导致时序脊建不出边、
-        topic summary 反复总结同名碎片、跨会话 tag 召回不连通。
+        Isolating by session splits same-name Topics into several nodes, so the temporal spine cannot build edges,
+        topic summaries keep re-summarizing same-name fragments, and cross-session tag recall stays disconnected.
         """
         return f"{self.user_id}::{self.agent_id}"
 
     @staticmethod
     def build_topic_scope_key(uid: str, agent_id: str) -> str:
-        """构建 Topic 隔离键: {uid}::{agent_id}（不含 session，见 get_topic_scope_key）"""
+        """Build the Topic isolation key: {uid}::{agent_id} (no session, see get_topic_scope_key)"""
         return f"{uid}::{agent_id}"
 
     @staticmethod
     def topic_scope_of(isolation_key: str) -> str:
-        """把带 session 的 isolation_key 削成 Topic 作用域（取前两段）。
+        """Trim a session-bearing isolation_key down to the Topic scope (first two segments).
 
-        供只拿到 isolation_key 的读侧使用 —— 建 Topic 与查 Topic 必须用同一个键，
-        否则查不到（两个后端都是 `isolation_key` 精确匹配）。
+        For read paths that only have an isolation_key -- creating and looking up a Topic must use the same key,
+        otherwise the lookup misses (both backends match `isolation_key` exactly).
         """
         if not isolation_key:
             return isolation_key
@@ -392,23 +392,23 @@ class MemoryNode:
 
     @staticmethod
     def build_isolation_key(uid: str, agent_id: str, session_id: str = "default_session") -> str:
-        """构建隔离键: {uid}::{agent_id}::{session_id}"""
+        """Build the isolation key: {uid}::{agent_id}::{session_id}"""
         sid = session_id or "default_session"
         return f"{uid}::{agent_id}::{sid}"
 
     @staticmethod
     def parse_isolation_key(key: str) -> tuple:
         """
-        解析隔离键，返回 (user_id, agent_id, session_id)。
+        Parse an isolation key into (user_id, agent_id, session_id).
 
-        兼容多种格式:
-        - 4 段: (旧格式带 appid) 跳过首段 → uid::agent_id::session_id
-        - 3 段: uid::agent_id::session_id (标准格式)
-        - 2 段: uid::agent_id (session_id 默认 "default_session")
+        Accepts several formats:
+        - 4 parts: (legacy format with appid) skip the first part → uid::agent_id::session_id
+        - 3 parts: uid::agent_id::session_id (standard format)
+        - 2 parts: uid::agent_id (session_id defaults to "default_session")
         """
         parts = key.split("::")
         if len(parts) >= 4:
-            # 兼容旧格式: 跳过 appid
+            # Legacy format compat: skip the appid
             return parts[1], parts[2], parts[3]
         elif len(parts) == 3:
             return parts[0], parts[1], parts[2]
@@ -417,7 +417,7 @@ class MemoryNode:
         return "", "", ""
 
     def to_dict(self) -> Dict[str, Any]:
-        """序列化为字典"""
+        """Serialize to a dict"""
         return {
             "node_id": self.node_id,
             "user_id": self.user_id,
@@ -434,48 +434,48 @@ class MemoryNode:
             "gmt_modified": int(self.gmt_modified.timestamp()) if self.gmt_modified else None,
             "valid_from": int(self.valid_from.timestamp()) if self.valid_from else None,
             "valid_until": int(self.valid_until.timestamp()) if self.valid_until else None,
-            # 演化图谱
+            # Evolution graph
             "supersedes": self.supersedes,
             "superseded_by": self.superseded_by,
             "is_latest": self.is_latest,
-            # 推断注解
+            # Inference annotation
             "speculate": self.speculate,
-            # Summary 锚点
+            # Summary anchor
             "source_raw_memory_id": self.source_raw_memory_id,
-            # 状态
+            # Status
             "status": self.status.value,
-            # 置信与校准
+            # Confidence and calibration
             "confidence": self.confidence,
             "evidence_count": self.evidence_count,
             "source_type": self.source_type.value,
-            # 情绪
+            # Emotion
             "emotional_valence": self.emotional_valence,
             "emotional_arousal": self.emotional_arousal,
-            # 检索元数据
+            # Retrieval metadata
             "access_count": self.access_count,
             "last_accessed_at": int(self.last_accessed_at.timestamp()) if self.last_accessed_at else None,
-            # 长尾标记
+            # Long-tail tags
             "specificity_score": self.specificity_score,
             "rarity_score": self.rarity_score,
             "longtail_flag": self.longtail_flag,
-            # 元认知
+            # Meta-cognition
             "meta_tags": [t.value for t in self.meta_tags],
             "meta_hints": self.meta_hints,
-            # 出处追溯
+            # Provenance
             "source_session_id": self.source_session_id,
             "source_turn_index": self.source_turn_index,
             "evidence_chain": self.evidence_chain,
-            # 扩展
+            # Extensions
             "custom": self.custom,
             "tags": self.tags,
             "tag_ners": list(getattr(self, "tag_ners", None) or []),
-            # 向量（可选，clone / 序列化场景需要携带）
+            # Vector (optional, must be carried for clone / serialization)
             "embedding": self.embedding,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MemoryNode":
-        """从字典反序列化（兼容旧 payload 中的废弃字段，忽略即可）"""
+        """Deserialize from a dict (deprecated fields in old payloads are ignored)"""
         def parse_dt(v):
             if v is None:
                 return None
@@ -518,46 +518,46 @@ class MemoryNode:
             owner=data.get("owner") or None,
             layer=parse_enum(MemoryLayer, data.get("layer"), MemoryLayer.L1_RAW),
             content=data.get("content", ""),
-            # memory_at: 优先读 memory_at，兼容旧 key created_at
+            # memory_at: prefer memory_at, fall back to the legacy key created_at
             memory_at=parse_dt(data.get("memory_at") or data.get("created_at")),
             temporal_anchor=data.get("temporal_anchor"),
             gmt_created=parse_dt(data.get("gmt_created")),
             gmt_modified=parse_dt(data.get("gmt_modified")),
             valid_from=parse_dt(data.get("valid_from")),
             valid_until=parse_dt(data.get("valid_until")),
-            # 演化图谱
+            # Evolution graph
             supersedes=data.get("supersedes"),
             superseded_by=data.get("superseded_by"),
             is_latest=data.get("is_latest", True),
-            # 推断注解
+            # Inference annotation
             speculate=data.get("speculate"),
-            # Summary 锚点
+            # Summary anchor
             source_raw_memory_id=data.get("source_raw_memory_id"),
-            # 状态
+            # Status
             status=parse_enum(MemoryStatus, data.get("status"), MemoryStatus.ACTIVE),
-            # 置信
+            # Confidence
             confidence=data.get("confidence", 1.0),
             evidence_count=data.get("evidence_count", 1),
             source_type=parse_enum(SourceType, data.get("source_type"), SourceType.EXPLICIT),
-            # 情绪
+            # Emotion
             emotional_valence=data.get("emotional_valence", 0.0),
             emotional_arousal=data.get("emotional_arousal", 0.0),
-            # 检索元数据
+            # Retrieval metadata
             access_count=data.get("access_count", 0),
             last_accessed_at=parse_dt(data.get("last_accessed_at")),
             embedding=data.get("embedding"),
-            # 长尾
+            # Long tail
             specificity_score=data.get("specificity_score", 0.0),
             rarity_score=data.get("rarity_score", 0.0),
             longtail_flag=data.get("longtail_flag", False),
-            # 元认知
+            # Meta-cognition
             meta_tags=meta_tags,
             meta_hints=data.get("meta_hints", {}),
-            # 出处
+            # Provenance
             source_session_id=data.get("source_session_id", ""),
             source_turn_index=data.get("source_turn_index"),
             evidence_chain=data.get("evidence_chain", []),
-            # 扩展
+            # Extensions
             custom=data.get("custom", {}),
             tags=data.get("tags", []) or [],
             tag_ners=list(data.get("tag_ners") or []),
@@ -565,15 +565,15 @@ class MemoryNode:
 
 
 # ============================================================
-# 子类模型
+# Subclass models
 # ============================================================
 
 @dataclass
 class VersionedFact(MemoryNode):
     """
-    L2 层的原子事实 — 版本化不可变记录
+    Atomic fact at the L2 layer -- versioned immutable record
 
-    V2 §3.2: 不直接修改事实内容，而是通过 status 变迁 + SUPERSEDED_BY 边来追踪变更。
+    V2 §3.2: fact content is never edited in place; changes are tracked via status transitions + SUPERSEDED_BY edges.
     """
     update_type: Optional[UpdateType] = None
 
@@ -602,7 +602,7 @@ class VersionedFact(MemoryNode):
 @dataclass
 class SchemaNode(MemoryNode):
     """
-    L6 层: 心智模型 — 从多个关联事实中自动归纳的抽象叙事模板 (Graph 层)
+    L6 layer: mental model -- abstract narrative template induced automatically from related facts (Graph layer)
 
     V3 §2.2
     """
@@ -665,21 +665,21 @@ class SchemaNode(MemoryNode):
 @dataclass
 class IntentionNode(MemoryNode):
     """
-    L7 层: 前瞻性记忆 — 记住"将来要做什么" (Graph 层)
+    L7 layer: prospective memory -- remembering "what to do later" (Graph layer)
 
     V3 §2.2
     """
     trigger_type: TriggerType = TriggerType.EVENT_BASED
     trigger_condition: str = ""
 
-    # 时间触发
+    # Time trigger
     trigger_time: Optional[datetime] = None
 
-    # 事件触发
+    # Event trigger
     trigger_event_pattern: Optional[str] = None
     trigger_event_embedding: Optional[List[float]] = None
 
-    # 意图内容
+    # Intention content
     intention_content: str = ""
     priority: IntentionPriority = IntentionPriority.MEDIUM
     expiry: Optional[datetime] = None
@@ -746,13 +746,13 @@ class IntentionNode(MemoryNode):
 
 
 # ============================================================
-# 辅助模型: KnowledgeGap
+# Auxiliary model: KnowledgeGap
 # ============================================================
 
 @dataclass
 class KnowledgeGap:
     """
-    知识缺口记录 — 描述"某个维度的信息缺失或不可靠"
+    Knowledge gap record -- "information missing or unreliable on some dimension"
 
     V2 §5.6.2
     """
@@ -832,13 +832,13 @@ class KnowledgeGap:
 
 
 # ============================================================
-# 辅助模型: 时间系统 (Temporal)
+# Auxiliary models: temporal system (Temporal)
 # ============================================================
 
 @dataclass
 class LifeStage:
-    """用户的一个生命阶段"""
-    name: str = ""                      # "大学时期", "在上海工作"
+    """One life stage of the user."""
+    name: str = ""                      # "college years", "working in Shanghai"
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     description: str = ""
@@ -874,15 +874,15 @@ class LifeStage:
 @dataclass
 class TemporalEvent:
     """
-    时间线上的一个事件
+    One event on the timeline
 
     V2 §6.1
     """
-    event_id: str = ""                  # 关联的 fact_id
+    event_id: str = ""                  # Associated fact_id
     event_description: str = ""
     event_time: Optional[datetime] = None
     time_precision: str = "approximate"  # exact / month / quarter / year / approximate
-    time_description: str = ""          # 原始时间描述
+    time_description: str = ""          # Original time expression
     life_stage: Optional[str] = None
     is_milestone: bool = False
 
@@ -923,7 +923,7 @@ class TemporalEvent:
 @dataclass
 class UserTimeline:
     """
-    用户的完整时间线
+    The user's complete timeline
 
     V2 §6.1
     """
@@ -954,14 +954,14 @@ class UserTimeline:
 
 
 # ============================================================
-# 输出协议: MemoryContextPackage
+# Output protocol: MemoryContextPackage
 # ============================================================
 
 @dataclass
 class ProfileSummary:
-    """用户画像摘要 (Layer 0, 始终返回)"""
-    core: str = ""                      # "张三, 30岁, 北京, 后端工程师"
-    personality: str = ""               # "务实, 技术导向"
+    """User profile summary (Layer 0, always returned)"""
+    core: str = ""                      # "Alex, 30, Berlin, backend engineer"
+    personality: str = ""               # "pragmatic, tech-driven"
     active_schemas: List[str] = field(default_factory=list)
     gotchas: List[str] = field(default_factory=list)
     note: str = ""
@@ -978,7 +978,7 @@ class ProfileSummary:
 
 @dataclass
 class MemoryIndexEntry:
-    """索引视图条目 (Layer 1, ~100 tokens)"""
+    """Index view entry (Layer 1, ~100 tokens)"""
     node_id: str = ""
     date: str = ""
     content_type: str = ""
@@ -999,7 +999,7 @@ class MemoryIndexEntry:
 
 @dataclass
 class MemorySummaryEntry:
-    """摘要视图条目 (Layer 2, ~500 tokens)"""
+    """Summary view entry (Layer 2, ~500 tokens)"""
     node_id: str = ""
     summary: str = ""
     confidence: float = 0.0
@@ -1018,7 +1018,7 @@ class MemorySummaryEntry:
 
 @dataclass
 class MetaCognitionReport:
-    """元认知报告"""
+    """Meta-cognition report."""
     confidence_summary: str = ""
     knowledge_gaps: List[Dict[str, Any]] = field(default_factory=list)
     unresolved_conflicts: List[Dict[str, Any]] = field(default_factory=list)
@@ -1035,7 +1035,7 @@ class MetaCognitionReport:
 
 @dataclass
 class TriggeredIntention:
-    """被触发的前瞻性意图"""
+    """A prospective intention that was triggered."""
     trigger_reason: str = ""
     intention: str = ""
     priority: str = "medium"
@@ -1054,7 +1054,7 @@ class TriggeredIntention:
 
 @dataclass
 class ActivatedSchema:
-    """被激活的 Schema"""
+    """An activated Schema."""
     schema: str = ""
     evidence_summary: str = ""
     expected_inferences: List[str] = field(default_factory=list)
@@ -1073,7 +1073,7 @@ class ActivatedSchema:
 
 @dataclass
 class TemporalContext:
-    """时间线上下文 (query 涉及时间时返回)"""
+    """Timeline context (returned when the query involves time)"""
     relevant_timeline: List[Dict[str, str]] = field(default_factory=list)
     temporal_note: str = ""
 
@@ -1087,32 +1087,32 @@ class TemporalContext:
 @dataclass
 class MemoryContextPackage:
     """
-    返回给调用方 LLM 的完整记忆上下文包
+    Complete memory context package returned to the calling LLM
 
-    V2 §7.1: 三层渐进式披露 + 元认知信号 + 前瞻意图 + Schema + 时间线
+    V2 §7.1: three-tier progressive disclosure + meta-cognition signals + prospective intentions + Schema + timeline
     """
-    # Layer 0: 用户画像摘要 (始终返回)
+    # Layer 0: user profile summary (always returned)
     profile_summary: ProfileSummary = field(default_factory=ProfileSummary)
 
-    # Layer 1: 索引视图 (~100 tokens)
+    # Layer 1: index view (~100 tokens)
     index_view: List[MemoryIndexEntry] = field(default_factory=list)
 
-    # Layer 2: 摘要视图 (~500 tokens, 按需展开)
+    # Layer 2: summary view (~500 tokens, expanded on demand)
     summary_view: List[MemorySummaryEntry] = field(default_factory=list)
 
-    # Layer 3: 完整内容 (按需懒加载)
+    # Layer 3: full content (lazily loaded on demand)
     full_content_ids: List[str] = field(default_factory=list)
 
-    # 元认知信号
+    # Meta-cognition signals
     meta_cognition: MetaCognitionReport = field(default_factory=MetaCognitionReport)
 
-    # 前瞻性意图
+    # Prospective intentions
     triggered_intentions: List[TriggeredIntention] = field(default_factory=list)
 
-    # 激活的 Schema
+    # Activated Schemas
     activated_schemas: List[ActivatedSchema] = field(default_factory=list)
 
-    # 时间线上下文
+    # Timeline context
     temporal_context: Optional[TemporalContext] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1129,19 +1129,19 @@ class MemoryContextPackage:
 
 
 # ============================================================
-# V1 兼容类型别名
+# V1 compat type aliases
 # ============================================================
 
-# MemoryEntry 作为 MemoryNode 的别名，保持旧代码不报错
+# MemoryEntry aliases MemoryNode so legacy code keeps importing it without errors
 MemoryEntry = MemoryNode
 
 
 @dataclass
 class MemoryMetadata:
     """
-    V1 兼容: 记忆元数据
+    V1 compat: memory metadata
 
-    新代码应直接使用 MemoryNode 的字段。此类保留用于与旧代码兼容。
+    New code should use MemoryNode fields directly; this class is kept for compatibility with legacy code.
     """
     uid: str = ""
     agent_id: str = ""
@@ -1234,9 +1234,9 @@ class MemoryMetadata:
 @dataclass
 class MemoryScore:
     """
-    V1 兼容: 记忆评分
+    V1 compat: memory scoring
 
-    V2 使用更复杂的评分公式 (参见 core/scorer.py)，此类保留兼容。
+    V2 uses a more complex scoring formula (see core/scorer.py); this class is kept for compatibility.
     """
     semantic_score: float = 0.0
     recency_score: float = 0.0

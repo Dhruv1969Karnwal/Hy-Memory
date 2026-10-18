@@ -53,12 +53,12 @@ def _get_client():
 
     config = MemoryConfig.from_env()
 
-    # ---- 胶水: thinking mode + temperature 强制 ----
-    # 当环境变量 HY_MEMORY_THINKING_MODE 设置时，对支持 thinking 的模型注入控制参数
+    # ---- glue: thinking mode + temperature enforcement ----
+    # when the HY_MEMORY_THINKING_MODE env var is set, inject control parameters into models that support thinking
     thinking_mode = os.getenv("HY_MEMORY_THINKING_MODE")
     if thinking_mode:
         _llm_model = (config.llm.model or "").lower()
-        # 需要 extra_body.thinking 控制的模型
+        # models that need extra_body.thinking to be controlled
         _needs_thinking_body = (
             "kimi" in _llm_model
             or "deepseek" in _llm_model
@@ -70,7 +70,7 @@ def _get_client():
             extra = config.llm.extra_body or {}
             extra["thinking"] = {"type": thinking_mode}
             config.llm.extra_body = extra
-            # kimi/deepseek 有温度硬约束
+            # kimi/deepseek have hard constraints on temperature
             if "kimi" in _llm_model or "deepseek" in _llm_model:
                 required_temp = 0.6 if thinking_mode == "disabled" else 1.0
                 config.llm.temperature = required_temp
@@ -260,16 +260,16 @@ class MemoryHTTPHandler(BaseHTTPRequestHandler):
     # ================================================================
 
     def _handle_health_liveness(self):
-        """轻量存活探针：探测内部 event loop（_LoopThread）是否还活着。
+        """Lightweight liveness probe: checks whether the internal event loop (_LoopThread) is still alive.
 
-        与 /api/v1/status（深度检查 VDB/embed/LLM，且自己临时开新 loop）不同，本
-        endpoint 专门探测真正承载所有业务协程的那个 _LoopThread loop 是否被阻塞/死锁。
+        Unlike /api/v1/status (which deep-checks VDB/embed/LLM and opens its own temporary loop), this
+        endpoint specifically probes the one _LoopThread loop that actually runs all business coroutines, to see whether it is blocked or deadlocked.
 
-        做法：往 _loop_thread 的 loop 投一个几乎零成本的 ping 协程，带短超时等待结果。
-          - loop 正常调度 → 快速返回 200 {"status":"alive"}
-          - loop 卡死（如被同步阻塞）→ 超时 → 503 {"status":"loop_blocked"}
-        绝不调用任何业务方法、绝不碰 VDB/LLM，也不给任何业务请求加超时。这样外部探活
-        能明确区分「进程活着」与「loop 活着」，据此重启 sidecar，而不会误伤正常长写入。
+        Approach: submit an almost zero-cost ping coroutine to _loop_thread's loop and await it with a short timeout.
+          - loop scheduling normally → returns 200 {"status":"alive"} quickly
+          - loop stuck (e.g. blocked synchronously) → timeout → 503 {"status":"loop_blocked"}
+        It never calls any business method, never touches VDB/LLM, and adds no timeout to any business request. That way external probing
+        can clearly tell "the process is alive" apart from "the loop is alive" and restart the sidecar accordingly, without hurting normal long writes.
         """
 
         try:
@@ -293,11 +293,11 @@ class MemoryHTTPHandler(BaseHTTPRequestHandler):
 
         try:
             fut = asyncio.run_coroutine_threadsafe(_ping(), loop)
-            # 短超时：loop 正常时 ping 是微秒级；卡死则超时判定为不可用
+            # short timeout: while the loop is healthy the ping takes microseconds; if it is stuck the timeout marks it unavailable
             fut.result(timeout=2.0)
             _json_response(self, 200, {"status": "alive"})
         except Exception:
-            # 超时或调度失败 → loop 被阻塞/死锁
+            # timeout or scheduling failure → the loop is blocked/deadlocked
             try:
                 fut.cancel()
             except Exception:
@@ -404,8 +404,8 @@ class MemoryHTTPHandler(BaseHTTPRequestHandler):
         _json_response(self, 200, result)
 
     def _handle_add_extracted(self, body: Dict):
-        """POST /api/v1/add_extracted — 写入已抽取好的记忆（跳过 extract，直接 reconcile）"""
-        # 接受 contents (str 或 list) / content / text
+        """POST /api/v1/add_extracted — write memories that are already extracted (skips extract, goes straight to reconcile)"""
+        # accepts contents (str or list) / content / text
         contents = body.get("contents")
         if contents is None:
             single = body.get("content") or body.get("text")

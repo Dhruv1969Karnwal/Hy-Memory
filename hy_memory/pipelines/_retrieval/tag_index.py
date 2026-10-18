@@ -1,19 +1,19 @@
 """
-Per-user tag embedding index —— 写侧维护的 tag 向量索引。
+Per-user tag embedding index -- write-side maintained tag vector index.
 
-核心设计：
-  - 存储：和 memories 同一套 VDB（通过 VectorStoreBase 接口抽象），独立 collection
-    （命名 `{memories_collection}_tag_index`）
-  - 写入：writer 侧惰性维护。每次 memory 写入成功后，对节点的每个 tag 调用
-    `ensure_tag_embedding`，已存在则跳过（uuid5 保证幂等），否则 embed + upsert
-  - 删除：client.delete 删除单条 memory 后，对每个 tag 扫主 collection 验证
-    引用数，为 0 才从 tag_index 中删除
-  - 查询：legacy / hybrid 的共享后处理可按开关读取该索引，提名 tag 候选
-  - 失败策略：全链路 try-except 静默降级，tag_index 失败不影响主流程
+Core design:
+  - Storage: the same VDB as memories (abstracted via the VectorStoreBase interface), separate collection
+    (named `{memories_collection}_tag_index`)
+  - Write: lazily maintained on the writer side. After each successful memory write, call
+    `ensure_tag_embedding` for every tag of the node; skip if it exists (uuid5 guarantees idempotence), otherwise embed + upsert
+  - Delete: after client.delete removes a single memory, scan the main collection for each tag to
+    verify its reference count; delete from tag_index only when it reaches 0
+  - Query: the shared post-processing of legacy / hybrid can read this index behind a flag to nominate tag candidates
+  - Failure policy: silent degradation with try-except across the whole chain; tag_index failures never affect the main flow
 
-限制：
-  - 非 Qdrant 后端（Chroma / Faiss）需要在 VectorStoreBase 的
-    tag_index 方法中先实现或抛 NotImplementedError。
+Limitations:
+  - Non-Qdrant backends (Chroma / Faiss) must first implement or raise NotImplementedError
+    in the tag_index methods of VectorStoreBase.
 """
 
 import asyncio
@@ -32,11 +32,11 @@ async def ensure_tag_embedding(
     tag: str,
 ) -> bool:
     """
-    惰性 upsert：若该 (user_id, tag) 的 embedding 不存在则计算并写入；
-    已存在则直接返回 True。
+    Lazy upsert: if the embedding for this (user_id, tag) does not exist, compute and write it;
+    return True directly if it already exists.
 
-    返回 True 表示"tag 在 tag_index 里是可用的"，False 表示失败。
-    异常一律吞掉并 log warning，不阻塞主流程。
+    Returning True means "the tag is usable in tag_index"; False means failure.
+    Exceptions are always swallowed and logged as warnings, never blocking the main flow.
     """
     if not config.TAG_INDEX_WRITE_ENABLED:
         return False
@@ -50,10 +50,10 @@ async def ensure_tag_embedding(
         return False
     except Exception as e:
         logger.debug(f"[tag-index] has_tag_embedding failed ({user_id}, {tag}): {e}")
-        # 尝试直接 upsert（exists 检查失败不代表不能写）
+        # Try a direct upsert (a failed exists check does not mean the write cannot proceed)
 
     try:
-        # 复用 search 路径的 embed 接口（search 路径低延迟优先，不走 write 攒批队列）
+        # Reuse the embed interface from the search path (search favors low latency, bypassing the write batching queue)
         vec = await embed_service.embed_queued(tag)
     except Exception as e:
         logger.warning(f"[tag-index] embed tag failed ({user_id}, {tag}): {e}")
@@ -76,9 +76,9 @@ async def ensure_tag_embeddings_for_node(
     tags: List[str],
 ) -> int:
     """
-    批量确保一组 tag 的 embedding 在 tag_index 中就位。返回成功数量。
-    并发检查/写入各 tag。单个 tag 仍有独立 try-except，不影响其他；同一节点常见
-    2-3 个 tag，串行会把 embedding 网关的尾延迟直接相加到 write 关键路径。
+    Ensure a batch of tags have their embeddings in place in tag_index. Returns the success count.
+    Checks/writes each tag concurrently. Each tag still has its own try-except without affecting others; a node commonly
+    has 2-3 tags, and serializing would add embedding-gateway tail latencies directly onto the write critical path.
     """
     if not tags:
         return 0
@@ -120,8 +120,8 @@ async def ensure_tag_embeddings_for_node(
                 exc,
             )
 
-    # 每个协程进入 embed_queued；同一 write 的 tags 会被队列拼成一批，多个并发 write
-    # 也可共享批次，不会像直接 embed_batch 那样每个 write 各发一个 HTTP 请求。
+    # Each coroutine enters embed_queued; the tags of one write get merged into a single batch by the queue, and concurrent writes
+    # can share batches too, unlike calling embed_batch directly where every write sends its own HTTP request.
     results = await asyncio.gather(
         *[
             ensure_tag_embedding(
@@ -144,8 +144,8 @@ async def cleanup_tags_on_delete(
     isolation_key: str = "",
 ) -> int:
     """
-    删除 memory 后，对其每个 tag 检查引用数。无引用则从 tag_index 删除。
-    返回实际删除的 tag 条目数。
+    After deleting a memory, check the reference count of each of its tags; delete from tag_index when unreferenced.
+    Returns the number of tag entries actually deleted.
     """
     if not config.TAG_INDEX_WRITE_ENABLED or not user_id or not tags:
         return 0
@@ -158,7 +158,7 @@ async def cleanup_tags_on_delete(
                 user_id=user_id, tag=tag, isolation_key=isolation_key,
             )
         except NotImplementedError:
-            return 0  # backend 不支持，整体放弃
+            return 0  # backend unsupported, give up entirely
         except Exception as e:
             logger.debug(f"[tag-index] count_memories_with_tag failed ({user_id}, {tag}): {e}")
             continue
@@ -184,11 +184,11 @@ async def search_matching_tags(
     min_score: Optional[float] = None,
 ) -> List[str]:
     """
-    对每个 keyword embedding 在 per-user tag_index 里检索 topk 最相近的 tag。
-    合并去重后返回。
+    For each keyword embedding, retrieve the topk nearest tags in the per-user tag_index,
+    then merge and deduplicate before returning.
 
-    返回的 tag 列表已去重，但不保证排序（reader 只关心 MatchAny 集合）。
-    任何失败静默返回空列表（reader 会把路 B 视为空）。
+    The returned tag list is deduplicated but unordered (the reader only cares about the MatchAny set).
+    Any failure silently returns an empty list (the reader treats path B as empty).
     """
     if not keyword_embeddings or not user_id:
         return []
@@ -220,8 +220,8 @@ async def search_matching_tags(
 
 def backend_supports_tag_index(vector_store) -> bool:
     """
-    探测 vector_store 是否实现了 tag_index 接口族。
-    供内部工具判断后端是否支持 tag index。
+    Probe whether the vector_store implements the tag_index interface family.
+    For internal tools to check whether the backend supports the tag index.
     """
     required = [
         "upsert_tag_embedding",
@@ -234,6 +234,6 @@ def backend_supports_tag_index(vector_store) -> bool:
         fn = getattr(vector_store, name, None)
         if fn is None:
             return False
-    # 通过 `_supports_tag_index` 私有布尔快速 opt-in，避免子类需要真调一次
+    # Fast opt-in via the private `_supports_tag_index` boolean, so subclasses do not need a real probe call
     flag = getattr(vector_store, "_supports_tag_index", None)
     return bool(flag) if flag is not None else True

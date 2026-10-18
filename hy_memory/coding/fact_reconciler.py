@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Working Fact Reconciler（事实层，独立于经验层 reconciler）
+Working Fact Reconciler (fact layer, independent of the experience-layer reconciler)
 
-输入：List[WorkingFactDraft]（来自 extractor）
-输出：(List[WorkingFact], List[FactReconcileOp])
+Input: List[WorkingFactDraft] (from the extractor)
+Output: (List[WorkingFact], List[FactReconcileOp])
 
-每条 draft 是一段 trace/session 的整体记录，必定 INSERT。唯一的判断是：新 trace
-是不是在继续推进旧 trace 的同一个用户任务？是的话把旧事实 SUPERSEDE 掉，形成
-跨 session 的任务进展链——软删而不是物理删，fact_link 留着可回溯，同时把旧事实
-攒下的经验链**过继**给新事实，免得经验随旧事实一起沉默。
+Each draft is the record of one whole trace/session and is always INSERTed. The only judgement is whether the new
+trace keeps advancing the same user task as an older trace. If so, the old fact is SUPERSEDEd, forming a cross-session
+task progress chain -- a soft delete rather than a physical one, so fact_link stays traceable, while the experience
+chains the old fact accumulated are **inherited** by the new fact so experience does not fade away with it.
 
-复用 LLMConfig.model（与 chat / 经验层 reconciler 共用）。
+Reuses LLMConfig.model (shared with chat and the experience-layer reconciler).
 
 """
 
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_configured_temperature(llm_provider) -> Optional[float]:
-    """从 MemoryConfig.llm 解析温度；None = 请求里不带该参数。"""
+    """Resolve the temperature from MemoryConfig.llm; None = the parameter is omitted from the request."""
     config = getattr(llm_provider, "config", None)
     llm = getattr(config, "llm", None) if config is not None else None
     if llm is not None:
@@ -53,40 +53,40 @@ def _resolve_configured_temperature(llm_provider) -> Optional[float]:
     temp = getattr(inner, "temperature", None) if inner is not None else None
     return float(temp) if temp is not None else None
 
-# 演变总结的固定输出上限，用于容纳多阶段任务的关键动作、直接结果和遗留状态，
-# 同时避免复制整条历史。它是摘要契约的一部分，不是需要按实例调节的参数。
+# Fixed output budget for the evolution summary: room for the key actions, direct results and leftover state of a
+# multi-stage task, without copying the whole history. Part of the summary contract, not a per-instance knob.
 _CHAIN_SUMMARY_MAX_TOKENS = 600
 
-# ---- 被覆盖事实的 details 过继 ----
+# ---- Inheriting details from superseded facts ----
 #
-# 为什么要有这个：fact_chain_summary 是 LLM 生成的压缩产物，它的提示词第一条就是
-# "This is compression only"，且输出被 _CHAIN_SUMMARY_MAX_TOKENS=600 卡住。链越长，
-# 越早的代际在摘要里丢得越多，最先丢的是具体取值（价格区间、评分范围这类数值），
-# 所以摘要能保住叙事，保不住数值。
+# Why this exists: fact_chain_summary is an LLM-compressed artefact whose first prompt rule is
+# "This is compression only", and its output is capped by _CHAIN_SUMMARY_MAX_TOKENS=600. The longer the chain,
+# the more of the earlier generations is lost in the summary, and concrete values go first (price ranges, score ranges),
+# so a summary keeps the narrative but not the numbers.
 #
-# 过继走的是复制而不是生成：没有 LLM 调用，没有它的失败模式，保真度在预算内是 100%。
-# 且 details 刻意不进向量（store._upsert_fact_vec），所以追加多少都不改变召回打分，
-# 只改变"命中之后读得到什么"。这两点合起来是这个做法成立的全部理由。
+# Inheritance copies instead of generating: no LLM call, none of its failure modes, 100% fidelity within the budget.
+# Details are deliberately kept out of vectors (store._upsert_fact_vec), so appending any amount never changes recall scoring;
+# it only changes "what can be read after a hit". Those two points together justify the whole approach.
 #
-# 三个必须处理的问题：
-#   1. 指数膨胀。祖先的 details 里可能已经含着它自己那一代过继来的块，直接追加会
-#      让每代翻倍。所以只取每条祖先"自己的" details（按标记切掉它的过继段），血统
-#      本来就由 _collect_history 一次走全，不靠逐代累积。
-#   2. 上下文预算。如果调用方把 details 原样注入上下文，k 条事实各带多代过继内容
-#      会迅速吃穿上下文。所以有总预算。
-#   3. 预算内的取舍。按代际由近到远填，填不下就停——近代的具体取值比远代的更可能
-#      还有效。这一步是有损的，损在哪里会写进过继块的尾注，不静默截断。
-_DETAILS_INHERIT_MARKER = "--- inherited from superseded facts ---"# 总预算。约等于抽取器单条 details 的上限（_MAX_DETAILS_CHARS=4000），即"过继来的
-# 全部历史"最多再占一条事实的份量，不让历史盖过当前状态。
+# Three problems that must be handled:
+#   1. Exponential growth. An ancestor's details may already contain the block it inherited in its own generation, so
+#      appending directly doubles every generation. Only each ancestor's "own" details are taken (its inherited tail is cut
+#      at the marker); the lineage is already walked in full by _collect_history, not accumulated generation by generation.
+#   2. Context budget. If callers inject details verbatim into context, k facts each carrying several inherited generations
+#      would burn through the context quickly, hence the total budget.
+#   3. Trade-offs inside the budget. Fill from the newest generation backwards and stop when it no longer fits -- recent
+#      values are likelier to still be valid. This step is lossy and what was lost is noted at the tail of the block, never truncated silently.
+_DETAILS_INHERIT_MARKER = "--- inherited from superseded facts ---"# Total budget. Roughly the extractor's per-fact details cap (_MAX_DETAILS_CHARS=4000), i.e. the "inherited
+# all history" so it takes up at most one more fact's worth of space and never overshadows the current state.
 _MAX_INHERITED_DETAILS_CHARS = 4000
-# 单条祖先的上限，防一条巨型 details 把整个预算吃光、后面几代一个字都进不来。
+# Per-ancestor cap, so one huge details field cannot eat the whole budget and leave later generations with nothing.
 _MAX_INHERITED_PER_FACT_CHARS = 1200
 _INHERIT_DETAILS_DEFAULT = True
 ENV_INHERIT_DETAILS = "HY_FACT_INHERIT_DETAILS"
 
 
 def _inherit_details_default() -> bool:
-    """同 `_subject_gate_default`：环境变量兜底，构造参数优先。"""
+    """Same as `_subject_gate_default`: env var fallback, constructor argument takes precedence."""
     raw = os.getenv(ENV_INHERIT_DETAILS)
     if raw is None or not raw.strip():
         return _INHERIT_DETAILS_DEFAULT
@@ -94,10 +94,10 @@ def _inherit_details_default() -> bool:
 
 
 def _own_details(details: str) -> str:
-    """剥掉一条事实自己过继来的段，只留它本代产生的 details。
+    """Strip the section a fact inherited itself, keeping only the details its own generation produced.
 
-    没有标记就原样返回。这是防指数膨胀的关键一步：血统由 _collect_history 一次走全，
-    每代只贡献自己那一份。
+    Returned unchanged when the marker is absent. This is the key step against exponential growth: the lineage is walked
+    in full by _collect_history, so each generation contributes only its own share.
     """
     if not details:
         return ""
@@ -106,16 +106,16 @@ def _own_details(details: str) -> str:
 
 
 def _build_inherited_details(history: List[WorkingFact]) -> Tuple[str, int, int]:
-    """把历代祖先自己的 details 拼成一个带代际标记的过继块。
+    """Assemble the ancestors' own details into one inherited block tagged by generation.
 
     Args:
-        history: 时间正序的历代事实（_collect_history 的返回值）。
+        history: historical facts in chronological order (the return value of _collect_history).
 
     Returns:
-        (过继块文本, 收进去的代数, 因预算被跳过的代数)。没有任何可过继内容时返回 ("", 0, 0)。
+        (inherited block text, generations included, generations skipped for budget). Returns ("", 0, 0) when there is nothing to inherit.
     """
-    # 由近到远填：近代的具体取值更可能还有效，且摘要对远代的保真度本来就最低，
-    # 但预算是硬的，先保住最可能被用到的那部分。
+    # Fill from the newest generation backwards: recent values are likelier to still be valid, and summary fidelity for
+    # distant generations is the lowest anyway; the budget is hard, so keep what is most likely to be used first.
     usable = [(i, f) for i, f in enumerate(history) if _own_details(f.details)]
     blocks: List[Tuple[int, str]] = []
     used = 0
@@ -127,7 +127,7 @@ def _build_inherited_details(history: List[WorkingFact]) -> Tuple[str, int, int]
         label = f"[gen{pos + 1}"
         if fact.subject:
             label += f" · {fact.subject}"
-        # created_at 是 datetime，short_date 吃 ISO 串（同 _summarize_chain 的用法）
+        # created_at is a datetime; short_date takes an ISO string (same usage as _summarize_chain)
         stamp = short_date(fact.created_at.isoformat() if fact.created_at else "")
         if stamp:
             label += f" · {stamp}"
@@ -140,7 +140,7 @@ def _build_inherited_details(history: List[WorkingFact]) -> Tuple[str, int, int]
         blocks.append((pos, chunk))
     if not blocks:
         return "", 0, skipped
-    # 呈现按时间正序，读起来是一条推进线；预算分配才是由近到远。
+    # Presentation stays chronological so it reads as one progression; only budget allocation runs newest first.
     blocks.sort(key=lambda item: item[0])
     text = f"{_DETAILS_INHERIT_MARKER}\n" + "\n\n".join(chunk for _, chunk in blocks)
     if skipped:
@@ -149,29 +149,29 @@ def _build_inherited_details(history: List[WorkingFact]) -> Tuple[str, int, int]
 
 
 
-# subject 机械闸门的开关。
-#   True  = 召回后把 subject 规范化不相等的候选直接从名单里删掉，LLM 看不到，且
-#           SUPERSEDE 执行前再复查一次。
-#   False（默认）= 关掉这个闸门，覆盖判定只走语义召回 + LLM。
+# Switch for the mechanical subject gate.
+#   True  = after recall, candidates whose normalized subject differs are removed from the list so the LLM never sees
+#           them, and they are checked once more before SUPERSEDE runs.
+#   False (default) = gate off; the supersede decision relies only on semantic recall + the LLM.
 #
-# 之所以做成开关：它的收益取决于 subject 本身是否稳定。
-#   - subject 是稳定的实体名（人、文件、服务）且彼此并列时，闸门能防止跨主体误合并，
-#     几乎不误伤。
-#   - subject 是自由文本或位置标签时，同一实体会被写成不同的 subject，等值比较会把
-#     真实的更新拦掉；如果后续步骤依赖前一步的结果，被拦掉的更新会让它读到过期值。
-# 一个只在部分场景成立的机制不该当默认值，所以默认关闭。
+# Why a switch: the payoff depends on whether subjects are stable in the first place.
+#   - When subjects are stable entity names (people, files, services) sitting side by side, the gate prevents
+#     cross-subject merges with almost no collateral damage.
+#   - When subjects are free text or positional labels, the same entity gets written under different subjects, and
+#     equality comparison blocks genuine updates; if a later step depends on an earlier one, it then reads a stale value.
+# A mechanism that only holds in some settings should not be the default, so it ships disabled.
 #
-# 关掉之后的已知代价：跨主体误合并会回来。补偿路径是 fact_chain_summary，它保留了
-# 被覆盖事实的演变，但保真度随链距衰减。
+# Known cost of leaving it off: cross-subject merges come back. The compensation is fact_chain_summary, which keeps
+# the evolution of superseded facts, though its fidelity decays with chain distance.
 _SUBJECT_GATE_DEFAULT = False
 ENV_SUBJECT_GATE = "HY_FACT_SUBJECT_GATE"
 
 
 def _subject_gate_default() -> bool:
-    """环境变量兜底，方便不改代码就切换默认行为。
+    """Env-var fallback so the default behaviour can be switched without touching code.
 
-    未设置 → 用 `_SUBJECT_GATE_DEFAULT`。设为 0/false/no/off → 关闭。
-    显式传给 `WorkingFactReconciler(subject_gate=...)` 的值优先于环境变量。
+    Unset → use `_SUBJECT_GATE_DEFAULT`. Set to 0/false/no/off → disabled.
+    A value passed explicitly to `WorkingFactReconciler(subject_gate=...)` takes precedence over the environment variable.
     """
     raw = os.getenv(ENV_SUBJECT_GATE)
     if raw is None or not raw.strip():
@@ -180,12 +180,12 @@ def _subject_gate_default() -> bool:
 
 
 def _subject_conflict(new_subject: str, old_subject: str) -> bool:
-    """两条事实的主体是否明确不同（不同 → 禁止覆盖）。
+    """Whether two facts clearly have different subjects (different → supersede forbidden).
 
-    只在双方都声明了主体、且规范化后不相等时才算冲突。有一侧为空就返回 False：
-    空不等于"主体不同"，它等于"这次没能定出主体"（抽取没给、兜底存的原文、或者
-    改动前写进库的老行）。把空当成冲突会让老库里的事实永远无法被覆盖，那是拿一个
-    未知去否决一个判断；交回 LLM 按语义判，才是改动前的行为。
+    A conflict exists only when both sides declare a subject and the normalized values differ. An empty side returns False:
+    empty does not mean "different subject", it means "no subject could be determined this time" (the extractor omitted it,
+    the fallback stored the source text, or the row predates this change). Treating empty as a conflict would make facts in
+    old stores impossible to supersede forever, i.e. vetoing a judgement with an unknown; handing it back to the LLM is the old behaviour.
     """
     a, b = normalize_subject(new_subject), normalize_subject(old_subject)
     return bool(a) and bool(b) and a != b
@@ -348,8 +348,8 @@ OUTPUT (the summary itself, nothing else)
 def _fact_drafts_language_text(drafts: List[WorkingFactDraft]) -> str:
     parts = []
     for draft in drafts:
-        # statement 是实际检索正文和本次会话语言的主来源；subject 经常是英文
-        # 文件名/符号名，不能让它抢在中文 statement 前面决定 prompt 语言。
+        # statement is the actual retrieval body and the main source of this session's language; subject is often an English
+        # file or symbol name, so it must not outrank a Chinese statement when deciding the prompt language.
         parts.extend([draft.statement, draft.details, draft.subject])
     return "\n".join(str(part).strip() for part in parts if str(part).strip())
 
@@ -396,15 +396,15 @@ def build_chain_summary_prompt(
 
 class WorkingFactReconciler:
     """
-    事实层 reconcile + 持久化执行器。
+    Fact-layer reconcile + persistence executor.
 
-    一次调用：
-      1. 每条 draft 用 statement embedding 召回 top-N active 事实
-      2. 单次 LLM 决策哪些旧事实属于同一用户任务的前序 session
-      3. 先处理 SUPERSEDE（软删 + 经验链过继），再 INSERT 新事实
-      4. 真发生了覆盖的，再要一次 LLM 写跨 session 任务进展总结
+    One call:
+      1. Each draft recalls the top-N active facts by statement embedding
+      2. A single LLM call decides which old facts are predecessor sessions of the same user task
+      3. SUPERSEDE is handled first (soft delete + experience-chain inheritance), then new facts are INSERTed
+      4. Only when a supersede really happened, one more LLM call writes the cross-session task progress summary
 
-    第 4 步只在有覆盖时触发，所以绝大多数写入不额外花钱。
+    Step 4 only fires when something was superseded, so the vast majority of writes cost nothing extra.
     """
 
     def __init__(
@@ -424,22 +424,22 @@ class WorkingFactReconciler:
         self.embed_service = embed_service
         self.llm_provider = llm_provider
         self.max_tokens = max_tokens
-        # None → 复用 LLMConfig.temperature（避免硬编码触发 kimi/deepseek 的温度硬约束）
+        # None → reuse LLMConfig.temperature (avoids hardcoded values tripping kimi/deepseek temperature constraints)
         if temperature is None:
-            # None 一路传到 provider = 不带该参数；此前兜 0.1 会绕过用户配置，
-            # 在只接受特定 temperature 的网关上（Opus 5 只收 1 或不传）直接 400
+            # None passed all the way to the provider = the parameter is omitted; the previous 0.1 fallback bypassed user config and
+            # returned 400 on gateways accepting only a specific temperature (Opus 5 accepts only 1 or nothing)
             temperature = _resolve_configured_temperature(llm_provider)
         self.temperature = temperature
         self.candidates_per_draft = candidates_per_draft
-        # 关掉就不生成演变总结，省一次调用
+        # Disabled means no evolution summary, saving one call
         self.enable_chain_summary = enable_chain_summary
-        # subject 机械闸门：None → 读环境变量 HY_FACT_SUBJECT_GATE，再退到默认值。
-        # 关掉后覆盖判定只剩语义召回 + LLM，详见文件顶部 `_SUBJECT_GATE_DEFAULT` 的说明。
+        # Mechanical subject gate: None → read HY_FACT_SUBJECT_GATE, then fall back to the default.
+        # When off, only semantic recall + the LLM decide supersession; see `_SUBJECT_GATE_DEFAULT` at the top of the file.
         self.subject_gate = (
             _subject_gate_default() if subject_gate is None else bool(subject_gate)
         )
-        # 被覆盖事实的 details 过继：None → 读环境变量 HY_FACT_INHERIT_DETAILS，
-        # 再退到默认值。详见 `_build_inherited_details` 上方的说明。
+        # Inheriting details from superseded facts: None → read HY_FACT_INHERIT_DETAILS,
+        # then fall back to the default. See the notes above `_build_inherited_details`.
         self.inherit_details = (
             _inherit_details_default() if inherit_details is None else bool(inherit_details)
         )
@@ -456,11 +456,11 @@ class WorkingFactReconciler:
         source: str = "default",
     ) -> Tuple[List[WorkingFact], List[FactReconcileOp]]:
         """
-        执行 reconcile + 持久化。
+        Run reconcile + persistence.
 
         Returns:
-            (真正落库的新事实, 执行过的 ops)。LLM 挂掉时退化为全 INSERT 不覆盖，
-            宁可多留一条过期事实，也不因为一次调用失败丢结论。
+            (new facts actually persisted, ops executed). If the LLM dies it degrades to all INSERT with no supersede:
+            keeping one stale fact is better than losing conclusions because a single call failed.
         """
         if not drafts:
             return [], []
@@ -495,22 +495,22 @@ class WorkingFactReconciler:
         return facts, ops
 
     # ------------------------------------------------------------
-    # 检索 candidates
+    # Recall candidates
     # ------------------------------------------------------------
 
     async def _retrieve_candidates(
         self, drafts: List[WorkingFactDraft], *, user_id: str, source: str
     ) -> List[List[WorkingFact]]:
-        """每条 draft 用 statement 召回同 user 的 top-N active 事实。
+        """For each draft, recall the top-N active facts of the same user by statement.
 
-        `self.subject_gate` 开启时（默认），召回后过 subject 闸门：主体不同的候选直接
-        从名单里去掉，LLM 根本看不到，所以它连误判的机会都没有。这不是省一次调用的
-        优化，是纠正一个真实缺陷——同一 workspace 下多个并列主体（多人共用一份行程、
-        多机共用一套脚本）的 statement 语义高度相似，纯语义 + LLM 会把它们判成同一
-        任务的先后版本。
+        With `self.subject_gate` on (default), recall passes through the subject gate: candidates with a different subject are
+        dropped from the list, so the LLM never sees them and cannot even misjudge. This is not an optimization that saves a call
+        but a fix for a real defect: several parallel subjects in one workspace (one itinerary shared by several people,
+        one script shared by several hosts) have semantically very similar statements, and pure semantics + LLM would read them
+        as successive versions of the same task.
 
-        关掉时整份召回原样交给 LLM。适用于 subject 不是稳定实体名的数据集（自由文本、
-        位置标签），那里精确字符串相等会把同实体判成不同主体，反而拦掉真实更新。
+        When off, the whole recall is handed to the LLM unchanged. Right for datasets where subject is not a stable entity name
+        (free text, positional labels); there exact string equality splits one entity into different subjects and blocks real updates.
         """
         try:
             embeddings = await self.embed_service.embed_batch(
@@ -525,9 +525,9 @@ class WorkingFactReconciler:
             try:
                 hits = await self.store.search_facts(
                     emb, user_id=user_id, top=self.candidates_per_draft,
-                    # 写入侧同样接词面通道：候选选错了 LLM 就没有机会判对。这里不传
-                    # min_score——写入侧要的是"有哪些可能的前身"，让 LLM 看更宽的名单，
-                    # 阈值过滤是读取侧的事。
+                    # The write side also takes the lexical channel: if the candidates are wrong the LLM gets no chance to decide right.
+                    # No min_score here -- the write side wants "which predecessors are possible", so the LLM sees a wider list;
+                    # threshold filtering is the read side's job.
                     query_text=draft.statement,
                     include_sources=[source],
                 )
@@ -554,7 +554,7 @@ class WorkingFactReconciler:
         return result
 
     # ------------------------------------------------------------
-    # LLM 决策
+    # LLM decision
     # ------------------------------------------------------------
 
     async def _llm_decide(
@@ -562,8 +562,8 @@ class WorkingFactReconciler:
         drafts: List[WorkingFactDraft],
         candidates: List[List[WorkingFact]],
     ) -> Dict[int, List[str]]:
-        """返回 {draft_idx: [被它覆盖的旧 fact_id, ...]}。"""
-        # 一条候选都没有就没得判，省一次 LLM 调用
+        """Returns {draft_idx: [old fact_ids it supersedes, ...]}."""
+        # With not a single candidate there is nothing to decide, saving one LLM call
         if not any(candidates):
             return {}
 
@@ -575,20 +575,20 @@ class WorkingFactReconciler:
         return self._parse_ops(resp.content)
 
     # ------------------------------------------------------------
-    # 演变总结
+    # Evolution summary
     # ------------------------------------------------------------
 
     async def _collect_history(
         self, retired: List[WorkingFact], *, user_id: str
     ) -> Tuple[List[WorkingFact], bool]:
-        """摊平出"这个任务此前怎样推进"，时间正序，返回 (历代, 是否截断过)。
+        """Flatten out "how this task progressed before", chronologically, returning (generations, ever truncated).
 
-        历史不另存，就在库里：被覆盖的事实原样留着，fact_link 指向后继，反查
-        一路走回去就是完整血统。retired 是这次刚被顶掉的那几条，各自往上追。
+        History is not stored separately, it lives in the database: superseded facts are kept as they are, fact_link points to the
+        successor, and walking back yields the full lineage. retired are the facts just replaced this time, each traced upward.
 
-        追太深会把提示词撑爆，超过 MAX_FACT_CHAIN_ENTRIES 就丢最老的，并告诉调用方
-        丢过，免得 LLM 以为这就是全部历史。只报"有没有丢"不报"丢了几代"：要数准
-        得递归走完整条链，为一句提示词不值。多走一步就够判断有没有更早的了。
+        Walking too deep blows up the prompt; past MAX_FACT_CHAIN_ENTRIES the oldest entries are dropped and the caller is told
+        that something was dropped, so the LLM does not assume this is the whole history. Only "was anything dropped" is reported, not "how many generations":
+        an exact count would need the whole chain walked recursively, which no prompt line is worth; one extra step is enough to tell whether anything older exists.
         """
         by_id: Dict[str, WorkingFact] = {}
         for old in retired:
@@ -600,7 +600,7 @@ class WorkingFactReconciler:
             except Exception as e:
                 logger.warning(f"[fact-reconcile] walk ancestors failed: {e}")
                 ancestors = []
-            # 一次顶掉多条时几条血统会汇到一起，共同祖先按 fact_id 天然去重
+            # Replacing several facts at once merges their lineages; common ancestors deduplicate naturally by fact_id
             for f in ancestors:
                 by_id[f.fact_id] = f
             by_id[old.fact_id] = old
@@ -612,10 +612,10 @@ class WorkingFactReconciler:
     async def _summarize_chain(
         self, history: List[WorkingFact], current: str, *, truncated: bool = False
     ) -> str:
-        """让 LLM 把同一任务的跨 session 进展写成简短摘要。
+        """Have the LLM write the cross-session progress of one task into a short summary.
 
-        失败返回空串，不抛。总结这一步不值得让整次写入失败，而且历史并没丢——
-        它还在库里，下次这条事实再被覆盖时会重新走一遍链，总结自己就补回来了。
+        Returns an empty string on failure rather than raising: this step is not worth failing the whole write for, and the history
+        is not lost either -- it stays in the database, and the next time this fact is superseded the chain is walked again and the summary repairs itself.
         """
         if not self.enable_chain_summary or not history:
             return ""
@@ -646,22 +646,22 @@ class WorkingFactReconciler:
 
     @staticmethod
     def _clean_summary(text: str) -> str:
-        """剥掉模型爱加的装饰：代码围栏、外层引号、"总结："之类的开场白。"""
+        """Strip decorations models like to add: code fences, outer quotes, "Summary:"-style preambles."""
         s = (text or "").strip()
         if s.startswith("```"):
-            # 去掉首行 ``` 或 ```json，以及结尾围栏
+            # Drop the first line ``` or ```json, plus the closing fence
             s = s.split("\n", 1)[-1] if "\n" in s else ""
             s = s.rsplit("```", 1)[0].strip()
-        for prefix in ("总结：", "总结:", "Summary:", "summary:"):
+        for prefix in ("\u603b\u7ed3\uff1a", "\u603b\u7ed3:", "Summary:", "summary:"):
             if s.startswith(prefix):
                 s = s[len(prefix):].strip()
-        # 只在整句被一对引号裹住时剥。句中还引了别的东西（路径、变量名）就别动，
-        # 否则 `"config" 指向 "env"` 会被削成 `config" 指向 "env`。
+        # Only strip when the whole sentence is wrapped in one pair of quotes. Leave it alone if it also quotes something else
+        # (a path, a variable name); otherwise `"config" points to "env"` would be shaved down to `config" points to "env`.
         if len(s) >= 2 and s[0] in "\"'“「" and s[-1] in "\"'”」":
             inner = s[1:-1]
             if s[0] not in inner and s[-1] not in inner:
                 s = inner.strip()
-        # 模型偶尔会分行铺开，压成一行免得污染提示词排版
+        # Models sometimes spread the text over lines; collapse it to one line so prompt formatting stays clean
         return " ".join(s.split())
 
     @staticmethod
@@ -697,11 +697,11 @@ class WorkingFactReconciler:
 
     @staticmethod
     def _parse_ops(text: str) -> Dict[int, List[str]]:
-        """宽松解析 ops，返回 {draft_idx: [fact_id...]}。"""
+        """Parse ops leniently, returning {draft_idx: [fact_id...]}."""
         if not text:
             return {}
         s = text.strip()
-        # 去 markdown fence
+        # Remove the markdown fence
         if s.startswith("```"):
             body = [line for line in s.split("\n") if not line.startswith("```")]
             s = "\n".join(body).strip() or s
@@ -742,7 +742,7 @@ class WorkingFactReconciler:
         return result
 
     # ------------------------------------------------------------
-    # 执行
+    # Execution
     # ------------------------------------------------------------
 
     async def _execute(
@@ -760,7 +760,7 @@ class WorkingFactReconciler:
     ) -> Tuple[List[WorkingFact], List[FactReconcileOp]]:
         inserted: List[WorkingFact] = []
         ops: List[FactReconcileOp] = []
-        # 一条旧事实只能被覆盖一次，否则 fact_link 会指向后来的那条，链就断了
+        # An old fact may be superseded only once, otherwise fact_link points at a later one and the chain breaks
         already_superseded: set = set()
 
         for idx, draft in enumerate(drafts):
@@ -785,17 +785,17 @@ class WorkingFactReconciler:
                 if fid in allowed and fid not in already_superseded
             ]
 
-            # 先过继经验链再软删旧事实，新事实入库时链已经是全的
+            # Inherit the experience chains before soft-deleting old facts, so the chain is already complete when the new fact lands
             inherited: List[str] = []
             retired: List[WorkingFact] = []
             for old_id in targets:
                 old = await self.store.get_fact(old_id, user_id=user_id)
                 if old is None:
                     continue
-                # 闸门在候选阶段已经拦过一道，这里再拦一次：候选是按 statement 召回的，
-                # 而 LLM 只能覆盖候选名单里的 id，理论上到不了这儿。真到了就说明前面
-                # 哪一环漏了，宁可让这次覆盖不生效——多留一条旧事实是可恢复的，删掉
-                # 别的主体的状态不是。闸门关掉时这道复查一并跳过，否则闸门就没关干净。
+                # The gate already filtered once during candidate selection; check again here. Candidates are recalled by statement,
+                # and the LLM may only supersede ids from that list, so this should be unreachable. Reaching it means some earlier
+                # step leaked; better to let this supersede have no effect -- keeping an extra old fact is recoverable, while deleting
+                # another subject's state is not. The re-check is skipped when the gate is off, otherwise the gate is not fully closed.
                 if self.subject_gate and _subject_conflict(draft.subject, old.subject):
                     logger.warning(
                         f"[fact-reconcile] refused cross-subject SUPERSEDE: "
@@ -829,8 +829,8 @@ class WorkingFactReconciler:
                 new_fact.fact_chain_summary = await self._summarize_chain(
                     history, new_fact.statement, truncated=truncated
                 )
-                # 摘要之外再把历代自己的 details 原样过继一份。摘要保叙事，过继保数值，
-                # 两者不重复：details 本来就不进摘要（_collect_history 只读 statement）。
+                # Beyond the summary, inherit each generation's own details verbatim. The summary preserves the narrative, inheritance
+                # the numbers; they do not overlap because details never enter the summary (_collect_history only reads statement).
                 if self.inherit_details:
                     block, taken, skipped = _build_inherited_details(history)
                     if block:
@@ -851,7 +851,7 @@ class WorkingFactReconciler:
                 logger.warning(f"[fact-reconcile] INSERT failed: {e}")
                 continue
 
-            # 过继来的经验反向补上新事实，两边链保持对称
+            # Backfill the new fact into the inherited experiences so both sides of the chain stay symmetric
             for eid in inherited:
                 await self._append_source_fact(eid, new_fact.fact_id, user_id=user_id)
 
@@ -868,7 +868,7 @@ class WorkingFactReconciler:
         try:
             exp = await self.store.get_by_id(experience_id, user_id=user_id)
             if exp is None:
-                # 经验已被 DELETE，死链交给检索时的存在性过滤兜底
+                # The experience was already DELETEd; the dead link is covered by the existence filter at retrieval time
                 return
             if fact_id in exp.source_fact_ids:
                 return
