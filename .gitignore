@@ -29,7 +29,7 @@ ui_walkthrough_*/
 OPEN_SOURCE_TODO.md
 release_todo.md
 
-# 本地评测数据集 / 大文件（不入库）
+# Local evaluation datasets / large files (not committed)
 agent_open_dataset/
 marvis_eval_data/
 open_agent_data.zip

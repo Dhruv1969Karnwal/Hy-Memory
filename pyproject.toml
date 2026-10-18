@@ -25,10 +25,10 @@ dependencies = [
     "scikit-learn",
     "tiktoken",
     "json-repair",
-    # Working 记忆（coding 链路）的事实层词面通道。rank_bm25 缺失时该通道
-    # 静默降级为纯稠密（lexical.py 的 except 兜住，不报错）——功能缺失而非
-    # 故障，线上不易察觉，所以进主依赖而不是 optional。
-    # jieba 只在文本含 CJK 时 lazy import，缺了退化为 bigram，同理。
+    # Lexical channel of the fact layer behind working memory (the coding lane). Without
+    # rank_bm25 the channel silently degrades to dense-only (lexical.py swallows the import error,
+    # so nothing raises): a silent loss of capability rather than a failure, easy to miss in
+    # production, which is why it is a main dependency and not an optional one.
     "rank-bm25",
     "jieba",
 ]
