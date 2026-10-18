@@ -5,7 +5,7 @@ The SDK previously had three kinds of writes that bypassed user config:
 
 1. Hardcoded values at call sites (abstractor 0.3/0.4/0.2, reflector 0.1/0.3, merger 0.3)
 2. Hardcoded dataclass defaults in sub-configs (emotion_analyzer 0.1, intention_detector 0.2/0.1,
-   topic_summary 0.3、episode_summary 0.3）
+   topic_summary 0.3, episode_summary 0.3)
 3. provider entry default 0.7 -- if the caller passes nothing it falls to 0.7, fully unrelated to user config
 
 As a result `MEMORY_LLM_TEMPERATURE` only took effect on a few paths, and switching gateways broke all the rest.

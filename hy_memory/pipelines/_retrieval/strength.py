@@ -74,7 +74,7 @@ def apply_strength_to_normal(
 
     hits: [{"node": MemoryNode, "score": float, "node_id": ...}, ...]
     profile_layers / intention_layers: sets of layer values excluded from decay (e.g.
-        {"l0_basic_info","l6_schema"} / {"l7_intention"}）。
+        {"l0_basic_info","l6_schema"} / {"l7_intention"}).
     Returns the same list (already modified in place) so calls can be chained.
     """
     _now = now or datetime.now()

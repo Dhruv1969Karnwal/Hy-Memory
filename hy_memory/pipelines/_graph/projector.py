@@ -202,7 +202,7 @@ async def project_memories_to_graph(
                 # The Topic isolation key **excludes session** (see MemoryNode.get_topic_scope_key):
                 # topics are concepts accumulated across sessions. A session-bearing isolation_key would
                 # create a separate, mutually unaware Topic per session for the same tag, starving the temporal spine and
-                # topic summary。
+                # topic summary.
                 _tid = await graph_store.add_topic_tag(
                     nid, str(tag), scope_key,
                     embed_service=embed_service,

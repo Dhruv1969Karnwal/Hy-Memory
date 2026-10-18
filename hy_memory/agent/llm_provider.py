@@ -265,7 +265,7 @@ class LLMProvider:
         Field placement differs across platforms:
         - hy3 / kimi-k2.5: message.reasoning_content, also accepting
           message.provider_specific_fields.reasoning_content
-        - reasoning_tokens：usage.completion_tokens_details.reasoning_tokens，
+        - reasoning_tokens: usage.completion_tokens_details.reasoning_tokens,
           some gateways flatten it onto usage.reasoning_tokens
 
         Returns:
@@ -359,7 +359,7 @@ class LLMProvider:
             temperature: temperature parameter
             stop: list of stop words
             tools: optional list of OpenAI function-calling style tool schemas
-                   （[{"type":"function","function":{"name":..., "parameters":...}}, ...]）。
+                   ([{"type":"function","function":{"name":..., "parameters":...}}, ...]).
                    When passed, the LLM may return tool_calls in its response and the caller decides how to dispatch them.
             tool_choice: optional OpenAI-style tool_choice ("auto" / "none" / {"type":"function","function":{"name":...}})
             **kwargs: other parameters

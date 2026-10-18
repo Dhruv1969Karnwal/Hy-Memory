@@ -7,8 +7,8 @@ pipelines/
 ├── writer.py              # MemoryWriter (System 1 writes)
 ├── reader.py              # MemoryReader (dispatcher → legacy/hybrid)
 ├── reader_base.py         # BaseReadPipeline (shared post-processing)
-├── reader_legacy.py       # LegacyReadPipeline（vector recall）
-├── reader_hybrid.py       # HybridReadPipeline（vector + BM25 recall）
+├── reader_legacy.py       # LegacyReadPipeline (vector recall)
+├── reader_hybrid.py       # HybridReadPipeline (vector + BM25 recall)
 ├── system2_writer.py      # System2Writer (ultra mode: System 1 + System 2 scheduling)
 ├── system2_agent.py       # System 2 Agent (LLM + Graph tools)
 ├── system2_tools.py       # System 2 Tool definitions

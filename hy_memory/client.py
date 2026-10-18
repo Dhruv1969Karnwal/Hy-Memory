@@ -973,7 +973,7 @@ class HyMemoryClient:
         Only actually builds store / extractor / reconciler when it hits is_coding=True.
         Users on the chat path never incur this overhead.
 
-        legacy CodingWriter = extractor + reconciler。
+        legacy CodingWriter = extractor + reconciler.
 
         variant("working" | "coding") decides two things:
           1. Which extraction spec to use (see _scene_variant)
@@ -985,7 +985,7 @@ class HyMemoryClient:
 
         `self._coding_store` / `self._coding_writer` also point to the **most recently** used one,
         only for compatibility with existing code paths (e.g. list_memories). To fetch by variant, use
-        _store_for_variant()。
+        _store_for_variant().
         """
         cached = self._coding_writers.get(variant)
         if cached is not None:
@@ -2600,7 +2600,7 @@ class HyMemoryClient:
                 # Aligned with the chat pipeline: chat always returns the singular memory_id, while the
                 # coding two-tier writer returns the plural experience_ids (one add usually yields 0 or 1 ADD).
                 # An extra singular memory_id holds the first experience_id, so a caller can simply read
-                # resp["memory_id"]。
+                # resp["memory_id"].
                 _coding_eids = resp.get("experience_ids") or []
                 resp["memory_id"] = _coding_eids[0] if _coding_eids else None
                 return resp
@@ -4751,7 +4751,7 @@ class HyMemoryClient:
         return out
 
     # ================================================================
-    # User Profile / Basic Info（L0）API
+    # User Profile / Basic Info (L0) API
     # ================================================================
 
     @_ensure_internal_loop

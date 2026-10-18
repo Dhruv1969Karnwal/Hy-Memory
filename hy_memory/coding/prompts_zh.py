@@ -44,7 +44,7 @@ or "nothing was actually modified". If the procedure or the conclusion would sav
 
 Do NOT extract:
   - Truly trivial single-step ops with no reusable procedure ("rename one file",
-    “run ls once”）
+    “run ls once”)
   - One-off issues already resolved with no transferable lesson
   - Information that already exists in the repo/system (don't duplicate package.json)
   - Per-PR / per-session throwaway tasks unless they encode a reusable pattern
@@ -73,7 +73,7 @@ EXPERIENCE FIELDS
 
 task          — Query-shaped name; phrase it as how the user would ask later.
                 Use "publish a release to the xx platform", not
-                “publish_release_internal”。
+                “publish_release_internal”.
                 Must be self-contained (no "this", "the file", "we").
 
 search_keys   — 0 to 5 alternative phrasings covering aspects that `task` alone
@@ -113,11 +113,11 @@ subject    — WHO or WHAT this session revolves around: the single entity the w
              performed on or serves. A short noun phrase, no sentence, no verb. Pick the most specific entity the session truly revolves around, not
              the tool it used:
                use the person's name when the session serves one named person
-                 （“Dylan”、“Matthew”）
+                 (“Dylan”,“Matthew”)
                use the file / module / symbol when the work targets code
-                 （“auth/middleware.ts”、“parse_plan_text”）
+                 (“auth/middleware.ts”,“parse_plan_text”)
                use the service / host / device / drive for ops work
-                 （“D:\\WXWork”、“redis-cache-prod”、“ci.yml”）
+                 (“D:\\WXWork”,“redis-cache-prod”,“ci.yml”)
              This is a HARD KEY, not prose: two sessions about different people or
              different files must get different subjects; two sessions about the same entity must get the exact same string, spelled identically.
              Prefer the exact identifier as it appears in the trace over a description of it. If the segment genuinely has no single
@@ -176,7 +176,7 @@ statement  — A compact record of THIS session. It splits into two parts, and t
                  (the trace did not contain `-Force`; do not invent it)
              Scope every negative finding to what was actually searched, and enumerate one by one all explicit coverage limits that could invalidate it,
              especially permission failures and depth limits: keep the
-             roots、filters、depth（“not found under C:\\ and D:\\ at depth 3;
+             roots, filters, depth (“not found under C:\\ and D:\\ at depth 3;
              some directories were not covered due to Access denied"), never widen it to
              "does not exist". Don't omit any limit just to make the record prettier.
              Never promote a partial search to global absence.
@@ -196,7 +196,7 @@ details    — The session's concrete OUTPUT, copied over verbatim. `statement` 
                  exactly as in the original
                config or code block → keep the whole block
                a command's key output → keep the lines that carry the findings (sizes, counts, versions,
-                 error text）
+                 error text)
                structured result (table, records list) → keep the rows
              Preserve the original layout -- line breaks, `Day 1:` / key: value prefixes, units,
              currency symbols, ids. Do not re-summarize, do not reorder, do not round numbers, do not translate.
@@ -283,7 +283,7 @@ EXTRACT_PROMPT_CODING_ZH = """\
 ║ Specifically, every `statement` and every `solution` must obey the following:                                                  ║
 ║   · The grammatical subject must be the CODE or THE DECISION -- never "the user", and never   ║
 ║     "the agent". Do not write "The user attempted to...", "The user wanted...",   ║
-║     “The agent then checked…”。                                           ║
+║     “The agent then checked…”.                                           ║
 ║   · Never close with bookkeeping phrases like "the session was completed", "the error was noted",         ║
 ║     "no solution was found yet". Close with the decision and its verification    ║
 ║     status. If no decision was made, close with what was ruled out and the next unexplored lead -- that is the ║
@@ -343,7 +343,7 @@ or "nothing was actually modified". If the procedure or the conclusion would sav
 
 Do NOT extract:
   - Truly trivial single-step ops with no reusable procedure ("rename one file",
-    “run ls once”）
+    “run ls once”)
   - One-off issues already resolved with no transferable lesson
   - Information that already exists in the repo/system (don't duplicate package.json)
   - Per-PR / per-session throwaway tasks unless they encode a reusable pattern
@@ -397,7 +397,7 @@ EXPERIENCE FIELDS
 
 task          — Query-shaped name; phrase it as how the user would ask later.
                 Use "publish a release to the xx platform", not
-                “publish_release_internal”。
+                “publish_release_internal”.
                 Must be self-contained (no "this", "the file", "we").
 
 search_keys   — 0 to 5 alternative phrasings covering aspects that `task` alone
@@ -441,10 +441,10 @@ statement  — A compact summary of THIS session. It carries two jobs at once an
              OPEN with the task and the symptom, using the words a user would use.
                 This is what guarantees findability -- keep the surface form close to how the problem was reported.
                 Name the specific goal and object ("reclaim disk space under D:\\WXWork",
-                “adjust the hue multiplier in QtColor._parse_value on feat/q4”、
+                “adjust the hue multiplier in QtColor._parse_value on feat/q4”,
                 "locate the new_file_search folder"), never a generic "fix a bug" /
                 "look for a file". Include the concrete symptom: error string, failing command,
-                wrong output。
+                wrong output.
 
              THEN give the coordinates and the decision.
                 For code work, write the repo-relative path, the symbol, and the branch. State what was finally SETTLED ON,
@@ -479,7 +479,7 @@ statement  — A compact summary of THIS session. It carries two jobs at once an
              - Scope every negative finding to what was actually searched, and enumerate one by one all explicit coverage limits that could invalidate it,
                especially permission failures and maximum search depth:
                “not found within the searched parts of C:\\ and D:\\; some directories
-               were skipped on Access denied, and the search was also depth-limited”。
+               were skipped on Access denied, and the search was also depth-limited”.
                Don't omit any limit to make the summary prettier. Never promote a partial search to global absence.
              - State causality as certain only when the trace directly verified the causal link. Otherwise keep the hedges
                ("suspected"/"inferred"/"not yet verified"); don't rewrite a wrong test assumption
@@ -488,7 +488,7 @@ statement  — A compact summary of THIS session. It carries two jobs at once an
              Key point -- this text IS the retrieval vector, and it is the only content a future query gets matched against.
              A generic summary is worthless, because every session looks like a generic summary: it would match every query,
              yet answer none of them. So you must write the concrete anchors that make this session findable -- real
-             file paths、function / symbol names、branch names、commands、error strings、
+             file paths, function / symbol names, branch names, commands, error strings,
              versions, config keys and values, host / service names. If someone later searches for any one of these
              specifics, this summary must be what comes back.
                good: “fixing a failing `npm run build` in CI. Read
@@ -658,9 +658,9 @@ Examples:
                                                                  → SUPERSEDE
 
   existing: "need to fix the JWT expiry handling in auth/middleware.ts; refresh logic has been
-             refresh logic。”
+             refresh logic.”
   new:      "need to add performance logging in auth/middleware.ts; a latency metric has been
-             latency metric。”
+             latency metric.”
                                                                  → keep both
             (same file/project, different user goals)
 
@@ -702,7 +702,7 @@ Rules:
     motive, action, test result, success state, or global negative conclusion.
   - Preserve evidence states exactly: attempted is not completed, observed is not verified, inferred
     is not established, and unresolved must stay unresolved. Keep uncertainty words and
-    search/permission/coverage limits。
+    search/permission/coverage limits.
   - State the current end status faithfully (completed, partially completed, failed, blocked, or
     still awaiting verification). Never upgrade the status because of a plausible-sounding causal story or something later entries
     did not verify.

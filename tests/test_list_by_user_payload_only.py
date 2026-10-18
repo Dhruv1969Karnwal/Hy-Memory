@@ -134,7 +134,7 @@ def _l2_fact_node(content):
 
 
 # ---------------------------------------------------------------------------
-# basic_profile.py：_find_latest_l0 / _assemble_full_kv
+# basic_profile.py: _find_latest_l0 / _assemble_full_kv
 # ---------------------------------------------------------------------------
 
 class TestBasicProfilePayloadOnly:
@@ -170,7 +170,7 @@ class TestBasicProfilePayloadOnly:
 
 
 # ---------------------------------------------------------------------------
-# writer.py：_get_recent_history
+# writer.py: _get_recent_history
 # ---------------------------------------------------------------------------
 
 class TestWriterPayloadOnly:
@@ -210,7 +210,7 @@ class TestWriterPayloadOnly:
 
 
 # ---------------------------------------------------------------------------
-# client.py：_list_vdb_bucket / async_get_basic_info /
+# client.py: _list_vdb_bucket / async_get_basic_info /
 #            async_build_entity_store / async_clone_user (dst + src negative assertion)
 # ---------------------------------------------------------------------------
 

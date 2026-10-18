@@ -351,11 +351,11 @@ Format:
 
 Rules:
 
-* memory：
+* memory: 
   Everything worth remembering long term -- preferences, opinions, attitudes, traits, events, plans, experiences, habits, decisions.
   It may be about `[user]` or about other named real people (`[John]`); for the subject to use see "# Subject rules" above
 
-* intentions：
+* intentions: 
   Forward-looking items the user (or another named real person) intends or plans to do later, with `valid_until` (deadline / target date,
   resolved against Memory Date); set it to `null` when the deadline cannot be determined
 
@@ -429,7 +429,7 @@ Format:
 
 Rules:
 
-* memory：
+* memory: 
   Everything worth remembering long term -- preferences, opinions, attitudes, traits, events, experiences, habits, decisions,
   **plus future plans and upcoming arrangements** (do not open a separate intentions bucket).
   It may be about `[user]` or about other named real people (`[John]`); for the subject to use see "# Subject rules" above
@@ -472,7 +472,7 @@ Last k Messages:
  {"role": "assistant", "content": "That is great -- have any of them caught your eye?"}]
 New Messages:
 [{"role": "user", "content": "Yeah, I brought her home yesterday -- a three-year-old Border Collie named Luna."}]
-Memory Date：2025-04-10
+Memory Date: 2025-04-10
 
 Output:
 ```json
@@ -491,7 +491,7 @@ The old messages are only used to resolve "her" and to fill in context ("the dow
 New Messages:
 [{"role": "user", "content": "Write me a short essay arguing why remote work improves productivity."},
  {"role": "assistant", "content": "Sure -- opening: 'Remote work is reshaping how teams collaborate ...' [about 2000 words of body text omitted] ... closing: 'In short, more autonomy and fewer interruptions bring higher output.'"}]
-Memory Date：2025-03-22
+Memory Date: 2025-03-22
 
 Output:
 ```json
@@ -510,7 +510,7 @@ The agent reply is long. Never store the whole essay verbatim; distil it into to
 New Messages:
 [{"role": "user", "content": "Hi, I'm Kenji. I'm planning a trip to Japan next month - could you build me a 7-day itinerary?"},
  {"role": "assistant", "content": "# 7-day classic golden route in Japan (Tokyo -> Kyoto -> Nara -> Osaka)\\nFly into Tokyo, take the Shinkansen south to Kyoto, a day trip to Nara, and finally depart from Osaka Kansai airport.\\n\\n## Day 1: Arrive in Tokyo\\n- Land at Haneda/Narita and drop your bags at a hotel near Tokyo Station.\\n- Evening: Senso-ji, walk Nakamise shopping street, try taiyaki.\\n- Night: Shibuya Crossing + Shibuya Sky for sunset; izakaya dinner (skewers, sake).\\n\\n## Day 2: Tokyo markets and landmarks -- [omitted]\\n## Day 3: Shinkansen to Kyoto, Fushimi Inari, Gion -- [omitted]\\n## Day 4: Kyoto temples (Kiyomizu-dera, Kinkaku-ji, Ginkaku-ji) -- [omitted]\\n## Day 5: Nara day trip (feeding the deer in Nara Park, Todai-ji) -- [omitted]\\n## Day 6: Osaka (Osaka Castle, street food in Dotonbori) -- [omitted]\\n## Day 7: Osaka sightseeing, then depart from Kansai airport -- [omitted]\\n\\nTip: buy a 7-day JR Pass before you leave. Want me to adjust anything?"}]
-Memory Date：2025-09-15
+Memory Date: 2025-09-15
 
 Output:
 ```json
@@ -533,7 +533,7 @@ New Messages:
  {"role": "assistant", "content": "You can blend spinach or carrot into the pasta sauce -- you can barely see or taste it, and plenty of kids accept it that way."},
  {"role": "user", "content": "Good idea, I'll try it tonight. By the way, what bedtime is good at this age?"},
  {"role": "assistant", "content": "For a 6-year-old, falling asleep between 7 and 9 pm is recommended, giving roughly 10 to 11 hours of sleep."}]
-Memory Date：2025-06-20
+Memory Date: 2025-06-20
 
 Output:
 ```json
@@ -552,7 +552,7 @@ In the third message the user says "I'll try it tonight" -- an explicit adoption
 
 New Messages:
 [{"role": "user", "content": "[Retrieved material: the Eiffel Tower is 330 metres tall and was completed in 1889.] With that in mind, I plan to propose to my girlfriend on top of the Eiffel Tower this summer."}]
-Memory Date：2025-05-02
+Memory Date: 2025-05-02
 
 Output:
 ```json
@@ -571,7 +571,7 @@ The retrieved material in brackets (the tower's height, the year it was built) i
 New Messages:
 [{"role": "user", "content": "Remember my grandma's dumpling recipe so it doesn't get lost. Filling: 500 g minced pork, 300 g napa cabbage, 2 tbsp light soy sauce, 1 tbsp sesame oil, a small knob of ginger. Salt the cabbage for 15 minutes, then squeeze out the water. Boil them, adding cold water twice, and they are ready when the dumplings float."},
  {"role": "assistant", "content": "Sure, noted!"}]
-Memory Date：2025-07-01
+Memory Date: 2025-07-01
 
 Output:
 ```json
@@ -590,7 +590,7 @@ Extract the actual factual content (the ingredients, the quantities, the salting
 New Messages:
 [{"role": "user", "content": "Note down my home-gym PRs for this block: squat 140kg x 3, bench 100kg x 5, deadlift 180kg x 2, overhead press 60kg x 6. Bodyweight 78kg, 3 sets per lift, 3 minutes rest between sets."},
  {"role": "assistant", "content": "Logged -- those are strong numbers!"}]
-Memory Date：2026-01-20
+Memory Date: 2026-01-20
 
 Output:
 ```json
@@ -611,7 +611,7 @@ New Messages:
 [{"role": "user", "content": "This week was big -- I finally passed my PhD defence on Tuesday!"},
  {"role": "assistant", "content": "Huge congratulations! How does that feel?"},
  {"role": "user", "content": "Such a relief! I also signed a lease for an apartment in Berlin and I'm moving in next month. I've started learning German on Duolingo too -- a 30-day streak already. My partner Sophia is still in Madrid for now, and that part is hard."}]
-Memory Date：2025-11-08
+Memory Date: 2025-11-08
 
 Output:
 ```json
@@ -635,7 +635,7 @@ Four or more topics -- the defence, the Berlin apartment, learning German, a par
 New Messages:
 [{"role": "user", "name": "Tim", "content": "Just back from the climbing gym, third time this week -- I finally sent that overhanging route."},
  {"role": "assistant", "name": "John", "content": "Impressive! I switched to swimming recently; the shoulder I hurt last month still hurts."}]
-Memory Date：2025-08-14
+Memory Date: 2025-08-14
 
 Output:
 ```json
@@ -655,7 +655,7 @@ John carries `role: "assistant"`, but he has a `name`, so he is another real per
 New Messages:
 [{"role": "user", "name": "Tim", "content": "What have you been up to?"},
  {"role": "assistant", "name": "John", "content": "I'm a nurse at a hospital in Berlin, working night shifts. Pretty exhausting."}]
-Memory Date：2025-09-02
+Memory Date: 2025-09-02
 
 Output:
 ```json
@@ -1068,7 +1068,7 @@ RECONCILE_STRUCTURE_METADATA_PROMPT_ZH = """
 Additional structural output contract:
 
 Every ADD, UPDATE or SUPERSEDE result must keep or fix `topic_paths`, `event_facet` and
-`topic_assignments`。
+`topic_assignments`.
 `topic_paths` are semantic paths from broad to narrow, for example `["sport", "swimming"]`; never guess a parent-child relation from a shared broad
 tag. `event_facet` contains only subject/participants/action/objects/locations/state.
 `topic_assignments` gives typed topic/facet/series/episode paths per subject; Series/Episode must

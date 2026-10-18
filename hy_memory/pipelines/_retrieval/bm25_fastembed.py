@@ -60,7 +60,7 @@ def is_available() -> bool:
 
 
 def _to_tuple(sparse_embedding) -> Optional[SparseTuple]:
-    """fastembed SparseEmbedding → (indices:List[int], values:List[float])。"""
+    """fastembed SparseEmbedding → (indices:List[int], values:List[float])."""
     try:
         indices = [int(i) for i in sparse_embedding.indices]
         values = [float(v) for v in sparse_embedding.values]

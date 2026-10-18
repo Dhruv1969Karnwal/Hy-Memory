@@ -6,7 +6,7 @@ Since 0.1.6.4, once qdrant enables fastembed BM25, the point.vector returned by 
 named multi-vector dict ({"": dense, "bm25": SparseVector}). clone reads src nodes through list_by_user,
 and the old code assigned that whole dict to node.embedding; after the clone is upserted again,
 _build_vector_field wraps the dict once more as if it were List[float] -> illegal nesting -> PointStruct
-ValidationError → rollback → cloned_count=0。
+ValidationError → rollback → cloned_count=0.
 
 This test, on a qdrant collection with sparse enabled:
   1. the embedding returned by list_by_user must be List[float] (not a dict);

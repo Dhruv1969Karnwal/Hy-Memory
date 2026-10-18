@@ -674,7 +674,7 @@ class ReadTraceLogger:
         """Graph rerank / expansion (usages A/B/C + episode bounding).
 
         The effect of this step **must be separable from "the pool got bigger"**, so stats carries the population at every funnel level:
-        edges / propagated / reachable / episode_candidates / prefiltered / admitted / paths。
+        edges / propagated / reachable / episode_candidates / prefiltered / admitted / paths.
         Without it, production only shows "the results changed" with no way to attribute which level admitted them.
         """
         st = dict(stats or {})

@@ -121,7 +121,7 @@ class ReconcileOp:
     supersede_reason: str = ""  # Contradiction description for SUPERSEDE
     # --- Relation graph (pro mode, see docs/pro_graph_design.md) ---
     # LLM-annotated relations to existing memories: [{"target_id": <existing memory_id>, "relation_type": ...}]
-    # relation_type ∈ causes / elaborates / contrasts / same_series。
+    # relation_type ∈ causes / elaborates / contrasts / same_series.
     # reconcile already lays out existing and new memories together, so emitting one more field only costs output tokens
     # and no extra LLM call; besides, the endpoints of causes / contrasts edges usually have very low cosine similarity, so vector retrieval would never surface them.
     related: List[Dict[str, str]] = field(default_factory=list)
@@ -744,7 +744,7 @@ class MemoryReconciler:
         current_time: str = "",
         new_memories_with_meta: Optional[List[Dict]] = None,  # Full meta including tags
         session_id: str = "",  # Isolation dimension, passed through to pipeline_logs
-        graph_store=None,  # Optional GraphStore：Entity MENTIONS boost
+        graph_store=None,  # Optional GraphStore: Entity MENTIONS boost
         new_memory_embeddings: Optional[Dict[str, List[float]]] = None,
         source: str = "default",
     ) -> ReconcileResult:

@@ -381,7 +381,7 @@ def apply_geo_intent_prior(
 ) -> Dict[str, float]:
     """When the query has no boostable entities and carries geo-intent, write a prior for GEO-tag candidates.
 
-    nodes: MemoryNode-like（.node_id / .tags / .tag_ners / .content / .memory_at）。
+    nodes: MemoryNode-like (.node_id / .tags / .tag_ners / .content / .memory_at).
     Takes max with existing tag_cos; disabled when prior<=0.
     """
     out: Dict[str, float] = dict(tag_cos_by_id or {})

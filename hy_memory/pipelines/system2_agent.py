@@ -1173,7 +1173,7 @@ async def prepare_materials(
             "stats": {total_facts, clusters_found, ...}
         }
     """
-    # Clustering config（min_samples=4）
+    # Clustering config (min_samples=4)
     _MIN_FACTS_FOR_INDUCTION = int(os.getenv(
         "MEMORY_S2_MIN_CLUSTER_SIZE",
         "2" if _S2_SCHEMA_EVIDENCE_GATE_ENABLED else "4",

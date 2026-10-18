@@ -1459,7 +1459,7 @@ class Neo4jGraphStore(GraphStoreBase):
         label: str,
         isolation_key: str,
     ) -> str:
-        """Memory -[:MENTIONS]-> Entity。"""
+        """Memory -[:MENTIONS]-> Entity."""
         if not memory_node_id or not name:
             return ""
         name_disp = str(name).strip()

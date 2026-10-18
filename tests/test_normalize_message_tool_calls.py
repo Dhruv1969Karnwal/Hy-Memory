@@ -4,7 +4,7 @@ Covers `HyMemoryClient._normalize_message`'s compatibility handling of the `tool
 
 Background: some clients (e.g. codebuddy) encode `tool_calls` as a JSON string rather than
 list[dict]; iterating the string directly loops by character, after which `tc.get(...)` raises
-`AttributeError: 'str' object has no attribute 'get'`。
+`AttributeError: 'str' object has no attribute 'get'`.
 
 How to run:
     pytest tests/test_normalize_message_tool_calls.py -v
