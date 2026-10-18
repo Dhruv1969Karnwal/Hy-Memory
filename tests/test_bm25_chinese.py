@@ -44,7 +44,7 @@ class TestNodeToPayloadSearchText:
         # search_text contains the keywords jieba segmented out
         tokens = st.split()
         assert "\u7528\u6237" in tokens  # "user"
-        assert "\u503e\u5511" in tokens  # "prefers"
+        assert "\u503e\u5411" in tokens  # "prefers"
         assert "\u89e3\u51b3\u65b9\u6848" in tokens or ("\u89e3\u51b3" in tokens and "\u65b9\u6848" in tokens)  # "solution" / "resolve" + "plan"
 
     def test_english_content_lemmatized(self):
