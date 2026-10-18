@@ -51,8 +51,8 @@ def test_measure(tmp_path_factory) -> None:
         f"measured at {time.strftime('%Y-%m-%d %H:%M')}"
     )
     print(
-        f"{'fake model each':>10}{'model share of serial':>16}{'serial':>10}"
-        f"{'parallel':>10}{'measured parallelism':>12}{'speedup':>9}"
+        f"{'fake/call':>10}{'model share':>15}{'serial':>10}"
+        f"{'parallel':>10}{'par degree':>10}{'speedup':>9}"
     )
     for model_seconds in MIXES:
         medians, peaks = [], []
