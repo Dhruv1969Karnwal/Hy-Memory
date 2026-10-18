@@ -389,8 +389,10 @@ def test_no_source_claims_deletion_tracking_the_scan_protocol_cannot_report() ->
     }
 
     assert not claiming or protocol_reports_deletions, (
-        f"{sorted(claiming)} 声称能观察源头删除，但 ScanEvent 只有 {sorted(kinds)}，"
-        "没有承载删除的事件类型；先实现删除事件再改声明。"
+        f"{sorted(claiming)} claim they can observe source deletions, but "
+        f"ScanEvent only has {sorted(kinds)}; "
+        "there is no event kind that carries a deletion; implement the deletion "
+        "event before changing the claim."
     )
 
 

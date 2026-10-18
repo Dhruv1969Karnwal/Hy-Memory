@@ -1,7 +1,7 @@
 """3925a kernel item 3: keychain failure classification and backoff that heals.
 
 Every keychain failure currently raises the same `SecretStoreUnavailableError`
-with no code, so the UI can only say "本机凭据存储暂不可用" whether the entry
+with no code, so the UI can only say "the local credential store is unavailable" whether the entry
 needs the user to click Allow, whether the read timed out, or whether the
 store is genuinely down. And the backoff is 60 / 300 / 900 seconds: after
 three failures the store refuses every read for 15 minutes, which is what

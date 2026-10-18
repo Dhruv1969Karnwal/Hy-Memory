@@ -36,16 +36,16 @@ type Attempt = Readonly<{
 }>;
 type Failure = { attempt: Attempt; message: string };
 const changedMessage =
-  "任务或来源范围已变化，请返回后重新确认。不会把本次操作用于变化后的任务。";
+  "The task or source scope has changed. Go back and confirm again. This action is never applied to a changed task.";
 const pendingLabels: Record<Action, string> = {
-  pause: "正在暂停，等待后台确认…",
-  resume: "正在继续，等待后台确认…",
-  cancel: "正在取消，等待后台确认…",
+  pause: "Pausing, waiting for background confirmation...",
+  resume: "Resuming, waiting for background confirmation...",
+  cancel: "Canceling, waiting for background confirmation...",
 };
 const retryLabels: Record<Action, string> = {
-  pause: "核对并重试暂停",
-  resume: "核对并重试继续",
-  cancel: "核对并重试取消",
+  pause: "Verify and retry pause",
+  resume: "Verify and retry resume",
+  cancel: "Verify and retry cancel",
 };
 const statuses = new Set([
   "pending",
@@ -114,20 +114,22 @@ export function SourceJobActions(props: SourceJobActionsProps) {
       );
       if (!stillCurrent(attempt)) return false;
       if (!validReceipt(result, attempt.job))
-        throw new Error("未收到此任务的有效回执。");
+        throw new Error("No valid receipt was received for this task.");
       const saved = { ...result };
       setReceipt(saved);
       if (!settledAction(attempt.action, saved))
-        throw new Error("后台尚未确认此操作完成。");
+        throw new Error(
+          "The background has not confirmed this operation completed.",
+        );
       return true;
     } catch (reason) {
       if (stillCurrent(attempt))
         setFailure({
           attempt,
-          message: `状态待核对。${
+          message: `Status needs verification. ${
             reason instanceof Error && reason.message.trim()
               ? reason.message
-              : "未能确认操作结果。"
+              : "The operation result could not be confirmed."
           }`,
         });
       return false;
@@ -164,13 +166,13 @@ export function SourceJobActions(props: SourceJobActionsProps) {
     <fieldset
       ref={root}
       className="source-job-actions"
-      aria-label={`${sourceLabel} ${operationLabel(currentJob)}任务操作`}
+      aria-label={`${sourceLabel} ${operationLabel(currentJob)} task actions`}
       aria-busy={busy}
       tabIndex={-1}
       data-job-id={currentJob.job_id}
     >
       <p className="source-job-status" role="status" aria-live="polite">
-        {!relevantPending && props.snapshotStale ? "最近回执：" : ""}
+        {!relevantPending && props.snapshotStale ? "Last receipt: " : ""}
         {relevantPending
           ? pendingLabels[relevantPending.action]
           : statusLabel(currentJob)}
@@ -200,8 +202,8 @@ export function SourceJobActions(props: SourceJobActionsProps) {
           <button
             type="button"
             className="quiet source-job-icon"
-            aria-label={`取消本次${operationLabel(currentJob)}`}
-            title={`取消本次${operationLabel(currentJob)}`}
+            aria-label={`Cancel this ${operationLabel(currentJob)}`}
+            title={`Cancel this ${operationLabel(currentJob)}`}
             disabled={disabled || busy || snapshot !== null}
             onClick={(event) => begin("cancel", event.currentTarget)}
           >
@@ -525,13 +527,14 @@ function CancelJobSheet({
       >
         <header className="source-job-heading">
           <h2 id={`${id}-title`}>
-            取消 {snapshot.sourceLabel} 的本次{operationLabel(snapshot.job)}？
+            Cancel this {operationLabel(snapshot.job)} for{" "}
+            {snapshot.sourceLabel}?
           </h2>
           <button
             type="button"
             className="quiet source-job-icon"
-            aria-label="关闭取消确认"
-            title="关闭取消确认"
+            aria-label="Close cancel confirmation"
+            title="Close cancel confirmation"
             disabled={pending || closing || !owned}
             onClick={close}
           >
@@ -540,30 +543,32 @@ function CancelJobSheet({
         </header>
         <div className="source-job-sheet-body">
           <p id={`${id}-consequences`}>
-            仅停止本次{operationLabel(snapshot.job)}
-            。已保存的本机副本会保留，不会撤回来源读取授权，也不会修改或删除原文件。
+            Only stops this {operationLabel(snapshot.job)}. Saved local copies
+            are kept. Source read authorization is not revoked, and original
+            files are not modified or deleted.
           </p>
           <dl className="source-job-snapshot">
             <div>
-              <dt>来源</dt>
+              <dt>Source</dt>
               <dd>
                 {snapshot.sourceLabel} <span>{snapshot.job.source_id}</span>
               </dd>
             </div>
             <div>
-              <dt>任务</dt>
+              <dt>Task</dt>
               <dd>
                 <code>{snapshot.job.job_id}</code>
               </dd>
             </div>
             <div>
-              <dt>{isSyncJob(snapshot.job) ? "本次新增" : "已保存"}</dt>
-              <dd>{snapshot.job.stored.toLocaleString()} 条</dd>
+              <dt>{isSyncJob(snapshot.job) ? "New this run" : "Saved"}</dt>
+              <dd>{snapshot.job.stored.toLocaleString()} items</dd>
             </div>
           </dl>
           {snapshot.syncEnabled && (
             <p className="source-job-sync-note">
-              持续同步仍开启，未来新增对话仍可能触发新的同步任务。本次取消不会关闭持续同步。
+              Continuous sync stays on; new conversations can still trigger new
+              sync tasks. Canceling here does not turn off continuous sync.
             </p>
           )}
           {pending && <p role="status">{pendingLabels.cancel}</p>}
@@ -581,7 +586,7 @@ function CancelJobSheet({
             onClick={close}
           >
             <ArrowLeft size={16} aria-hidden="true" />
-            返回
+            Back
           </button>
           <button
             type="button"
@@ -596,7 +601,9 @@ function CancelJobSheet({
             ) : (
               <X size={16} aria-hidden="true" />
             )}
-            {error && !stale && !invalid ? retryLabels.cancel : "确认取消"}
+            {error && !stale && !invalid
+              ? retryLabels.cancel
+              : "Confirm cancel"}
           </button>
         </footer>
       </section>
@@ -644,13 +651,13 @@ function primaryAction(
   job: ImportJob,
 ): { action: "pause" | "resume"; label: string } | null {
   if (["pending", "running"].includes(job.status))
-    return { action: "pause", label: `暂停${operationLabel(job)}` };
+    return { action: "pause", label: `Pause ${operationLabel(job)}` };
   if (["paused", "interrupted"].includes(job.status))
-    return { action: "resume", label: `继续${operationLabel(job)}` };
+    return { action: "resume", label: `Resume ${operationLabel(job)}` };
   if (job.status === "failed")
     return {
       action: "resume",
-      label: isSyncJob(job) ? "重试新增同步" : "重试未完成部分",
+      label: isSyncJob(job) ? "Retry new sync" : "Retry unfinished part",
     };
   return null;
 }
@@ -686,30 +693,30 @@ export function settledAction(action: Action, result: ImportJob) {
 function statusLabel(job: ImportJob) {
   if (isSyncJob(job)) {
     const names: Record<ImportJob["status"], string> = {
-      pending: "等待检查新增",
-      running: "正在检查新增",
-      paused: "新增同步已暂停",
-      interrupted: "新增同步已中断",
-      failed: "新增同步失败",
-      completed: "本次新增检查已完成",
-      cancelled: "本次新增同步已取消",
+      pending: "Waiting to check for new items",
+      running: "Checking for new items",
+      paused: "New sync paused",
+      interrupted: "New sync interrupted",
+      failed: "New sync failed",
+      completed: "New-item check complete",
+      cancelled: "New sync canceled",
     };
-    return `${names[job.status] ?? "状态待核对"} · 本次新增 ${job.stored.toLocaleString()} 条`;
+    return `${names[job.status] ?? "Status needs verification"} · ${job.stored.toLocaleString()} new this run`;
   }
   const names: Record<ImportJob["status"], string> = {
-    pending: "等待导入",
-    running: "正在导入",
-    paused: "导入已暂停",
-    interrupted: "导入已中断",
-    failed: "导入失败",
-    completed: "本次导入已完成",
-    cancelled: "本次导入已取消",
+    pending: "Import queued",
+    running: "Importing",
+    paused: "Import paused",
+    interrupted: "Import interrupted",
+    failed: "Import failed",
+    completed: "Import completed",
+    cancelled: "Import canceled",
   };
-  return `${names[job.status] ?? "状态待核对"} · 已保存 ${job.stored.toLocaleString()} 条`;
+  return `${names[job.status] ?? "Status needs verification"} · Saved ${job.stored.toLocaleString()} items`;
 }
 
 function operationLabel(job: ImportJob) {
-  return isSyncJob(job) ? "新增同步" : "导入";
+  return isSyncJob(job) ? "new sync" : "import";
 }
 
 function isSyncJob(job: ImportJob) {

@@ -26,7 +26,7 @@ const prioritySources = new Set([
   "codex",
 ]);
 const changedMessage =
-  "来源位置或候选版本已变化，请取消后重新选择目录。旧确认不会用于变化后的来源。";
+  "The source location or candidate version changed. Cancel and choose the directory again. An old confirmation is never applied to a changed source.";
 type Attempt = {
   source: SourceResponse;
   key: string;
@@ -120,7 +120,7 @@ export function SourceDirectoryPicker(props: SourceDirectoryPickerProps) {
         return;
       }
       if (result?.cancelled !== false || !absolutePath(result.path))
-        throw new Error("目录选择未返回有效位置。");
+        throw new Error("Directory picking didn't return a valid location.");
       setAttempt({ ...selected, path: result.path });
       flight.current = false;
       setPicking(false);
@@ -128,8 +128,8 @@ export function SourceDirectoryPicker(props: SourceDirectoryPickerProps) {
       if (mounted.current && generation.current === token) {
         setError(
           reason instanceof Error
-            ? `目录选择未完成：${reason.message}`
-            : "目录选择未完成，请重试。",
+            ? `Directory picking didn't finish: ${reason.message}`
+            : "Directory picking didn't finish. Try again.",
         );
         finish();
       }
@@ -138,21 +138,21 @@ export function SourceDirectoryPicker(props: SourceDirectoryPickerProps) {
 
   if (!prioritySources.has(source.source_id)) return null;
   const explanation = !supported
-    ? "当前桌面版本不支持目录选择，请更新桌面应用。"
+    ? "This desktop version doesn't support directory picking. Update the desktop app."
     : null;
   return (
     <div className="source-directory-picker">
       <button
         type="button"
         className="source-directory-trigger"
-        aria-label={`选择 ${source.display_name} 历史目录`}
-        title={`选择 ${source.display_name} 历史目录`}
+        aria-label={`Choose ${source.display_name} history directory`}
+        title={`Choose ${source.display_name} history directory`}
         aria-describedby={explanation ? id : undefined}
         disabled={disabled || !!explanation || picking || attempt !== null}
         onClick={(event) => void pick(event.currentTarget)}
       >
         <FolderSearch size={16} aria-hidden="true" />
-        {picking ? "正在选择目录…" : "选择目录"}
+        {picking ? "Choosing directory..." : "Choose directory"}
       </button>
       {explanation && (
         <p id={id} className="source-directory-meta">
@@ -178,7 +178,9 @@ export function SourceDirectoryPicker(props: SourceDirectoryPickerProps) {
           onRefresh={() => current.current.onSaved()}
           onClose={(saved) => {
             if (saved)
-              setNotice("候选位置已保存，仍需选择来源并确认历史读取。");
+              setNotice(
+                "Candidate location saved. You still need to choose the source and confirm history reading.",
+              );
             finish();
           }}
         />
@@ -311,7 +313,9 @@ function CandidateSheet({
         !validCandidate(value, attempt.source.source_id) ||
         value.candidate_revision !== (attempt.source.candidate_revision ?? 0)
       )
-        throw new Error("目录核对回执无效或候选版本已变化，请重新选择。");
+        throw new Error(
+          "The directory check receipt is invalid or the candidate version changed. Choose again.",
+        );
       setPreview(Object.freeze({ ...value }));
     } catch (reason) {
       if (alive.current && token === generation.current)
@@ -337,8 +341,8 @@ function CandidateSheet({
       if (alive.current && token === generation.current) {
         setError(
           committed.current
-            ? "候选位置已保存，但来源列表刷新失败。刷新不会再次保存或授权。"
-            : "保存结果仍待核对，请刷新来源状态；不会重复提交保存。",
+            ? "Candidate location saved, but the source list failed to refresh. Refreshing won't save or authorize again."
+            : "The save result still needs verification. Refresh the source status; the save won't be submitted again.",
         );
         setPhase(committed.current ? "refresh-error" : "unknown");
       }
@@ -399,7 +403,7 @@ function CandidateSheet({
       if (invalidated.current || latest.current.changed) {
         setPhase("saved-changed");
         setError(
-          "候选位置已保存，但来源状态已变化。请取消后重新核对；不会把旧回执应用到新的来源。",
+          "Candidate location saved, but the source status changed. Cancel and check again; an old receipt is never applied to a new source.",
         );
         return;
       }
@@ -417,7 +421,7 @@ function CandidateSheet({
       if (alive.current && token === generation.current) {
         setPhase("unknown");
         setError(
-          "保存结果待核对。请刷新来源状态后重新打开，不会重复提交保存。",
+          "The save result is pending verification. Refresh the source status and reopen; the save won't be submitted again.",
         );
       }
     } finally {
@@ -560,13 +564,13 @@ function CandidateSheet({
       >
         <header className="source-directory-heading">
           <h2 id={`${id}-title`}>
-            保存 {attempt.source.display_name} 的候选位置
+            Save {attempt.source.display_name}'s candidate location
           </h2>
           <button
             type="button"
             className="source-directory-icon"
-            aria-label="关闭目录确认"
-            title="关闭目录确认"
+            aria-label="Close directory confirmation"
+            title="Close directory confirmation"
             disabled={writePending || closing}
             onClick={() => close()}
           >
@@ -575,14 +579,21 @@ function CandidateSheet({
         </header>
         <div className="source-directory-reading">
           <p id={`${id}-description`}>
-            仅保存这个来源的候选目录，不会读取历史、开启持续同步、处理模型内容或安装宿主连接。保存后仍需选择来源，并单独确认历史读取。
+            This only saves the candidate directory for this source. It doesn't
+            read history, turn on continuous sync, process model content, or
+            install a host connection. After saving, you still choose the source
+            and confirm history reading separately.
           </p>
           <strong>{attempt.source.display_name}</strong>
           <code>{preview?.path ?? attempt.path}</code>
-          {phase === "preview" && <p role="status">正在核对目录位置…</p>}
+          {phase === "preview" && (
+            <p role="status">Checking the directory location...</p>
+          )}
           {writePending && (
             <p role="status">
-              {phase === "saving" ? "正在保存候选位置…" : "正在刷新来源状态…"}
+              {phase === "saving"
+                ? "Saving the candidate location..."
+                : "Refreshing the source status..."}
             </p>
           )}
           {preview && !refreshOnly && (
@@ -593,7 +604,10 @@ function CandidateSheet({
                 disabled={pending || closing || invalid || disabled}
                 onChange={(event) => setConfirmed(event.target.checked)}
               />
-              <span>仅保存此候选位置，不授权读取历史</span>
+              <span>
+                Only this candidate location is saved, with no history read
+                authorization
+              </span>
             </label>
           )}
           {(invalid || error) && (
@@ -610,7 +624,7 @@ function CandidateSheet({
             onClick={() => close()}
           >
             <ArrowLeft size={16} aria-hidden="true" />
-            取消
+            Cancel
           </button>
           {phase === "saved-changed" ? null : refreshOnly ? (
             <button
@@ -619,7 +633,7 @@ function CandidateSheet({
               onClick={() => void refresh()}
             >
               <RefreshCw size={16} aria-hidden="true" />
-              刷新来源状态
+              Refresh source status
             </button>
           ) : preview ? (
             <button
@@ -628,7 +642,7 @@ function CandidateSheet({
               onClick={() => void save()}
             >
               <Check size={16} aria-hidden="true" />
-              保存候选位置
+              Save candidate location
             </button>
           ) : (
             phase !== "preview" && (
@@ -638,7 +652,7 @@ function CandidateSheet({
                 onClick={() => void check()}
               >
                 <RefreshCw size={16} aria-hidden="true" />
-                重新核对目录
+                Check the directory again
               </button>
             )
           )}
@@ -654,18 +668,18 @@ function blockedReason(source: SourceResponse): string | null {
     source.candidate_kind === "environment_override" ||
     source.candidate_change_reason?.includes("environment")
   )
-    return "此位置由环境变量指定，本次不能在应用中更换。";
+    return "This location comes from an environment variable, so it can't be changed in the app.";
   if (
     source.authorized ||
     (source.grant_revision ?? 0) > 0 ||
     source.imported_messages > 0 ||
     source.candidate_change_allowed === false
   )
-    return "此来源已有历史、授权或任务，本次不支持更换目录。";
+    return "This source already has history, authorization or jobs, so changing its directory isn't supported.";
   if (source.candidate_change_allowed !== true)
-    return "当前 Core 尚未确认是否可更换目录，请刷新或更新后重试。";
+    return "The current Core hasn't confirmed whether the directory can be changed. Refresh or update, then try again.";
   if (source.capabilities.historical_import !== "implemented")
-    return "此来源暂不支持历史目录导入。";
+    return "This source doesn't support history directory import yet.";
   return null;
 }
 
@@ -714,6 +728,6 @@ function validCandidate(
 
 function directoryError(reason: unknown) {
   return reason instanceof Error
-    ? `目录核对失败：${reason.message}`
-    : "目录核对失败，请重试或重新选择。";
+    ? `Directory check failed: ${reason.message}`
+    : "Directory check failed. Try again or choose again.";
 }

@@ -4,7 +4,7 @@ import { recallForHost } from "./host-facing.js";
 
 const HIT = {
   memory_id: "m1",
-  content: "用户偏好本地优先",
+  content: "The user prefers local-first",
   kind: "chat",
   scopes: ["all-apps"],
   evidence_ids: ["c866a180-0000-4000-8000-000000000000"],
@@ -20,7 +20,7 @@ describe("a recall result as a host sees it", () => {
     expect(JSON.stringify(seen)).not.toContain("c866a180");
     expect(seen).toMatchObject({
       state: "ok",
-      hits: [{ memory_id: "m1", content: "用户偏好本地优先" }],
+      hits: [{ memory_id: "m1", content: "The user prefers local-first" }],
     });
   });
 

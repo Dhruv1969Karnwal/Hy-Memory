@@ -1,6 +1,6 @@
 """MemHub_context memory lane: HY decides the order, keywords only when HY does not answer.
 
-Same decision as host recall (用户 09-24 13:50). Absence assertions are preceded
+Same decision as host recall (user 09-24 13:50). Absence assertions are preceded
 by the same read returning the memory while it was still readable.
 """
 
@@ -362,12 +362,16 @@ def test_context_route_keeps_unique_lexical_hit_ahead_of_full_semantic_top_k(
 ):  # noqa: F811
     database = app.state.evidence_store.database_path
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "unique-target", content="用户使用 route-exact-marker 作为验收代号。")
+        put(
+            db,
+            "unique-target",
+            content="The user uses route-exact-marker as the acceptance codename.",
+        )
         semantic_ids = []
         for index in range(10):
             memory_id = f"route-semantic-{index}"
             semantic_ids.append(memory_id)
-            put(db, memory_id, content=f"无关语义候选 {index}。")
+            put(db, memory_id, content=f"unrelated semantic candidate {index}.")
 
     async def semantic(_query: str) -> tuple[str, ...]:
         return tuple(semantic_ids)

@@ -45,7 +45,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "dashscope",
-    label: "阿里云百炼（通义千问）",
+    label: "Alibaba Cloud Model Studio (Qwen)",
     provider_kind: "openai_compatible",
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     model: "qwen-flash",
@@ -53,7 +53,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "moonshot",
-    label: "Kimi（月之暗面）",
+    label: "Kimi (Moonshot)",
     provider_kind: "openai_compatible",
     base_url: "https://api.moonshot.cn/v1",
     model: "kimi-k3",
@@ -61,7 +61,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "zhipu",
-    label: "智谱 GLM",
+    label: "Zhipu GLM",
     provider_kind: "openai_compatible",
     base_url: "https://open.bigmodel.cn/api/paas/v4",
     model: "glm-4-flash",
@@ -69,7 +69,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "volcengine",
-    label: "火山方舟（豆包）",
+    label: "Volcano Engine Ark (Doubao)",
     provider_kind: "openai_compatible",
     base_url: "https://ark.cn-beijing.volces.com/api/v3",
     model: "doubao-seed-2-1-pro-260628",
@@ -77,7 +77,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "hunyuan",
-    label: "腾讯混元",
+    label: "Tencent Hunyuan",
     provider_kind: "openai_compatible",
     base_url: "https://api.hunyuan.cloud.tencent.com/v1",
     model: "hunyuan-turbos-latest",
@@ -85,7 +85,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "siliconflow",
-    label: "硅基流动 SiliconFlow",
+    label: "SiliconFlow",
     provider_kind: "openai_compatible",
     base_url: "https://api.siliconflow.cn/v1",
     model: "deepseek-ai/DeepSeek-V3",
@@ -101,7 +101,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "ollama",
-    label: "Ollama（本机）",
+    label: "Ollama (local)",
     provider_kind: "ollama",
     base_url: "http://127.0.0.1:11434",
     model: "",
@@ -109,7 +109,7 @@ export const CLI_PROVIDER_PRESETS: readonly ProviderPreset[] = [
   },
   {
     id: "custom",
-    label: "自定义 OpenAI 兼容服务",
+    label: "Custom OpenAI-compatible service",
     provider_kind: "openai_compatible",
     base_url: "",
     model: "",
@@ -157,7 +157,7 @@ async function answerWithDefault(
   fallback: string,
 ): Promise<string> {
   const value = (
-    await prompter.ask(`${question}（默认 ${fallback}）: `)
+    await prompter.ask(`${question} (default ${fallback}): `)
   ).trim();
   return value || fallback;
 }
@@ -165,14 +165,14 @@ async function answerWithDefault(
 async function chooseProvider(
   prompter: WizardPrompter,
 ): Promise<ProviderPreset | null> {
-  prompter.write("选择模型服务：");
+  prompter.write("Choose a model service:");
   CLI_PROVIDER_PRESETS.forEach((preset, index) => {
     prompter.write(`  ${index + 1}) ${preset.label}`);
   });
-  prompter.write("  0) 跳过，暂时只导入原文");
+  prompter.write("  0) Skip, and only import raw conversations for now");
   while (true) {
     const answer = (
-      await prompter.ask("请选择（默认 DeepSeek，可输入 back 返回）: ")
+      await prompter.ask("Choose (default DeepSeek, type back to go back): ")
     ).trim();
     if (answer.toLowerCase() === "back") return null;
     if (answer === "0" || answer.toLowerCase() === "skip") return null;
@@ -184,18 +184,22 @@ async function chooseProvider(
     ) {
       return CLI_PROVIDER_PRESETS[index]!;
     }
-    prompter.write("输入无法识别，请输入服务编号、0 或 back。");
+    prompter.write("Unrecognized input. Enter a service number, 0, or back.");
   }
 }
 
 async function retryOrSkip(prompter: WizardPrompter): Promise<boolean> {
   while (true) {
-    const answer = (await prompter.ask("输入 r 重新填写，或 0 跳过模型配置: "))
+    const answer = (
+      await prompter.ask(
+        "Enter r to fill it in again, or 0 to skip model setup: ",
+      )
+    )
       .trim()
       .toLowerCase();
     if (answer === "" || answer === "r" || answer === "retry") return true;
     if (answer === "0" || answer === "skip") return false;
-    prompter.write("输入无法识别，请输入 r 或 0。");
+    prompter.write("Unrecognized input. Enter r or 0.");
   }
 }
 
@@ -209,29 +213,31 @@ async function chooseDetectedHosts(
 ): Promise<string[]> {
   const listed = await hostApi.list(hostHome);
   if (!("hosts" in listed) || listed.hosts.length === 0) return [];
-  const answer = (await prompter.ask("接入检测到的应用？[Y/n]: "))
+  const answer = (await prompter.ask("Connect the detected apps? [Y/n]: "))
     .trim()
     .toLowerCase();
-  if (["n", "no", "否", "0"].includes(answer)) return [];
+  if (["n", "no", "\u5426", "0"].includes(answer)) return [];
   const detected = listed.hosts.filter((host) => host.present);
   if (detected.length === 0) {
     prompter.write(
-      "没有检测到可接入的应用，已跳过。之后可运行 memhub host install 接入。",
+      "No connectable app was detected, so this was skipped. Run memhub host install later to connect one.",
     );
     return [];
   }
-  prompter.write("检测到以下应用：");
+  prompter.write("Detected these apps:");
   detected.forEach((host, index) => {
     prompter.write(`  ${index + 1}) ${host.label}`);
   });
   let selected: number[] | null = null;
   while (selected === null) {
     selected = parseSelection(
-      await prompter.ask("选择要接入的应用（回车=全选，如 1,3）: "),
+      await prompter.ask(
+        "Choose the apps to connect (Enter = all, e.g. 1,3): ",
+      ),
       detected.length,
     );
     if (selected === null)
-      prompter.write("输入无法识别，请重新输入编号或 all。");
+      prompter.write("Unrecognized input. Enter the numbers again or all.");
   }
   return selected.flatMap((index) => {
     const host = detected[index];
@@ -290,20 +296,20 @@ function writeSummary(
   installedHosts: readonly string[],
   failedHosts: readonly { hostId: string; label: string }[],
 ): void {
-  prompter.write("配置摘要：");
-  prompter.write(`  模型：${profile.name} / ${profile.model}`);
+  prompter.write("Configuration summary:");
+  prompter.write(`  Model: ${profile.name} / ${profile.model}`);
   prompter.write(
-    `  应用接入：${installedHosts.length > 0 ? installedHosts.join("、") : "已跳过"}`,
+    `  App connections: ${installedHosts.length > 0 ? installedHosts.join(", ") : "Skipped"}`,
   );
   for (const failure of failedHosts) {
     if (APP_ONLY_HOSTS.has(failure.hostId)) {
-      prompter.write(`  请在 App 里接入：${failure.label}`);
+      prompter.write(`  Connect in the app: ${failure.label}`);
       continue;
     }
-    prompter.write(`  接入失败：${failure.label}`);
+    prompter.write(`  Connect failed: ${failure.label}`);
   }
   prompter.write(
-    "下一步：运行 memhub status 查看状态，或 memhub recall <问题> 查记忆。",
+    "Next step: run memhub status to see the state, or memhub recall <question> to search memories.",
   );
 }
 
@@ -324,27 +330,29 @@ export async function runInteractiveModelSetup(
   while (true) {
     const preset = await chooseProvider(prompter);
     if (preset === null) {
-      prompter.write("已跳过模型配置，只保留原文导入。");
+      prompter.write("Model setup skipped; only raw import is kept.");
       return { state: "skipped" };
     }
     const baseUrl = await answerWithDefault(
       prompter,
-      "模型服务地址",
+      "Model service address",
       preset.base_url,
     );
     if (baseUrl.toLowerCase() === "back") continue;
-    const model = await answerWithDefault(prompter, "模型名称", preset.model);
+    const model = await answerWithDefault(prompter, "Model name", preset.model);
     if (model.toLowerCase() === "back") continue;
     if (!model) {
-      prompter.write("模型名称不能为空，请重新选择。");
+      prompter.write("The model name can't be empty. Choose again.");
       continue;
     }
     const apiKey = preset.key_required
-      ? await prompter.askSecret("API Key（输入不会显示）: ")
+      ? await prompter.askSecret("API Key (input isn't echoed): ")
       : undefined;
     if (apiKey?.toLowerCase() === "back") continue;
     if (preset.key_required && !apiKey) {
-      prompter.write("未填写 API Key。输入 back 返回，或重新选择模型服务。");
+      prompter.write(
+        "No API Key entered. Enter back to go back, or choose a model service again.",
+      );
       continue;
     }
     const hostApi = options.hostApi ?? { list: listHosts, read: readHost };
@@ -385,7 +393,7 @@ export async function runInteractiveModelSetup(
     );
     const profile = receiptProfile(created);
     if (profile === null) {
-      prompter.write("模型配置未保存。");
+      prompter.write("Model configuration wasn't saved.");
       if (await retryOrSkip(prompter)) continue;
       return { state: "skipped" };
     }
@@ -407,9 +415,11 @@ export async function runInteractiveModelSetup(
         await clients.operations.delete(
           `/api/v1/model-profiles/${encodeURIComponent(profile.profile_id)}`,
         );
-        prompter.write("模型连接未通过。可以重新填写，或输入 0 跳过后续配置。");
+        prompter.write(
+          "The model connection didn't pass. Fill it in again, or enter 0 to skip the rest of the setup.",
+        );
         if (await retryOrSkip(prompter)) continue;
-        prompter.write("已跳过模型配置，只保留原文导入。");
+        prompter.write("Model setup skipped; only raw import is kept.");
         return { state: "skipped" };
       }
     } catch (error) {

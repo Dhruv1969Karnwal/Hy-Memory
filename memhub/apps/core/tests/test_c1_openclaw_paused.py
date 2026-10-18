@@ -1,6 +1,7 @@
 """OpenClaw is paused: registered for honesty, but never probed or started.
 
-The contract says "OpenClaw/Claw 暂停，禁止探测或启动". Registered-but-paused
+The contract says "OpenClaw/Claw are paused; probing \
+or starting them is forbidden". Registered-but-paused
 means the catalog still lists the source (so the list is stable), yet nothing may
 touch its path: no `stat`, no detection, no import. The failure this guards
 against is silent probing — `inspect_source_location` used to `stat` the

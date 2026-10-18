@@ -39,14 +39,16 @@ describe("built Cursor installer CLI", () => {
     const before = await readFile(path.join(cursorDir, "mcp.json"), "utf8");
     const rollback = run(cli, ["rollback", "--cursor-dir", cursorDir]);
     expect(rollback.status).toBe(1);
-    expect(rollback.stderr).toContain("体验版暂不支持");
+    expect(rollback.stderr).toContain("Not supported in the trial build yet");
     const previewRollback = run(cli, [
       "preview-rollback",
       "--cursor-dir",
       cursorDir,
     ]);
     expect(previewRollback.status).toBe(1);
-    expect(previewRollback.stderr).toContain("体验版暂不支持");
+    expect(previewRollback.stderr).toContain(
+      "Not supported in the trial build yet",
+    );
     // Zero mutation: the installed config is byte-identical after refusing.
     expect(await readFile(path.join(cursorDir, "mcp.json"), "utf8")).toBe(
       before,

@@ -120,7 +120,7 @@ def test_budget_never_silently_removes_middle_of_a_conversation(tmp_path, length
 
 def test_first_pass_keeps_all_sessions_and_short_user_requirements(tmp_path):
     path, records = library(
-        tmp_path, {f"session-{i}": ["不做云同步", "Understood."] for i in range(6)}
+        tmp_path, {f"session-{i}": ["No cloud sync.", "Understood."] for i in range(6)}
     )
     result = select_evidence(path, max_chars=10_000)
     assert {r.evidence_id for r in result.records} == {r.evidence_id for r in records}

@@ -250,7 +250,7 @@ def test_governed_semantic_ids_enter_unified_memory_path(app):
         return ("memory",)
 
     app.state.recall_target = SimpleNamespace(semantic_search=semantic_search)
-    response = post(app, {"query": "职业是什么呀呀呀", "kinds": ["memory"]})
+    response = post(app, {"query": "What is my occupation?", "kinds": ["memory"]})
     assert response.status_code == 200
     body = response.json()
     assert body["state"] == "grounded"

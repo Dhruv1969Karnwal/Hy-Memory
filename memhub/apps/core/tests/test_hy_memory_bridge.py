@@ -832,14 +832,14 @@ def test_bridge_imports_existing_content_without_running_extractor(tmp_path) -> 
         user_id="local",
         source_id="cursor",
         session_id="conversation-1",
-        turns=(HyMemoryTurn(role="user", content="我偏好简洁文案。"),),
+        turns=(HyMemoryTurn(role="user", content="I prefer concise copy."),),
         evidence_ids=("evidence-1",),
     )
 
-    result = asyncio.run(bridge.ingest_extracted(request, ("用户偏好简洁文案。",)))
+    result = asyncio.run(bridge.ingest_extracted(request, ("The user prefers concise copy.",)))
 
     assert tuple(memory.memory_id for memory in result.memories) == ("memory-1",)
-    assert client.calls[0]["contents"] == ["用户偏好简洁文案。"]
+    assert client.calls[0]["contents"] == ["The user prefers concise copy."]
     assert client.calls[0]["metadata"] == {
         "source_id": "cursor",
         "evidence_ids": ["evidence-1"],
@@ -1072,13 +1072,13 @@ def test_bridge_update_rewrites_in_place_and_keeps_the_id(tmp_path) -> None:
         client=client,
     )
 
-    result = asyncio.run(bridge.update("memory-to-correct", "用户的花名是白泽"))
+    result = asyncio.run(bridge.update("memory-to-correct", "The user's alias is Baize"))
 
     assert result["success"] is True
     assert client.calls == [
         {
             "update_memory_id": "memory-to-correct",
-            "update_content": "用户的花名是白泽",
+            "update_content": "The user's alias is Baize",
         }
     ]
 
@@ -1101,7 +1101,7 @@ def test_hy_saying_it_did_not_update_is_not_read_as_a_success(tmp_path) -> None:
     )
 
     with pytest.raises(HyMemoryBridgeError) as error:
-        asyncio.run(bridge.update("memory-hy-never-had", "用户的花名是白泽"))
+        asyncio.run(bridge.update("memory-hy-never-had", "The user's alias is Baize"))
 
     assert str(error.value) == "hy_memory_update_rejected"
 
@@ -1130,7 +1130,7 @@ def test_bridge_semantic_search_can_span_isolated_hy_agents(tmp_path) -> None:
 
     memory_ids = asyncio.run(
         bridge.search_ids(
-            "我的长期偏好是什么？",
+            "What are my long-term preferences?",
             user_id="local",
             agent_id="*",
         )
@@ -1146,7 +1146,7 @@ def test_bridge_semantic_search_can_span_isolated_hy_agents(tmp_path) -> None:
 
 
 def test_bridge_preserves_sdk_formatted_search_content(tmp_path) -> None:
-    formatted = "Memory: 用户偏好本地优先。\nWhen: 2026-09-12 08:00:00 UTC"
+    formatted = "Memory: The user prefers local-first.\nWhen: 2026-09-12 08:00:00 UTC"
     client = FakeHyMemoryClient(
         {"success": True},
         search_result={
@@ -1173,7 +1173,7 @@ def test_bridge_preserves_sdk_formatted_search_content(tmp_path) -> None:
 
     hits = asyncio.run(
         bridge.search_memories(
-            "我的长期偏好是什么？",
+            "What are my long-term preferences?",
             user_id="local",
             agent_id="*",
         )
@@ -1209,7 +1209,7 @@ def test_semantic_search_skips_native_store_while_a_write_is_active(tmp_path, mo
     with pytest.raises(HyMemoryBridgeError, match="hy_memory_store_busy"):
         asyncio.run(
             bridge.search_ids(
-                "导入期间查询",
+                "query during import",
                 user_id="local",
                 agent_id="*",
             )
@@ -1243,7 +1243,7 @@ def test_search_ids_does_not_create_nodes_tasks_or_collections(tmp_path) -> None
 
     memory_ids = asyncio.run(
         bridge.search_ids(
-            "我的长期偏好是什么？",
+            "What are my long-term preferences?",
             user_id="local",
             agent_id="*",
         )
@@ -1403,7 +1403,7 @@ def test_ingest_refuses_a_request_whose_workspace_ids_disagree_with_the_context(
             message_id="now",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="项目 A 的一轮。",
+            verbatim="One turn of project A.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -1412,7 +1412,7 @@ def test_ingest_refuses_a_request_whose_workspace_ids_disagree_with_the_context(
             "success": True,
             "memories": [
                 {
-                    "content": "项目 A 的一轮。",
+                    "content": "One turn of project A.",
                     "owner": "user",
                     "memory_id": "m1",
                     "layer": "working_fact",
@@ -1431,7 +1431,7 @@ def test_ingest_refuses_a_request_whose_workspace_ids_disagree_with_the_context(
         user_id="local",
         source_id="cursor",
         session_id="atlas",
-        turns=(HyMemoryTurn(role="user", content="项目 A 的一轮。"),),
+        turns=(HyMemoryTurn(role="user", content="One turn of project A."),),
         evidence_ids=(record.evidence_id,),
         # The bound context is project-a; the request lies and says project-b.
         workspace_ids=("workspace:v1:project-b",),

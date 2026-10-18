@@ -1,14 +1,14 @@
-"""环回地址不得走 HTTP(S)_PROXY。
+"""Loopback addresses must not go through HTTP(S)_PROXY.
 
 Some environments set a system HTTP proxy; httpx defaults to trust_env=True and may send
-127.0.0.1 / localhost / ::1 的请求交给代理，表现成「本地 Ollama
-连不上 / health 起不来」，排查会被带偏。远端 HTTPS 服务仍须走代理。
+Handing 127.0.0.1 / localhost / ::1 requests to a proxy shows up as "local Ollama will not
+connect / health never comes up", and debugging gets dragged off course. Remote HTTPS still must.
 
-判据是**传输层归属**而不是「假代理有没有收到连接」：后者链路太长，
-任何一环没起来都会静默变成「没被劫持」，于是正向对照失效而无人发现。
-这里直接问 client 某个 URL 会走哪个连接池、那个池有没有代理。
+The criterion is **transport layer ownership**, not "did the fake proxy receive a connection":
+the latter is too long a chain, and any link that fails to start silently reads as "not hijacked",
+so the positive control dies unnoticed. Here we ask the client which pool a URL would use.
 
-本文件不靠设置 NO_PROXY 变绿——那是环境绕过，不是产品修复。
+This file does not go green by setting NO_PROXY -- that is an environment bypass, not a fix.
 """
 
 from __future__ import annotations
@@ -21,7 +21,8 @@ import pytest
 
 from one_memory.http_client import create_async_client, create_client
 
-# 企业代理的替身。只做归属判定，不会真的发起连接，所以不需要它活着。
+# A stand-in for a corporate proxy. It only decides ownership and never connects, so it need not
+# live.
 FAKE_PROXY = "http://127.0.0.1:9"
 
 LOOPBACK_URLS = (
@@ -36,7 +37,7 @@ REMOTE_URLS = (
 
 
 def _origin(url: object) -> str:
-    """把 httpcore.URL 与 httpx.URL 都归一成 `scheme://host:port`。"""
+    """Normalizes both httpcore.URL and httpx.URL to `scheme://host:port`."""
     scheme = getattr(url, "scheme", b"")
     host = getattr(url, "host", b"")
     port = getattr(url, "port", None)
@@ -48,16 +49,18 @@ def _origin(url: object) -> str:
 
 
 def proxy_for(client: httpx.Client | httpx.AsyncClient, url: str) -> str | None:
-    """返回 httpx 为该 URL 选中的代理（`scheme://host:port`），直连时返回 None。
+    """Returns the proxy httpx picked for that URL (`scheme://host:port`), None when direct.
 
-    依赖 httpx 0.28.x 的内部结构（`_transport_for_url` 与 `pool._proxy_url`）。
-    结构变了就在这里失败，而不是让所有断言静默变成「直连」。
-    池上的 `_proxy_url` 是 httpcore.URL（字段是 bytes），不能直接和 httpx.URL 比。
+    Depends on httpx 0.28.x internals (`_transport_for_url` and `pool._proxy_url`).
+    If the structure changes, fail here instead of letting every assertion read as "direct".
+    The pool's `_proxy_url` is an httpcore.URL whose fields are bytes, so it is not comparable.
     """
     transport = client._transport_for_url(httpx.URL(url))
     pool = getattr(transport, "_pool", None)
     assert pool is not None, (
-        f"httpx transport {type(transport).__name__} 没有 _pool，内部结构已变，本文件的判据需要重写"
+        f"httpx transport {type(transport).__name__} has no _pool, the internals changed and this "
+        f"file's criterion needs a "
+        f"rewrite"
     )
     known_pool = type(pool).__name__ in {
         "ConnectionPool",
@@ -66,8 +69,8 @@ def proxy_for(client: httpx.Client | httpx.AsyncClient, url: str) -> str | None:
         "AsyncHTTPProxy",
     }
     assert known_pool, (
-        f"未知的连接池类型 {type(pool).__name__}，无法判断代理归属；"
-        "httpx 版本变了，请重写本文件的判据"
+        f"unknown connection pool type {type(pool).__name__}, cannot decide proxy ownership;"
+        "the httpx version changed, please rewrite the criterion in this file"
     )
     proxy = getattr(pool, "_proxy_url", None)
     return None if proxy is None else _origin(proxy)
@@ -75,11 +78,11 @@ def proxy_for(client: httpx.Client | httpx.AsyncClient, url: str) -> str | None:
 
 @pytest.fixture
 def env_proxy(monkeypatch: pytest.MonkeyPatch) -> str:
-    # 必须先清掉环境里**所有** *_proxy 变量，再设假代理。
-    # 只 setenv 大写的 HTTP_PROXY 是不够的：urllib 的 getproxies_environment()
-    # 会把变量名统一小写后收集，机器上若已有小写 http_proxy（企业代理常这么设），
-    # 它会盖掉这里设的假代理，于是正向对照断言拿到的是真实代理地址而非 FAKE_PROXY，
-    # 三条测试在「设了小写代理的机器上」必红、在没设的机器上全绿 —— 结果取决于环境。
+    # Clear **every** *_proxy variable in the environment before setting the fake proxy.
+    # Setting only the uppercase HTTP_PROXY is not enough: urllib's getproxies_environment()
+    # collects names lowercased, so a lowercase http_proxy already on the machine (corporate
+    # proxies often set it that way) overrides the fake proxy here, and the positive control
+    # reads a real proxy address instead of FAKE_PROXY: red on such machines, green elsewhere.
     for name in list(os.environ):
         if name.lower().endswith("_proxy"):
             monkeypatch.delenv(name, raising=False)
@@ -89,12 +92,13 @@ def env_proxy(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 def test_plain_httpx_sends_loopback_through_env_proxy(env_proxy: str) -> None:
-    """正向对照：不修的话环回真的会被代理劫走，负向断言才有意义。"""
+    """Positive control: unpatched, loopback really is hijacked, which gives the negatives \
+meaning."""
     expected = _origin(httpx.URL(env_proxy))
     with httpx.Client() as client:
         hijacked = {url: proxy_for(client, url) for url in LOOPBACK_URLS}
     assert all(proxy == expected for proxy in hijacked.values()), (
-        f"env proxy 没有劫持环回，正向对照失效：{hijacked}"
+        f"the env proxy did not hijack loopback, the positive control is dead: {hijacked}"
     )
 
 
@@ -104,7 +108,9 @@ def test_create_client_keeps_loopback_direct_while_http_proxy_is_set(
     del env_proxy
     with create_client() as client:
         routed = {url: proxy_for(client, url) for url in LOOPBACK_URLS}
-    assert all(proxy is None for proxy in routed.values()), f"环回仍在走代理：{routed}"
+    assert all(proxy is None for proxy in routed.values()), (
+        f"loopback still goes through a proxy: {routed}"
+    )
 
 
 def test_create_async_client_keeps_loopback_direct_while_http_proxy_is_set(
@@ -117,7 +123,9 @@ def test_create_async_client_keeps_loopback_direct_while_http_proxy_is_set(
             return {url: proxy_for(client, url) for url in LOOPBACK_URLS}
 
     routed = asyncio.run(routes())
-    assert all(proxy is None for proxy in routed.values()), f"环回仍在走代理：{routed}"
+    assert all(proxy is None for proxy in routed.values()), (
+        f"loopback still goes through a proxy: {routed}"
+    )
 
 
 def test_remote_requests_still_use_env_proxy(env_proxy: str) -> None:
@@ -132,15 +140,16 @@ def test_remote_requests_still_use_env_proxy(env_proxy: str) -> None:
 
     async_routed = asyncio.run(routes())
     assert all(proxy == expected for proxy in sync_routed.values()), (
-        f"远端 HTTPS 绕过了代理：{sync_routed}"
+        f"remote HTTPS bypassed the proxy: {sync_routed}"
     )
     assert all(proxy == expected for proxy in async_routed.values()), (
-        f"远端 HTTPS 绕过了代理：{async_routed}"
+        f"remote HTTPS bypassed the proxy: {async_routed}"
     )
 
 
 def test_injected_transport_is_not_shadowed_by_the_mounts(env_proxy: str) -> None:
-    """调用方传 transport= 时不得被环回挂载盖掉，否则 MockTransport 会被打穿。"""
+    """A caller's transport= must not be overwritten by the loopback mount, or MockTransport \
+leaks."""
     del env_proxy
     mock = httpx.MockTransport(lambda _request: httpx.Response(200))
     with create_client(transport=mock) as client:
@@ -152,7 +161,7 @@ def test_removing_loopback_mounts_lets_the_proxy_take_loopback_back(
     env_proxy: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """变异：去掉环回直连挂载后，环回必须重新落到代理上。"""
+    """Mutation: removing the loopback direct mount must send loopback back to the proxy."""
     import one_memory.http_client as http_client
 
     monkeypatch.setattr(http_client, "LOOPBACK_DIRECT_MOUNTS", {})
@@ -160,5 +169,6 @@ def test_removing_loopback_mounts_lets_the_proxy_take_loopback_back(
     with create_client() as client:
         routed = {url: proxy_for(client, url) for url in LOOPBACK_URLS}
     assert all(proxy == expected for proxy in routed.values()), (
-        f"去掉挂载后环回仍是直连，说明守卫守的不是挂载：{routed}"
+        f"loopback is still direct without the mount, so the guard is not guarding the mount: "
+        f"{routed}"
     )

@@ -71,7 +71,7 @@ const MEMORY_USAGE_INSTRUCTIONS =
   "Before a real memory query starts, give one brief public action summary, not chain-of-thought. " +
   "Say it only when the query is actually sent, once per logical query. Do not say it when loading a Skill, reading static instructions, installing, or merely preparing a call. " +
   "Do not repeat it for retries, pagination, or an internal raw and governed path of the same query. " +
-  'In Chinese context, say exactly "正在使用 MemHub 查询记忆"; otherwise use the current conversation language to say you are querying MemHub. ' +
+  'In Chinese context, say exactly "Using MemHub to query memories"; otherwise use the current conversation language to say you are querying MemHub. ' +
   "Distinguish querying, results returned, and sources actually used in the answer. " +
   "For MemHub_recall use the query property; for MemHub_ask use question. " +
   "Use optional raw conversation, ask, or matter tools only if exposed and authorized for the requested scope. " +

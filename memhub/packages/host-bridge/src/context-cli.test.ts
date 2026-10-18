@@ -79,8 +79,12 @@ describe("om_context CLI receipts", () => {
     const result = await runContextCli(["original"], env);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("成功使用 MemHub 回忆到相关记忆。");
-    expect(result.stdout).not.toContain("获取部分相关记忆");
+    expect(result.stdout).toContain(
+      "Successfully recalled relevant memories from MemHub.",
+    );
+    expect(result.stdout).not.toContain(
+      "Partially relevant memories were fetched from MemHub",
+    );
     expect(result.stdout).toContain("e1");
     expect(result.stdout).toContain("adoption: unknown");
   });
@@ -91,11 +95,15 @@ describe("om_context CLI receipts", () => {
     const result = await runContextCli(["original"], env);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("已完成MemHub的记忆查询。");
-    expect(result.stdout).not.toContain("成功使用 MemHub");
-    expect(result.stdout).not.toContain("获取部分相关记忆");
-    expect(result.stdout).not.toContain("暂时不可用");
-    expect(result.stdout).not.toContain("覆盖有限");
+    expect(result.stdout).toContain("MemHub memory search completed.");
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories",
+    );
+    expect(result.stdout).not.toContain(
+      "Partially relevant memories were fetched from MemHub",
+    );
+    expect(result.stdout).not.toContain("temporarily unavailable");
+    expect(result.stdout).not.toContain("limited coverage");
   });
 
   it("uses the partial-memory receipt only when items were returned", async () => {
@@ -120,9 +128,11 @@ describe("om_context CLI receipts", () => {
     const result = await runContextCli(["original"], env);
 
     expect(result.stdout).toContain(
-      "已从 MemHub 获取部分相关记忆，以下将补充这些信息继续。",
+      "Partially relevant memories were fetched from MemHub; the following continues with this information.",
     );
-    expect(result.stdout).not.toContain("成功使用 MemHub");
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories",
+    );
     expect(result.stdout).toContain("e1");
   });
 
@@ -145,7 +155,7 @@ describe("om_context CLI receipts", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(
-      "记忆语义查询这次超时，已先返回当前能查到的内容；稍后会自动恢复。",
+      "The semantic memory query timed out this time, so what was available is returned first; it recovers automatically later.",
     );
   });
 
@@ -165,10 +175,16 @@ describe("om_context CLI receipts", () => {
 
     const result = await runContextCli(["original"], env);
 
-    expect(result.stdout).toContain("已完成MemHub的记忆查询。");
-    expect(result.stdout).not.toContain("获取部分相关记忆");
-    expect(result.stdout).not.toContain("成功使用 MemHub");
-    expect(result.stdout).not.toContain("成功使用 MemHub 回忆到相关记忆。");
+    expect(result.stdout).toContain("MemHub memory search completed.");
+    expect(result.stdout).not.toContain(
+      "Partially relevant memories were fetched from MemHub",
+    );
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories",
+    );
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories from MemHub.",
+    );
   });
 
   it("says unavailable for a returned outage, not a permission denial", async () => {
@@ -181,10 +197,14 @@ describe("om_context CLI receipts", () => {
 
     expect(result.exitCode).toBe(4);
     expect(result.stdout).toContain(
-      "MemHub 暂时不可用，我将先依据当前对话继续。",
+      "MemHub is temporarily unavailable; I will continue based on the current conversation.",
     );
-    expect(result.stdout).not.toContain("超出当前授权范围");
-    expect(result.stdout).not.toContain("成功使用 MemHub");
+    expect(result.stdout).not.toContain(
+      "outside the current authorization scope",
+    );
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories",
+    );
   });
 
   it("uses the denial receipt for host_scope_denied and does not invite a bypass", async () => {
@@ -196,11 +216,13 @@ describe("om_context CLI receipts", () => {
 
     expect(result.exitCode).toBe(4);
     expect(result.stdout).toContain(
-      "本次记忆查询超出当前授权范围，我将先依据当前可用信息继续。",
+      "This memory search is outside the current authorization scope; I will continue with the information available.",
     );
     expect(result.stdout).toContain("Do not retry through other tools");
-    expect(result.stdout).not.toContain("暂时不可用");
-    expect(result.stdout).not.toContain("成功使用 MemHub");
+    expect(result.stdout).not.toContain("temporarily unavailable");
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories",
+    );
   });
 
   it("does not describe an upgrade requirement as a permission denial", async () => {
@@ -212,10 +234,12 @@ describe("om_context CLI receipts", () => {
 
     expect(result.exitCode).toBe(5);
     expect(result.stdout).toContain(
-      "MemHub 暂时不可用，我将先依据当前对话继续。",
+      "MemHub is temporarily unavailable; I will continue based on the current conversation.",
     );
     expect(result.stdout).toContain("Do not retry through other tools");
-    expect(result.stdout).not.toContain("超出当前授权范围");
+    expect(result.stdout).not.toContain(
+      "outside the current authorization scope",
+    );
   });
 
   it("leaves --json as the structured envelope, without rewriting receipts", async () => {
@@ -230,6 +254,8 @@ describe("om_context CLI receipts", () => {
     const result = await runContextCli(["original", "--json"], env);
 
     expect(JSON.parse(result.stdout)).toEqual(payload);
-    expect(result.stdout).not.toContain("成功使用 MemHub");
+    expect(result.stdout).not.toContain(
+      "Successfully recalled relevant memories",
+    );
   });
 });

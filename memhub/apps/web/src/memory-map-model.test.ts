@@ -12,14 +12,14 @@ import {
 } from "./memory-map-model";
 
 const memories = [
-  { memory_id: "a", content: "Alpha", tags: ["设计"], status: "confirmed" },
+  { memory_id: "a", content: "Alpha", tags: ["Design"], status: "confirmed" },
   {
     memory_id: "b",
     content: "Beta",
-    tags: ["设计", "测试"],
+    tags: ["Design", "Testing"],
     status: "confirmed",
   },
-  { memory_id: "c", content: "Gamma", tags: ["测试"], status: "confirmed" },
+  { memory_id: "c", content: "Gamma", tags: ["Testing"], status: "confirmed" },
 ] as GovernedMemory[];
 const graph = {
   total_memories: 3,
@@ -79,13 +79,13 @@ describe("memory map membership", () => {
       ["source:cursor", ["c"]],
     ]);
     expect(
-      mapGroups(memories, graph, "topic").find((g) => g.label === "设计")
+      mapGroups(memories, graph, "topic").find((g) => g.label === "Design")
         ?.sourceCount,
     ).toBe(1);
   });
   it("topic membership is many-to-many and does not infer a matter", () => {
     expect(
-      mapGroups(memories, graph, "topic").find((g) => g.label === "测试")
+      mapGroups(memories, graph, "topic").find((g) => g.label === "Testing")
         ?.memoryIds,
     ).toEqual(["b", "c"]);
   });

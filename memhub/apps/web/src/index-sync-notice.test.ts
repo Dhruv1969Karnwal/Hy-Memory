@@ -21,7 +21,7 @@ describe("indexSyncPresentation", () => {
       ),
     ).toMatchObject({
       action: "retry",
-      explanation: expect.stringContaining("最近一次同步未成功"),
+      explanation: expect.stringContaining("The last sync did not succeed"),
     });
   });
 
@@ -33,7 +33,7 @@ describe("indexSyncPresentation", () => {
       ),
     ).toMatchObject({
       action: "retry",
-      attemptedLine: expect.stringContaining("尚未尝试同步"),
+      attemptedLine: expect.stringContaining("Sync has not been attempted"),
     });
   });
 
@@ -63,7 +63,9 @@ describe("indexSyncPresentation", () => {
       ),
     ).toMatchObject({
       action: "none",
-      explanation: expect.stringContaining("仅重试同步不能补齐"),
+      explanation: expect.stringContaining(
+        "retrying the sync alone cannot fill it in",
+      ),
     });
   });
 });

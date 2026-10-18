@@ -39,9 +39,9 @@ import { traceUiAction } from "./ui-trace";
 const NO_SOURCES: SourceResponse[] = [];
 const ACTIVE_IMPORT_STATUSES = new Set(["pending", "running"]);
 const RECOVERY_SCOPE_ERROR =
-  "无法确认原连接请求所属的数据范围，已保留请求编号。请核对原实例回执，不会自动重新授权。";
+  "The data scope of the original connection request could not be confirmed; the request number is kept. Verify the receipt from the original instance; authorization will not be re-granted automatically.";
 const JOB_ACTION_UNCERTAIN =
-  "任务操作结果待核对，保留最后已确认状态。请重新核对；不会自动重复发送操作。";
+  "The task operation result is pending verification; the last confirmed state is kept. Please re-verify; the operation will not be resent automatically.";
 
 export type ImportJobAction = "pause" | "resume" | "cancel";
 
@@ -138,7 +138,10 @@ export function useImportSources(_options: { automaticSync?: boolean } = {}) {
       const live = requestId ? liveRequests.current.get(requestId) : undefined;
       // instance_id is only a live-process check. It is deliberately never persisted.
       const fresh = await getHealth();
-      if (!alive.current) throw new Error("连接确认已关闭，尚未提交新的授权。");
+      if (!alive.current)
+        throw new Error(
+          "The connection confirmation was closed; no new authorization has been submitted.",
+        );
       assertCheckedConnection(checked, cachedSources() ?? []);
       if (
         fresh.instance_id !== instanceId ||
@@ -265,7 +268,9 @@ export function useImportSources(_options: { automaticSync?: boolean } = {}) {
         getImportJobs(),
       ]);
       if (!alive.current || version < refreshFloor.current) {
-        throw new Error("来源状态正在更新，请稍后重新核对。");
+        throw new Error(
+          "The source state is being updated; please re-verify shortly.",
+        );
       }
       refreshFloor.current = version;
       const nextSources = commitSources(sourceRead);
@@ -421,7 +426,11 @@ export function useImportSources(_options: { automaticSync?: boolean } = {}) {
     if (flight) {
       return flight.action === action
         ? flight.promise
-        : Promise.reject(new Error("此任务的另一操作正在核对，请等待回执。"));
+        : Promise.reject(
+            new Error(
+              "Another operation for this task is being verified; please wait for the receipt.",
+            ),
+          );
     }
     const uncertain = uncertainJobActions.current.get(jobId);
     if (uncertain && uncertain.action !== action)
@@ -429,9 +438,15 @@ export function useImportSources(_options: { automaticSync?: boolean } = {}) {
     const known = current.current.jobs.find((job) => job.job_id === jobId);
     const instanceId = current.current.health?.instance_id;
     if (!alive.current || !known || !instanceId)
-      return Promise.reject(new Error("任务身份尚未核对，请先刷新状态。"));
+      return Promise.reject(
+        new Error(
+          "The task identity has not been verified; refresh the state first.",
+        ),
+      );
     if (!uncertain && action === "resume" && isFinalJob(known))
-      return Promise.reject(new Error("本次任务已结束，不能继续导入。"));
+      return Promise.reject(
+        new Error("This task has ended; the import cannot continue."),
+      );
     const intent = uncertain ?? { action, before: { ...known }, instanceId };
 
     const updateAction = (state: ImportJobActionState) => {
@@ -449,7 +464,7 @@ export function useImportSources(_options: { automaticSync?: boolean } = {}) {
         !sameJobIdentity(currentJob, intent.before)
       )
         throw new Error(
-          "任务身份或 Core 实例已变化，操作结果待核对。请刷新状态。",
+          "The task identity or Core instance has changed; the operation result is pending verification. Please refresh the state.",
         );
     };
     const remember = (job: ImportJob): ImportJob => {
@@ -566,7 +581,11 @@ export function useImportSources(_options: { automaticSync?: boolean } = {}) {
     if (flight) {
       return flight.identity === checked.identity
         ? flight.promise
-        : Promise.reject(new Error("另一连接请求仍在确认中，请等待回执。"));
+        : Promise.reject(
+            new Error(
+              "Another connection request is still being confirmed; please wait for the receipt.",
+            ),
+          );
     }
     refreshFloor.current = ++refreshVersion.current;
     setBusyKey(onboarding ? "connect:onboarding" : "connect:selected");
@@ -705,7 +724,9 @@ function assertJobReceipt(job: ImportJob, expected: ImportJob): void {
     ].includes(job.status) ||
     !Number.isFinite(Date.parse(job.updated_at))
   )
-    throw new Error("返回的任务身份或状态不匹配，操作结果待核对。");
+    throw new Error(
+      "The returned task identity or state does not match; the operation result is pending verification.",
+    );
 }
 
 function isFinalJob(job: ImportJob): boolean {
@@ -786,7 +807,7 @@ export function isDefiniteJobRejection(reason: unknown): boolean {
  * A 4xx means the request was answered and refused. A 5xx, a timeout, or a
  * transport failure without a response means the outcome is *unknown*: the
  * write may have been applied before the answer was lost. The UI must not tell
- * the user "未能开启读取" in that case — that is a factual claim it cannot make,
+ * the user "reading could not be started" in that case -- that is a factual claim it cannot make,
  * and it invites a retry that could double-apply. Exported so the surfaces that
  * close a trace can pick the matching outcome.
  */
@@ -800,7 +821,7 @@ export function isDefiniteAccessRefusal(reason: unknown): boolean {
 
 function jobActionMessage(reason: unknown): string {
   if (apiErrorCode(reason) === "job_not_resumable")
-    return "本次任务已结束，不能继续导入。请刷新最后已确认状态。";
+    return "This task has ended; the import cannot continue. Please refresh the last confirmed state.";
   return toMessage(reason);
 }
 
@@ -847,32 +868,48 @@ function toMessage(reason: unknown): string {
   const code = apiErrorCode(reason);
   if (code) {
     const labels: Record<string, string> = {
-      source_unavailable: "来源目录暂时不可读取，请核对位置和权限后重试。",
-      source_not_available: "来源目录暂时不可读取，请核对位置和权限后重试。",
-      source_not_authorized: "此来源尚未授权，请先确认读取范围。",
-      environment_override_confirmation_required: "自定义来源路径尚未确认。",
-      imports_disabled: "当前环境未启用历史导入。",
-      grant_required: "请先重新确认此来源的读取权限。",
-      source_identity_changed: "来源位置或目录身份已变化，请重新确认。",
-      source_permission_changed: "来源权限已变化，请刷新后重新确认。",
-      sync_permission_required: "持续同步尚未授权，请在来源行单独开启。",
-      source_confirmation_required: "来源身份尚未核对，请重新检测并确认。",
-      source_intent_conflict: "连接请求与原确认范围不同，请重新核对回执。",
+      source_unavailable:
+        "The source directory cannot be read right now; check the location and permissions, then retry.",
+      source_not_available:
+        "The source directory cannot be read right now; check the location and permissions, then retry.",
+      source_not_authorized:
+        "This source is not authorized yet; confirm the read scope first.",
+      environment_override_confirmation_required:
+        "The custom source path has not been confirmed.",
+      imports_disabled: "History import is not enabled in this environment.",
+      grant_required:
+        "Please re-confirm read permission for this source first.",
+      source_identity_changed:
+        "The source location or directory identity has changed; please confirm again.",
+      source_permission_changed:
+        "The source permissions have changed; refresh and confirm again.",
+      sync_permission_required:
+        "Continuous sync is not authorized; enable it on the source row.",
+      source_confirmation_required:
+        "The source identity is pending verification; re-detect and confirm.",
+      source_intent_conflict:
+        "The connection request differs from the originally confirmed scope; re-verify the receipt.",
       import_upload_scope_mismatch:
-        "文件回执与本次来源范围不一致，请重新核对已确认的文件和目录。",
+        "The file receipt does not match this source's scope; re-verify the confirmed files and directories.",
       source_intent_job_missing:
-        "原连接任务暂不可读取，请核对回执，不要重复授权。",
-      source_import_busy: "此来源已有导入任务，请先核对任务状态。",
+        "The original connection task cannot be read; check the receipt and do not authorize again.",
+      source_import_busy:
+        "This source already has an import task; check the task state first.",
     };
-    return labels[code] ?? "来源操作未完成，请核对当前状态后重试。";
+    return (
+      labels[code] ??
+      "The source operation did not complete. Check the current state and retry."
+    );
   }
-  return reason instanceof Error ? reason.message : "操作失败，请重试。";
+  return reason instanceof Error
+    ? reason.message
+    : "The operation failed. Please retry.";
 }
 
 function toRefreshMessage(reason: unknown): string {
   const message = toMessage(reason);
   if (message.includes("timeout")) {
-    return "状态刷新超时，当前显示最后已确认状态。后台状态尚未核对，请刷新。";
+    return "State refresh timed out; showing the last confirmed state. Background state is unverified; please refresh.";
   }
-  return "暂时无法刷新状态，当前显示最后已确认状态。后台状态尚未核对，请刷新。";
+  return "The state cannot be refreshed right now; showing the last confirmed state. Background state is unverified; please refresh.";
 }

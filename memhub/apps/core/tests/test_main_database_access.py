@@ -473,7 +473,8 @@ def test_a_writer_that_kept_the_old_journal_switches_on_the_next_ordinary_checko
 
 
 def test_catching_up_to_wal_waits_only_as_long_as_the_caller_allows(tmp_path):
-    """补切 WAL 要文件独占片刻；等多久由调用方的 busy_timeout_ms 定，不是连接的缺省 5 秒。"""
+    """Re-switching to WAL needs the file exclusively for a moment; how long to wait is set by the \
+caller's busy_timeout_ms, not the connection default of 5 seconds."""
     path = tmp_path / "one-memory.sqlite3"
     raw = sqlite3.connect(path)
     raw.execute("CREATE TABLE rows (thread INTEGER, n INTEGER)")
@@ -488,7 +489,7 @@ def test_catching_up_to_wal_waits_only_as_long_as_the_caller_allows(tmp_path):
     reader.execute("SELECT * FROM rows").fetchall()
     try:
         started = time.monotonic()
-        # 正向前提：有人读着时确实切不过去。
+        # Positive premise: with a live reader the switch really does fail.
         with pytest.raises(sqlite3.OperationalError), database.write(busy_timeout_ms=120):
             pass
         assert time.monotonic() - started < 1.5

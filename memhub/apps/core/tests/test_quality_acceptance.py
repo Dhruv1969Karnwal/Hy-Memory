@@ -24,15 +24,17 @@ def test_acceptance_pack_is_deterministic_and_scores_personal_boundary(tmp_path)
     database = tmp_path / "one-memory.sqlite3"
     evidence = EvidenceStore(database)
     MemoryTaskStore(database)
-    personal = _put(evidence, "personal", "我是一个产品经理")
-    task = _put(evidence, "task", "请优化这个页面")
-    agent = _put(evidence, "agent", "我是一个产品经理", WrittenBy.AGENT)
+    personal = _put(evidence, "personal", "\u6211\u662f\u4e00\u4e2a\u4ea7\u54c1\u7ecf\u7406")
+    task = _put(evidence, "task", "Please optimize this page")
+    agent = _put(
+        evidence, "agent", "\u6211\u662f\u4e00\u4e2a\u4ea7\u54c1\u7ecf\u7406", WrittenBy.AGENT
+    )
     governance = MemoryGovernanceStore(database)
     as_person(governance).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户是一名产品经理",
+            content="The user is a product manager",
             scopes=("all-apps",),
             evidence_ids=(personal.evidence_id,),
         ),
@@ -64,7 +66,7 @@ def test_acceptance_score_fails_missing_personal_memory(tmp_path) -> None:
     evidence = EvidenceStore(database)
     MemoryGovernanceStore(database)
     MemoryTaskStore(database)
-    personal = _put(evidence, "personal", "我是一个产品经理")
+    personal = _put(evidence, "personal", "\u6211\u662f\u4e00\u4e2a\u4ea7\u54c1\u7ecf\u7406")
     row = build_acceptance_pack(database, sample_size=1)[0]
 
     score = score_acceptance_pack(

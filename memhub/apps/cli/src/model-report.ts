@@ -88,11 +88,11 @@ export function modelReportExitCode(document: ModelReportDocument): number {
 
 export function renderModelReportText(document: ModelReportDocument): string {
   if (document.state !== "ok") {
-    return `模型配置不可读：${document.state} (${document.code})\n`;
+    return `Model profiles unreadable: ${document.state} (${document.code})\n`;
   }
   const profiles =
     "profiles" in document ? document.profiles : [document.profile];
-  if (profiles.length === 0) return "尚未配置模型。\n";
+  if (profiles.length === 0) return "No model has been configured yet.\n";
   return `${profiles
     .map(
       (profile) =>

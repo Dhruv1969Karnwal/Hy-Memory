@@ -87,7 +87,7 @@ def _seed(library, sources=("cursor", "claude-code")) -> list[str]:
                     correlation_id=f"m-{index}",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim=f"{source_id} 第 {index} 条真实对话内容。",
+                    verbatim=f"{source_id} real conversation content line {index}.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
@@ -95,7 +95,7 @@ def _seed(library, sources=("cursor", "claude-code")) -> list[str]:
                 MemoryDraft(
                     user_id="local",
                     kind=MemoryKind.CHAT,
-                    content=f"{source_id} 第 {index} 条真实对话内容。",
+                    content=f"{source_id} real conversation content line {index}.",
                     scopes=("all-apps",),
                     evidence_ids=(record.evidence_id,),
                 ),
@@ -234,7 +234,8 @@ def _new_version(library, rng):
             correlation_id=f"m-{index}",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim=f"{source_id} 第 {index} 条真实对话内容（第 {rng.randrange(99)} 次改动）。",
+            verbatim=f"{source_id} real conversation content line {index} "
+            f"(edit {rng.randrange(99)}).",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     )
@@ -252,7 +253,7 @@ def _new_evidence(library, rng):
             correlation_id=marker,
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="一条新的真实对话内容。",
+            verbatim="A new piece of real conversation content.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     )

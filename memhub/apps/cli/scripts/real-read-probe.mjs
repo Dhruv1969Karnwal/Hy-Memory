@@ -24,7 +24,7 @@ const MEMORY = {
   user_id: "local",
   kind: "chat",
   status: "confirmed",
-  content: "部署脚本要先跑 verify_merge_plan。",
+  content: "The deployment script must run verify_merge_plan first.",
   scopes: ["all-apps"],
   evidence_ids: ["probe-e1"],
   origin: "extracted",
@@ -175,7 +175,8 @@ const ROUTES = new Map([
           source_id: "codex",
           written_by: "user",
           created_at: "2026-09-19T00:00:00Z",
-          verbatim: "部署前先跑 verify_merge_plan，别靠读 diff 猜冲突。",
+          verbatim:
+            "Run verify_merge_plan before deploying; do not guess conflicts by reading the diff.",
         },
       ],
       history: [{ memory_id: "probe-1", revision: 2, action: "confirm" }],

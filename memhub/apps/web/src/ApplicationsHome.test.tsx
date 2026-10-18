@@ -65,7 +65,7 @@ beforeEach(() => {
     memory_count: 601,
     latest: {
       memory_id: "m1",
-      content: "实际治理记忆",
+      content: "A real governed memory",
       truncated: false,
       revision: 2,
       source_ids: ["app-0"],
@@ -101,7 +101,7 @@ beforeEach(() => {
     ]),
   } as unknown as NonNullable<typeof window.oneMemory>;
 });
-it("hides a debug-frame dialogue excerpt from 最近更新 and falls back to memory", async () => {
+it("hides a debug-frame dialogue excerpt from Recent updates and falls back to memory", async () => {
   recentConversations.mockResolvedValue({
     items: [
       {
@@ -129,7 +129,7 @@ it("hides a debug-frame dialogue excerpt from 最近更新 and falls back to mem
       onSettings={() => {}}
     />,
   );
-  await screen.findByText("实际治理记忆");
+  await screen.findByText("A real governed memory");
   expect(screen.queryByText(/write_stdout/)).toBeNull();
 });
 
@@ -162,27 +162,29 @@ it("shows latest recorded call separately from newly generated memory and opens 
       onCalls={onCalls}
     />,
   );
-  await screen.findByText("实际治理记忆");
-  fireEvent.click(screen.getByRole("tab", { name: "最近调用" }));
-  await screen.findByText("Codex 查到 3 条相关内容");
+  await screen.findByText("A real governed memory");
+  fireEvent.click(screen.getByRole("tab", { name: "Recent calls" }));
+  await screen.findByText("Codex found 3 related items");
   expect(document.querySelector(".r6-home-call-direction")).toBeTruthy();
-  expect(screen.queryByText("实际治理记忆")).toBeNull();
-  expect(screen.getByText(/今天 .+ · 查询成功/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "最近更新" }));
-  expect(screen.getByText("实际治理记忆")).toBeTruthy();
-  const memoryActions = screen.getAllByRole("button", { name: "查看记忆" });
+  expect(screen.queryByText("A real governed memory")).toBeNull();
+  expect(screen.getByText(/Today .+ · Query succeeded/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Recent updates" }));
+  expect(screen.getByText("A real governed memory")).toBeTruthy();
+  const memoryActions = screen.getAllByRole("button", {
+    name: "View memories",
+  });
   fireEvent.click(memoryActions[memoryActions.length - 1]);
   expect(onMemories).toHaveBeenCalledWith("m1");
-  fireEvent.click(screen.getByRole("tab", { name: "最近调用" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Recent calls" }));
   expect(history).toHaveBeenCalledWith({ limit: 20, offset: 0 });
   if (CALL_HISTORY_ENTRY_VISIBLE) {
-    fireEvent.click(screen.getByRole("button", { name: "查看记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "View records" }));
     expect(onCalls).toHaveBeenCalledOnce();
   } else {
     // D96: the recent call still shows on the home page; only the way into
     // the call-history page is hidden.
-    expect(screen.getByText(/今天 .+ · 查询成功/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "查看记录" })).toBeNull();
+    expect(screen.getByText(/Today .+ · Query succeeded/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "View records" })).toBeNull();
     expect(onCalls).not.toHaveBeenCalled();
   }
 });
@@ -214,8 +216,8 @@ it("shows only the host for memory hits whose references have no source", async 
       onCalls={() => {}}
     />,
   );
-  fireEvent.click(await screen.findByRole("tab", { name: "最近调用" }));
-  await screen.findByText("WorkBuddy 查到 2 条相关内容");
+  fireEvent.click(await screen.findByRole("tab", { name: "Recent calls" }));
+  await screen.findByText("WorkBuddy found 2 related items");
   const direction = document.querySelector(".r6-home-call-direction");
   expect(direction?.querySelectorAll("img")).toHaveLength(1);
   expect(direction?.querySelector("img")?.getAttribute("src")).toContain(
@@ -252,8 +254,8 @@ it("keeps source to host direction for raw hits with a source", async () => {
       onCalls={() => {}}
     />,
   );
-  fireEvent.click(await screen.findByRole("tab", { name: "最近调用" }));
-  await screen.findByText("WorkBuddy 查到 1 条相关内容");
+  fireEvent.click(await screen.findByRole("tab", { name: "Recent calls" }));
+  await screen.findByText("WorkBuddy found 1 related items");
   const direction = document.querySelector(".r6-home-call-direction");
   expect(direction?.querySelectorAll("img")).toHaveLength(1);
   expect(direction?.querySelector("svg")).toBeTruthy();
@@ -301,8 +303,10 @@ it("shows unlinked apps and the latest returned call on matching rows", async ()
       onCalls={() => {}}
     />,
   );
-  expect(await screen.findByText(/Cursor 查到 3 条相关内容 ·/)).toBeTruthy();
-  expect(screen.getByText("尚未关联")).toBeTruthy();
+  expect(
+    await screen.findByText(/Cursor found 3 related items ·/),
+  ).toBeTruthy();
+  expect(screen.getByText("Not linked")).toBeTruthy();
 });
 it("keeps the latest call visible when recording is incomplete", async () => {
   history.mockResolvedValue({
@@ -328,11 +332,13 @@ it("keeps the latest call visible when recording is incomplete", async () => {
       onCalls={() => {}}
     />,
   );
-  fireEvent.click(await screen.findByRole("tab", { name: "最近调用" }));
-  await screen.findByText("Cursor 查到 1 条相关内容");
-  expect(screen.getByText(/有几次调用没被记下来/)).toBeTruthy();
-  expect(screen.queryByText("暂时无法读取调用记录")).toBeNull();
-  expect(screen.queryByText("暂无已记录调用")).toBeNull();
+  fireEvent.click(await screen.findByRole("tab", { name: "Recent calls" }));
+  await screen.findByText("Cursor found 1 related items");
+  expect(screen.getByText(/a few calls were not recorded/)).toBeTruthy();
+  expect(
+    screen.queryByText("Call records cannot be read right now"),
+  ).toBeNull();
+  expect(screen.queryByText("No recorded calls yet")).toBeNull();
 });
 it("does not present failed or disabled call history as zero usage", async () => {
   history.mockRejectedValue(Error("private error"));
@@ -345,10 +351,12 @@ it("does not present failed or disabled call history as zero usage", async () =>
       onCalls={() => {}}
     />,
   );
-  await screen.findByText("实际治理记忆");
-  expect(screen.queryByText("暂无已记录调用")).toBeNull();
+  await screen.findByText("A real governed memory");
+  expect(screen.queryByText("No recorded calls yet")).toBeNull();
   expect(document.body.textContent).not.toContain("private error");
-  expect(screen.queryByText("暂时无法读取调用记录")).toBeNull();
+  expect(
+    screen.queryByText("Call records cannot be read right now"),
+  ).toBeNull();
 });
 it("marks a retained application activity as last-read when call history cannot refresh", async () => {
   history
@@ -381,7 +389,7 @@ it("marks a retained application activity as last-read when call history cannot 
     />,
   );
 
-  await screen.findByText(/App 0 查到 3 条相关内容 ·/);
+  await screen.findByText(/App 0 found 3 related items ·/);
   view.rerender(
     <ApplicationsHome
       active={false}
@@ -404,9 +412,11 @@ it("marks a retained application activity as last-read when call history cannot 
   );
   await waitFor(() => expect(history).toHaveBeenCalledTimes(2));
 
-  expect(await screen.findByText("实际治理记忆")).toBeTruthy();
-  expect(screen.getByText(/上次读取：App 0 查到 3 条相关内容/)).toBeTruthy();
-  expect(screen.queryByText(/^App 0 查到/)).toBeNull();
+  expect(await screen.findByText("A real governed memory")).toBeTruthy();
+  expect(
+    screen.getByText(/Last read: App 0 found 3 related items/),
+  ).toBeTruthy();
+  expect(screen.queryByText(/^App 0 found/)).toBeNull();
 });
 it("does not say an unavailable call returned memories", async () => {
   history.mockResolvedValue({
@@ -435,14 +445,18 @@ it("does not say an unavailable call returned memories", async () => {
   );
 
   expect(
-    await screen.findByText("后台服务没有运行，应用暂时查不到记忆"),
+    await screen.findByText(
+      "The background service is not running, so apps cannot query memories right now",
+    ),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "重新启动" }));
+  fireEvent.click(screen.getByRole("button", { name: "Restart" }));
   await waitFor(() =>
     expect(window.oneMemory?.restartBackground).toHaveBeenCalledOnce(),
   );
-  expect(screen.queryByText(/App 0 暂时无法查记忆/)).toBeNull();
-  expect(screen.queryByText(/查到 [0-9]+ 条相关内容/)).toBeNull();
+  expect(
+    screen.queryByText(/App 0 cannot query memories right now/),
+  ).toBeNull();
+  expect(screen.queryByText(/found [0-9]+ related items/)).toBeNull();
 });
 
 it("warns only after three consecutive timeouts and keeps them out of app rows", async () => {
@@ -473,16 +487,18 @@ it("warns only after three consecutive timeouts and keeps them out of app rows",
 
   expect(
     await screen.findByText(
-      "WorkBuddy 最近几次没查到记忆，后台可能正忙，稍后会自动恢复",
+      "WorkBuddy found no memories in its last few calls; the background service may be busy and will recover on its own",
     ),
   ).toBeTruthy();
-  expect(screen.queryByText(/WorkBuddy 这次没来得及/)).toBeNull();
+  expect(
+    screen.queryByText(/WorkBuddy did not get memories back in time/),
+  ).toBeNull();
   if (CALL_HISTORY_ENTRY_VISIBLE) {
-    fireEvent.click(screen.getByRole("button", { name: "查看记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "View records" }));
     expect(onCalls).toHaveBeenCalledOnce();
   } else {
     // D96: the warning stays, without a button into the call history.
-    expect(screen.queryByRole("button", { name: "查看记录" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "View records" })).toBeNull();
   }
 });
 it("uses live-sync success time for an application row", async () => {
@@ -505,12 +521,15 @@ it("uses live-sync success time for an application row", async () => {
       onSettings={() => {}}
     />,
   );
-  expect(await screen.findByText(/最近同步 今天/)).toBeTruthy();
+  expect(await screen.findByText(/Last sync Today/)).toBeTruthy();
 });
 it.each([
-  [{ running: 1, pending: 0 }, "正在沉淀第一批记忆"],
-  [{ running: 0, pending: 1 }, "准备沉淀第一批记忆"],
-  [{ running: 0, pending: 0, waiting_for_model: 1 }, "准备沉淀第一批记忆"],
+  [{ running: 1, pending: 0 }, "Distilling the first memories"],
+  [{ running: 0, pending: 1 }, "Preparing to distill the first memories"],
+  [
+    { running: 0, pending: 0, waiting_for_model: 1 },
+    "Preparing to distill the first memories",
+  ],
 ])(
   "renders the first-memory state from processing: %j",
   async (value, label) => {
@@ -531,7 +550,9 @@ it.each([
     );
     expect(await screen.findByText(label)).toBeTruthy();
     expect(
-      screen.getByText("历史已保存，记忆生成后会显示在这里。"),
+      screen.getByText(
+        "History is saved; generated memories will appear here.",
+      ),
     ).toBeTruthy();
   },
 );
@@ -578,15 +599,15 @@ it("uses full summary count, renders latest real memory and expands all applicat
     />,
   );
   await screen.findByText("601");
-  expect(screen.getByText("条")).toBeTruthy();
-  expect(screen.getByText("后台运行中")).toBeTruthy();
-  expect(screen.getByText("2 个应用已接入")).toBeTruthy();
-  expect(screen.getByText("实际治理记忆")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "添加应用" })).toBeNull();
+  expect(screen.getByText("memories")).toBeTruthy();
+  expect(screen.getByText("Backend running")).toBeTruthy();
+  expect(screen.getByText("2 apps connected")).toBeTruthy();
+  expect(screen.getByText("A real governed memory")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Add app" })).toBeNull();
   expect(screen.queryByText("App 4")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
+  fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
   expect(screen.getByText("App 4")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "返回首页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
   expect(screen.queryByText("App 4")).toBeNull();
 });
 it("keeps authoritative home and processing data when only the source snapshot becomes stale", async () => {
@@ -598,7 +619,7 @@ it("keeps authoritative home and processing data when only the source snapshot b
       onSettings={() => {}}
     />,
   );
-  await screen.findByText("实际治理记忆");
+  await screen.findByText("A real governed memory");
   view.rerender(
     <ApplicationsHome
       imports={
@@ -612,12 +633,12 @@ it("keeps authoritative home and processing data when only the source snapshot b
       onSettings={() => {}}
     />,
   );
-  expect(screen.getByText("实际治理记忆")).toBeTruthy();
+  expect(screen.getByText("A real governed memory")).toBeTruthy();
   expect(screen.getByText("601")).toBeTruthy();
-  expect(screen.getByText("后台运行中")).toBeTruthy();
-  expect(screen.getByText("2 个应用已接入")).toBeTruthy();
-  expect(screen.getAllByText("一切就绪")).toHaveLength(2);
-  expect(screen.queryByText("状态待核对")).toBeNull();
+  expect(screen.getByText("Backend running")).toBeTruthy();
+  expect(screen.getByText("2 apps connected")).toBeTruthy();
+  expect(screen.getAllByText("All set")).toHaveLength(2);
+  expect(screen.queryByText("Status pending verification")).toBeNull();
 });
 it("does not turn a failed home summary into zero or expose a private error", async () => {
   summary.mockRejectedValue(new Error("private offline detail"));
@@ -629,7 +650,9 @@ it("does not turn a failed home summary into zero or expose a private error", as
       onSettings={() => {}}
     />,
   );
-  await waitFor(() => expect(screen.getByText("暂无法读取")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByText("Temporarily unreadable")).toBeTruthy(),
+  );
   expect(screen.queryByText("0")).toBeNull();
   expect(document.body.textContent).not.toContain("private offline detail");
 });
@@ -642,15 +665,18 @@ it("never calls a recall event a success when only stored memories are available
       onSettings={() => {}}
     />,
   );
-  await screen.findByText("实际治理记忆");
-  expect(screen.queryByText(/已返回|已采用/)).toBeNull();
+  await screen.findByText("A real governed memory");
+  expect(screen.queryByText(/returned|adopted/)).toBeNull();
 });
 
 it.each([
-  [{ running: 0, pending: 0 }, "一切就绪"],
-  [{ running: 0, pending: 0, waiting_for_model: 1 }, "等待模型"],
-  [{ running: 0, pending: 0, blocked_stages: [{ count: 1 }] }, "排队处理中"],
-  [{ running: 0, pending: 0, failed: 1 }, "需要处理"],
+  [{ running: 0, pending: 0 }, "All set"],
+  [{ running: 0, pending: 0, waiting_for_model: 1 }, "Waiting for the model"],
+  [
+    { running: 0, pending: 0, blocked_stages: [{ count: 1 }] },
+    "Queued for processing",
+  ],
+  [{ running: 0, pending: 0, failed: 1 }, "Needs attention"],
 ])("does not confuse task state with readiness: %j", async (value, label) => {
   processing.mockResolvedValue(value);
   render(
@@ -662,7 +688,7 @@ it.each([
     />,
   );
   expect(await screen.findAllByText(label)).toHaveLength(2);
-  expect(screen.queryByText("已就绪")).toBeNull();
+  expect(screen.queryByText("Ready")).toBeNull();
 });
 
 it("keeps the import-in-progress empty state stable without a progress link", async () => {
@@ -684,9 +710,11 @@ it("keeps the import-in-progress empty state stable without a progress link", as
     />,
   );
   expect(
-    await screen.findByText("对话持续导入中，即将沉淀你的记忆"),
+    await screen.findByText(
+      "Conversations are still importing; your memories will be distilled shortly",
+    ),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "查看进度" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "View progress" })).toBeNull();
 });
 
 it.each([null, "", "not-a-date"])(
@@ -696,7 +724,7 @@ it.each([null, "", "not-a-date"])(
       memory_count: 1,
       latest: {
         memory_id: "m1",
-        content: "实际治理记忆",
+        content: "A real governed memory",
         revision: 2,
         source_ids: ["app-0"],
         updated_at,
@@ -710,8 +738,8 @@ it.each([null, "", "not-a-date"])(
         onSettings={() => {}}
       />,
     );
-    await screen.findByText("实际治理记忆");
-    expect(screen.getByText(/时间未知.*版本 2/)).toBeTruthy();
+    await screen.findByText("A real governed memory");
+    expect(screen.getByText(/Time unknown.*version 2/)).toBeTruthy();
   },
 );
 
@@ -797,7 +825,7 @@ it("sequences a quick overview exit before translation-only expansion and revers
   const motion = mockMotion();
   const view = render(mountHome());
   await screen.findByText("601");
-  const expand = screen.getByRole("button", { name: "查看全部 5 个应用" });
+  const expand = screen.getByRole("button", { name: "View all 5 apps" });
   fireEvent.click(expand);
   expect(motion.jobs).toHaveLength(1);
   expect(motion.jobs[0].element.className).toBe("r6-home-top");
@@ -812,9 +840,9 @@ it("sequences a quick overview exit before translation-only expansion and revers
   expect(JSON.stringify(motion.jobs.map((j) => j.frames))).not.toMatch(/scale/);
   await motion.finish();
   expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "返回首页" }),
+    screen.getByRole("button", { name: "Back to home" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "返回首页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
   expect(
     view.container.querySelector(".r6-home")?.getAttribute("data-phase"),
   ).toBe("collapsing");
@@ -829,10 +857,10 @@ it("expands on downward wheel and collapses on upward wheel at the list top", as
   document.documentElement.dataset.nativeReduceMotion = "true";
   render(mountHome());
   await screen.findByText("601");
-  const panel = screen.getByRole("region", { name: "我的应用" });
+  const panel = screen.getByRole("region", { name: "My apps" });
   fireEvent.wheel(panel, { deltaY: 80 });
   expect(screen.getByText("App 4")).toBeTruthy();
-  const list = screen.getByRole("region", { name: "应用列表" });
+  const list = screen.getByRole("region", { name: "App list" });
   list.scrollTop = 0;
   fireEvent.wheel(panel, { deltaY: -80 });
   expect(screen.queryByText("App 4")).toBeNull();
@@ -842,8 +870,8 @@ it("Escape interrupts overview exit without a stale expansion completing", async
   const motion = mockMotion();
   const view = render(mountHome());
   await screen.findByText("601");
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
-  fireEvent.keyDown(screen.getByRole("region", { name: "应用首页" }), {
+  fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
+  fireEvent.keyDown(screen.getByRole("region", { name: "App home" }), {
     key: "Escape",
   });
   await motion.finish();
@@ -859,14 +887,14 @@ it("Escape still interrupts after the disappearing trigger loses focus to body",
   const motion = mockMotion();
   render(mountHome());
   await screen.findByText("601");
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
+  fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
   await motion.finish();
   fireEvent.keyDown(document.body, { key: "Escape" });
   await motion.finish();
   await motion.finish();
   expect(screen.queryByText("App 4")).toBeNull();
   expect(
-    screen.getByRole("region", { name: "应用首页" }).getAttribute("data-phase"),
+    screen.getByRole("region", { name: "App home" }).getAttribute("data-phase"),
   ).toBe("idle");
 });
 
@@ -876,7 +904,7 @@ it.each(["native", "prefers"])(
     const motion = mockMotion();
     const view = render(mountHome());
     await screen.findByText("601");
-    fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
+    fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
     await act(async () => {
       if (kind === "native")
         document.documentElement.dataset.nativeReduceMotion = "true";
@@ -891,7 +919,7 @@ it.each(["native", "prefers"])(
       view.container.querySelector(".r6-home")?.getAttribute("data-phase"),
     ).toBe("idle");
     const count = motion.jobs.length;
-    fireEvent.click(screen.getByRole("button", { name: "返回首页" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
     expect(motion.jobs).toHaveLength(count);
     expect(screen.queryByText("App 4")).toBeNull();
   },
@@ -900,19 +928,19 @@ it.each(["native", "prefers"])(
 it("preserves independent nonzero list scroll through collapse and inactive navigation", async () => {
   const view = render(mountHome());
   await screen.findByText("601");
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
-  const list = screen.getByRole("region", { name: "应用列表" });
+  fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
+  const list = screen.getByRole("region", { name: "App list" });
   list.scrollTop = 240;
   fireEvent.scroll(list);
-  const detail = screen.getAllByRole("button", { name: "查看详情" })[3];
+  const detail = screen.getAllByRole("button", { name: "View details" })[3];
   detail.focus();
   view.rerender(mountHome(false));
   view.rerender(mountHome(true));
   expect(screen.getByText("App 4")).toBeTruthy();
   expect(list.scrollTop).toBe(240);
   expect(document.activeElement).toBe(detail);
-  fireEvent.click(screen.getByRole("button", { name: "返回首页" }));
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+  fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
   expect(list.scrollTop).toBe(240);
 });
 
@@ -923,7 +951,7 @@ it.each(["unmount", "inactive"])(
     const raf = vi.spyOn(window, "requestAnimationFrame");
     const view = render(mountHome());
     await screen.findByText("601");
-    fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
+    fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
     if (mode === "unmount") view.unmount();
     else view.rerender(mountHome(false));
     await motion.finish();
@@ -937,17 +965,17 @@ it.each(["unmount", "inactive"])(
 it("restores expanded list and source focus after detail unmount, scoped to the import owner", async () => {
   const view = render(mountHome());
   await screen.findByText("601");
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 5 个应用" }));
-  const list = screen.getByRole("region", { name: "应用列表" });
+  fireEvent.click(screen.getByRole("button", { name: "View all 5 apps" }));
+  const list = screen.getByRole("region", { name: "App list" });
   list.scrollTop = 220;
   fireEvent.scroll(list);
-  screen.getAllByRole("button", { name: "查看详情" })[3].focus();
+  screen.getAllByRole("button", { name: "View details" })[3].focus();
   view.unmount();
   const returned = render(mountHome());
   expect(screen.getByText("App 4")).toBeTruthy();
-  expect(screen.getByRole("region", { name: "应用列表" }).scrollTop).toBe(220);
+  expect(screen.getByRole("region", { name: "App list" }).scrollTop).toBe(220);
   expect(document.activeElement).toBe(
-    screen.getAllByRole("button", { name: "查看详情" })[3],
+    screen.getAllByRole("button", { name: "View details" })[3],
   );
   returned.unmount();
   imports.refresh = vi.fn();
@@ -968,8 +996,8 @@ it("does not show zero connected apps before host status is ready", async () => 
     />,
   );
   await screen.findByText("601");
-  expect(screen.getByText("正在核对中")).toBeTruthy();
-  expect(screen.queryByText("0 个应用已接入")).toBeNull();
+  expect(screen.getByText("Verifying")).toBeTruthy();
+  expect(screen.queryByText("0 apps connected")).toBeNull();
 });
 
 it("does not keep saying sync is being checked after the remembered apply failed", async () => {
@@ -984,11 +1012,11 @@ it("does not keep saying sync is being checked after the remembered apply failed
     />,
   );
 
-  expect(await screen.findByText(/未能自动开启/)).toBeTruthy();
-  const sync = screen.getByText("对话同步").closest("div");
-  expect(sync?.textContent).not.toContain("正在检查状态");
-  expect(sync?.textContent).toContain("未能开启");
-  expect(screen.getByRole("button", { name: "重新接入" })).toBeTruthy();
+  expect(await screen.findByText(/did not turn on automatically/)).toBeTruthy();
+  const sync = screen.getByText("Conversation sync").closest("div");
+  expect(sync?.textContent).not.toContain("Checking status");
+  expect(sync?.textContent).toContain("Not enabled");
+  expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
 });
 
 it("keeps the conversation-sync checking copy before the first home read", () => {
@@ -1001,8 +1029,8 @@ it("keeps the conversation-sync checking copy before the first home read", () =>
       onSettings={() => {}}
     />,
   );
-  expect(screen.getByText("正在检查状态")).toBeTruthy();
-  expect(screen.queryByText(/个应用已开启/)).toBeNull();
+  expect(screen.getByText("Checking status")).toBeTruthy();
+  expect(screen.queryByText(/apps enabled/)).toBeNull();
 });
 
 it("does not claim there are no memories while the first summary read is pending", async () => {
@@ -1021,8 +1049,8 @@ it("does not claim there are no memories while the first summary read is pending
       onSettings={() => {}}
     />,
   );
-  await screen.findByText("正在读取动态");
-  expect(screen.queryByText("还没有已生成的记忆")).toBeNull();
+  await screen.findByText("Loading activity");
+  expect(screen.queryByText("No memories generated yet")).toBeNull();
 });
 
 it("counts enabled apps for conversation sync and does not report a degraded run", async () => {
@@ -1054,12 +1082,12 @@ it("counts enabled apps for conversation sync and does not report a degraded run
     />,
   );
   await screen.findByText("601");
-  const sync = screen.getByText("对话同步").closest("div");
-  expect(sync?.textContent).toContain("2 个应用已开启");
-  expect(sync?.textContent).not.toContain("部分异常");
-  expect(sync?.textContent).not.toContain("正在导入");
-  expect(sync?.textContent).not.toContain("持续同步已开启");
-  expect(await screen.findByText("2 个应用已接入")).toBeTruthy();
+  const sync = screen.getByText("Conversation sync").closest("div");
+  expect(sync?.textContent).toContain("2 apps enabled");
+  expect(sync?.textContent).not.toContain("partial errors");
+  expect(sync?.textContent).not.toContain("Importing");
+  expect(sync?.textContent).not.toContain("Continuous sync is on");
+  expect(await screen.findByText("2 apps connected")).toBeTruthy();
 });
 
 it("does not show zero connected apps while cold-start insertion is still applying", async () => {
@@ -1083,8 +1111,8 @@ it("does not show zero connected apps while cold-start insertion is still applyi
     />,
   );
   await screen.findByText("601");
-  expect(screen.getByText("正在核对中")).toBeTruthy();
-  expect(screen.queryByText("0 个应用已接入")).toBeNull();
+  expect(screen.getByText("Verifying")).toBeTruthy();
+  expect(screen.queryByText("0 apps connected")).toBeNull();
 });
 
 it("shows a newly imported conversation ahead of an older memory", async () => {
@@ -1098,7 +1126,7 @@ it("shows a newly imported conversation ahead of an older memory", async () => {
         written_by: "person",
         created_at: "2026-01-01T00:00:00Z",
         imported_at: "2026-09-23T06:47:00Z",
-        excerpt: "刚从 Cursor 同步进来的原话",
+        excerpt: "The exact words just synced from Cursor",
         truncated: false,
       },
     ],
@@ -1116,13 +1144,17 @@ it("shows a newly imported conversation ahead of an older memory", async () => {
       onSettings={() => {}}
     />,
   );
-  expect(await screen.findByText("刚从 Cursor 同步进来的原话")).toBeTruthy();
-  expect(screen.getAllByText("最近更新").length).toBeGreaterThan(0);
-  expect(screen.queryByText("对话")).toBeNull();
-  expect(screen.queryByText("记忆")).toBeNull();
-  expect(screen.queryByText(/原始对话/)).toBeNull();
-  // 查看会话入口已按产品要求从“最近更新”屏蔽（2026-10-12）。
-  expect(screen.queryByRole("button", { name: "查看会话" })).toBeNull();
+  expect(
+    await screen.findByText("The exact words just synced from Cursor"),
+  ).toBeTruthy();
+  expect(screen.getAllByText("Recent updates").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Conversation")).toBeNull();
+  expect(screen.queryByText("Memory")).toBeNull();
+  expect(screen.queryByText(/raw conversation/)).toBeNull();
+  // The View conversation entry is hidden from Recent updates as required by product (2026-10-12).
+  expect(
+    screen.queryByRole("button", { name: "View conversation" }),
+  ).toBeNull();
   expect(onConversations).not.toHaveBeenCalled();
   expect(recentConversations).toHaveBeenCalledWith({
     limit: 1,
@@ -1145,7 +1177,7 @@ function homeWithHosts(getRecallHosts: ReturnType<typeof vi.fn>) {
   );
 }
 function accessRow() {
-  return screen.getByText("应用访问").closest("div")?.textContent ?? "";
+  return screen.getByText("App access").closest("div")?.textContent ?? "";
 }
 const installed = (hostId: string, permission?: object) => ({
   hostId,
@@ -1167,21 +1199,27 @@ it("never renders an app whose permission could not be read as zero connected", 
     .mockResolvedValueOnce([installed("app-0", unreadable)])
     .mockResolvedValue([installed("app-0", { state: "approved" })]);
   homeWithHosts(read);
-  await waitFor(() => expect(accessRow()).toContain("1 个应用待核对"));
-  expect(screen.queryByText("0 个应用已接入")).toBeNull();
+  await waitFor(() =>
+    expect(accessRow()).toContain("1 apps pending verification"),
+  );
+  expect(screen.queryByText("0 apps connected")).toBeNull();
   expect(
-    screen.getByText("App 0 的记忆权限暂时没有读到，无法确认是否已接入。"),
+    screen.getByText(
+      "The memory permission for App 0 could not be read right now, so the connection cannot be confirmed.",
+    ),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
-  await waitFor(() => expect(accessRow()).toContain("1 个应用已接入"));
+  fireEvent.click(screen.getByRole("button", { name: "Verify again" }));
+  await waitFor(() => expect(accessRow()).toContain("1 apps connected"));
   expect(read).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole("button", { name: "重新核对" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Verify again" })).toBeNull();
 });
 
 it("treats a host without any permission answer as unchecked, not unconnected", async () => {
   homeWithHosts(vi.fn().mockResolvedValue([installed("app-0")]));
-  await waitFor(() => expect(accessRow()).toContain("1 个应用待核对"));
-  expect(screen.queryByText("0 个应用已接入")).toBeNull();
+  await waitFor(() =>
+    expect(accessRow()).toContain("1 apps pending verification"),
+  );
+  expect(screen.queryByText("0 apps connected")).toBeNull();
 });
 
 it("keeps the known count and names only the unchecked rest", async () => {
@@ -1194,10 +1232,12 @@ it("keeps the known count and names only the unchecked rest", async () => {
       ]),
   );
   await waitFor(() =>
-    expect(accessRow()).toContain("1 个应用已接入，1 个待核对"),
+    expect(accessRow()).toContain("1 apps connected, 1 pending verification"),
   );
   expect(
-    screen.getByText("App 1 的记忆权限暂时没有读到，无法确认是否已接入。"),
+    screen.getByText(
+      "The memory permission for App 1 could not be read right now, so the connection cannot be confirmed.",
+    ),
   ).toBeTruthy();
 });
 
@@ -1207,14 +1247,16 @@ it("says a failed host read is unchecked and offers to read again", async () => 
     .mockRejectedValueOnce(new Error("host_read_timeout"))
     .mockResolvedValue([installed("app-0", { state: "approved" })]);
   homeWithHosts(read);
-  await waitFor(() => expect(accessRow()).toContain("待核对"));
-  expect(accessRow()).not.toContain("正在核对中");
-  expect(screen.queryByText("0 个应用已接入")).toBeNull();
+  await waitFor(() => expect(accessRow()).toContain("Pending verification"));
+  expect(accessRow()).not.toContain("Verifying");
+  expect(screen.queryByText("0 apps connected")).toBeNull();
   expect(
-    screen.getByText("应用接入状态暂时没有读到，无法确认有几个应用已接入。"),
+    screen.getByText(
+      "App connection status could not be read right now, so the number of connected apps cannot be confirmed.",
+    ),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "重新核对" }));
-  await waitFor(() => expect(accessRow()).toContain("1 个应用已接入"));
+  fireEvent.click(screen.getByRole("button", { name: "Verify again" }));
+  await waitFor(() => expect(accessRow()).toContain("1 apps connected"));
   expect(read).toHaveBeenCalledTimes(2);
 });
 
@@ -1227,11 +1269,11 @@ it("still shows a checked zero as zero", async () => {
         { ...installed("app-1", { state: "not-installed" }), installed: false },
       ]),
   );
-  await waitFor(() => expect(accessRow()).toContain("0 个应用已接入"));
-  expect(screen.queryByRole("button", { name: "重新核对" })).toBeNull();
+  await waitFor(() => expect(accessRow()).toContain("0 apps connected"));
+  expect(screen.queryByRole("button", { name: "Verify again" })).toBeNull();
 });
 
-describe("运行状态卡：一次失败的刷新不能让卡片继续说在运行", () => {
+describe("Runtime status card: a failed refresh must not keep it saying it is running", () => {
   function renderHome(next: Partial<typeof imports>) {
     render(
       <ApplicationsHome
@@ -1245,15 +1287,17 @@ describe("运行状态卡：一次失败的刷新不能让卡片继续说在运�
 
   it("says it is running while the last health read succeeded", async () => {
     renderHome({ healthStale: false });
-    await screen.findByText("实际治理记忆");
-    expect(screen.getByText("后台运行中")).toBeTruthy();
+    await screen.findByText("A real governed memory");
+    expect(screen.getByText("Backend running")).toBeTruthy();
   });
 
   it("stops saying it is running once a health read has failed", async () => {
     renderHome({ healthStale: true });
-    await screen.findByText("实际治理记忆");
-    expect(screen.queryByText("后台运行中")).toBeNull();
-    expect(screen.getByText("连接状态待核对")).toBeTruthy();
+    await screen.findByText("A real governed memory");
+    expect(screen.queryByText("Backend running")).toBeNull();
+    expect(
+      screen.getByText("Connection status pending verification"),
+    ).toBeTruthy();
     // The health object itself is kept: it names the instance that owns the
     // running backfill and the write receipts.
     expect(screen.getByText("601")).toBeTruthy();

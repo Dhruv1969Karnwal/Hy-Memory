@@ -1640,7 +1640,7 @@ describe("public One Memory CLI", () => {
 
   // The objective names `memhub` and `memhub-cli` as the primary entries, and
   // the npm tarball ships all three names. The managed installer must create
-  // the same set, otherwise "装完即短指令可用" is only true for the names the
+  // the same set, otherwise "short commands usable right after install" is only true for the names the
   // installer happened to create.
   it("creates the memhub-cli primary alias during install", async () => {
     vi.clearAllMocks();
@@ -1834,7 +1834,7 @@ describe("stopped Runtime is exit 3, not a usage error", () => {
   );
 });
 
-// The objective requires "稳定 JSON/exit code" for every declared command.
+// The objective requires "stable JSON/exit code" for every declared command.
 // `start`/`stop`/`restart` accepted only the bare verb, so `--json` came back
 // as a usage error (exit 2) — a script could not drive lifecycle in JSON.
 describe("lifecycle commands accept --json", () => {
@@ -2443,7 +2443,7 @@ describe("backup restore drives the Core managed-restore contract", () => {
 // the runtime-not-running code instead of a usage error).
 // `--json` is documented under "Global options", so `memhub --json <cmd>` must
 // work like `memhub <cmd> --json`. It used to be treated as the command name
-// and fail with "未知命令".
+// and fail with "Unknown command".
 describe("leading --json is accepted as a global option", () => {
   it("accepts --json before the command and still emits JSON", async () => {
     const output = captureStreams();
@@ -2454,7 +2454,7 @@ describe("leading --json is accepted as a global option", () => {
       output.restore();
     }
     expect(code!).not.toBe(2);
-    expect(output.stderr()).not.toContain("未知命令");
+    expect(output.stderr()).not.toContain("Unknown command");
     // The success document comes back as a single JSON object on stdout.
     expect(JSON.parse(output.stdout())).toMatchObject({
       schema_version: 1,

@@ -31,10 +31,10 @@ def _turn(tmp_path, *parts: tuple[str, str]) -> list:
 def test_tool_heavy_turn_is_one_window(tmp_path):
     records = _turn(
         tmp_path,
-        ("user", "帮我看看这个仓库的测试为什么挂了"),
+        ("user", "Check why the tests in this repo are failing"),
         *[("tool", "x" * 50_000) for _ in range(5)],
-        *[("assistant", "定位中") for _ in range(30)],
-        ("assistant", "原因是 fixture 没清理" * 100),
+        *[("assistant", "locating") for _ in range(30)],
+        ("assistant", "fixture not cleaned up" * 100),
     )
     chunks = _conversation_chunks(records)
     assert len(chunks) == 1
@@ -42,14 +42,14 @@ def test_tool_heavy_turn_is_one_window(tmp_path):
 
 
 def test_long_answer_is_not_cut(tmp_path):
-    records = _turn(tmp_path, ("user", "写一份方案"), ("assistant", "段落。" * 7_000))
+    records = _turn(tmp_path, ("user", "Write a plan"), ("assistant", "para. " * 7_000))
     chunks = _conversation_chunks(records)
     assert chunks == [tuple(records)]
     assert all(":segment:" not in record.evidence_id for record in chunks[0])
 
 
 def test_text_over_the_ceiling_still_splits(tmp_path):
-    records = _turn(tmp_path, ("user", "整理"), ("assistant", "句子。" * 25_000))
+    records = _turn(tmp_path, ("user", "Tidy it up"), ("assistant", "sentence. " * 25_000))
     chunks = _conversation_chunks(records)
     assert len(chunks) > 1
     assert all(chunk[0].evidence_id == records[0].evidence_id for chunk in chunks)
@@ -57,7 +57,7 @@ def test_text_over_the_ceiling_still_splits(tmp_path):
 
 def test_switch_restores_the_old_split(tmp_path, monkeypatch):
     monkeypatch.setenv("ONE_MEMORY_SPLIT_TURNS", "1")
-    records = _turn(tmp_path, ("user", "写一份方案"), ("assistant", "段落。" * 7_000))
+    records = _turn(tmp_path, ("user", "Write a plan"), ("assistant", "para. " * 7_000))
     assert len(_conversation_chunks(records)) > 1
 
 
@@ -78,7 +78,7 @@ def test_one_window_is_capped_in_raw_bytes(tmp_path):
 
     records = _turn(
         tmp_path,
-        ("user", "跑一下全部测试"),
+        ("user", "Run all the tests"),
         *[("tool", "y" * 400_000) for _ in range(20)],
     )
     chunks = _conversation_chunks(records)
@@ -94,7 +94,7 @@ def test_the_byte_ceiling_counts_bytes_not_characters(tmp_path):
     times as much through."""
     from one_memory.memory_processing import _WINDOW_BYTE_CEILING, _window_bytes
 
-    assert _window_bytes(_turn(tmp_path, ("user", "中文"))[0]) > len("中文")
+    assert _window_bytes(_turn(tmp_path, ("user", "\u4e2d\u6587"))[0]) > len("\u4e2d\u6587")
     assert _WINDOW_BYTE_CEILING == 2_000_000
 
 
@@ -105,8 +105,8 @@ def test_the_sdk_strips_tool_messages_on_the_chat_path():
     from hy_memory.coding.preproc import strip_tool_messages
     from hy_memory.pipelines.base import ChatMessage, ToolCall
 
-    question = ChatMessage(role="user", content="帮我看看为什么挂了")
-    answer = ChatMessage(role="assistant", content="先看日志")
+    question = ChatMessage(role="user", content="Check why it failed")
+    answer = ChatMessage(role="assistant", content="Look at the logs first")
     tool_call = ChatMessage(
         role="assistant",
         content="",

@@ -12,13 +12,13 @@ import {
 } from "./display-preferences";
 import { graphEase } from "./graph-motion";
 
-/** 力导向迭代总步数。原实现在挂载时一次算完，现改为分帧推进。 */
+/** Total number of force-directed iterations. The original implementation computed everything at mount time; it now advances frame by frame. */
 const LAYOUT_ITERATIONS = 90;
 /** Soft budget checked between steps; one O(n^2) step can exceed it. */
 const LAYOUT_BUDGET_MS = 6;
 /** Layout work remains bounded per frame, including reduced-motion mode. */
 const LAYOUT_MAX_STEPS_PER_FRAME = 3;
-/** 节点交错入场的单位延迟与时长（毫秒）。 */
+/** Unit delay and duration (ms) for the staggered node entrance. */
 const ENTER_STAGGER_MS = 0;
 const ENTER_DURATION_MS = 240;
 const SELECT_DURATION_MS = 180;
@@ -38,8 +38,8 @@ export function MemoryGraph3D({
   const host = useRef<HTMLDivElement>(null);
   const labelHost = useRef<HTMLDivElement>(null);
   const selectRef = useRef(onSelectNode);
-  // 选中态通过 ref 传入渲染循环，而不是进 useEffect 依赖。
-  // 依赖里带 selectedNodeId 会导致每次点击重建整个场景、重跑布局、重建全部 mesh。
+  // The selected state is passed into the render loop via a ref instead of going into the useEffect deps.
+  // Keeping selectedNodeId in the deps would rebuild the whole scene, re-run the layout, and rebuild every mesh on each click.
   const selectedRef = useRef(selectedNodeId);
   const cameraPose = useRef<{
     position: THREE.Vector3;
@@ -205,11 +205,11 @@ export function MemoryGraph3D({
       mesh: THREE.Mesh;
       material: THREE.MeshStandardMaterial;
       baseColor: THREE.Color;
-      /** 入场进度 0..1 */
+      /** Entrance progress 0..1 */
       enter: number;
-      /** 入场延迟（毫秒） */
+      /** Entrance delay (ms) */
       enterDelay: number;
-      /** 选中权重 0..1，用于颜色与自发光插值 */
+      /** Selection weight 0..1, used for color and emissive interpolation */
       select: number;
       selectFrom: number;
     };
@@ -255,7 +255,7 @@ export function MemoryGraph3D({
       target: THREE.Vector3;
       baseOpacity: number;
       baseColor: THREE.Color;
-      /** 两端节点入场完成后边才淡入 */
+      /** Edges fade in only after both endpoint nodes finish their entrance */
       appearAfter: number;
     };
     const edgeVisuals: EdgeVisual[] = [];
@@ -365,7 +365,7 @@ export function MemoryGraph3D({
     renderer.domElement.addEventListener("pointerleave", leaveNode);
     renderer.domElement.addEventListener("pointercancel", cancelPointer);
 
-    // 按需渲染：只有画面真的变了才提交一帧。
+    // On-demand rendering: a frame is committed only when the picture actually changed.
     let dirty = true;
     const markDirty = () => {
       dirty = true;
@@ -626,7 +626,10 @@ export function MemoryGraph3D({
       <div className="graph-labels" ref={labelHost} aria-hidden="true" />
       {!available ? (
         <div className="memory-graph-fallback">
-          <p>这台设备打不开 3D 视图，已显示关联列表。</p>
+          <p>
+            This device cannot open the 3D view; the relation list is shown
+            instead.
+          </p>
           {graph.nodes.map((node) => (
             <button
               type="button"
@@ -644,13 +647,13 @@ export function MemoryGraph3D({
         <div
           className="memory-graph-controls"
           role="toolbar"
-          aria-label="图谱工具"
+          aria-label="Graph tools"
         >
           <button
             type="button"
             className="secondary"
-            title="放大"
-            aria-label="放大图谱"
+            title="Zoom in"
+            aria-label="Zoom in on the graph"
             onClick={() => actionsRef.current?.zoom(0.8)}
           >
             <Plus size={16} />
@@ -658,8 +661,8 @@ export function MemoryGraph3D({
           <button
             type="button"
             className="secondary"
-            title="缩小"
-            aria-label="缩小图谱"
+            title="Zoom out"
+            aria-label="Zoom out on the graph"
             onClick={() => actionsRef.current?.zoom(1.25)}
           >
             <Minus size={16} />
@@ -667,8 +670,8 @@ export function MemoryGraph3D({
           <button
             type="button"
             className="secondary"
-            title="重置视角"
-            aria-label="重置图谱视角"
+            title="Reset view"
+            aria-label="Reset the graph view"
             onClick={() => actionsRef.current?.reset()}
           >
             <Focus size={16} />
@@ -713,23 +716,23 @@ function colorForRelation(relation: string): number {
 }
 
 type RelationLayout = {
-  /** node_id 到位置的映射，值是可变引用，分帧推进时原地更新。 */
+  /** Map from node_id to position; values are mutable refs, updated in place as frames advance. */
   positions: Map<string, THREE.Vector3>;
-  /** 推进一步，返回是否还有剩余迭代。 */
+  /** Advance one step; returns whether iterations remain. */
   step(): boolean;
-  /** 一次跑完剩余迭代，用于降低动效偏好或需要立即出终态时。 */
+  /** Run all remaining iterations at once, for reduced-motion preferences or when the final state is needed immediately. */
   settle(): void;
   done(): boolean;
 }; /**
- * 3D 力导向布局，可分帧推进。
+ * 3D force-directed layout that can advance frame by frame.
  *
- * 与原实现的差异：
- * 1. 拆成 step() 供渲染循环逐帧调用，节点因此有生长过程
- * 2. 位置与力改用按索引的数组，内层 O(n²) 循环不再走 Map 查找
- * 3. 复用 scratch 向量，不再每对节点 clone 一个 Vector3
+ * Differences from the original implementation:
+ * 1. Split into step() for the render loop to call each frame, so nodes have a growth process
+ * 2. Positions and forces now use index-based arrays; the inner O(n²) loop no longer goes through Map lookups
+ * 3. Scratch vectors are reused; no more cloning a Vector3 for every node pair
  *
- * 初始位置仍由 seededUnit(node_id) 决定，因此同一张图每次布局结果一致，不会乱跳。
- * 导出仅供测试校验“分帧推进与一次算完结果一致”，业务代码不应直接调用。
+ * Initial positions are still decided by seededUnit(node_id), so the same graph always lays out identically and never jumps around.
+ * The export exists only for tests to verify that frame-by-frame advancement matches the run-it-all-at-once result; business code should not call it directly.
  */
 export function createRelationLayout(
   graph: MemoryGraphResponse,

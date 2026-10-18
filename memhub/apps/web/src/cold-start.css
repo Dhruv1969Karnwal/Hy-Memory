@@ -302,7 +302,7 @@
   flex-shrink: 0;
 }
 
-/* 检测完成后的结果提示条：告诉用户找到了几个应用，并给一键全选。 */
+/* Result banner after detection finishes: tells the user how many apps were found and offers select-all in one click. */
 .cold-start .cold-start-detect-hint {
   display: flex;
   align-items: center;

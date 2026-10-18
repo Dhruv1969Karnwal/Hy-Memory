@@ -198,7 +198,8 @@ class ModelProfileSnapshot(BaseModel):
     max_concurrency: int
     context_window: int | None
     has_api_key: bool
-    # 与 ModelProfile 的默认值保持一致：忘记显式传参时不应悄悄打开思考链。
+    # Keep ModelProfile's default: forgetting to pass the argument explicitly must not
+    # quietly enable the thinking chain.
     disable_thinking: bool = True
 
 

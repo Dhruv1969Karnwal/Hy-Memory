@@ -18,14 +18,14 @@
  *   `ModelSettings.tsx`. Never called from this repository.
  * - DeepSeek: vendor-compatible endpoint and a dated quickstart model id;
  *   `apps/core/tests/test_matter_discovery.py` uses the same endpoint shape.
- * - 阿里云百炼 / Kimi / 智谱 / 火山方舟 / 腾讯混元 / 硅基流动 / OpenRouter:
+ * - Alibaba Cloud Bailian / Kimi / Zhipu / Volcano Ark / Tencent Hunyuan / SiliconFlow / OpenRouter:
  *   vendor quickstart pages, 2026-09-20. Not called from this repository.
  * - Ollama: local, so the model depends entirely on what the user pulled.
  *   Left blank rather than guessing.
  *
  * Two shapes deliberately ship with an empty `model`, because guessing would
  * be worse than asking: Ollama depends on the local pull, and the aggregators
- * (OpenRouter, and to a lesser degree 硅基流动) require a namespaced id such
+ * (OpenRouter, and to a lesser degree SiliconFlow) require a namespaced id such
  * as `deepseek-ai/DeepSeek-V3`, which cannot be inferred. An empty model is
  * the signal the form uses to open the advanced panel straight away.
  *
@@ -51,28 +51,28 @@ export const PROVIDER_PRESETS = [
   },
   {
     id: "dashscope",
-    label: "阿里云百炼（通义千问）",
+    label: "Alibaba Cloud Bailian (Tongyi Qianwen)",
     provider: "openai_compatible",
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     model: "qwen-flash",
   },
   {
     id: "moonshot",
-    label: "Kimi（月之暗面）",
+    label: "Kimi (Moonshot)",
     provider: "openai_compatible",
     baseUrl: "https://api.moonshot.cn/v1",
     model: "kimi-k3",
   },
   {
     id: "zhipu",
-    label: "智谱 GLM",
+    label: "Zhipu GLM",
     provider: "openai_compatible",
     baseUrl: "https://open.bigmodel.cn/api/paas/v4",
     model: "glm-4-flash",
   },
   {
     id: "volcengine",
-    label: "火山方舟（豆包）",
+    label: "Volcano Ark (Doubao)",
     provider: "openai_compatible",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     // Ark accepts either a preset Model ID or the user's own Endpoint ID, and
@@ -82,14 +82,14 @@ export const PROVIDER_PRESETS = [
   },
   {
     id: "hunyuan",
-    label: "腾讯混元",
+    label: "Tencent Hunyuan",
     provider: "openai_compatible",
     baseUrl: "https://api.hunyuan.cloud.tencent.com/v1",
     model: "hunyuan-turbos-latest",
   },
   {
     id: "siliconflow",
-    label: "硅基流动 SiliconFlow",
+    label: "SiliconFlow",
     provider: "openai_compatible",
     baseUrl: "https://api.siliconflow.cn/v1",
     model: "deepseek-ai/DeepSeek-V3",
@@ -104,7 +104,7 @@ export const PROVIDER_PRESETS = [
   },
   {
     id: "ollama",
-    label: "Ollama（本机）",
+    label: "Ollama (local)",
     provider: "ollama",
     baseUrl: "http://127.0.0.1:11434",
     model: "",

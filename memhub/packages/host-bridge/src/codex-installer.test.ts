@@ -15,8 +15,8 @@ import {
 /** Shaped after a real `~/.codex/config.toml`, foreign entry included. */
 const OCCUPIED = `personality = "pragmatic"
 
-# MemHub 记忆 + 判决账本 + 项目图谱。
-# Tutti 会把本文件复制进每个会话的 CODEX_HOME。
+# MemHub memory + verdict ledger + project graph.
+# Tutti copies this file into the CODEX_HOME of every session.
 [mcp_servers.one-memory]
 command = "node"
 args = ["/Users/someone/one-memory-tutti/bin/mcp-server.mjs"]

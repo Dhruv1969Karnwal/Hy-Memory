@@ -12,7 +12,8 @@ import { isDefiniteRefusal } from "./write-outcome";
 
 export const SOURCES_KEY = ["sources"] as const;
 const FRESH_MS = 5_000;
-const SYNC_UNCONFIRMED = "此应用的处理开关结果未能确认，其他应用不受影响。";
+const SYNC_UNCONFIRMED =
+  "This app's processing switch result could not be confirmed; other apps are not affected.";
 
 type Revisioned = {
   grant_revision?: number | null;
@@ -147,12 +148,12 @@ function syncRejectionMessage(
 ): string | null {
   if (!latest) return null;
   if (!latest.authorized)
-    return "此应用的读取授权已失效，请重新授权后再开启持续同步。";
+    return "This app's read authorization has lapsed; authorize again before enabling continuous sync.";
   if (
     latest.root_id !== before.root_id ||
     latest.grant_revision !== before.grant_revision
   )
-    return "此应用的授权或目录已变化，已按最新状态显示，请确认后再试。";
+    return "This app's authorization or directory has changed; the latest state is shown, confirm it and try again.";
   return null;
 }
 

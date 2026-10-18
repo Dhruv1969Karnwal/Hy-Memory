@@ -209,7 +209,7 @@ export function hostConnectionUnsupported(
 }
 
 export const UNSUPPORTED_NOTE =
-  "暂不支持一键插入：它没有 MCP 通道，无法发放可撤销的记忆凭证。";
+  "One-click insertion is not supported yet: it has no MCP channel, so no revocable memory credential can be issued.";
 
 export function matchHost(
   hosts: readonly RecallHostStatus[] | undefined,
@@ -225,20 +225,26 @@ export function matchHost(
 }
 
 const REASONS: Record<string, string> = {
-  host_unsupported: "它没有 MCP 通道，无法发放可撤销的记忆凭证",
-  unsupported_host: "当前安装不支持一键插入",
-  connection_client_unavailable: "桌面端的连接组件不可用",
-  noncanonical_data_dir_host_integration_disabled: "测试实例不接入应用",
-  installation_receipt_missing: "安装后没有拿到安装回执",
-  permission_not_approved: "记忆使用权限没有获批",
-  host_uninstall_modified_files: "配置文件被改过",
-  host_uninstall_needs_review: "有无法确认的残留，需要人工核对",
-  host_permission_store_unavailable: "权限存储暂不可用",
-  host_control_unavailable: "应用控制通道暂不可用",
+  host_unsupported:
+    "It has no MCP channel, so no revocable memory credential can be issued",
+  unsupported_host: "The current install does not support one-click insertion",
+  connection_client_unavailable:
+    "The desktop connection component is unavailable",
+  noncanonical_data_dir_host_integration_disabled:
+    "A test instance does not connect to apps",
+  installation_receipt_missing:
+    "The install receipt was not received after installing",
+  permission_not_approved: "The memory use permission was not approved",
+  host_uninstall_modified_files: "The configuration file was modified",
+  host_uninstall_needs_review:
+    "There is residue that cannot be confirmed and needs manual review",
+  host_permission_store_unavailable: "The permission store is unavailable",
+  host_control_unavailable: "The app control channel is unavailable",
   host_runtime_app_location_unsafe:
-    "请先把 MemHub 拖到“应用程序”文件夹，再接入应用",
-  runtime_broker_unavailable: "本机运行时暂不可用",
-  host_read_timeout: "桌面端读取接入状态超时",
+    "Drag MemHub into the 'Applications' folder before connecting apps",
+  runtime_broker_unavailable: "The local runtime is unavailable",
+  host_read_timeout:
+    "The desktop timed out while reading the connection status",
 };
 
 /** Desktop errors arrive as IPC text ending in a code; name the known ones. */
@@ -260,8 +266,10 @@ export function hostRereadFailed(error: unknown) {
 /** What to add after a failure message: the reason, and whether what is on
  * screen could be re-read afterwards. */
 export function hostFailureNote(reason: string | null, rereadFailed: boolean) {
-  return `${reason ? `原因：${reason}。` : ""}${
-    rereadFailed ? "当前接入状态也未能重新读取，显示的可能不是最新状态。" : ""
+  return `${reason ? `Reason: ${reason}.` : ""}${
+    rereadFailed
+      ? "The connection status could not be re-read either, so what is shown may not be the latest."
+      : ""
   }`;
 }
 

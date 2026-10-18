@@ -164,7 +164,7 @@ describe("disabled local operations", () => {
       LOCAL_OPERATION_DISABLED_MESSAGE,
     );
     expect(() => refuseDisabledHostOperation("preview-rollback")).toThrow(
-      /体验版暂不支持/,
+      /Not supported in the trial build/,
     );
   });
 

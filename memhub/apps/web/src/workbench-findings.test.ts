@@ -18,7 +18,7 @@ function memory(
     user_id: "local",
     kind: "chat",
     status: "confirmed",
-    content: `记忆 ${id}`,
+    content: `Memory ${id}`,
     scopes: ["all-apps"],
     evidence_ids: [`ev-${id}`],
     origin: "extracted",
@@ -81,20 +81,20 @@ const processing: MemoryProcessingSummary = {
 } as MemoryProcessingSummary;
 
 describe("mattersOf", () => {
-  // 原来这里有三条测试守着「按 scope 分组」。那条轴已经被判定为错的：
-  // scope 是授权范围，真实库里是 workspace:v1:<sha256>，当事项列出来就是
-  // 一列 hash。删掉它们不是为了求绿，是它们守的行为本身不该存在。
-  // 授权范围仍然要能被说清，只是说在重复发现的句子里，不再是左栏的轴 ——
-  // 由下面这条和「重复」那组测试一起守。
-  it("授权范围仍然说得出来，只是不再当事项轴", () => {
+  // Three tests used to guard "group by scope" here. That axis was judged wrong:
+  // scope is an authorization range; in a real library it reads workspace:v1:<sha256>,
+  // so listing it as matters was a column of hashes. They were deleted not to go green,
+  // but because the behavior they guarded should not exist at all.
+  // An authorization scope still has to be sayable, only now inside the duplicate-finding
+  it("authorization scopes are still stated, just no longer as the matter axis", () => {
     const matters = mattersOf(
       [memory("a", { scopes: ["all-apps"], tags: [] })],
       [source("cursor")],
     );
 
-    // 左栏不再因为 scope 立行。
-    expect(matters.map((item) => item.label)).toEqual(["全部"]);
-    // 但按 scope 取记忆仍然有效：存过的选择不能因为换轴就查不到。
+    // The left column no longer adds a row because of a scope.
+    expect(matters.map((item) => item.label)).toEqual(["All"]);
+    // Fetching memories by scope still works: a saved selection must not become unfindable after the axis change.
     expect(
       memoriesInMatter(
         [memory("a", { scopes: ["all-apps"], tags: [] })],
@@ -103,9 +103,9 @@ describe("mattersOf", () => {
     ).toHaveLength(1);
   });
 
-  it("重复发现里也不许出现整串 hash", () => {
-    // scopesText 会把每条记忆的授权范围念出来。真实库里那是 64 位十六进制，
-    // 整串念出来占满一行且什么都没说。这里只要求短号可辨、长串不出现。
+  it("a duplicate finding never prints a whole hash", () => {
+    // scopesText reads out each memory's authorization scopes. In a real library that is 64
+    // hex characters, which fills the line and says nothing. Only the short id needs to be recognizable here; the long string must not appear.
     const said = findingsOf({
       memories: [
         memory("a", {
@@ -124,12 +124,12 @@ describe("mattersOf", () => {
       .join(" ");
 
     expect(said).not.toContain("0027abad1745330f");
-    // 但两个项目要能被分辨，否则这句话等于没说。
+    // but the two projects must still be tellable apart, otherwise the sentence says nothing.
     expect(said).toContain("0027abad");
     expect(said).toContain("daf248ff");
   });
 
-  it("一条记忆都没有时来源数是 0，不拿导入过的来源充数", () => {
+  it("with no memories the source count is 0, without padding with imported sources", () => {
     const matters = mattersOf([], [source("cursor")]);
 
     expect(matters[0]).toMatchObject({ memoryCount: 0, sourceCount: 0 });
@@ -137,16 +137,16 @@ describe("mattersOf", () => {
 });
 
 describe("findingsOf", () => {
-  it("从同一句原话抽出来的两条会被指出来，并给出各自的归属", () => {
+  it("points out two memories extracted from the same sentence and gives each owner", () => {
     const findings = findingsOf({
       memories: [
         memory("a", {
-          content: "统一用 axios 封装，不要用 fetch 裸调",
+          content: "Wrap everything with axios, do not call fetch directly",
           scopes: ["project:om"],
           evidence_ids: ["ev-1"],
         }),
         memory("b", {
-          content: "统一用 axios 封装，不用 fetch 裸调",
+          content: "Wrap everything with axios, no direct fetch calls",
           scopes: ["all-apps"],
           evidence_ids: ["ev-1", "ev-2"],
         }),
@@ -158,20 +158,20 @@ describe("findingsOf", () => {
     const duplicate = findings.find((item) => item.kind === "duplicate");
     expect(duplicate?.memoryIds).toEqual(["a", "b"]);
     expect(duplicate?.text).toContain("om");
-    expect(duplicate?.text).toContain("个人画像");
+    expect(duplicate?.text).toContain("Personal profile");
   });
 
-  it("出处不同的两条不会被当成重复，哪怕措辞很像", () => {
-    // 实测过：字面相似度分不开。「PersonaMem 卡在提取层」和「检索层先放着」
-    // 的三元组相似度 0.346，比几对真重复还高。所以判据只看出处。
+  it("two memories with different provenance are not duplicates even when worded alike", () => {
+    // Measured in practice: surface similarity cannot separate them. "PersonaMem is stuck
+    // at the extraction layer" and "leave the retrieval layer alone" scored 0.346, higher than several genuine duplicate pairs, so the criterion is provenance only.
     const findings = findingsOf({
       memories: [
         memory("a", {
-          content: "统一用 axios 封装，不要用 fetch 裸调",
+          content: "Wrap everything with axios, do not call fetch directly",
           evidence_ids: ["ev-1"],
         }),
         memory("b", {
-          content: "统一用 axios 封装，不用 fetch 裸调",
+          content: "Wrap everything with axios, no direct fetch calls",
           evidence_ids: ["ev-2"],
         }),
       ],
@@ -182,12 +182,14 @@ describe("findingsOf", () => {
     expect(findings.find((item) => item.kind === "duplicate")).toBeUndefined();
   });
 
-  it("已删除和已被取代的记忆不参与重复判断", () => {
+  it("deleted and superseded memories do not take part in duplicate detection", () => {
     const findings = findingsOf({
       memories: [
-        memory("a", { content: "统一用 axios 封装，不要用 fetch 裸调" }),
+        memory("a", {
+          content: "Wrap everything with axios, do not call fetch directly",
+        }),
         memory("b", {
-          content: "统一用 axios 封装，不用 fetch 裸调",
+          content: "Wrap everything with axios, no direct fetch calls",
           status: "deleted",
         }),
       ],
@@ -198,8 +200,8 @@ describe("findingsOf", () => {
     expect(findings.find((item) => item.kind === "duplicate")).toBeUndefined();
   });
 
-  it("已经删掉或被取代的记忆不参与配对", () => {
-    // 正向对照：同样两条、同一出处，都活着的时候是能报出来的。
+  it("memories already deleted or superseded are not paired", () => {
+    // Positive control: the same two entries, same evidence, reported while both are live.
     const same = { evidence_ids: ["ev-1"] };
     const live = findingsOf({
       memories: [memory("a", same), memory("b", same)],
@@ -208,7 +210,7 @@ describe("findingsOf", () => {
     });
     expect(live.find((item) => item.kind === "duplicate")).toBeDefined();
 
-    // 翻成负向：其中一条已经被处理掉，就不该再拿它去烦人。
+    // Flip to negative: once one of them has been processed away, stop bothering the user with it.
     const gone = findingsOf({
       memories: [
         memory("a", same),
@@ -230,7 +232,7 @@ describe("findingsOf", () => {
     expect(refused.find((item) => item.kind === "duplicate")).toBeUndefined();
   });
 
-  it("重复对最多报两条，不淹掉别的发现", () => {
+  it("reports at most two duplicate pairs so other findings are not buried", () => {
     const same = { evidence_ids: ["ev-1"] };
     const findings = findingsOf({
       memories: [
@@ -248,12 +250,12 @@ describe("findingsOf", () => {
     );
   });
 
-  it("三条以上两个月没动过才报沉寂，两条不报", () => {
+  it("reports dormancy only for three or more untouched memories, not two", () => {
     const stale = { updated_at: "2026-06-01T00:00:00Z" };
     const two = findingsOf({
       memories: [
-        memory("a", { ...stale, content: "甲" }),
-        memory("b", { ...stale, content: "乙" }),
+        memory("a", { ...stale, content: "A" }),
+        memory("b", { ...stale, content: "B" }),
       ],
       processing,
       now: NOW,
@@ -262,19 +264,19 @@ describe("findingsOf", () => {
 
     const three = findingsOf({
       memories: [
-        memory("a", { ...stale, content: "甲" }),
-        memory("b", { ...stale, content: "乙" }),
-        memory("c", { ...stale, content: "丙" }),
+        memory("a", { ...stale, content: "A" }),
+        memory("b", { ...stale, content: "B" }),
+        memory("c", { ...stale, content: "C" }),
       ],
       processing,
       now: NOW,
     });
     expect(three.find((item) => item.kind === "dormant")?.text).toContain(
-      "3 条",
+      "3 memories",
     );
   });
 
-  it("流水线卡住时报出真实条数，而不是含糊说一句在处理", () => {
+  it("reports the real count when the pipeline is stuck instead of a vague in-progress line", () => {
     const findings = findingsOf({
       memories: [],
       processing: {
@@ -287,20 +289,20 @@ describe("findingsOf", () => {
     });
 
     expect(findings.find((item) => item.kind === "blocked")?.text).toContain(
-      "7 段",
+      "7 conversation segments",
     );
   });
 
-  it("什么都没有的时候不硬凑发现", () => {
+  it("does not invent findings when there is nothing", () => {
     expect(findingsOf({ memories: [], processing, now: NOW })).toEqual([]);
   });
 });
 
-describe("左栏的事项轴", () => {
-  it("列的是主题，不是那串授权范围的 hash", () => {
-    // 真实库里 scope 长这样：workspace:v1:<sha256>。原来 mattersOf 按 scope
-    // 分组、标签取冒号后面，于是「事项」列出的是 9 串 v1:0027abad… ——
-    // 那是权限，不是事项，人也看不懂。
+describe("the matter axis in the left column", () => {
+  it("lists topics, not the authorization scope hash", () => {
+    // In a real library scopes look like this: workspace:v1:<sha256>. mattersOf used to group
+    // by scope and take the label after the colon, so "matters" listed 9 rows of v1:0027abad... --
+    // that is permissions, not matters, and nobody can read it.
     const matters = mattersOf(
       [
         memory("a", {
@@ -316,17 +318,17 @@ describe("左栏的事项轴", () => {
     );
 
     const labels = matters.map((item) => item.label);
-    expect(labels).toContain("全部");
+    expect(labels).toContain("All");
     expect(labels).toContain("axios");
-    // 一条 hash 都不许出现在人眼前。
+    // Not a single hash may appear in front of the user.
     expect(labels.filter((label) => label.includes("v1:"))).toEqual([]);
     expect(labels.filter((label) => label.startsWith("workspace"))).toEqual([]);
   });
 
-  it("只被一条记忆用过的主题不单独立一行", () => {
-    // 正向对照：没有这条，上一条可以被「每个标签都立一行」骗过 ——
-    // axios 照样在，只是旁边多出 frontend、testing 两个各挂一条的行，
-    // 左栏又变成一条记忆一行，等于没分类。
+  it("a topic used by a single memory does not get its own row", () => {
+    // Positive control: without this, the previous test could be fooled by "one row per tag" --
+    // axios would still be there, only beside frontend and testing rows carrying one memory each,
+    // turning the column back into one row per memory, which is no categorization at all.
     const matters = mattersOf(
       [
         memory("a", { scopes: [], tags: ["axios", "frontend"] }),
@@ -341,7 +343,7 @@ describe("左栏的事项轴", () => {
     expect(labels).not.toContain("testing");
   });
 
-  it("点一个主题能筛出带这个标签的记忆", () => {
+  it("picking a topic filters the memories carrying that tag", () => {
     const memories = [
       memory("a", { scopes: [], tags: ["axios"] }),
       memory("b", { scopes: [], tags: ["testing"] }),
@@ -352,24 +354,24 @@ describe("左栏的事项轴", () => {
     expect(picked.map((item) => item.memory_id)).toEqual(["a"]);
   });
 
-  it("条数多的主题排前面，全部永远第一", () => {
+  it("topics with more entries sort first and All is always first", () => {
     const matters = mattersOf(
       [
-        memory("a", { scopes: [], tags: ["少", "多"] }),
-        memory("b", { scopes: [], tags: ["多"] }),
-        memory("c", { scopes: [], tags: ["多"] }),
-        memory("d", { scopes: [], tags: ["少"] }),
+        memory("a", { scopes: [], tags: ["Few", "Many"] }),
+        memory("b", { scopes: [], tags: ["Many"] }),
+        memory("c", { scopes: [], tags: ["Many"] }),
+        memory("d", { scopes: [], tags: ["Few"] }),
       ],
       [],
     );
 
-    expect(matters.map((item) => item.label)).toEqual(["全部", "多", "少"]);
+    expect(matters.map((item) => item.label)).toEqual(["All", "Many", "Few"]);
   });
 
-  it("一条带标签的记忆都没有时，左栏只剩全部，不是一片空", () => {
+  it("with no tagged memories the column keeps All instead of going blank", () => {
     const matters = mattersOf([memory("a", { scopes: [], tags: [] })], []);
 
-    expect(matters.map((item) => item.label)).toEqual(["全部"]);
+    expect(matters.map((item) => item.label)).toEqual(["All"]);
     expect(matters[0].memoryCount).toBe(1);
   });
 });

@@ -56,8 +56,10 @@ describe("Windows H08 support assessment", () => {
   it("normalizes Windows paths for a future reparse-point containment check", () => {
     const assessment = createWindowsSupportAssessment();
     expect(
-      assessment.reparseLikePath("C:\\Programs\\中文 One Memory\\runtime"),
-    ).toBe("C:\\Programs\\中文 One Memory\\runtime");
+      assessment.reparseLikePath(
+        "C:\\Programs\\\u4e2d\u6587 One Memory\\runtime",
+      ),
+    ).toBe("C:\\Programs\\\u4e2d\u6587 One Memory\\runtime");
     expect(assessment.reparseLikePath("relative\\path")).toBeNull();
     expect(assessment.containsReparseMarker("C:\\One Memory\\runtime")).toBe(
       true,

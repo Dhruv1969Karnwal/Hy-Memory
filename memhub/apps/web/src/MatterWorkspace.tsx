@@ -51,13 +51,13 @@ import { isDefiniteRefusal } from "./write-outcome";
 import "./matters.css";
 
 const kinds: Record<MatterClaim["kind"], string> = {
-  goal: "目标",
-  decision: "已明确的决定",
-  constraint: "约束与边界",
-  proposal: "提案",
-  progress: "进展记录",
-  open_question: "尚待决定",
-  experience: "经验与避坑",
+  goal: "Goal",
+  decision: "Confirmed decisions",
+  constraint: "Constraints and boundaries",
+  proposal: "Proposal",
+  progress: "Progress log",
+  open_question: "Still to decide",
+  experience: "Lessons and pitfalls",
 };
 const order: MatterClaim["kind"][] = [
   "goal",
@@ -69,40 +69,53 @@ const order: MatterClaim["kind"][] = [
   "proposal",
 ];
 const authors: Record<string, string> = {
-  human_statement: "用户陈述",
-  agent_report: "Agent 自报",
-  mixed: "交叉来源",
-  unknown: "作者未确定",
+  human_statement: "User statement",
+  agent_report: "Agent self-report",
+  mixed: "Cross sources",
+  unknown: "Author unconfirmed",
 };
 const sources: Record<string, string> = {
   cursor: "Cursor",
   codex: "Codex",
   workbuddy: "WorkBuddy",
   "claude-code": "Claude Code",
-  "one-memory-manual": "手动添加",
+  "one-memory-manual": "Added manually",
 };
 const runErrors: Record<string, string> = {
-  matter_model_budget_exhausted: "模型项目预算已耗尽，需补充预算或更换模型。",
-  matter_model_http_401: "模型鉴权失败，请检查模型配置。",
-  matter_model_http_402: "模型服务要求检查余额或付款状态，原话已保留。",
+  matter_model_budget_exhausted:
+    "The model project budget is exhausted; add budget or switch models.",
+  matter_model_http_401:
+    "Model authentication failed; check the model configuration.",
+  matter_model_http_402:
+    "The model service asks you to check the balance or payment status; the original words are preserved.",
   hy_memory_model_payment_required:
-    "记忆模型服务要求检查余额或付款状态，原话已保留。",
+    "The memory model service asks you to check the balance or payment status; the original words are preserved.",
   matter_sources_changed_during_generation:
-    "整理期间来源发生变化，请重新整理。",
-  matter_model_output_truncated: "模型输出超出预算，整理结果未保存。",
-  matter_collection_incomplete: "读取范围超出本轮预算，尚未进入 HY 提取。",
-  matter_import_paused: "来源导入已暂停，档案未更新。",
-  matter_import_failed: "来源导入失败，档案未更新。",
-  matter_import_incomplete: "来源扫描有未完成或读取错误，档案未更新。",
-  matter_import_source_unavailable: "已授权来源不可用，档案未更新。",
-  matter_import_source_revoked: "来源授权已撤销，档案未更新。",
-  matter_synthesis_coverage_incomplete: "关键记忆未完整保留，档案未通过核验。",
+    "The sources changed while organizing was running; organize again.",
+  matter_model_output_truncated:
+    "Model output exceeded the budget; the organized result was not saved.",
+  matter_collection_incomplete:
+    "The read scope exceeded this run's budget; HY extraction has not started.",
+  matter_import_paused: "Source import is paused; the file was not updated.",
+  matter_import_failed: "Source import failed; the file was not updated.",
+  matter_import_incomplete:
+    "The source scan had unfinished items or read errors; the file was not updated.",
+  matter_import_source_unavailable:
+    "An authorized source is unavailable; the file was not updated.",
+  matter_import_source_revoked:
+    "The source authorization was revoked; the file was not updated.",
+  matter_synthesis_coverage_incomplete:
+    "Key memories were not fully retained; the file failed verification.",
   matter_organization_coverage_incomplete:
-    "事项归属遗漏了关键记忆，档案未通过核验。",
-  hy_memory_input_exceeds_window: "有单条消息超出 HY 处理窗口，尚未完整提取。",
-  hy_memory_model_empty_response: "记忆模型连续返回空结果，本轮提取未完成。",
-  hy_memory_model_output_truncated: "记忆模型输出不完整，本轮提取未完成。",
-  hy_memory_model_request_failed: "记忆模型请求失败，本轮提取未完成。",
+    "Matter assignment left out key memories; the file failed verification.",
+  hy_memory_input_exceeds_window:
+    "A single message exceeded the HY processing window; extraction was not complete.",
+  hy_memory_model_empty_response:
+    "The memory model returned empty results repeatedly; this run's extraction did not complete.",
+  hy_memory_model_output_truncated:
+    "The memory model output was incomplete; this run's extraction did not complete.",
+  hy_memory_model_request_failed:
+    "The memory model request failed; this run's extraction did not complete.",
 };
 const time = (value: string) =>
   new Date(value).toLocaleString("zh-CN", {
@@ -226,14 +239,16 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
       setMattersReadFailed(items.status === "rejected");
       setError(
         items.status === "rejected"
-          ? "未能读取事项档案。请检查本地服务后重试。"
+          ? "Could not read the matter files. Check the local service and retry."
           : jobs.status === "rejected"
-            ? "整理进度暂时不可用，事项档案已刷新。"
+            ? "Organization progress is unavailable right now; the matter files were refreshed."
             : "",
       );
     } catch {
       if (request === loadSequence.current)
-        setError("未能读取事项档案。请检查本地服务后重试。");
+        setError(
+          "Could not read the matter files. Check the local service and retry.",
+        );
     } finally {
       if (request === loadSequence.current) setLoading(false);
     }
@@ -256,7 +271,9 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
       setMapError("");
     } catch {
       if (request === mapRequest.current)
-        setMapError("基础记忆暂时不可用，可重试读取。");
+        setMapError(
+          "Base memories are unavailable right now; you can retry the read.",
+        );
     }
   }, []);
   useEffect(() => {
@@ -355,7 +372,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
           setHistoryRead({ version: contentVersion, value: items });
       })
       .catch(() => {
-        if (!cancelled) setError("版本记录读取失败。");
+        if (!cancelled) setError("Failed to read the version history.");
       });
     return () => {
       cancelled = true;
@@ -395,7 +412,9 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
       await load();
       trace?.done("succeeded");
     } catch (reason) {
-      setError("操作未完成。资料或版本可能已变化，请刷新后重试。");
+      setError(
+        "The action did not complete. The material or version may have changed; refresh and retry.",
+      );
       trace?.done(isDefiniteRefusal(reason) ? "failed" : "unknown", {
         reason: isDefiniteRefusal(reason)
           ? "matter_write_failed"
@@ -434,7 +453,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
         setEvidenceRead({ version: contentVersion, value: result });
     } catch {
       if (request === evidenceRequest.current)
-        setError("原始证据已变化或不可用。");
+        setError("The original evidence changed or is unavailable.");
     } finally {
       if (request === evidenceRequest.current) setSourceLoading(false);
     }
@@ -473,7 +492,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
       setMemoryRead({ version: contentVersion, value: detail });
     } catch {
       if (request === memoryRequest.current)
-        setMapError("这条基础记忆已变化或不可读取。");
+        setMapError("This base memory has changed or cannot be read.");
     } finally {
       if (request === memoryRequest.current) setMemoryLoading(false);
     }
@@ -499,21 +518,21 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
       <header className="matter-topbar">
         <div>
           <p className="matter-brand">MemHub</p>
-          <h1>工作台</h1>
+          <h1>Workspace</h1>
         </div>
         <div className="matter-top-actions">
           <span className="local-state">
-            <ShieldCheck size={14} /> 本地资料库
+            <ShieldCheck size={14} /> Local library
           </span>
           <button type="button" className="secondary" onClick={onOpenSources}>
-            <Link2 size={15} /> 来源与连接
+            <Link2 size={15} /> Sources and connections
           </button>
           <button
             type="button"
             disabled={busy || !!running}
             onClick={() => void action((traceId) => discoverMatters(traceId))}
           >
-            <RefreshCw size={15} /> 整理历史
+            <RefreshCw size={15} /> Organize history
           </button>
         </div>
       </header>
@@ -521,7 +540,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
         <div className="matter-error" role="alert">
           {error}
           <button type="button" className="quiet" onClick={() => void load()}>
-            重试
+            Retry
           </button>
         </div>
       )}
@@ -535,9 +554,9 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
           <div>
             <strong>{running.phase}</strong>
             <span>
-              基础记忆 {running.completed_batches} /{" "}
-              {running.total_batches || "…"} 批 ·{" "}
-              {Math.round(running.elapsed_seconds)} 秒
+              Base memories {running.completed_batches} /{" "}
+              {running.total_batches || "..."} batches -{" "}
+              {Math.round(running.elapsed_seconds)} seconds
             </span>
           </div>
           <progress
@@ -551,43 +570,47 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
       )}
       {!running && runs[0]?.status === "failed" && (
         <div className="matter-error" role="status">
-          上次整理未完成 ·{" "}
+          Last organization did not complete -{" "}
           {memoryWriteErrorText(runs[0].error) ??
             runErrors[runs[0].error ?? ""] ??
-            "模型结果未通过校验，请重试。"}
+            "The model result failed validation; retry."}
         </div>
       )}
       {!running && runs[0] && (
         <div className="matter-run-receipt" role="status">
           <span>
-            {runs[0].coverage_complete ? "本轮读取完整" : "本轮读取未完整"}
+            {runs[0].coverage_complete
+              ? "Complete read this run"
+              : "Incomplete read this run"}
           </span>
-          <span>已读取 {runs[0].selected_records} 条</span>
-          <span>HY 输入 {runs[0].hy_input_records ?? 0} 条</span>
+          <span>Read {runs[0].selected_records} records</span>
+          <span>HY input {runs[0].hy_input_records ?? 0} records</span>
           {runs[0].omitted_records > 0 && (
-            <span>{runs[0].omitted_records} 条未处理</span>
+            <span>{runs[0].omitted_records} records not processed</span>
           )}
-          {runs[0].status === "completed" && <span>档案待核对</span>}
-          {runs[0].failed_phase && <span>未通过：{runs[0].failed_phase}</span>}
+          {runs[0].status === "completed" && (
+            <span>File pending verification</span>
+          )}
+          {runs[0].failed_phase && <span>Failed: {runs[0].failed_phase}</span>}
         </div>
       )}
       <div className="matter-columns">
-        <aside className="matter-sidebar" aria-label="事项列表">
+        <aside className="matter-sidebar" aria-label="Matter list">
           <div className="matter-sidebar-head">
-            <span>我的事项</span>
+            <span>My matters</span>
             <span>
               {loading
-                ? "核对中"
+                ? "Verifying"
                 : mattersReadFailed
-                  ? "待核对"
+                  ? "Pending verification"
                   : matters.length}
             </span>
           </div>
           <label className="matter-search">
             <Search size={14} />
             <input
-              aria-label="搜索事项"
-              placeholder="搜索事项"
+              aria-label="Search matters"
+              placeholder="Search matters"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -596,7 +619,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
             <div
               className="matter-skeleton"
               role="status"
-              aria-label="正在读取事项"
+              aria-label="Loading matters"
             />
           )}
           {filtered.map((item) => (
@@ -611,34 +634,40 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
               <span>
                 <strong>{item.title}</strong>
                 <small>
-                  {item.claims.length} 个记忆点 · {item.source_count} 个来源
+                  {item.claims.length} memory points - {item.source_count}{" "}
+                  sources
                 </small>
-                <em>{item.scope_confirmed ? "范围已确认" : "待校准"}</em>
+                <em>
+                  {item.scope_confirmed
+                    ? "Scope confirmed"
+                    : "Needs calibration"}
+                </em>
               </span>
             </button>
           ))}
           {!!search && !filtered.length && (
             <p className="matter-muted">
               {mattersReadFailed
-                ? "事项读取失败，保留待核对状态。"
-                : "没有匹配的事项"}
+                ? "Matter read failed; the pending verification state is kept."
+                : "No matching matters"}
             </p>
           )}
           <footer className="matter-sidebar-footer">
             {runs[0] ? (
               <>
-                <span>{runs[0].selected_records} 条消息参与本轮</span>
+                <span>{runs[0].selected_records} messages joined this run</span>
                 <span>
-                  {runs[0].omitted_records.toLocaleString()} 条不在本轮范围
+                  {runs[0].omitted_records.toLocaleString()} messages outside
+                  this run
                 </span>
               </>
             ) : (
               <span>
                 {loading
-                  ? "正在读取事项"
+                  ? "Loading matters"
                   : mattersReadFailed
-                    ? "事项读取失败，当前为待核对状态"
-                    : "仅显示已生成的档案"}
+                    ? "Matter read failed; the current state is pending verification"
+                    : "Only generated files are shown"}
               </span>
             )}
           </footer>
@@ -647,7 +676,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
           {!matter && !loading && !error && (
             <div className="matter-empty">
               <BookOpen size={32} />
-              <h2>尚未整理事项</h2>
+              <h2>No matters organized yet</h2>
               <button
                 type="button"
                 disabled={busy || !!running}
@@ -655,15 +684,15 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   void action((traceId) => discoverMatters(traceId))
                 }
               >
-                从授权历史整理
+                Organize from authorized history
               </button>
             </div>
           )}
           {matter && (
             <>
               <div className="matter-breadcrumb">
-                我的事项 <ChevronRight size={13} />{" "}
-                <span>档案 v{matter.version}</span>
+                My matters <ChevronRight size={13} />{" "}
+                <span>File v{matter.version}</span>
               </div>
               <header className="matter-heading">
                 <div>
@@ -673,8 +702,8 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                 <button
                   type="button"
                   className="quiet icon-button"
-                  title="编辑事项范围"
-                  aria-label="编辑事项范围"
+                  title="Edit matter scope"
+                  aria-label="Edit matter scope"
                   disabled={
                     busy ||
                     !["ready", "needs_update"].includes(matter.availability)
@@ -689,16 +718,17 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                 </button>
               </header>
               <div className="matter-metadata">
-                <span>内容待核对</span>
+                <span>Content pending verification</span>
                 <span>
                   {matter.source_engine === "hy-memory"
-                    ? "HY Memory 提取"
-                    : "历史探索结果 · 未经 HY"}
+                    ? "HY Memory extraction"
+                    : "Legacy exploration result - not through HY"}
                 </span>
                 <span>
-                  <ShieldCheck size={13} /> {matter.evidence_count} 条证据
+                  <ShieldCheck size={13} /> {matter.evidence_count} evidence
+                  items
                 </span>
-                <span>{time(matter.updated_at)} 更新</span>
+                <span>Updated {time(matter.updated_at)}</span>
                 <span>{matter.model}</span>
               </div>
               <label className="matter-agent-access" hidden={tab === "map"}>
@@ -723,13 +753,13 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                     )
                   }
                 />
-                允许已连接 Agent 读取此事项
+                Allow connected agents to read this matter
               </label>
               {matter.availability !== "ready" && (
                 <div className="matter-update-warning">
                   {matter.availability === "needs_update"
-                    ? "新资料待整理，旧结论暂不提供给 Agent。"
-                    : "来源或基础记忆已变化，旧档案已隐藏。"}
+                    ? "New material awaits organization; the old conclusions are not given to agents yet."
+                    : "The sources or base memories have changed; the old file is hidden."}
                   <button
                     type="button"
                     className="quiet"
@@ -740,14 +770,16 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                       )
                     }
                   >
-                    <RefreshCw size={14} /> 更新档案
+                    <RefreshCw size={14} /> Update file
                   </button>
                 </div>
               )}
               {!matter.scope_confirmed && matter.availability === "ready" && (
                 <div className="matter-calibration">
                   <div>
-                    <strong>最近是在推进这件事吗？</strong>
+                    <strong>
+                      Is this what you have been working on recently?
+                    </strong>
                     <p>{matter.boundary}</p>
                   </div>
                   <button
@@ -767,7 +799,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                       )
                     }
                   >
-                    <Check size={14} /> 确认事项范围
+                    <Check size={14} /> Confirm matter scope
                   </button>
                 </div>
               )}
@@ -791,7 +823,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   }}
                 >
                   <label>
-                    事项名称
+                    Matter name
                     <input
                       value={title}
                       maxLength={100}
@@ -801,7 +833,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                     />
                   </label>
                   <label>
-                    事项范围
+                    Matter scope
                     <textarea
                       value={boundary}
                       maxLength={800}
@@ -811,27 +843,27 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   </label>
                   <div>
                     <button type="submit" disabled={busy}>
-                      保存
+                      Save
                     </button>
                     <button
                       type="button"
                       className="quiet"
                       onClick={() => setEdit(false)}
                     >
-                      取消
+                      Cancel
                     </button>
                   </div>
                 </form>
               )}
               <div className="matter-tabs">
-                <div role="tablist" aria-label="档案视图">
+                <div role="tablist" aria-label="File views">
                   <button
                     type="button"
                     role="tab"
                     aria-selected={tab === "map"}
                     onClick={() => setTab("map")}
                   >
-                    <Network size={14} /> 记忆地图
+                    <Network size={14} /> Memory map
                   </button>
                   <button
                     type="button"
@@ -839,7 +871,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                     aria-selected={tab === "wiki"}
                     onClick={() => setTab("wiki")}
                   >
-                    <FileText size={14} /> 知识档案
+                    <FileText size={14} /> Knowledge file
                   </button>
                   <button
                     type="button"
@@ -847,7 +879,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                     aria-selected={tab === "history"}
                     onClick={() => setTab("history")}
                   >
-                    <History size={14} /> 版本记录
+                    <History size={14} /> Version history
                   </button>
                 </div>
                 <button
@@ -856,13 +888,13 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   disabled={busy || matter.availability !== "ready"}
                   onClick={() => void action(openContext, "read")}
                 >
-                  <Copy size={14} /> 任务上下文
+                  <Copy size={14} /> Task context
                 </button>
                 <button
                   type="button"
                   className="quiet icon-button"
-                  title="基础记忆与原文"
-                  aria-label="打开记忆检查器"
+                  title="Base memories and source text"
+                  aria-label="Open memory inspector"
                   onClick={() => setInspectorOpen(true)}
                 >
                   <PanelRightOpen size={16} />
@@ -877,7 +909,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                       className="quiet"
                       onClick={() => void loadMap()}
                     >
-                      重试读取
+                      Retry read
                     </button>
                   </p>
                 )}
@@ -890,23 +922,23 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                     />
                     <fieldset
                       className="memory-map-legend matter-map-legend"
-                      aria-label="图谱图例"
+                      aria-label="Graph legend"
                     >
-                      <span data-kind="memory">基础记忆</span>
-                      <span data-kind="source">来源</span>
-                      <span data-kind="schema">模式</span>
-                      <span data-kind="topic">主题</span>
+                      <span data-kind="memory">Base memories</span>
+                      <span data-kind="source">Sources</span>
+                      <span data-kind="schema">Schema</span>
+                      <span data-kind="topic">Topics</span>
                       <span>
-                        {projection.memories.length} 条记忆 ·{" "}
-                        {projection.graph.edges.length} 条关联
+                        {projection.memories.length} memories -{" "}
+                        {projection.graph.edges.length} links
                       </span>
                     </fieldset>
                   </>
                 ) : (
                   <p className="matter-map-empty">
                     {matter.source_engine === "legacy_direct"
-                      ? "历史探索结果没有 HY 基础记忆，可在知识档案中查看。"
-                      : "暂无可展示的基础记忆关联。"}
+                      ? "Legacy exploration results have no HY base memories; see them in the knowledge file."
+                      : "No base memory links to show yet."}
                   </p>
                 )}
               </div>
@@ -938,9 +970,9 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                                 <span>
                                   {
                                     {
-                                      historical: "历史记录",
-                                      superseded: "已被替代",
-                                      unresolved: "待核对",
+                                      historical: "History entry",
+                                      superseded: "Superseded",
+                                      unresolved: "Pending verification",
                                     }[claim.state]
                                   }
                                 </span>
@@ -951,7 +983,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                                   type="button"
                                   className="citation-link"
                                   key={`${cite.evidence_id}-${cite.quote}`}
-                                  aria-label={`查看原话 ${sources[cite.source_id] ?? cite.source_id} ${index + 1}-${i + 1}`}
+                                  aria-label={`View quote ${sources[cite.source_id] ?? cite.source_id} ${index + 1}-${i + 1}`}
                                   onClick={() => void openEvidence(cite)}
                                 >
                                   <Link2 size={12} />
@@ -966,7 +998,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   })}
                   {!!matter.uncertainties.length && (
                     <section className="matter-uncertainties">
-                      <h3>信息缺口与待核对</h3>
+                      <h3>Information gaps and items pending verification</h3>
                       <ul>
                         {matter.uncertainties.map((item) => (
                           <li key={item}>{item}</li>
@@ -983,9 +1015,11 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                       <div>
                         <strong>{item.title}</strong>
                         <p>
-                          {time(item.updated_at)} · {item.claims.length}{" "}
-                          个记忆点 ·{" "}
-                          {item.scope_confirmed ? "范围已确认" : "未校准"}
+                          {time(item.updated_at)} · {item.claims.length} memory
+                          points -{" "}
+                          {item.scope_confirmed
+                            ? "Scope confirmed"
+                            : "Not calibrated"}
                         </p>
                       </div>
                     </li>
@@ -1006,16 +1040,16 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                     );
                     setNote("");
                     setNotice(
-                      "补充已保存为用户原话，更新档案后恢复上下文调用。",
+                      "The note was saved as the user's own words. Context calls resume after the file is updated.",
                     );
                   });
                 }}
               >
-                <label htmlFor="matter-note">补充或更正</label>
+                <label htmlFor="matter-note">Additions or corrections</label>
                 <div>
                   <textarea
                     id="matter-note"
-                    placeholder="关于这件事，还有…"
+                    placeholder="Anything else about this matter..."
                     value={note}
                     maxLength={20000}
                     onChange={(e) => setNote(e.target.value)}
@@ -1023,8 +1057,8 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   <button
                     type="submit"
                     className="icon-button"
-                    title="保存补充"
-                    aria-label="保存补充"
+                    title="Save note"
+                    aria-label="Save note"
                     disabled={
                       busy ||
                       !note.trim() ||
@@ -1042,24 +1076,24 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
           <button
             type="button"
             className="matter-inspector-backdrop"
-            aria-label="收起记忆检查器"
+            aria-label="Collapse memory inspector"
             onClick={() => setInspectorOpen(false)}
           />
         )}
         <aside
           className={`matter-evidence ${inspectorOpen ? "is-open" : ""}`}
-          aria-label="原始证据"
+          aria-label="Original evidence"
           onKeyDown={(event) => {
             if (event.key === "Escape") setInspectorOpen(false);
           }}
         >
           <header className="matter-inspector-heading">
-            <h3>记忆与原文</h3>
+            <h3>Memories and source text</h3>
             <button
               type="button"
               className="quiet icon-button"
-              title="关闭检查器"
-              aria-label="关闭记忆检查器"
+              title="Close inspector"
+              aria-label="Close memory inspector"
               onClick={() => setInspectorOpen(false)}
             >
               <X size={16} />
@@ -1077,13 +1111,13 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
             onSelect={(id) => void selectMemory(id)}
           />
           <header>
-            <h3>原始证据</h3>
+            <h3>Original evidence</h3>
             {citation && (
               <button
                 type="button"
                 className="quiet icon-button"
-                title="关闭原话"
-                aria-label="关闭原话"
+                title="Close quote"
+                aria-label="Close quote"
                 onClick={() => {
                   evidenceRequest.current += 1;
                   setCitation(null);
@@ -1098,7 +1132,7 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
             <div
               className="matter-skeleton"
               role="status"
-              aria-label="正在读取原文"
+              aria-label="Loading source text"
             />
           ) : evidence ? (
             <>
@@ -1115,28 +1149,28 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                   </strong>
                   <small>
                     {evidence.written_by === "person"
-                      ? "用户原话"
-                      : "Agent 发言"}
+                      ? "User's own words"
+                      : "Agent message"}
                   </small>
                 </div>
               </div>
               <p className="evidence-time">
                 {evidence.created_at
                   ? time(evidence.created_at)
-                  : "消息时间未知"}
+                  : "Message time unknown"}
               </p>
               <p className="evidence-time">
-                观测于 {time(evidence.observed_at)}
+                Observed at {time(evidence.observed_at)}
               </p>
               <div className="evidence-verbatim">
                 {highlight(evidence.text, citation?.quote ?? "")}
               </div>
-              <p className="evidence-id">证据 {evidence.evidence_id}</p>
+              <p className="evidence-id">Evidence {evidence.evidence_id}</p>
             </>
           ) : !memoryDetail && !memoryLoading ? (
             <div className="evidence-empty">
               <Link2 size={25} />
-              <p>暂无选中的原话</p>
+              <p>No quote selected</p>
             </div>
           ) : null}
         </aside>
@@ -1154,24 +1188,26 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
               aria-labelledby="context-title"
             >
               <header>
-                <h2 id="context-title">任务上下文 · v{context.version}</h2>
+                <h2 id="context-title">Task context - v{context.version}</h2>
                 <button
                   type="button"
                   className="quiet icon-button"
-                  title="关闭上下文"
-                  aria-label="关闭上下文"
+                  title="Close context"
+                  aria-label="Close context"
                   onClick={() => setContext(null)}
                 >
                   <X size={18} />
                 </button>
               </header>
               <textarea
-                aria-label="任务上下文内容"
+                aria-label="Task context content"
                 readOnly
                 value={context.text}
               />
               <footer>
-                <span>历史参考 · 保留来源与核验状态</span>
+                <span>
+                  Historical reference - sources and verification status kept
+                </span>
                 <button
                   type="button"
                   onClick={async () => {
@@ -1179,11 +1215,13 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                       await navigator.clipboard.writeText(context.text);
                       setCopied(true);
                     } catch {
-                      setError("复制失败，可在上下文文本框中选择内容。");
+                      setError(
+                        "Copy failed; you can select the text in the context box.",
+                      );
                     }
                   }}
                 >
-                  <Copy size={14} /> {copied ? "已复制" : "复制上下文"}
+                  <Copy size={14} /> {copied ? "Copied" : "Copy context"}
                 </button>
               </footer>
             </section>

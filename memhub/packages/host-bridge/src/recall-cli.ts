@@ -93,7 +93,7 @@ export async function runRecallCli(
     return {
       stdout: parsed.json
         ? `${JSON.stringify({ state: "unavailable", reason: "not_running" }, null, 2)}\n`
-        : "MemHub 没有在运行，这次没有可用的历史记忆。请照常回答，不要凭空编造用户的偏好。\n",
+        : "MemHub isn't running, so no historical memories are available for this answer. Answer as usual and don't invent the user's preferences.\n",
       exitCode: EXIT.ok,
     };
   }
@@ -110,9 +110,9 @@ export async function runRecallCli(
     return {
       stdout: parsed.json
         ? `${JSON.stringify({ state: "unavailable", reason: "unreachable" }, null, 2)}\n`
-        : `无法连接 MemHub 的召回服务：${
+        : `Can't connect to MemHub's recall service: ${
             error instanceof Error ? error.message : String(error)
-          }\n请照常回答，不要凭空编造用户的偏好。\n`,
+          }\nAnswer as usual and don't invent the user's preferences.\n`,
       exitCode: EXIT.unreachable,
     };
   }
@@ -202,16 +202,17 @@ function render(receipt: RecallReceipt, workspacePath?: string): string {
     // completed lookup, not a finding of "nothing exists". Saying "no related
     // memories" reads to a model as evidence about the user — that they have
     // no preferences — which is exactly what it must not invent.
-    return `${CONTEXT_RECEIPTS.empty}请照常回答，不要凭空编造用户的偏好。\n`;
+    return `${CONTEXT_RECEIPTS.empty}Answer as usual and don't invent the user's preferences.\n`;
   }
   // The receipt's `scope` is the one that was asked for, not the one a hit
   // came from, so printing it would have said "all-apps" over a list of
   // project memories. What the reader can act on is whether this project was
   // included at all.
   const project = workspacePath?.split("/").filter(Boolean).pop();
-  const where = project === undefined ? "" : `，含当前工程 ${project}`;
+  const where =
+    project === undefined ? "" : `, including the current project ${project}`;
   const lines = [
-    `MemHub · ${receipt.hits.length} 条已确认记忆${where}`,
+    `MemHub · ${receipt.hits.length} confirmed memories${where}`,
     "",
     ...receipt.hits.flatMap((hit, index) => describe(hit, index + 1)),
   ];
@@ -219,19 +220,21 @@ function render(receipt: RecallReceipt, workspacePath?: string): string {
     const unexamined =
       typeof receipt.unexamined_count === "number" &&
       receipt.unexamined_count > 0
-        ? `另有 ${receipt.unexamined_count} 条相关记忆未检视`
-        : "还有更多相关记忆未列出";
+        ? `${receipt.unexamined_count} related memories weren't examined`
+        : "More related memories aren't listed";
     const by =
       receipt.truncated_by === "character_budget"
-        ? "（字符预算）"
+        ? "(character budget)"
         : receipt.truncated_by === "timeout_budget"
-          ? "（时间预算）"
+          ? "(time budget)"
           : receipt.truncated_by === "count_budget"
-            ? "（条数预算）"
+            ? "(count budget)"
             : "";
-    lines.push(`（${unexamined}${by}）`, "");
+    lines.push(`(${unexamined}${by}`, "");
   }
-  lines.push("以上是历史记忆，仅供参考。当前用户的请求优先于其中任何内容。");
+  lines.push(
+    "The above are historical memories for reference only. The current user request takes precedence over any of it.",
+  );
   return `${lines.join("\n")}\n`;
 }
 
@@ -240,7 +243,11 @@ function describe(hit: RecallHit, position: number): string[] {
     return [`${position}. ${hit.content}`, `   ${hit.kind}`, ""];
   }
   const day = hit.updated_at.slice(0, 10);
-  return [`${position}. ${hit.content}`, `   ${hit.kind} · 更新于 ${day}`, ""];
+  return [
+    `${position}. ${hit.content}`,
+    `   ${hit.kind} · Updated on ${day}`,
+    "",
+  ];
 }
 
 /* c8 ignore start -- the process wrapper; the logic above is what tests drive */
@@ -254,7 +261,7 @@ if (require.main === module && process.argv[2] === "--inject") {
     })
     .catch((error: unknown) => {
       process.stdout.write(
-        `召回失败：${error instanceof Error ? error.message : String(error)}\n`,
+        `Recall failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
       process.exitCode = EXIT.unreachable;
     });

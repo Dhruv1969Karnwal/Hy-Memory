@@ -214,19 +214,22 @@ export function hostExitCode(document: HostFlowDocument): number {
 export function renderHostText(document: HostFlowDocument): string {
   if ("state" in document) {
     const lines = [
-      document.state === "invalid" ? "参数无效。" : `不可用：${document.code}`,
+      document.state === "invalid"
+        ? "Invalid arguments."
+        : `Unavailable: ${document.code}`,
     ];
     if (document.host_id) lines.push(`  host  ${document.host_id}`);
     return `${lines.join("\n")}\n`;
   }
   if (document.command === "list") {
     if (document.hosts.length === 0) {
-      return "本机未发现可接入的宿主。\n";
+      return "No connectable hosts found on this machine.\n";
     }
     const lines = document.hosts.map(
-      (host) => `- ${host.label}：${host.present ? "已接入" : "未接入"}`,
+      (host) =>
+        `- ${host.label}: ${host.present ? "connected" : "not connected"}`,
     );
-    return `可连接的应用：\n${lines.join("\n")}\n`;
+    return `Connectable apps:\n${lines.join("\n")}\n`;
   }
   const lines = [`host ${document.host_id} · ${document.operation}`];
   const result = document.result as Record<string, unknown> | null;
@@ -243,14 +246,14 @@ export function renderHostText(document: HostFlowDocument): string {
         lines.push(`    - ${String(entry.path)}`);
       }
       if (result.files.length > 8) {
-        lines.push(`    … 另有 ${result.files.length - 8} 个`);
+        lines.push(`    … and ${result.files.length - 8} more`);
       }
     }
     if (typeof result.fingerprint === "string") {
       lines.push(`  fingerprint  ${result.fingerprint}`);
       lines.push("");
       lines.push(
-        "这是预览，未改动任何文件。确认后运行：host install --host <id> --approve <fingerprint>",
+        "This is a preview; no files were changed. To confirm, run: host install --host <id> --approve <fingerprint>",
       );
     }
     // Shown because the Runtime refuses to uninstall while anything still
@@ -259,15 +262,16 @@ export function renderHostText(document: HostFlowDocument): string {
     // the refusal looks like a bug rather than a request to look.
     const review = result.review;
     if (Array.isArray(review) && review.length > 0) {
-      lines.push(`  review  ${review.length} 处仍需人工确认：`);
+      lines.push(`  review  ${review.length} items still need manual review:`);
       for (const item of review.slice(0, 12)) {
         const entry = item as Record<string, unknown>;
         lines.push(`    - ${String(entry.path)} :: ${String(entry.where)}`);
       }
-      if (review.length > 12) lines.push(`    … 另有 ${review.length - 12} 处`);
+      if (review.length > 12)
+        lines.push(`    … and ${review.length - 12} more`);
       lines.push("");
       lines.push(
-        "这些不是我们安装的内容，卸载不会替你删除；需自行处理后才能卸载。",
+        "These were not installed by us; uninstalling will not delete them for you. Remove them yourself before uninstalling.",
       );
     }
   }

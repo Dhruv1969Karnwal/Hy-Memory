@@ -59,7 +59,9 @@ def test_small_import_and_memory_hand_off_proceed_while_three_long_copies_run(
         ]
         small_run = handoff = None
         try:
-            assert await asyncio.to_thread(all_copying.wait, 10), "三个长快照没有同时开始"
+            assert await asyncio.to_thread(all_copying.wait, 10), (
+                "the three long snapshots never started at the same time"
+            )
             handoff = asyncio.create_task(in_the_background(time.perf_counter))
             small_run = asyncio.create_task(
                 ImportRunner(evidence_store=small.evidence, job_store=small.jobs).run(
@@ -82,9 +84,17 @@ def test_small_import_and_memory_hand_off_proceed_while_three_long_copies_run(
     finally:
         shutdown_bulk_pool()
 
-    assert copies_still_running == len(LONG_COPIES), "长快照提前结束，场景没有测到占用"
-    assert handed_off, "三个长快照复制期间，一次后台交接 1 秒内没被执行"
-    assert imported, "三个长快照复制期间，小来源导入 5 秒内没完成"
+    assert copies_still_running == len(LONG_COPIES), (
+        "the long snapshots finished early, the scenario never measured contention"
+    )
+    assert handed_off, (
+        "while the three long snapshots were copying, a background handoff did not run within 1"
+        " second"
+    )
+    assert imported, (
+        "while the three long snapshots were copying, the small-source import did not finish"
+        " within 5 seconds"
+    )
     assert small.evidence.count() == 1
     assert all(f.evidence.count() == 1 for f in long_copies.values())
 

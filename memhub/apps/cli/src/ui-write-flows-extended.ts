@@ -1,6 +1,6 @@
 /**
  * The remaining Web Console mutating operations the CLI did not expose:
- * 端内新增记忆 (memory-notes), extraction window, graph width, and manual
+ * In-app memory notes (memory-notes), extraction window, graph width, and manual
  * extraction.
  *
  * Core owns every rule; this module only validates the input it is about to
@@ -180,7 +180,7 @@ function unknown(
 
 export function planMemoryNoteAdd(text: string): ExtendedWriteOutcome {
   // The plan keeps only the note's identity, like `memories plan add`: the
-  //正文 lives in a bounded file and is re-read and re-hashed at apply time, so
+  // The body lives in a bounded file and is re-read and re-hashed at apply time, so
   // a plan file never carries the user's private text.
   if (!validNoteText(text)) return invalid("memory_note_text_invalid");
   const requestId = randomUUID();
@@ -471,31 +471,37 @@ export function renderExtendedWriteText(
   document: ExtendedWriteOutcome,
 ): string {
   if (document.state === "preview") {
-    const lines = ["以下操作尚未执行；加 --confirm 后才会写入："];
+    const lines = [
+      "The following actions have not been executed; they are only written with --confirm:",
+    ];
     const plan = document.plan;
     switch (plan.kind) {
       case "memory_note_add":
-        lines.push(`新增端内记忆：${plan.content_characters} 字符`);
+        lines.push(
+          `Add in-app memory note: ${plan.content_characters} characters`,
+        );
         break;
       case "memory_note_process":
-        lines.push(`处理端内记忆：${plan.evidence_id}`);
+        lines.push(`Process in-app memory note:${plan.evidence_id}`);
         break;
       case "extraction_window_set":
-        lines.push(`设置提取窗口：${plan.window_preset}`);
+        lines.push(`Set extraction window:${plan.window_preset}`);
         break;
       case "graph_width_decide":
-        lines.push(`图谱宽度决定：${plan.decision}`);
+        lines.push(`Graph width decision:${plan.decision}`);
         break;
       case "manual_extract":
-        lines.push(`手动提取：${plan.evidence_ids.length} 条证据`);
+        lines.push(
+          `Manual extraction: ${plan.evidence_ids.length} evidence items`,
+        );
         break;
     }
-    lines.push(`plan_digest：${plan.digest}`);
+    lines.push(`plan_digest: ${plan.digest}`);
     return `${lines.join("\n")}\n`;
   }
   if (document.state === "committed" || document.state === "recovered") {
-    return `${document.state === "recovered" ? "已从回执恢复" : "已提交"}：${document.operation_id}\n${JSON.stringify(document.receipt)}\n`;
+    return `${document.state === "recovered" ? "Recovered from receipt" : "Committed"}: ${document.operation_id}\n${JSON.stringify(document.receipt)}\n`;
   }
   const code = "code" in document ? document.code : "ui_write_state_invalid";
-  return `操作未完成：${document.state}（${code}）\n`;
+  return `Operation incomplete: ${document.state}(${code})\n`;
 }

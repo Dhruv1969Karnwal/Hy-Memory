@@ -232,7 +232,7 @@ def test_activation_survives_a_corpus_already_imported(tmp_path) -> None:
                     message_id="message:already-here",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="统一用 axios 封装，不用 fetch 裸调",
+                    verbatim="Use the axios wrapper everywhere, no bare fetch calls",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             )

@@ -16,7 +16,7 @@ describe("oversized conversation processing label", () => {
 
   it("explains retained originals without asserting other work is running", () => {
     expect(blockReasonLabel(oversized.reason)).toBe(
-      "这段对话含过长原文，暂未整理；原文已保留",
+      "This conversation contains oversized source text; not organized yet, source text kept",
     );
   });
 
@@ -31,7 +31,9 @@ describe("oversized conversation processing label", () => {
       count: 2,
     };
     expect(modelBlock([oversized, missingModel])).toBe(missingModel);
-    expect(blockReasonLabel(missingModel.reason)).toBe("还没有启用生成模型");
+    expect(blockReasonLabel(missingModel.reason)).toBe(
+      "No generation model is enabled yet",
+    );
   });
 });
 
@@ -82,7 +84,7 @@ describe("pipeline codes stay out of the reader's way", () => {
     ]);
     expect(stages.retrying).toBe(2);
     expect(retryingBlockLabel(stages.retrying)).toBe(
-      "2 条这次没能整理成功，正在重试",
+      "2 items: Failed to organize this round; retrying",
     );
   });
 
@@ -137,19 +139,19 @@ describe("pipeline codes stay out of the reader's way", () => {
 describe("keychain failure wording", () => {
   it("tells the reader to authorize when macOS is asking for permission", () => {
     expect(blockReasonLabel("secure_storage_authorization_required")).toBe(
-      "需要授权访问本机钥匙串。请重新打开 App 并完成一次授权",
+      "Access to the local keychain needs authorization. Reopen the app and approve once",
     );
   });
 
   it("asks for a re-save when the keychain read timed out", () => {
     expect(blockReasonLabel("secure_storage_read_timeout")).toBe(
-      "读取本机钥匙串超时。重新保存一遍模型配置即可恢复",
+      "Reading the local keychain timed out. Save the model config again to recover",
     );
   });
 
   it("asks for a re-save when the keychain write timed out", () => {
     expect(blockReasonLabel("secure_storage_write_timeout")).toBe(
-      "写入本机钥匙串超时。重新保存一遍模型配置即可恢复",
+      "Writing to the local keychain timed out. Save the model config again to recover",
     );
   });
 
@@ -157,6 +159,6 @@ describe("keychain failure wording", () => {
     expect(modelBlock([])).toBeNull();
     expect(
       blockReasonLabel("secure_storage_authorization_required"),
-    ).not.toContain("生成模型");
+    ).not.toContain("generation model");
   });
 });

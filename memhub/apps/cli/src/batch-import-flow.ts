@@ -282,24 +282,24 @@ export function batchScanExitCode(document: BatchScanDocument): number {
 
 export function renderBatchScanText(document: BatchScanDocument): string {
   if (document.state === "no_sources") {
-    return "本机没有检测到可接入的来源。\n";
+    return "No connectable sources detected on this machine.\n";
   }
   const lines = document.sources.map((row) => {
     const counters =
       row.discovered === null
         ? ""
-        : `  发现=${row.discovered} 存储=${row.stored ?? 0} 错误=${row.errors ?? 0}`;
+        : `  discovered=${row.discovered} stored=${row.stored ?? 0} errors=${row.errors ?? 0}`;
     const reason =
-      row.failure_reason === null ? "" : `  原因=${row.failure_reason}`;
+      row.failure_reason === null ? "" : `  reason=${row.failure_reason}`;
     const label =
-      row.status === "already_importing" ? "导入进行中" : row.status;
+      row.status === "already_importing" ? "import in progress" : row.status;
     return `  ${row.source_id}  ${label}${counters}${reason}`;
   });
   const summary =
     document.state === "committed"
-      ? `已完成：${document.accepted_source_ids.length} 个来源`
+      ? `Completed: ${document.accepted_source_ids.length} sources`
       : document.state === "partial"
-        ? `部分完成：${document.accepted_source_ids.length} 个成功，其余见上方`
-        : `未完成：${document.code ?? "unknown"}`;
+        ? `Partially complete: ${document.accepted_source_ids.length} succeeded, see above for the rest`
+        : `Not completed: ${document.code ?? "unknown"}`;
   return `${summary}\n${lines.join("\n")}\n`;
 }

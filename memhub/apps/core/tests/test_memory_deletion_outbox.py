@@ -1,7 +1,9 @@
-"""删除发件箱：一条删除同一时刻只归一个执行者，结果只由持有领取凭证的那个写。
+"""A deletion outbox: one deletion belongs to exactly one executor at a time, and only the \
+holder of the lease writes the result.
 
-时间一律走注入的虚拟时钟：退避 30 秒起、翻倍、6 小时封顶是精确断言，
-不靠真实 sleep 去碰运气。
+Time always goes through an injected virtual clock: the backoff that starts at 30 seconds, \
+doubles and caps at 6 hours is an exact assertion,
+not luck left to a real sleep.
 """
 
 import asyncio
@@ -158,7 +160,7 @@ def test_a_claim_that_was_taken_over_cannot_overwrite_the_outcome(tmp_path) -> N
     assert governance.deletion(memory_id, user_id="local").status is DeletionStatus.COMPLETED
 
 
-# ------------------------------------------------------------ HY 说没删成
+# ------------------------------------------------------------ HY says the delete did not land
 
 
 class _DeleteClient(FakeHyMemoryClient):
@@ -206,7 +208,8 @@ def test_a_memory_hy_no_longer_holds_counts_as_deleted(tmp_path, deleted) -> Non
 
 
 def test_hy_reporting_success_for_a_memory_it_still_holds_is_a_failure(tmp_path) -> None:
-    """HY 的 success 不是判据，删完之后它手里没有这条才是：success=true、删了 0 条、还读得到。"""
+    """HY's success is not the criterion; what counts is that it no longer holds the row after \
+deleting: success=true, 0 rows deleted, still readable."""
 
     class _Claims(_DeleteClient):
         def delete(self, memory_id: str):
@@ -221,18 +224,24 @@ def test_hy_reporting_success_for_a_memory_it_still_holds_is_a_failure(tmp_path)
     assert str(error.value) == "hy_memory_delete_rejected"
 
 
-# ------------------------------------------------------------ 读不到不等于没有
+# ------------------------------------------------------------ not readable is not absent
 #
-# 回归场景表明：锁定版本的公开 SDK 会让 get 里的 Graph 查询吞掉异常并返回 None。
-# VDB 已无记录、Graph 删除失败且 Graph 查询也失败时，get 答 None，删除被记成完成，
-# 而那条记忆还在 Graph 里。完成只能由两路各自明确答「没有」来证明。
+# The regression scenario shows it: in the pinned public SDK the Graph query inside get swallows
+# the exception and returns None.
+# With no VDB record left, a failed Graph delete and a failing Graph query, get answers None, the
+# delete is recorded as completed,
+# and that memory is still in Graph. Completion can only be proven by both lanes each answering
+# "absent" explicitly.
 
 
 class _SdkShapedClient(FakeHyMemoryClient):
-    """锁定版 SDK 的两路存储（真的 Chroma / Kuzu 存储类，底下换成可控的集合与连接）。
+    """The pinned SDK's two lanes (real Chroma / Kuzu storage classes over controllable \
+collections and connections).
 
-    每路可设为 held / absent / error，Graph 另有 unavailable。`get` 与 SDK 一样：
-    Chroma 的 get_by_id 吞掉读错误、Kuzu 不可用时答 None、Graph 查询失败也当没有。
+    Each lane can be held / absent / error, and Graph \
+adds unavailable. `get` behaves as the SDK's does:
+    Chroma's get_by_id swallows read errors, Kuzu answers None when it is unavailable, and a \
+failing Graph query counts as absent.
     """
 
     def __init__(self, *, vdb: str, graph: str) -> None:
@@ -280,7 +289,7 @@ def test_a_deletion_is_done_only_when_both_stores_say_it_is_gone(
     client = _SdkShapedClient(vdb=vdb, graph=graph)
     bridge = _bridge(tmp_path, client)
     if vdb == "absent" and graph in {"error", "unavailable"}:
-        # 正向前提：这正是 SDK 的 get 会答「没有」的情形。
+        # Positive premise: this is exactly the case where the SDK's get answers "absent".
         assert client.get("m") is None
 
     if outcome is None:
@@ -293,7 +302,8 @@ def test_a_deletion_is_done_only_when_both_stores_say_it_is_gone(
 
 @pytest.mark.parametrize("which", ["vector", "graph"])
 def test_a_store_that_is_not_the_pinned_one_cannot_confirm_a_deletion(tmp_path, which) -> None:
-    """认不出的存储（例如被换上的包装层）读到「没有」也证明不了没有。"""
+    """An unrecognized store (for example a wrapper that \
+was swapped in) answering "absent" still proves nothing."""
     client = _SdkShapedClient(vdb="absent", graph="absent")
 
     async def nothing(_memory_id: str):

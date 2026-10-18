@@ -96,7 +96,8 @@ interface InstallationBinding {
 const CREDENTIAL_ENV = "ONE_MEMORY_HOST_CREDENTIAL_FILE";
 const locks = new Map<string, Promise<void>>();
 
-export const LOCAL_EXPERIENCE_UNAVAILABLE = "体验版暂不支持";
+export const LOCAL_EXPERIENCE_UNAVAILABLE =
+  "Not supported in the trial version yet";
 
 /** Trusted local Runtime control plane. Never exposed through MCP or the Core API.
  * POSIX local storage, with a trusted owner-controlled data root; same-user

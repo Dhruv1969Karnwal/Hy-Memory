@@ -2,19 +2,19 @@
  *
  * Two screens now report the same host — the source list and the health
  * panel — and a second copy of these tables is how one screen ends up
- * calling a host 已安装 while the other calls it 未接通.
+ * calling a host Connected while the other calls it Not connected.
  */
 
 /** The three verdicts, said as what the user would do about them.
  *
- * "已安装" on its own is the word that hid the recorded failure — three hosts
+ * "Installed" on its own is the word that hid the recorded failure — three hosts
  * were installed, and installed was all it said. So none of these three is
  * that word.
  */
 export const LINK_WORDING: Record<string, string> = {
-  wired: "已接通",
-  reachable_but_blind: "已安装，但取不到记忆",
-  unreachable: "未接通",
+  wired: "Connected",
+  reachable_but_blind: "Installed, but no memories come back",
+  unreachable: "Not connected",
 };
 
 /** Call-rule skill drift, said as what the user would do about it (R-33).
@@ -24,7 +24,7 @@ export const LINK_WORDING: Record<string, string> = {
  * modes, different actions.
  */
 export const SKILL_WORDING: Record<string, string> = {
-  in_sync: "最新",
-  stale: "需更新",
-  modified: "你手动改过",
+  in_sync: "Up to date",
+  stale: "Needs update",
+  modified: "Manually edited by you",
 };

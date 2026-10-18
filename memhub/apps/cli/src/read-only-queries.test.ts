@@ -380,7 +380,7 @@ describe("CLI-20 status summary", () => {
     } finally {
       text.restore();
     }
-    expect(text.stdout()).not.toMatch(/桥接.*(正常|健康)/);
+    expect(text.stdout()).not.toMatch(/App connections.*Healthy/);
   });
 
   it("says the bridge was not checked when the inspector cannot answer", async () => {
@@ -617,7 +617,7 @@ describe("CLI-21 memory reads", () => {
           total: 12,
           offset: 0,
           limit: 2,
-          items: [memory("m1", "第一条记忆"), memory("m2", "x".repeat(400))],
+          items: [memory("m1", "First memory"), memory("m2", "x".repeat(400))],
         },
       };
     });
@@ -659,7 +659,7 @@ describe("CLI-21 memory reads", () => {
         "memories",
         "list",
         "--query",
-        "部署",
+        "deployment",
         "--status",
         "confirmed",
         "--source",
@@ -674,7 +674,7 @@ describe("CLI-21 memory reads", () => {
     ).catch(() => undefined);
     expect(transport.get).toHaveBeenCalledWith("/api/v1/memory-library", {
       params: {
-        query: "部署",
+        query: "deployment",
         status: "confirmed",
         source: "codex",
         offset: 10,
@@ -686,14 +686,14 @@ describe("CLI-21 memory reads", () => {
   it("reads a sensitive query from a file so it stays out of shell history", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "om-cli-query-"));
     const file = path.join(directory, "query.txt");
-    await writeFile(file, "机密查询\n", { mode: 0o600 });
+    await writeFile(file, "secret query\n", { mode: 0o600 });
     await run(["memories", "list", "--query-file", file, "--json"], {}).catch(
       () => undefined,
     );
     expect(transport.get).toHaveBeenCalledWith(
       "/api/v1/memory-library",
       expect.objectContaining({
-        params: expect.objectContaining({ query: "机密查询" }),
+        params: expect.objectContaining({ query: "secret query" }),
       }),
     );
   });
@@ -767,7 +767,7 @@ describe("CLI-21 memory reads", () => {
     transport.get.mockResolvedValue({
       status: 200,
       data: {
-        memory: memory("m1", "记忆正文"),
+        memory: memory("m1", "Memory body text"),
         evidence: [
           {
             evidence_id: "e1",
@@ -784,7 +784,7 @@ describe("CLI-21 memory reads", () => {
             revision: 3,
             action: "correct",
             status: "confirmed",
-            content: "记忆正文",
+            content: "Memory body text",
             scopes: ["all-apps"],
             created_at: "T",
           },
@@ -819,7 +819,7 @@ describe("CLI-21 memory reads", () => {
       action: "correct",
       status: "confirmed",
       scopes: ["all-apps"],
-      content: "记忆正文",
+      content: "Memory body text",
     });
   });
 
@@ -894,7 +894,7 @@ describe("malformed success responses", () => {
     transport.get.mockResolvedValue({
       status: 200,
       data: {
-        memory: memory("m1", "正文"),
+        memory: memory("m1", "Body text"),
         evidence: [
           {
             evidence_id: "e1",
@@ -925,7 +925,7 @@ describe("malformed success responses", () => {
     transport.get.mockResolvedValue({
       status: 200,
       data: {
-        memory: memory("m1", "正文"),
+        memory: memory("m1", "Body text"),
         evidence: [
           {
             evidence_id: "not-cited",

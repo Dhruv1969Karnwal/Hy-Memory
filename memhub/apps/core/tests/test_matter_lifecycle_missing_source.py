@@ -44,15 +44,18 @@ def test_a_hy_matter_without_a_lifecycle_source_fails_closed(tmp_path) -> None:
                 statement=memory.content,
                 kind="constraint",
                 citations=[
-                    Citation(evidence_id=record.evidence_id, quote="Atlas仅在本机保存资料。")
+                    Citation(
+                        evidence_id=record.evidence_id,
+                        quote="Atlas stores its data only on this device.",
+                    )
                 ],
                 memory_refs=[ref],
             )
             store = MatterStore(processor.tasks.database_path)
             saved = store.save(
                 MatterDraft(
-                    title="Atlas笔记开发",
-                    purpose="交付笔记",
+                    title="Atlas notes development",
+                    purpose="Ship notes",
                     boundary="Atlas",
                     claims=[claim],
                     anchors=[record.evidence_id],

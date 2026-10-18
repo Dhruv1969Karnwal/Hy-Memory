@@ -10,10 +10,10 @@ import type { MemoryProcessingBlock } from "@one-memory/contracts";
 
 export function taskKindLabel(kind: string): string {
   const labels: Record<string, string> = {
-    extract: "记忆抽取",
-    system2: "关系归纳",
-    ultra: "深度整理",
-    sweeper: "跨域整理",
+    extract: "Memory extraction",
+    system2: "Relation summary",
+    ultra: "Deep organizing",
+    sweeper: "Cross-domain organizing",
   };
   return labels[kind] ?? kind;
 }
@@ -29,51 +29,56 @@ export function blockReasonLabel(reason: string): string {
   const known = BLOCK_REASON_LABELS[reason];
   if (known) return known;
   if (reason.startsWith("hy_memory_write_verification_")) return RETRYING;
-  return "暂时没能整理，稍后会自动重试";
+  return "Organizing stalled for now; it will retry automatically later";
 }
 
-const RETRYING = "这次没能整理成功，正在重试";
+const RETRYING = "Failed to organize this round; retrying";
 
 const BLOCK_REASON_LABELS: Record<string, string> = {
   // Waiting on the reader, or on something they can go and check.
-  waiting_for_model: "等待可用生成模型",
-  model_profile_not_active: "还没有启用生成模型",
-  model_api_key_missing: "缺少生成模型 API Key",
-  model_secret_unavailable: "模型凭据暂不可用",
-  secure_storage_unavailable: "本机凭据存储暂不可用",
+  waiting_for_model: "Waiting for an available generation model",
+  model_profile_not_active: "No generation model is enabled yet",
+  model_api_key_missing: "Generation model API key missing",
+  model_secret_unavailable: "Model credentials are temporarily unavailable",
+  secure_storage_unavailable:
+    "Local credential storage is temporarily unavailable",
   // Keychain failures are not all the same ask. macOS asking for permission is
   // answered by authorizing, not by reconfiguring a model, so each code says
   // the one thing the reader can actually go and do.
   secure_storage_authorization_required:
-    "需要授权访问本机钥匙串。请重新打开 App 并完成一次授权",
+    "Access to the local keychain needs authorization. Reopen the app and approve once",
   secure_storage_read_timeout:
-    "读取本机钥匙串超时。重新保存一遍模型配置即可恢复",
+    "Reading the local keychain timed out. Save the model config again to recover",
   secure_storage_write_timeout:
-    "写入本机钥匙串超时。重新保存一遍模型配置即可恢复",
+    "Writing to the local keychain timed out. Save the model config again to recover",
   hy_memory_model_authentication_failed:
-    "模型认证失败。更新 key 后，到设置里点一次检测，会自动接着处理",
+    "Model authentication failed. Update the key, then run the check in settings once and processing resumes automatically",
   hy_memory_model_payment_required:
-    "模型账户余额不足。充值或换 key 后，到设置里点一次检测，会自动接着处理",
+    "Model account balance is low. Top up or swap the key, then run the check in settings once and processing resumes automatically",
   hy_memory_model_access_denied:
-    "模型服务拒绝访问。更新权限后，到设置里点一次检测，会自动接着处理",
-  hy_memory_model_rate_limited: "模型服务限流",
-  hy_memory_model_service_unavailable: "模型服务暂不可用",
-  hy_memory_model_timeout: "模型服务响应超时",
-  hy_memory_model_request_incompatible: "模型请求不兼容，请核对配置",
-  hy_memory_model_request_failed: "模型请求未成功",
-  hy_memory_unavailable: "HY Memory 不可用",
-  hy_memory_init_failed: "HY Memory 启动失败",
-  model_content_profile_changed: "当前模型已变化",
-  model_content_content_scope_changed: "本地会话内容已变化",
+    "The model service refused access. Update permissions, then run the check in settings once and processing resumes automatically",
+  hy_memory_model_rate_limited: "Model service is rate-limited",
+  hy_memory_model_service_unavailable: "Model service temporarily unavailable",
+  hy_memory_model_timeout: "Model service response timed out",
+  hy_memory_model_request_incompatible:
+    "Model request is incompatible; check the configuration",
+  hy_memory_model_request_failed: "The model request did not succeed",
+  hy_memory_unavailable: "HY Memory is unavailable",
+  hy_memory_init_failed: "HY Memory failed to start",
+  model_content_profile_changed: "The current model has changed",
+  model_content_content_scope_changed: "Local conversation content has changed",
   // Named rather than summed up as a retry: Core never picks this one up
-  // again (`_guard_task`), so calling it "正在重试" would be a lie.
-  hy_memory_input_exceeds_window: "这段对话含过长原文，暂未整理；原文已保留",
+  // again (`_guard_task`), so calling it "retrying" would be a lie.
+  hy_memory_input_exceeds_window:
+    "This conversation contains oversized source text; not organized yet, source text kept",
   // The pipeline's own retries, kept here so a health panel can say what it
   // is doing without a code.
   failed: RETRYING,
   hy_memory_update_rejected: RETRYING,
-  model_profile_superseded: "生成模型换过了，这批会重新整理",
-  ingest_policy_superseded: "整理方式换过了，这批会重新整理",
+  model_profile_superseded:
+    "The generation model was swapped; this batch will be organized again",
+  ingest_policy_superseded:
+    "The organizing policy was swapped; this batch will be organized again",
 };
 
 /** The stalls worth naming to the reader.
@@ -134,7 +139,7 @@ export function splitBlockedStages(
 
 /** The one line a reader gets for work the pipeline is handling by itself. */
 export function retryingBlockLabel(count: number): string {
-  return `${count} 条${RETRYING}`;
+  return `${count} items: ${RETRYING}`;
 }
 
 /** The reasons that mean "no usable model", as the pipeline reports them.
@@ -173,28 +178,31 @@ export function modelBlock(
  * tells them what it cost. An unrecognised code still gets a sentence rather
  * than itself, for the same reason the block reasons do. */
 export function importIssueLabel(reason: string): string {
-  return SCAN_ISSUE_LABELS[reason] ?? "这条记录没读出来";
+  return SCAN_ISSUE_LABELS[reason] ?? "This record could not be read";
 }
 
 const SCAN_ISSUE_LABELS: Record<string, string> = {
-  invalid_json: "内容损坏，这条没读出来",
-  record_too_large: "内容过长，超出单条上限",
-  unknown_record: "记录类型不认识，这条没读出来",
-  no_text: "这条没有可整理的文字",
-  tool_content_excluded: "工具输出不计入原文",
-  internal_reasoning_excluded: "模型的内部思考不计入原文",
-  not_written_by_person: "不是本人写的，未计入",
-  source_busy: "来源正被占用，稍后会自动补读",
-  unsupported_schema: "这个来源的文件格式暂不支持",
-  budget_exceeded: "超出本次处理上限，其余未读",
-  source_permission_changed: "这个来源的读取授权变了，需要重新核对",
+  invalid_json: "The content is corrupted; this record could not be read",
+  record_too_large: "The content is too long for the per-record limit",
+  unknown_record: "Unrecognized record type; this record could not be read",
+  no_text: "This record has no text to organize",
+  tool_content_excluded: "Tool output does not count as source text",
+  internal_reasoning_excluded:
+    "The model's internal reasoning does not count as source text",
+  not_written_by_person: "Not written by the user; not counted",
+  source_busy: "The source is busy; it will be re-read automatically later",
+  unsupported_schema: "This source's file format is not supported yet",
+  budget_exceeded:
+    "The per-run processing limit was exceeded; the rest was not read",
+  source_permission_changed:
+    "The read authorization for this source changed and needs re-verification",
 };
 
 export function extractionStateLabel(state: string): string {
   const labels: Record<string, string> = {
-    extracted: "已提炼",
-    outside_window: "未提炼 · 在窗口外",
-    queued: "未提炼 · 排队中",
+    extracted: "Extracted",
+    outside_window: "Not extracted · outside the window",
+    queued: "Not extracted · queued",
   };
   return labels[state] ?? state;
 }
@@ -203,24 +211,24 @@ export function extractionStateLabel(state: string): string {
 // from an older version's rejection reads as a plain delete.
 export function memoryHistoryActionLabel(action: string): string {
   const labels: Record<string, string> = {
-    legacy: "旧版确认记录",
-    create: "创建",
-    correct: "纠正",
-    set_scopes: "调整使用范围",
-    undo: "撤销修改",
-    hy_reconcile: "模型更新",
-    hy_supersede: "被新记忆取代",
-    delete: "删除",
+    legacy: "Legacy confirmation record",
+    create: "Create",
+    correct: "Correct",
+    set_scopes: "Adjust usage scopes",
+    undo: "Undo edit",
+    hy_reconcile: "Model update",
+    hy_supersede: "Replaced by a newer memory",
+    delete: "Delete",
   };
-  return labels[action] ?? "其他操作";
+  return labels[action] ?? "Other action";
 }
 
 export function extractionWindowPresetLabel(preset: string): string {
   const labels: Record<string, string> = {
-    "3m": "近 3 个月",
-    "6m": "近 6 个月",
-    "1y": "近 1 年",
-    all: "全部历史",
+    "3m": "Last 3 months",
+    "6m": "Last 6 months",
+    "1y": "Last year",
+    all: "All history",
   };
   return labels[preset] ?? preset;
 }

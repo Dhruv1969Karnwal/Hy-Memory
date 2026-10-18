@@ -113,9 +113,7 @@ PUBLIC_PREFIXES = (
     "scripts/platform/windows/verify-windows-support",
 )
 
-EXCLUDED_PREFIXES = (
-    "apps/cli/docs/",
-)
+EXCLUDED_PREFIXES = ("apps/cli/docs/",)
 
 # These files are useful only with private acceptance receipts, design exports,
 # real-machine paths, or packaging worktrees that the public snapshot excludes.
@@ -148,9 +146,9 @@ FORBIDDEN_TEXT = (
     "." + "woa" + ".com",
     "." + "oa" + ".com",
     "/Users/" + "kristinhe",
-    "产品" + "OM",
+    "\u4ea7\u54c1" + "OM",
     "file" + "726913703804825",
-    "翔" + "哥",
+    "\u7fd4" + "\u54e5",
     "codex/" + "c6-cli-h01",
 )
 
@@ -189,7 +187,8 @@ def _repository_files(root: Path) -> tuple[str, ...]:
     return tuple(
         path.relative_to(root).as_posix()
         for path in sorted(root.rglob("*"))
-        if (path.is_file() or path.is_symlink()) and ".git" not in path.relative_to(root).parts
+        if (path.is_file() or path.is_symlink())
+        and ".git" not in path.relative_to(root).parts
     )
 
 
@@ -225,7 +224,9 @@ def _scan_text(target: Path) -> list[str]:
         content = path.read_text(encoding="utf-8", errors="replace")
         for marker in FORBIDDEN_TEXT:
             if marker in content:
-                failures.append(f"forbidden public marker {marker!r}: {path.relative_to(target)}")
+                failures.append(
+                    f"forbidden public marker {marker!r}: {path.relative_to(target)}"
+                )
     return failures
 
 
@@ -249,7 +250,9 @@ def export(root: Path, target: Path) -> tuple[str, ...]:
         if path.is_file() and path.name not in ROOT_FILES
     )
     if unexpected_root:
-        raise ValueError(f"unclassified public root files: {', '.join(unexpected_root)}")
+        raise ValueError(
+            f"unclassified public root files: {', '.join(unexpected_root)}"
+        )
     failures = _scan_text(target)
     if failures:
         raise ValueError("\n".join(failures))

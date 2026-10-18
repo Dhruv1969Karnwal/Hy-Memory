@@ -107,7 +107,7 @@ vi.mock("axios", () => ({
 }));
 
 vi.mock("./ModelSettings", () => ({
-  ModelSettings: () => <input aria-label="模型配置输入" />,
+  ModelSettings: () => <input aria-label="Model config input" />,
 }));
 
 import { ApplicationDetail } from "./ApplicationDetail";
@@ -152,7 +152,7 @@ async function toggle(sync: HTMLElement, expected: "true" | "false") {
 
 async function openDetail() {
   render(<DetailHarness />);
-  const sync = await screen.findByRole("switch", { name: "同步开关" });
+  const sync = await screen.findByRole("switch", { name: "Sync switch" });
   await waitFor(() => expect(sync.getAttribute("aria-checked")).toBe("false"));
   await waitFor(() => expect(sync.getAttribute("aria-busy")).toBeNull());
   return sync;

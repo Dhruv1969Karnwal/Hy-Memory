@@ -133,10 +133,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function rail(label: string) {
-  const navigation = screen.getByRole("navigation", { name: "主要导航" });
+  const navigation = screen.getByRole("navigation", {
+    name: "Primary navigation",
+  });
   await userEvent.click(
     within(navigation).getByRole("button", {
-      name: label === "应用" ? /^应用\d*$/ : label,
+      name: label === "Applications" ? /^Applications\d*$/ : label,
     }),
   );
 }
@@ -166,17 +168,17 @@ async function startFrom(destination: "home" | "detail") {
     expect(screen.getByRole("region", { name: "Cursor detail" })).toBeTruthy();
   }
   // The global strip is shown in settings while the sources subview is retained.
-  await rail("设置");
+  await rail("Settings");
 }
 
 it.each(["home", "detail"] as const)(
   "keeps the settings strip without a source link and restores retained %s state",
   async (destination) => {
     await startFrom(destination);
-    expect(screen.getByRole("status").textContent).toContain("正在");
-    expect(screen.queryByRole("button", { name: "查看来源" })).toBeNull();
-    expect(screen.queryByText("查看进度与详情")).toBeNull();
-    await rail("应用");
+    expect(screen.getByRole("status").textContent).toContain("Importing");
+    expect(screen.queryByRole("button", { name: "View sources" })).toBeNull();
+    expect(screen.queryByText("View progress and details")).toBeNull();
+    await rail("Applications");
     if (destination === "detail") {
       expect(
         screen.getByRole("region", { name: "Cursor detail" }),
@@ -192,7 +194,7 @@ it.each(["home", "detail"] as const)(
 
 it("keeps ordinary apps navigation on home without opening management", async () => {
   await startFrom("home");
-  await rail("应用");
+  await rail("Applications");
   expect(
     screen.getByRole("region", { name: "Applications home" }),
   ).toBeTruthy();

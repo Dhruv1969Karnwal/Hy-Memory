@@ -30,7 +30,7 @@ from one_memory.memory_governance import (  # noqa: E402
 )
 
 ROWS = 430_000
-TARGET = "独特记忆目标短语"
+TARGET = "\u72ec\u7279\u8bb0\u5fc6\u76ee\u6807\u77ed\u8bed"
 NOW = "2026-09-01T00:00:00+00:00"
 
 
@@ -52,9 +52,11 @@ def _fill(db: sqlite3.Connection) -> None:
         for index in range(left, right):
             evidence_id = f"e-{index:07d}"
             content = (
-                f"这是 {TARGET}，用于验证治理记忆词法命中。"
+                f"\u8fd9\u662f {TARGET}\uff0c"
+                f"\u7528\u4e8e\u9a8c\u8bc1\u6cbb\u7406\u8bb0\u5fc6\u8bcd\u6cd5\u547d\u4e2d\u3002"
                 if index == 0
-                else f"普通历史记录 {index} 不包含查询目标"
+                else f"\u666e\u901a\u5386\u53f2\u8bb0\u5f55 "
+                f"{index} \u4e0d\u5305\u542b\u67e5\u8be2\u76ee\u6807"
             )
             evidence_rows.append(
                 (
@@ -109,7 +111,15 @@ def _run(repeat: int) -> dict[str, object]:
         db.close()
 
         store = MemoryGovernanceStore(path)
-        terms = ("独特", "特记", "记忆", "忆目", "目标", "标短", "短语")
+        terms = (
+            "\u72ec\u7279",
+            "\u7279\u8bb0",
+            "\u8bb0\u5fc6",
+            "\u5fc6\u76ee",
+            "\u76ee\u6807",
+            "\u6807\u77ed",
+            "\u77ed\u8bed",
+        )
         first_started = time.perf_counter()
         first, first_more = store.find_confirmed_matching_terms(
             user_id="local", terms=terms, scopes=("all-apps",)
@@ -133,7 +143,7 @@ def _run(repeat: int) -> dict[str, object]:
                     AND m.memory_id IN (
                       SELECT memory_id FROM governed_memories_terms WHERE term=?)
                     ORDER BY m.updated_at DESC,m.memory_id LIMIT 9""",
-                    ("特记",),
+                    ("\u7279\u8bb0",),
                 )
             ]
         ordered = sorted(samples)

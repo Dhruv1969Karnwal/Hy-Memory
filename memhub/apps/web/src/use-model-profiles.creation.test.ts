@@ -271,7 +271,7 @@ it("allows correcting a draft after an explicitly rejected validation POST", asy
   });
   expect(readPendingModelCreation()).toBeNull();
   expect(hook.result.current.pendingCreation).toBeNull();
-  expect(hook.result.current.error).toContain("配置未保存");
+  expect(hook.result.current.error).toContain("Configuration not saved");
   expect(api.getModelCreationOperation).not.toHaveBeenCalled();
   await act(async () => {
     expect(
@@ -430,7 +430,9 @@ it("keeps a missing creation locked when a profile appears before discard", asyn
   expect(hook.result.current.profiles).toEqual([profile]);
   expect(readPendingModelCreation()).toBe(ID);
   expect(hook.result.current.pendingCreation).toBe(ID);
-  expect(hook.result.current.error).toContain("已发现模型配置");
+  expect(hook.result.current.error).toContain(
+    "Model configurations were found",
+  );
   expect(api.createModelProfile).not.toHaveBeenCalled();
 });
 

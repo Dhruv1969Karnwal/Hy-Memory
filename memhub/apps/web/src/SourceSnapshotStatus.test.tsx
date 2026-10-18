@@ -15,9 +15,9 @@ it("labels the last full-source observation without inventing a source event tim
       onRefresh={vi.fn()}
     />,
   );
-  const stamp = screen.getByText(/状态确认于/).querySelector("time");
+  const stamp = screen.getByText(/Status confirmed at/).querySelector("time");
   expect(stamp?.dateTime).toBe(confirmedAt);
-  expect(screen.queryByText("状态待核对")).toBeNull();
+  expect(screen.queryByText("Status pending verification")).toBeNull();
 });
 
 it("retains the exact prior time in stale state and offers an explicit read-only refresh", async () => {
@@ -28,13 +28,15 @@ it("retains the exact prior time in stale state and offers an explicit read-only
       onRefresh={onRefresh}
     />,
   );
-  expect(screen.getByText("状态待核对")).toBeTruthy();
-  expect(screen.getByText(/上次确认/).querySelector("time")?.dateTime).toBe(
-    confirmedAt,
+  expect(screen.getByText("Status pending verification")).toBeTruthy();
+  expect(
+    screen.getByText(/Last confirmed/).querySelector("time")?.dateTime,
+  ).toBe(confirmedAt);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Refresh source status" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "刷新来源状态" }));
   expect(onRefresh).toHaveBeenCalledOnce();
-  expect(screen.getByText("状态待核对")).toBeTruthy();
+  expect(screen.getByText("Status pending verification")).toBeTruthy();
 });
 
 it.each([null, "not-a-time"])(
@@ -46,7 +48,7 @@ it.each([null, "not-a-time"])(
         onRefresh={vi.fn()}
       />,
     );
-    expect(screen.getByText("尚无已确认状态")).toBeTruthy();
+    expect(screen.getByText("No confirmed status yet")).toBeTruthy();
     expect(document.querySelector("time")).toBeNull();
   },
 );
@@ -66,18 +68,19 @@ it("coalesces repeated refresh clicks and retains the error until a real new sna
     />,
   );
   await userEvent.dblClick(
-    screen.getByRole("button", { name: "刷新来源状态" }),
+    screen.getByRole("button", { name: "Refresh source status" }),
   );
   expect(onRefresh).toHaveBeenCalledOnce();
   expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "刷新来源状态" })
-      .disabled,
+    screen.getByRole<HTMLButtonElement>("button", {
+      name: "Refresh source status",
+    }).disabled,
   ).toBe(true);
   await act(async () => fail(new Error("offline")));
-  expect(screen.getByRole("alert").textContent).toContain("尚未取得新状态");
-  expect(screen.getByText(/上次确认/).querySelector("time")?.dateTime).toBe(
-    confirmedAt,
-  );
+  expect(screen.getByRole("alert").textContent).toContain("No new status yet");
+  expect(
+    screen.getByText(/Last confirmed/).querySelector("time")?.dateTime,
+  ).toBe(confirmedAt);
   view.rerender(
     <SourceSnapshotStatus
       snapshot={{ confirmedAt: "2026-09-14T04:01:00.000Z", stale: false }}
@@ -85,7 +88,7 @@ it("coalesces repeated refresh clicks and retains the error until a real new sna
     />,
   );
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByText("状态待核对")).toBeNull();
+  expect(screen.queryByText("Status pending verification")).toBeNull();
 });
 
 it("reports a failed refresh even when the last snapshot was not stale", async () => {
@@ -96,14 +99,16 @@ it("reports a failed refresh even when the last snapshot was not stale", async (
       onRefresh={onRefresh}
     />,
   );
-  await userEvent.click(screen.getByRole("button", { name: "刷新来源状态" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Refresh source status" }),
+  );
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "刷新未成功，仍显示上次确认的状态。",
+    "The refresh failed; the last confirmed status is still shown.",
   );
-  expect(screen.getByText(/状态确认于/).querySelector("time")?.dateTime).toBe(
-    confirmedAt,
-  );
-  expect(screen.queryByText("尚无已确认状态")).toBeNull();
+  expect(
+    screen.getByText(/Status confirmed at/).querySelector("time")?.dateTime,
+  ).toBe(confirmedAt);
+  expect(screen.queryByText("No confirmed status yet")).toBeNull();
 });
 
 it("clears a failed refresh only after a newer authoritative snapshot arrives", async () => {
@@ -114,7 +119,9 @@ it("clears a failed refresh only after a newer authoritative snapshot arrives", 
       onRefresh={onRefresh}
     />,
   );
-  await userEvent.click(screen.getByRole("button", { name: "刷新来源状态" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Refresh source status" }),
+  );
   await screen.findByRole("alert");
   view.rerender(
     <SourceSnapshotStatus

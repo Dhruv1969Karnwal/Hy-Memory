@@ -43,13 +43,13 @@ type Snapshot = {
 };
 type Pending = "check" | "write" | "refresh";
 const changedMessage =
-  "安装身份、授权版本或所选来源范围已变化，请关闭后重新打开并核对。不会把本次确认用于变化后的授权。";
+  "The installation identity, grant revision or selected source scope has changed. Close and reopen to review. This confirmation is not applied to a changed grant.";
 const toolNames: Record<RecallPermissionTool, string> = {
-  om_recall: "检索记忆",
-  om_ask: "记忆问答（可选）",
-  om_conversations: "读取原始对话",
-  om_matters: "事项（已有授权）",
-  om_diagnostic_trace: "读取脱敏诊断记录",
+  om_recall: "Retrieve memories",
+  om_ask: "Memory Q&A (optional)",
+  om_conversations: "Read raw conversations",
+  om_matters: "Matters (already authorized)",
+  om_diagnostic_trace: "Read redacted diagnostic records",
 };
 const focusSelector =
   'button:not(:disabled), input:not(:disabled), [tabindex="0"]';
@@ -140,7 +140,9 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
         token === generation.current &&
         currentHost.current === hostId
       )
-        setError("未能读取调用授权状态，请稍后刷新核对。未更改权限。");
+        setError(
+          "The call authorization state could not be read. Refresh and check later. Permissions were not changed.",
+        );
     } finally {
       if (mounted.current && token === generation.current) {
         flight.current = false;
@@ -247,7 +249,7 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
       if (!validMutationResult(saved, picture, review))
         throw new Error("host_permission_invalid_receipt");
       receive(saved);
-      setNotice(`已允许 ${host.label} 使用记忆。`);
+      setNotice(`Allowed ${host.label} to use memory.`);
       // The write already landed: a failed list refresh is reported as such,
       // never as a failed grant, so nobody re-submits an approval that stuck.
       try {
@@ -263,7 +265,7 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
       setError(
         isStaleError(reason)
           ? changedMessage
-          : "未能确认这次授权。请刷新核对后再试，不要重复提交。",
+          : "This grant could not be confirmed. Refresh, check and try again; do not resubmit.",
       );
     } finally {
       if (mounted.current) setGranting(false);
@@ -273,7 +275,7 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
   return (
     <section
       className={`recall-permission-control${compact ? " recall-permission-compact" : ""}`}
-      aria-label={`${host.label} 调用权限`}
+      aria-label={`${host.label} call permissions`}
       ref={control}
       tabIndex={-1}
     >
@@ -282,20 +284,22 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
       </p>
       {!bridge && (
         <p className="recall-permission-meta">
-          当前桌面连接不支持完整权限管理，不能在此授权或撤回。
+          The current desktop connection does not support full permission
+          management; it cannot grant or revoke here.
         </p>
       )}
       {status?.reason === "installation_incomplete" && (
         <p className="recall-permission-meta">
-          连接安装尚未完成，不能授权使用记忆。
+          The connection install is not complete, so memory use cannot be
+          authorized.
         </p>
       )}
       {compact ? (
         <label className="recall-permission-switch">
-          <span>允许使用记忆</span>
+          <span>Allow memory use</span>
           <input
             type="checkbox"
-            aria-label="允许使用记忆"
+            aria-label="Allow memory use"
             checked={receipt?.status === "approved"}
             disabled={
               disabled ||
@@ -323,7 +327,7 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
               onClick={(event) => open("grant", event.currentTarget)}
             >
               <ShieldCheck size={16} aria-hidden="true" />
-              调整调用权限
+              Adjust call permissions
             </button>
           ) : (
             <>
@@ -344,7 +348,7 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
                 onClick={(event) => void grantAll(event.currentTarget)}
               >
                 <ShieldCheck size={16} aria-hidden="true" />
-                {granting ? "正在允许…" : "允许使用记忆"}
+                {granting ? "Allowing..." : "Allow memory use"}
               </button>
               <button
                 type="button"
@@ -359,7 +363,7 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
                 }
                 onClick={(event) => open("grant", event.currentTarget)}
               >
-                调整范围
+                Adjust scope
               </button>
             </>
           )}
@@ -371,14 +375,14 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
               onClick={(event) => open("revoke", event.currentTarget)}
             >
               <ShieldOff size={16} aria-hidden="true" />
-              撤回调用权限
+              Revoke call permissions
             </button>
           )}
           <button
             type="button"
             className="quiet recall-permission-icon"
-            aria-label="刷新调用权限"
-            title="刷新调用权限"
+            aria-label="Refresh call permissions"
+            title="Refresh call permissions"
             disabled={disabled || !bridge || pending || granting || !!snapshot}
             onClick={() => void refresh()}
           >
@@ -386,8 +390,8 @@ export function RecallPermissionControl(props: RecallPermissionControlProps) {
           </button>
         </div>
       )}
-      {pending && <p role="status">正在读取调用授权状态…</p>}
-      {granting && <p role="status">正在允许 {host.label} 使用记忆…</p>}
+      {pending && <p role="status">Reading the call authorization state...</p>}
+      {granting && <p role="status">Allowing {host.label} to use memory...</p>}
       {notice && (
         <p className="recall-permission-meta" role="status">
           {notice}
@@ -711,7 +715,7 @@ function PermissionDialog({
         setError(
           committed.current
             ? refreshAfterCommitMessage(snapshot.action)
-            : "未能刷新授权状态，请稍后重试。未再次提交权限变更。",
+            : "The authorization state could not be refreshed. Try again later. No permission change was resubmitted.",
         );
       }
     } finally {
@@ -790,8 +794,8 @@ function PermissionDialog({
       else
         setError(
           snapshot.action === "revoke"
-            ? "撤回结果尚未确认。请刷新核对后重新确认，不要重复提交。"
-            : "保存结果尚未确认。请刷新核对后重新确认，不要重复提交。",
+            ? "The revocation result is not confirmed yet. Refresh, check and confirm again; do not resubmit."
+            : "The save result is not confirmed yet. Refresh, check and confirm again; do not resubmit.",
         );
     } finally {
       finish(token);
@@ -848,17 +852,19 @@ function PermissionDialog({
       >
         <header className="recall-permission-heading">
           <div>
-            <p className="eyebrow">独立调用授权</p>
+            <p className="eyebrow">Separate call authorization</p>
             <h2 id={`${id}-title`}>
               {snapshot.label} ·{" "}
-              {snapshot.action === "revoke" ? "撤回调用权限" : "使用记忆"}
+              {snapshot.action === "revoke"
+                ? "Revoke call permissions"
+                : "Use memory"}
             </h2>
           </div>
           <button
             type="button"
             className="quiet recall-permission-icon"
-            aria-label="关闭"
-            title="关闭"
+            aria-label="Close"
+            title="Close"
             disabled={pending === "write"}
             onClick={close}
           >
@@ -867,19 +873,20 @@ function PermissionDialog({
         </header>
         <div className="recall-permission-body">
           <p className="recall-permission-meta">
-            安装：<code>{receipt.installationId}</code> · 授权版本{" "}
+            Installation: <code>{receipt.installationId}</code> - grant revision{" "}
             {result?.receipt?.revision ?? receipt.revision}
           </p>
           {phase === "select" && (
             <>
               <p>
-                连接安装与使用记忆分别授权。所选权限仅用于此应用的这次安装。
+                The connection install and memory use are authorized separately.
+                The selected permissions apply only to this install of this app.
               </p>
               <fieldset
                 className="recall-permission-options"
                 disabled={!!pending || blocked}
               >
-                <legend>允许的工具</legend>
+                <legend>Allowed tools</legend>
                 {offeredTools.map((tool) => (
                   <label className="recall-permission-choice" key={tool}>
                     <input
@@ -892,7 +899,8 @@ function PermissionDialog({
                       {toolNames[tool]}
                       {tool === "om_ask" && (
                         <small>
-                          可能使用已配置的模型处理。本次只授予此应用的记忆读取范围。
+                          May use the configured model for processing. This
+                          grants only this app's memory read scope.
                         </small>
                       )}
                     </span>
@@ -903,17 +911,19 @@ function PermissionDialog({
                 className="recall-permission-options"
                 disabled={!!pending || blocked}
               >
-                <legend>允许的记忆范围</legend>
+                <legend>Allowed memory scopes</legend>
                 <label className="recall-permission-choice">
                   <input
                     type="checkbox"
                     checked={scopes.includes("all-apps")}
                     onChange={() => toggleScope("all-apps")}
                   />
-                  <span>跨应用共享记忆（all-apps）</span>
+                  <span>Cross-app shared memory (all-apps)</span>
                 </label>
                 <p className="recall-permission-meta">
-                  仅限已允许共享的记忆，不等于全部原始对话，也不扩大来源读取授权。
+                  Only memories already allowed to be shared; this is not all
+                  raw conversations and does not widen source read
+                  authorization.
                 </p>
                 {snapshot.workspaces.map((option) => (
                   <label
@@ -922,12 +932,12 @@ function PermissionDialog({
                   >
                     <input
                       type="checkbox"
-                      aria-label={`工作区：${option.label}`}
+                      aria-label={`Workspace: ${option.label}`}
                       checked={scopes.includes(option.scope)}
                       onChange={() => toggleScope(option.scope)}
                     />
                     <span>
-                      工作区：{option.label}
+                      Workspace: {option.label}
                       <small>{option.scope}</small>
                     </span>
                   </label>
@@ -937,13 +947,17 @@ function PermissionDialog({
                 className="recall-permission-options"
                 disabled={!!pending || blocked}
               >
-                <legend>原始对话来源</legend>
+                <legend>Raw conversation sources</legend>
                 <p className="recall-permission-meta">
-                  读取原始对话需同时允许原始对话工具、all-apps
-                  和明确选择的已授权来源。不会自动纳入其他来源。
+                  Reading raw conversations requires the raw conversation tool,
+                  all-apps and an explicitly selected authorized source. Other
+                  sources are never included automatically.
                 </p>
                 {!snapshot.sources.length && (
-                  <p>暂无可核对的已授权来源，不能新增原始对话读取权限。</p>
+                  <p>
+                    No authorized source is available to check, so no raw
+                    conversation read permission can be added.
+                  </p>
                 )}
                 {snapshot.sources.map((source) => (
                   <label
@@ -952,14 +966,14 @@ function PermissionDialog({
                   >
                     <input
                       type="checkbox"
-                      aria-label={`${source.display_name} 原始对话`}
+                      aria-label={`${source.display_name} raw conversations`}
                       checked={scopes.includes(`source:${source.source_id}`)}
                       onChange={() => toggleScope(`source:${source.source_id}`)}
                     />
                     <span>
                       {source.display_name}
                       <small>
-                        source:{source.source_id} · 来源授权版本{" "}
+                        source:{source.source_id} - source grant revision{" "}
                         {source.grant_revision}
                       </small>
                     </span>
@@ -971,20 +985,23 @@ function PermissionDialog({
                   className="recall-permission-options"
                   disabled={!!pending || blocked}
                 >
-                  <legend>未能核对的已有范围</legend>
+                  <legend>Existing scopes that could not be verified</legend>
                   <p>
-                    以下范围不会自动丢弃。继续更新需明确移除，或取消并补齐来源、工作区信息后再打开。
+                    The scopes below are never dropped automatically. To
+                    continue updating you must explicitly remove them, or cancel
+                    and reopen once the source and workspace information is
+                    complete.
                   </p>
                   {unverified.map((scope) => (
                     <label className="recall-permission-choice" key={scope}>
                       <input
                         type="checkbox"
                         checked={!scopes.includes(scope)}
-                        aria-label={`移除未核对范围：${scope}`}
+                        aria-label={`Remove unverified scope: ${scope}`}
                         onChange={() => toggleScope(scope)}
                       />
                       <span>
-                        移除此范围<small>{scope}</small>
+                        Remove this scope<small>{scope}</small>
                       </span>
                     </label>
                   ))}
@@ -995,16 +1012,18 @@ function PermissionDialog({
           {editing && phase === "select" && (
             <section
               className="recall-permission-summary"
-              aria-label="当前授权"
+              aria-label="Current authorization"
             >
-              <h3>当前授权</h3>
+              <h3>Current authorization</h3>
               <PermissionSummary
                 tools={receipt.allowedTools}
                 scopes={receipt.allowedScopes}
                 snapshot={snapshot}
               />
               <p>
-                本次确认将替换当前全部工具和范围，不会与旧授权合并。未选中的权限将被移除。
+                This confirmation replaces all current tools and scopes and is
+                not merged with the old grant. Unselected permissions are
+                removed.
               </p>
             </section>
           )}
@@ -1014,23 +1033,32 @@ function PermissionDialog({
           {phase === "select" && (
             <section
               className="recall-permission-summary"
-              aria-label="本次授权"
+              aria-label="This authorization"
             >
-              <h3>{editing ? "本次将授权" : "本次将授权（默认全选）"}</h3>
+              <h3>
+                {editing
+                  ? "This grant"
+                  : "This grant (all selected by default)"}
+              </h3>
               <PermissionSummary
                 tools={tools}
                 scopes={scopes}
                 snapshot={snapshot}
               />
-              {removed.length > 0 && <p>本次将移除：{removed.join("、")}</p>}
+              {removed.length > 0 && (
+                <p>This grant removes: {removed.join(", ")}</p>
+              )}
             </section>
           )}
           {phase === "revoke" && (
             <>
               <p>
-                这将结束此安装的调用授权，阻止之后的记忆读取。不会删除来源或卸载连接，也不会关闭其他应用的授权。
+                This ends the call authorization for this install and blocks
+                further memory reads. It does not delete sources or uninstall
+                the connection, and it does not disable other apps'
+                authorization.
               </p>
-              <p>不能收回此应用此前已读取的内容。</p>
+              <p>It cannot take back what this app has already read.</p>
               <PermissionSummary
                 tools={receipt.allowedTools}
                 scopes={receipt.allowedScopes}
@@ -1046,18 +1074,20 @@ function PermissionDialog({
                 disabled={!!pending || blocked}
                 onChange={(event) => setConfirmed(event.target.checked)}
               />
-              <span>我确认撤回此安装的调用授权</span>
+              <span>
+                I confirm revoking the call authorization for this install
+              </span>
             </label>
           )}
           {phase === "receipt" && result?.receipt && (
             <>
               <p role="status">
                 {snapshot.action === "revoke"
-                  ? "此安装的调用授权已撤回。"
-                  : "调用授权已保存。"}
+                  ? "The call authorization for this install has been revoked."
+                  : "The call authorization was saved."}
               </p>
               <p className="recall-permission-meta">
-                授权版本 {result.receipt.revision}
+                Grant revision {result.receipt.revision}
               </p>
               <PermissionSummary
                 tools={result.receipt.allowedTools}
@@ -1068,15 +1098,17 @@ function PermissionDialog({
           )}
           {snapshot.action === "grant" && (
             <p className="recall-permission-meta">
-              本次不会安装连接、导入历史或开启持续同步，也不改变内置 SDK
-              的本地记忆处理。授权不代表应用已实际调用或采用记忆。
+              This does not install the connection, import history or enable
+              continuous sync, and it does not change the built-in SDK local
+              memory processing. Authorization does not mean the app has
+              actually called or adopted memories.
             </p>
           )}
           {pending && (
             <p role="status">
               {pending === "write"
-                ? "正在提交调用权限…"
-                : "正在核对安装身份与授权版本…"}
+                ? "Submitting call permissions..."
+                : "Checking the installation identity and grant revision..."}
             </p>
           )}
           {visibleError && (
@@ -1092,7 +1124,7 @@ function PermissionDialog({
             disabled={pending === "write"}
             onClick={close}
           >
-            {phase === "receipt" ? "完成" : "取消"}
+            {phase === "receipt" ? "Done" : "Cancel"}
           </button>
           {(needsRefresh || error) && !stale && !changed && (
             <button
@@ -1102,7 +1134,7 @@ function PermissionDialog({
               onClick={() => void refresh()}
             >
               <RefreshCw size={16} aria-hidden="true" />
-              刷新核对
+              Refresh and check
             </button>
           )}
           {phase === "select" && (
@@ -1112,7 +1144,7 @@ function PermissionDialog({
               onClick={approve}
             >
               <ShieldCheck size={16} aria-hidden="true" />
-              {editing ? "保存这次范围" : "允许并保存"}
+              {editing ? "Save this scope" : "Allow and save"}
             </button>
           )}
           {phase === "revoke" && (
@@ -1122,7 +1154,7 @@ function PermissionDialog({
               onClick={() => void commit(null)}
             >
               <ShieldOff size={16} aria-hidden="true" />
-              确认撤回
+              Confirm revocation
             </button>
           )}
         </footer>
@@ -1143,8 +1175,8 @@ function PermissionSummary({
 }) {
   return (
     <>
-      <p>工具：{tools.map((tool) => toolNames[tool]).join("、") || "无"}</p>
-      <ul className="recall-permission-scope-list" aria-label="授权范围">
+      <p>Tools: {tools.map((tool) => toolNames[tool]).join(", ") || "None"}</p>
+      <ul className="recall-permission-scope-list" aria-label="Granted scopes">
         {scopes.length ? (
           scopes.map((scope) => (
             <li key={scope}>
@@ -1153,19 +1185,19 @@ function PermissionSummary({
                 <span>
                   {snapshot.sources.find(
                     (source) => `source:${source.source_id}` === scope,
-                  )?.display_name ?? "来源未能核对"}
+                  )?.display_name ?? "Source not verified"}
                 </span>
               )}
               {scope.startsWith("workspace:") && (
                 <span>
                   {snapshot.workspaces.find((option) => option.scope === scope)
-                    ?.label ?? "工作区未能核对"}
+                    ?.label ?? "Workspace not verified"}
                 </span>
               )}
             </li>
           ))
         ) : (
-          <li>无授权范围</li>
+          <li>No granted scopes</li>
         )}
       </ul>
     </>
@@ -1241,22 +1273,28 @@ function statusLabel(
   status: RecallPermissionStatus | undefined,
   hostId: string,
 ) {
-  if (!status || status.hostId !== hostId) return "调用授权状态尚未核对";
-  if (status.state === "not-installed") return "尚未安装连接，不能授权使用记忆";
+  if (!status || status.hostId !== hostId)
+    return "Call authorization state not verified yet";
+  if (status.state === "not-installed")
+    return "The connection is not installed, so memory use cannot be authorized";
   if (status.state === "relink-required") {
     if (status.reason === "legacy_installation")
-      return "检测到旧连接，请先重新连接，再允许使用记忆";
+      return "An old connection was detected; reconnect first, then allow memory use";
     if (status.reason === "managed_config_changed")
-      return "连接配置已变化，请先核对并重新连接，再允许使用记忆";
-    return "连接凭据需要更新，请先重新连接，再允许使用记忆";
+      return "The connection configuration changed; review and reconnect first, then allow memory use";
+    return "The connection credentials need updating; reconnect first, then allow memory use";
   }
-  if (status.state === "unavailable") return "调用授权服务暂不可用";
-  if (status.state === "unsupported") return "此连接暂不支持调用权限管理";
-  if (!validReceipt(status, hostId)) return "调用授权信息不完整，请刷新核对";
-  if (status.state === "approved") return "已允许按所选范围使用记忆";
+  if (status.state === "unavailable")
+    return "The call authorization service is unavailable";
+  if (status.state === "unsupported")
+    return "This connection does not support call permission management";
+  if (!validReceipt(status, hostId))
+    return "Call authorization details are incomplete; refresh and check";
+  if (status.state === "approved")
+    return "Memory use is allowed for the selected scopes";
   if (status.state === "revoked")
-    return "此安装的调用授权已撤回，需重新连接后再授权";
-  return "已安装，尚未允许使用记忆";
+    return "The call authorization for this install was revoked; reconnect and grant it again";
+  return "Installed; memory use is not allowed yet";
 }
 
 function sameStatus(
@@ -1370,6 +1408,6 @@ function isStaleError(error: unknown) {
 
 function refreshAfterCommitMessage(action: Snapshot["action"]) {
   return action === "revoke"
-    ? "授权已撤回，但列表刷新失败。刷新核对不会再次撤回。"
-    : "授权已保存，但列表刷新失败。刷新核对不会再次授权。";
+    ? "The authorization was revoked, but the list refresh failed. Refreshing to check does not revoke again."
+    : "The authorization was saved, but the list refresh failed. Refreshing to check does not grant again.";
 }

@@ -35,26 +35,32 @@ export function ConnectionFallback() {
           void load();
       }}
     >
-      <summary>连接其他工具</summary>
+      <summary>Connect other tools</summary>
       {!available ? (
-        <p>本机连接材料仅在桌面 App 中可用。</p>
+        <p>Local connection material is only available in the desktop app.</p>
       ) : (
         <>
           <p className="connection-boundary">
-            仅本机 MCP / 命令工具。纯网页聊天不支持直接连接本机。
+            Local MCP / command tools only. Pure web chat cannot connect to this
+            machine directly.
           </p>
-          <p>列表内工具请用上方一键安装，此处仅供未列出的工具。</p>
-          {loading && <p role="status">正在读取本机连接配置…</p>}
+          <p>
+            For tools in the list above, use the one-click install; this is only
+            for tools not listed.
+          </p>
+          {loading && (
+            <p role="status">Reading the local connection config...</p>
+          )}
           {error && (
             <p role="alert">
-              未能读取连接配置。
+              Could not read the connection config.
               <button
                 type="button"
                 className="quiet"
                 onClick={() => void load()}
               >
                 <RefreshCw size={15} aria-hidden="true" />
-                重试
+                Retry
               </button>
             </p>
           )}
@@ -62,14 +68,14 @@ export function ConnectionFallback() {
             <>
               <div
                 role="tablist"
-                aria-label="连接材料格式"
+                aria-label="Connection material format"
                 className="connection-modes"
               >
                 {(
                   [
-                    ["prompt", "连接提示词"],
-                    ["mcp", "MCP 配置"],
-                    ["shell", "命令"],
+                    ["prompt", "Connection prompt"],
+                    ["mcp", "MCP config"],
+                    ["shell", "Command"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -88,14 +94,15 @@ export function ConnectionFallback() {
                 ))}
               </div>
               <textarea
-                aria-label="本机连接材料"
+                aria-label="Local connection material"
                 readOnly
                 value={material[mode] ?? ""}
                 spellCheck={false}
               />
               <p>
-                包含本机路径，不含记忆和密钥。片段会运行本机 MemHub
-                连接程序；粘贴前请确认，MemHub 需保持运行。
+                It contains local paths but no memories or keys. The snippet
+                runs this machine's MemHub connector; confirm before pasting,
+                and keep MemHub running.
               </p>
               <button
                 type="button"
@@ -103,19 +110,21 @@ export function ConnectionFallback() {
                 onClick={async () => {
                   try {
                     await copyText(material[mode] ?? "");
-                    setNotice("已复制，尚未建立连接。");
+                    setNotice("Copied; no connection has been established.");
                   } catch {
-                    setNotice("复制失败，可在上方选中文本复制。");
+                    setNotice(
+                      "Copy failed; you can select the text above to copy.",
+                    );
                   }
                 }}
               >
                 <Copy size={15} aria-hidden="true" />
-                复制
+                Copy
                 {mode === "prompt"
-                  ? "提示词"
+                  ? " prompt"
                   : mode === "mcp"
-                    ? "配置"
-                    : "命令"}
+                    ? " config"
+                    : " command"}
               </button>
               {notice && <p role="status">{notice}</p>}
             </>

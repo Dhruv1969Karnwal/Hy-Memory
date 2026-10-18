@@ -103,7 +103,7 @@ class TestBundleResolution:
 class TestEncoding:
     @requires_assets
     def test_vectors_are_512_wide_and_unit_length(self) -> None:
-        vectors = LocalEmbedder().encode(["记忆系统", "另一段文字"])
+        vectors = LocalEmbedder().encode(["memory system", "another piece of text"])
 
         assert [len(vector) for vector in vectors] == [512, 512]
         for vector in vectors:
@@ -116,9 +116,9 @@ class TestEncoding:
         # every shape assertion above.
         anchor, related, unrelated = LocalEmbedder().encode(
             [
-                "记忆系统的向量宽度必须一致",
-                "向量维度不匹配会导致图库被归档",
-                "今天午饭吃的是牛肉面",
+                "The memory system's vector width must stay consistent",
+                "A vector dimension mismatch gets the graph store archived",
+                "Today's lunch was beef noodles",
             ]
         )
         close = sum(a * b for a, b in zip(anchor, related, strict=True))
@@ -129,7 +129,7 @@ class TestEncoding:
     @requires_assets
     def test_the_same_text_encodes_identically_across_calls(self) -> None:
         embedder = LocalEmbedder()
-        assert embedder.encode(["稳定性"]) == embedder.encode(["稳定性"])
+        assert embedder.encode(["stability"]) == embedder.encode(["stability"])
 
     @requires_assets
     def test_encoding_opens_no_socket(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,7 +146,7 @@ class TestEncoding:
         # the tokenizer is covered too. Warming it up first would leave the
         # one path most likely to reach out, resolving a model by name,
         # untested.
-        assert len(LocalEmbedder().encode(["断网之后仍然要能编码"])[0]) == 512
+        assert len(LocalEmbedder().encode(["encoding must still work when offline"])[0]) == 512
 
     def test_absent_assets_fail_with_an_actionable_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -156,5 +156,5 @@ class TestEncoding:
         monkeypatch.setattr("one_memory.local_embedding.resolve_asset_dir", lambda: tmp_path)
 
         with pytest.raises(MissingEmbeddingAssetsError) as caught:
-            LocalEmbedder().encode(["任意文本"])
+            LocalEmbedder().encode(["any text"])
         assert "fetch_embedding_model" in str(caught.value)

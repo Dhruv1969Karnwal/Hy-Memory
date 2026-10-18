@@ -384,7 +384,7 @@ class MatterStore:
             return Matter(
                 matter_id=identifier,
                 version=matter.version,
-                title="档案需重新整理",
+                title="Profile needs to be reorganized",
                 availability=reason,
                 model=matter.model,
                 updated_at=matter.updated_at,
@@ -475,7 +475,10 @@ class MatterStore:
 
     def context(self, identifier: str, *, character_budget: int | None = None) -> MatterContext:
         matter = self.get(identifier)
-        text = "该档案有新增资料或来源变化，暂不提供旧结论，请先更新。"
+        text = (
+            "This profile has new material or changed sources, so the old conclusions are "
+            "withheld; update it first."
+        )
         truncated = False
         if matter.availability == "ready":
             lines = [
@@ -700,5 +703,5 @@ class MatterStore:
         for run in self.runs():
             if run.status == "running":
                 run.status = "interrupted"
-                run.phase = "整理已中断，可重试"
+                run.phase = "Organization interrupted; retry available"
                 self.put_run(run)

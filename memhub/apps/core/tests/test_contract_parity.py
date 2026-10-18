@@ -1,9 +1,12 @@
-"""Python 的枚举和 TypeScript 里那份手写的联合类型必须一致。
+"""Python's enums and the hand-written TypeScript union must agree.
 
-项目规则写的是「TypeScript 类型由契约生成或验证」，而在这条测试出现之前
-两样都没有：`packages/contracts/src/index.ts` 是手抄的，抄错或漏抄不会有
-任何东西报警。整套代码生成不在这一轮范围内，但把「唯一来源」这句话对
-这几个枚举坐实，成本只有这一个文件。
+The project rule says "TypeScript types are generated or verified from the contract", and before \
+this test
+neither existed: `packages/contracts/src/index.ts` was copied by hand, and a wrong or missing \
+copy would not
+warn about anything. Whole-codegen is out of scope for this round, but making the single-source \
+claim real
+for these enums costs only this one file.
 """
 
 import re
@@ -19,7 +22,7 @@ CONTRACTS = Path(__file__).resolve().parents[3] / "packages" / "contracts" / "sr
 def _union(name: str) -> tuple[str, ...]:
     source = CONTRACTS.read_text(encoding="utf-8")
     match = re.search(rf"^export type {name} = (.+);$", source, re.MULTILINE)
-    assert match is not None, f"{name} 在 TypeScript 契约里找不到"
+    assert match is not None, f"{name} is missing from the TypeScript contract"
     return tuple(sorted(re.findall(r'"([^"]+)"', match.group(1))))
 
 
@@ -53,10 +56,13 @@ def test_governed_memory_carries_the_same_fields_on_both_sides() -> None:
 
 
 def test_an_agent_owned_memory_is_usable_and_never_passes_as_the_person(tmp_path) -> None:
-    """助手输出里的事实直接可用，但始终标成助手说的。
+    """Facts in assistant output are usable right away, but always labelled as what the \
+assistant said.
 
-    召回读到它时，origin 让别的 AI 应用知道这是模型的陈述、不是本人的判决。
-    已有的同内容记忆，也不会被模型输出改掉来源标记。
+    Read through recall, origin tells another AI app that this is a model statement, not the \
+person's own verdict.
+    An existing memory with the same content never has its origin marker rewritten by model \
+output either.
     """
     from tests.test_memory_processing import (
         test_agent_output_keeps_the_origin_of_a_same_content_memory,

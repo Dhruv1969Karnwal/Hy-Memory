@@ -992,7 +992,7 @@ def test_startup_repairs_stale_journal_and_requeues_unsent_identity_failure(tmp_
             message_id="user-1",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="我喜欢蓝莓",
+            verbatim="I like blueberries",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -1048,7 +1048,7 @@ def test_startup_never_repairs_a_possibly_sent_identity_failure(tmp_path) -> Non
             message_id="user-1",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="已经发给模型",
+            verbatim="Already sent to the model",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -1113,10 +1113,13 @@ def test_unresolved_unknown_is_automatically_retried_only_once(tmp_path) -> None
     first_retry = queue.get(record.request_id)
     assert first_retry.state == PENDING
     with sqlite3.connect(path) as connection:
-        assert connection.execute(
-            "SELECT attempts FROM memory_write_jobs WHERE job_id=?",
-            (record.job_id,),
-        ).fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT attempts FROM memory_write_jobs WHERE job_id=?",
+                (record.job_id,),
+            ).fetchone()[0]
+            == 1
+        )
 
     drain = DurableWriteDrain(queue, execute=_never_execute, owner="retry-owner")
     assert drain.claim(limit=1) == (record.job_id,)
@@ -1130,10 +1133,13 @@ def test_unresolved_unknown_is_automatically_retried_only_once(tmp_path) -> None
     )
 
     with sqlite3.connect(path) as connection:
-        assert connection.execute(
-            "SELECT attempts FROM memory_write_jobs WHERE job_id=?",
-            (record.job_id,),
-        ).fetchone()[0] == 2
+        assert (
+            connection.execute(
+                "SELECT attempts FROM memory_write_jobs WHERE job_id=?",
+                (record.job_id,),
+            ).fetchone()[0]
+            == 2
+        )
     assert (
         queue.retry_first_unknown_after_reconcile(
             older_than=datetime.now(UTC) + timedelta(minutes=1)
@@ -4209,10 +4215,13 @@ def test_pause_before_hy_releases_an_already_claimed_job(tmp_path) -> None:
     assert current is not None
     assert current.state == PENDING
     with sqlite3.connect(path) as connection:
-        assert connection.execute(
-            "SELECT hy_invoked FROM memory_write_jobs WHERE job_id=?",
-            (record.job_id,),
-        ).fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT hy_invoked FROM memory_write_jobs WHERE job_id=?",
+                (record.job_id,),
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_pause_after_first_hy_call_does_not_interrupt_the_current_job(tmp_path) -> None:

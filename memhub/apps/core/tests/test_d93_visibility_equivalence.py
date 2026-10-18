@@ -1,6 +1,6 @@
 """D93 test 1: the written-ahead visibility must agree with the exact check.
 
-Plan `读写隔离方案-20261009.html` section 8, row 1. Random sequences of
+Plan `\u8bfb\u5199\u9694\u79bb\u65b9\u6848-20261009.html` section 8, row 1. Random sequences of
 revoking and restoring a source, changing a citation, issuing a new proof,
 correcting and deleting a memory. After every step the set of memories the
 library shows is computed twice:
@@ -199,7 +199,7 @@ class World:
                         correlation_id=f"m-{index}",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim=f"第 {index} 条对话原文。",
+                        verbatim=f"conversation line {index} of original words.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
@@ -213,7 +213,7 @@ class World:
                 MemoryDraft(
                     user_id=USER,
                     kind=MemoryKind.CHAT,
-                    content=f"记忆 {index}",
+                    content=f"memory {index}",
                     scopes=("all-apps",),
                     evidence_ids=tuple(record.evidence_id for record in cited),
                 ),
@@ -283,7 +283,7 @@ class World:
                 user_id=USER,
                 request_id=f"correct-{self.rng.random()}",
                 expected_revision=self.memories[memory_id],
-                content=f"改过的记忆 {self.rng.random():.6f}",
+                content=f"edited memory {self.rng.random():.6f}",
             )
             self.memories[memory_id] = memory.revision
         elif action == "delete" and live:

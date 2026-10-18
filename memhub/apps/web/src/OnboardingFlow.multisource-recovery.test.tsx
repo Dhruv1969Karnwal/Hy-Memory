@@ -37,28 +37,28 @@ vi.mock("./api", () => ({
 vi.mock("./FirstImportReview", () => ({
   defaultHostSourceIds: () => [],
   FirstImportReview: (props: FirstImportReviewProps) => (
-    <section aria-label="导入结果">
-      <output aria-label="已受理来源">{props.sourceIds.join(",")}</output>
-      <output aria-label="保留任务">
+    <section aria-label="Import result">
+      <output aria-label="Accepted sources">{props.sourceIds.join(",")}</output>
+      <output aria-label="Kept jobs">
         {props.jobs.map((job) => `${job.job_id}:${job.status}`).join(",")}
       </output>
-      <output aria-label="失败来源">
+      <output aria-label="Failed sources">
         {Object.keys(props.failedSources ?? {}).join(",")}
       </output>
       <button type="button" onClick={() => props.onContinue("settings")}>
-        继续配置模型
+        Continue to model setup
       </button>
       <button type="button" onClick={() => props.onContinue("sources")}>
-        进入应用
+        Go to apps
       </button>
     </section>
   ),
 }));
 vi.mock("./OnboardingModelController", () => ({
   OnboardingModelController: ({ onBack }: { onBack(): void }) => (
-    <section aria-label="模型步骤">
+    <section aria-label="Model step">
       <button type="button" onClick={onBack}>
-        返回导入
+        Back to import
       </button>
     </section>
   ),
@@ -106,28 +106,27 @@ function source(
 function Harness() {
   const imports = useImportSources({ automaticSync: false });
   return imports.loading ? (
-    <p>读取初始来源</p>
+    <p>Reading initial sources</p>
   ) : (
     <OnboardingFlow state={state} imports={imports} onFinish={finish} />
   );
 }
 function checkbox(id: string) {
   return screen.getByRole<HTMLInputElement>("checkbox", {
-    name: `导入 ${id} 历史`,
+    name: `Import ${id} history`,
   });
 }
 function count() {
   return within(
-    screen.getByRole("complementary", { name: "本次导入" }),
+    screen.getByRole("complementary", { name: "This import" }),
   ).getByText(/^\d+$/).textContent;
 }
 async function ready() {
   render(<Harness />);
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "重新检测位置" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
+    expect(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    ).toHaveProperty("disabled", false),
   );
 }
 function noUnrequestedWrites() {
@@ -180,26 +179,25 @@ it("defaults to all three readable apps without authorization and preserves expl
   sources = [source("workbuddy"), source("cursor"), source("codex")];
   await ready();
   await waitFor(() => expect(count()).toBe("3"));
-  expect(screen.getByRole("list", { name: "候选应用" }).children).toHaveLength(
-    3,
-  );
+  expect(
+    screen.getByRole("list", { name: "Candidate apps" }).children,
+  ).toHaveLength(3);
   for (const item of sources)
     expect(checkbox(item.source_id).checked).toBe(true);
   expect(api.connectSources).not.toHaveBeenCalled();
   noUnrequestedWrites();
   fireEvent.click(checkbox("cursor"));
   expect(count()).toBe("2");
-  fireEvent.click(screen.getByRole("button", { name: "重新检测位置" }));
+  fireEvent.click(screen.getByRole("button", { name: "Re-check locations" }));
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "重新检测位置" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
+    expect(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    ).toHaveProperty("disabled", false),
   );
   expect(checkbox("cursor").checked).toBe(false);
   expect(count()).toBe("2");
-  fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
-  await screen.findByRole("region", { name: "导入结果" });
+  fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+  await screen.findByRole("region", { name: "Import result" });
   expect(api.connectSources).toHaveBeenCalledExactlyOnceWith(
     ["codex", "workbuddy"],
     true,
@@ -220,14 +218,15 @@ it("canceling custom location does not select it on later metadata refresh", asy
   await ready();
   await waitFor(() => expect(count()).toBe("1"));
   fireEvent.click(checkbox("codex"));
-  const dialog = screen.getByRole("dialog", { name: "确认自定义位置" });
-  fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
-  fireEvent.click(screen.getByRole("button", { name: "重新检测位置" }));
+  const dialog = screen.getByRole("dialog", {
+    name: "Confirm custom location",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Re-check locations" }));
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "重新检测位置" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
+    expect(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    ).toHaveProperty("disabled", false),
   );
   expect(checkbox("codex").checked).toBe(false);
   expect(count()).toBe("1");
@@ -245,28 +244,32 @@ it("keeps the single-source submit frozen when another source arrives during fin
       resolve = done;
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start import" }));
   expect(api.connectSources).not.toHaveBeenCalled();
   sources = [...sources, source("codex")];
   await act(async () => resolve(sources));
-  await screen.findByRole("region", { name: "导入结果" });
+  await screen.findByRole("region", { name: "Import result" });
   expect(api.connectSources).toHaveBeenCalledExactlyOnceWith(
     ["workbuddy"],
     true,
     expect.objectContaining({ sourceRoots: { workbuddy: "root-workbuddy" } }),
   );
-  expect(screen.getByLabelText("已受理来源").textContent).toBe("workbuddy");
+  expect(screen.getByLabelText("Accepted sources").textContent).toBe(
+    "workbuddy",
+  );
   noUnrequestedWrites();
 });
 
 it("empty discovery shows zero and allows explicit entry without a connection request", async () => {
   await ready();
   expect(count()).toBe("0");
-  expect(screen.getByRole("button", { name: "开始导入" })).toHaveProperty(
+  expect(screen.getByRole("button", { name: "Start import" })).toHaveProperty(
     "disabled",
     true,
   );
-  fireEvent.click(screen.getByRole("button", { name: "稍后添加，先进入" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add later, continue now" }),
+  );
   await waitFor(() =>
     expect(finish).toHaveBeenCalledExactlyOnceWith("sources"),
   );
@@ -302,21 +305,27 @@ it("partial acceptance preserves the successful job and failure through model-st
   );
   await ready();
   await waitFor(() => expect(count()).toBe("2"));
-  fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
-  await screen.findByRole("region", { name: "导入结果" });
-  expect(screen.getByLabelText("已受理来源").textContent).toBe("workbuddy");
-  expect(screen.getByLabelText("失败来源").textContent).toBe("cursor");
-  expect(screen.getByLabelText("保留任务").textContent).toBe(
+  fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+  await screen.findByRole("region", { name: "Import result" });
+  expect(screen.getByLabelText("Accepted sources").textContent).toBe(
+    "workbuddy",
+  );
+  expect(screen.getByLabelText("Failed sources").textContent).toBe("cursor");
+  expect(screen.getByLabelText("Kept jobs").textContent).toBe(
     "accepted-job:completed",
   );
-  fireEvent.click(screen.getByRole("button", { name: "继续配置模型" }));
-  fireEvent.click(await screen.findByRole("button", { name: "返回导入" }));
-  expect(screen.getByLabelText("保留任务").textContent).toBe(
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue to model setup" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Back to import" }),
+  );
+  expect(screen.getByLabelText("Kept jobs").textContent).toBe(
     "accepted-job:completed",
   );
-  expect(screen.getByLabelText("失败来源").textContent).toBe("cursor");
+  expect(screen.getByLabelText("Failed sources").textContent).toBe("cursor");
   expect(api.completeOnboarding).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "进入应用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Go to apps" }));
   await waitFor(() =>
     expect(finish).toHaveBeenCalledExactlyOnceWith("sources"),
   );

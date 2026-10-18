@@ -761,10 +761,12 @@ CREATE TABLE IF NOT EXISTS evidence (
     KEY evidence_imported_index (user_id, imported_at, evidence_id(36))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 存量 MySQL 库：CREATE TABLE IF NOT EXISTS 对已存在的 evidence 表是 no-op，故单独建索引。
--- 前缀长度同邻居惯例（InnoDB 索引键上限 3072 字节，utf8mb4 4 字节/字符；imported_at 是定长
--- DATETIME(6)，evidence_id 是 36 字符 uuid 形式。该索引服务 list_recent_conversations 的
--- ORDER BY imported_at DESC, evidence_id DESC；此前无对应索引导致 43 万行全表排序（秒级）。
+-- Existing MySQL databases: CREATE TABLE IF NOT EXISTS is a no-op on an evidence table that is
+-- already there, so the index is created separately. Prefix lengths follow the neighbouring
+-- convention (InnoDB caps an index key at 3072 bytes and utf8mb4 is 4 bytes a character;
+-- imported_at is a fixed-width DATETIME(6) and evidence_id is the 36-character uuid form). The \
+index serves the ORDER BY imported_at DESC, evidence_id DESC of list_recent_conversations, which \
+previously sorted 430k rows with no matching index and took seconds.
 CREATE INDEX IF NOT EXISTS evidence_imported_index
 ON evidence (user_id, imported_at DESC, evidence_id(36));
 
@@ -2229,7 +2231,8 @@ async def _046_clean_codex_internal_context(cursor: Any) -> None:
           memory_id,revision,action,status,content,scopes_json,created_at,migrated_from,by_model
         )
         SELECT memory_id,revision+1,'cleanup_internal_context','deleted',
-          '[已清理：该记忆包含 Codex 内部续跑提示]',scopes_json,CURRENT_TIMESTAMP,NULL,0
+          '[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex \
+\u5185\u90e8\u7eed\u8dd1\u63d0\u793a]',scopes_json,CURRENT_TIMESTAMP,NULL,0
         FROM governed_memories AS memory
         WHERE lower(content) LIKE '%<codex_internal_context%'
           AND NOT EXISTS (
@@ -2241,7 +2244,8 @@ async def _046_clean_codex_internal_context(cursor: Any) -> None:
         """
         UPDATE governed_memories
         SET status='deleted',
-            content='[已清理：该记忆包含 Codex 内部续跑提示]',
+            content='[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex \
+\u5185\u90e8\u7eed\u8dd1\u63d0\u793a]',
             revision=(
               SELECT max(revision) FROM governed_memory_versions AS version
               WHERE version.memory_id=governed_memories.memory_id
@@ -2258,7 +2262,8 @@ async def _046_clean_codex_internal_context(cursor: Any) -> None:
         """,
         """
         UPDATE governed_memory_versions
-        SET content='[已清理：该记忆包含 Codex 内部续跑提示]'
+        SET content='[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex \
+\u5185\u90e8\u7eed\u8dd1\u63d0\u793a]'
         WHERE lower(content) LIKE '%<codex_internal_context%'
         """,
         """
@@ -2278,7 +2283,7 @@ async def _046_clean_codex_internal_context(cursor: Any) -> None:
         """
         UPDATE evidence_versions
         SET role='system',written_by='agent',
-            verbatim='[已清理的 Codex 内部续跑提示]',
+            verbatim='[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u7eed\u8dd1\u63d0\u793a]',
             content_hash='aa5f8a0411d9c5a64f6b4542ab6120460698c31db9b6b5c025d0c6b684988e99'
         WHERE evidence_id IN (
           SELECT evidence_id FROM evidence
@@ -2289,7 +2294,7 @@ async def _046_clean_codex_internal_context(cursor: Any) -> None:
         """
         UPDATE evidence
         SET role='system',written_by='agent',
-            verbatim='[已清理的 Codex 内部续跑提示]',
+            verbatim='[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u7eed\u8dd1\u63d0\u793a]',
             content_hash='aa5f8a0411d9c5a64f6b4542ab6120460698c31db9b6b5c025d0c6b684988e99',
             updated_at=CURRENT_TIMESTAMP
         WHERE source_id='codex'
@@ -2328,13 +2333,15 @@ async def _047_clean_codex_harness_envelopes(cursor: Any) -> None:
         "INSERT INTO governed_memory_versions (memory_id,revision,action,status,content,"
         "scopes_json,created_at,migrated_from,by_model) "
         "SELECT memory_id,revision+1,'cleanup_internal_context','deleted',"
-        "'[已清理：该记忆包含 Codex 内部提示]',scopes_json,CURRENT_TIMESTAMP,NULL,0 "
+        "'[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex"
+        " \u5185\u90e8\u63d0\u793a]',scopes_json,CURRENT_TIMESTAMP,NULL,0 "
         "FROM governed_memories AS memory WHERE "
         f"{memory_match} AND NOT EXISTS (SELECT 1 FROM governed_memory_versions AS version "
         "WHERE version.memory_id=memory.memory_id "
         "AND version.action='cleanup_internal_context')",
         "UPDATE governed_memories SET status='deleted',"
-        "content='[已清理：该记忆包含 Codex 内部提示]',"
+        "content='[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex"
+        " \u5185\u90e8\u63d0\u793a]',"
         "revision=(SELECT max(revision) FROM governed_memory_versions AS version "
         "WHERE version.memory_id=governed_memories.memory_id "
         "AND version.action='cleanup_internal_context'),updated_at=CURRENT_TIMESTAMP,"
@@ -2342,7 +2349,9 @@ async def _047_clean_codex_harness_envelopes(cursor: Any) -> None:
         "WHERE EXISTS (SELECT 1 FROM governed_memory_versions AS version "
         "WHERE version.memory_id=governed_memories.memory_id "
         "AND version.action='cleanup_internal_context') AND status!='deleted'",
-        "UPDATE governed_memory_versions SET content='[已清理：该记忆包含 Codex 内部提示]' "
+        "UPDATE governed_memory_versions SET"
+        " content='[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex"
+        " \u5185\u90e8\u63d0\u793a]' "
         f"WHERE {memory_match}",
         "DELETE FROM governed_memories_terms WHERE memory_id IN "
         "(SELECT memory_id FROM governed_memory_versions "
@@ -2351,12 +2360,12 @@ async def _047_clean_codex_harness_envelopes(cursor: Any) -> None:
         "(SELECT memory_id FROM governed_memory_versions "
         "WHERE action='cleanup_internal_context')",
         "UPDATE evidence_versions SET role='system',written_by='agent',"
-        "verbatim='[已清理的 Codex 内部提示]',"
+        "verbatim='[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u63d0\u793a]',"
         "content_hash='e455dd7c10b80517e6e345aeca2620083106479d3e8752432fa287036b24c3bb' "
         "WHERE evidence_id IN (SELECT evidence_id FROM evidence "
         f"WHERE source_id='codex' AND {evidence_match})",
         "UPDATE evidence SET role='system',written_by='agent',"
-        "verbatim='[已清理的 Codex 内部提示]',"
+        "verbatim='[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u63d0\u793a]',"
         "content_hash='e455dd7c10b80517e6e345aeca2620083106479d3e8752432fa287036b24c3bb',"
         f"updated_at=CURRENT_TIMESTAMP WHERE source_id='codex' AND {evidence_match}",
     )

@@ -19,7 +19,7 @@ vi.mock("./api", () => api);
 
 const note: MemoryNoteReceipt = {
   evidence_id: "note-1",
-  text: "项目周会不排在周五。",
+  text: "Do not schedule the weekly project meeting on Fridays.",
   scope: "all-apps",
   created_at: "2026-09-12T00:00:00Z",
   state: "waiting_for_model",
@@ -47,9 +47,11 @@ it("OBS-18: reads the configured model before saying it is not configured", asyn
     }),
   );
   page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
-  expect(screen.getByText(/整理模型：/).textContent).toContain("正在读取");
-  expect(screen.queryByRole("button", { name: "配置模型" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
+  expect(screen.getByText(/Organizing model:/).textContent).toContain(
+    "Reading",
+  );
+  expect(screen.queryByRole("button", { name: "Configure model" })).toBeNull();
   release([
     {
       profile_id: "p1",
@@ -58,9 +60,11 @@ it("OBS-18: reads the configured model before saying it is not configured", asyn
     },
   ]);
   await waitFor(() =>
-    expect(screen.getByText(/整理模型：/).textContent).toContain("DeepSeek"),
+    expect(screen.getByText(/Organizing model:/).textContent).toContain(
+      "DeepSeek",
+    ),
   );
-  expect(screen.queryByText(/尚未配置/)).toBeNull();
+  expect(screen.queryByText(/Not configured/)).toBeNull();
 });
 
 it("explains source verification failure without retrying or claiming success", async () => {
@@ -72,13 +76,13 @@ it("explains source verification failure without retrying or claiming success", 
     },
   ]);
   page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   expect(
     await screen.findByText(
-      "历史引用尚未绑定到原始来源，当前批次未完成，原话已保留。",
+      "History references are not yet bound to their original sources; the current batch is incomplete, and the original text is kept.",
     ),
   ).toBeTruthy();
-  expect(screen.queryByText("整理已完成")).toBeNull();
+  expect(screen.queryByText("Organizing finished")).toBeNull();
   expect(api.processMemoryNote).not.toHaveBeenCalled();
 });
 
@@ -111,7 +115,7 @@ it("reports a saved note that still needs processing when the panel is closed", 
       state: "waiting_for_model",
     }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   await waitFor(() =>
     expect(callbacks.onPendingChange).toHaveBeenCalledWith({
       evidenceId: note.evidence_id,
@@ -129,17 +133,21 @@ it("reports a saved note that still needs processing when the panel is closed", 
 
 it("saves from an empty library with the linked-app scope by default", async () => {
   const callbacks = page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
-  const input = screen.getByRole("textbox", { name: "记下这件事" });
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
+  const input = screen.getByRole("textbox", { name: "Note this down" });
   expect(document.activeElement).toBe(input);
   await userEvent.type(input, note.text);
   expect(
-    screen.getByRole("button", { name: "保存原话" }).hasAttribute("disabled"),
+    screen
+      .getByRole("button", { name: "Save source text" })
+      .hasAttribute("disabled"),
   ).toBe(false);
   expect(
-    screen.queryByRole("checkbox", { name: /允许已关联应用读取/ }),
+    screen.queryByRole("checkbox", { name: /Allow linked apps to read/ }),
   ).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "保存原话" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save source text" }),
+  );
   await waitFor(() =>
     expect(api.saveMemoryNote).toHaveBeenCalledWith(
       {
@@ -152,10 +160,12 @@ it("saves from an empty library with the linked-app scope by default", async () 
       expect.any(String),
     ),
   );
-  expect(screen.getByText("已保存，正在后台沉淀记忆")).toBeTruthy();
+  expect(
+    screen.getByText("Saved; memories are settling in the background"),
+  ).toBeTruthy();
   expect(callbacks.onSaved).toHaveBeenCalledOnce();
-  expect(screen.queryByRole("dialog", { name: "添加记忆" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "查看记忆" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Add memory" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "View memory" })).toBeNull();
 });
 
 it("preserves draft and request identity after an uncertain save", async () => {
@@ -175,9 +185,11 @@ it("preserves draft and request identity after an uncertain save", async () => {
     },
   } as unknown as NonNullable<typeof window.oneMemory>;
   page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   await userEvent.type(screen.getByRole("textbox"), note.text);
-  await userEvent.click(screen.getByRole("button", { name: "保存原话" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save source text" }),
+  );
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
     note.text,
@@ -188,7 +200,9 @@ it("preserves draft and request identity after an uncertain save", async () => {
   expect(result?.status).toBe("unknown");
   expect(result?.reason).toBe("save_result_unconfirmed");
   expect(result?.status).not.toBe("failed");
-  await userEvent.click(screen.getByRole("button", { name: "保存原话" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save source text" }),
+  );
   expect(api.saveMemoryNote.mock.calls[0][0].request_id).toBe(
     api.saveMemoryNote.mock.calls[1][0].request_id,
   );
@@ -202,16 +216,20 @@ it("closes as saved when the POST response is lost but the operation exists", as
     state: "pending",
   });
   const callbacks = page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   await userEvent.type(screen.getByRole("textbox"), note.text);
-  await userEvent.click(screen.getByRole("button", { name: "保存原话" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save source text" }),
+  );
   await waitFor(() =>
     expect(api.getMemoryNoteOperation).toHaveBeenCalledOnce(),
   );
   const requestId = api.saveMemoryNote.mock.calls[0][0].request_id;
   expect(api.getMemoryNoteOperation).toHaveBeenCalledWith(requestId);
-  expect(screen.getByText("已保存，正在后台沉淀记忆")).toBeTruthy();
-  expect(screen.queryByRole("dialog", { name: "添加记忆" })).toBeNull();
+  expect(
+    screen.getByText("Saved; memories are settling in the background"),
+  ).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Add memory" })).toBeNull();
   expect(callbacks.onSaved).toHaveBeenCalledOnce();
 });
 
@@ -220,9 +238,9 @@ it("opens a persisted result in the existing memory editor", async () => {
     { ...note, state: "ready", memory_ids: ["memory-7"] },
   ]);
   const callbacks = page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   await userEvent.click(
-    await screen.findByRole("button", { name: "查看记忆" }),
+    await screen.findByRole("button", { name: "View memory" }),
   );
   expect(callbacks.onOpenMemory).toHaveBeenCalledWith("memory-7");
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -230,7 +248,7 @@ it("opens a persisted result in the existing memory editor", async () => {
 
 it("closes with Escape and restores the trigger focus", async () => {
   page();
-  const trigger = screen.getByRole("button", { name: "添加记忆" });
+  const trigger = screen.getByRole("button", { name: "Add memory" });
   await userEvent.click(trigger);
   await userEvent.keyboard("{Escape}");
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -245,12 +263,14 @@ it("refreshes the workbench once asynchronous extraction becomes ready", async (
     { ...note, state: "ready", memory_ids: ["new-memory"] },
   ]);
   const callbacks = page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   expect(callbacks.onSaved).not.toHaveBeenCalled();
   await waitFor(() => expect(callbacks.onSaved).toHaveBeenCalledOnce(), {
     timeout: 2500,
   });
-  expect(await screen.findByRole("button", { name: "查看记忆" })).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "View memory" }),
+  ).toBeTruthy();
 });
 
 it("does not ask for separate consent when an old note is waiting for permission", async () => {
@@ -259,11 +279,15 @@ it("does not ask for separate consent when an old note is waiting for permission
   ]);
   api.processMemoryNote.mockResolvedValue({ ...note, state: "pending" });
   page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
 
-  expect(await screen.findByText("原话已保存，等待整理")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "模型授权" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "重新整理" }));
+  expect(
+    await screen.findByText("Source text saved, waiting to be organized"),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Model authorization" }),
+  ).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Organize again" }));
   expect(api.processMemoryNote).toHaveBeenCalledExactlyOnceWith(
     note.evidence_id,
     expect.any(String),
@@ -276,9 +300,9 @@ it("preserves ordinary processing-failure retry without opening model consent", 
   ]);
   api.processMemoryNote.mockResolvedValue({ ...note, state: "pending" });
   page();
-  await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
   await userEvent.click(
-    await screen.findByRole("button", { name: "重新整理" }),
+    await screen.findByRole("button", { name: "Organize again" }),
   );
   expect(api.processMemoryNote).toHaveBeenCalledExactlyOnceWith(
     note.evidence_id,

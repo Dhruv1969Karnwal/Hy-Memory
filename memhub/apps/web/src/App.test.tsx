@@ -36,21 +36,21 @@ describe("coreStatus", () => {
     // Connected and busy looks identical to connected and idle otherwise, and
     // in that stretch the memories genuinely are not in yet.
     expect(coreStatus({ ...core, memory_backfill: "running" })).toBe(
-      "本地 Core 正在整理历史对话",
+      "The local Core is organizing conversation history",
     );
     expect(coreStatus({ ...core, memory_backfill: "done" })).toBe(
-      "本地 Core 已连接",
+      "Local Core connected",
     );
   });
 
   it("does not present a failed catch-up as a healthy connection", () => {
     expect(coreStatus({ ...core, memory_backfill: "failed" })).toBe(
-      "历史对话整理未完成",
+      "History organizing not finished",
     );
   });
 
   it("reads an older Core, which has no such field, as simply connected", () => {
-    expect(coreStatus(core)).toBe("本地 Core 已连接");
-    expect(coreStatus(null)).toBe("连接 Core…");
+    expect(coreStatus(core)).toBe("Local Core connected");
+    expect(coreStatus(null)).toBe("Connecting to Core...");
   });
 });

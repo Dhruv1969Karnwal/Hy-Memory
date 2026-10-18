@@ -165,7 +165,7 @@ describe("WorkBuddy injection hook as the host runs it", () => {
                   kind: "memory",
                   memory_id: "mem-1",
                   revision: 1,
-                  content: "用户喜欢深绿色的界面",
+                  content: "The user prefers a dark green interface",
                   memory_kind: "chat",
                   evidence_ids: [],
                   matched_by: ["lexical"],
@@ -173,7 +173,7 @@ describe("WorkBuddy injection hook as the host runs it", () => {
                   truncated: false,
                 },
               ],
-              used_characters: 10,
+              used_characters: 39,
               truncated: false,
               total_ms: 2,
               adoption: "unknown",
@@ -234,7 +234,7 @@ describe("WorkBuddy injection hook as the host runs it", () => {
       transcript_path: path.join(hostDir, "projects", "sess-rt.jsonl"),
       cwd: root,
       hook_event_name: "UserPromptSubmit",
-      prompt: "继续上次的按钮颜色任务",
+      prompt: "continue the button color task from last time",
     });
 
     const linked = await run(command, input, {
@@ -247,7 +247,7 @@ describe("WorkBuddy injection hook as the host runs it", () => {
     const output = JSON.parse(linked.stdout);
     expect(output.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
     expect(output.hookSpecificOutput.additionalContext).toContain(
-      "用户喜欢深绿色的界面",
+      "The user prefers a dark green interface",
     );
     expect(linked.ms).toBeLessThan(3_000);
 
@@ -284,7 +284,7 @@ describe("WorkBuddy injection hook as the host runs it", () => {
     expect(
       JSON.parse(answered.stdout).hookSpecificOutput.additionalContext,
     ).toBe(
-      "<memhub_session_notice>\n来源 codex om-derived:abc\n</memhub_session_notice>",
+      "<memhub_session_notice>\nSource codex om-derived:abc\n</memhub_session_notice>",
     );
 
     await writeFile(mode, "hang");
@@ -386,7 +386,7 @@ async function noticeHook() {
   const reply = JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "UserPromptSubmit",
-      additionalContext: "来源 codex om-derived:abc",
+      additionalContext: "Source codex om-derived:abc",
     },
     one_memory_ack: TOKEN,
   });
@@ -469,7 +469,7 @@ function noticeInput() {
   return JSON.stringify({
     session_id: "sess-notice",
     hook_event_name: "UserPromptSubmit",
-    prompt: "按钮用什么颜色",
+    prompt: "what color should the buttons be",
   });
 }
 

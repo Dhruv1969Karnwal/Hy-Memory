@@ -66,20 +66,20 @@ const SECTION_NAMES = [
 ] as const;
 
 const BRIDGE_LABELS: Record<StatusDocument["bridge"]["state"], string> = {
-  healthy: "正常",
-  stopped: "未运行",
-  degraded: "降级",
-  untrusted: "身份不可信",
-  unknown: "未知",
-  not_checked: "未检查",
+  healthy: "Healthy",
+  stopped: "Not running",
+  degraded: "Degraded",
+  untrusted: "Identity not trusted",
+  unknown: "Unknown",
+  not_checked: "Not checked",
 };
 
 const SECTION_LABELS: Record<string, string> = {
-  sources: "来源",
-  sync: "同步",
-  processing: "生成任务",
-  model: "模型",
-  memories: "记忆",
+  sources: "Sources",
+  sync: "Sync",
+  processing: "Generation jobs",
+  model: "Model",
+  memories: "Memories",
 };
 
 export async function composeStatusReport(options: {
@@ -176,25 +176,27 @@ export function renderStatusText(
   heading: string,
 ): string {
   const lines = [
-    `${heading}：${runtimeLine(report)}`,
-    `资料空间：${report.data_dir}`,
-    `应用连接：${BRIDGE_LABELS[report.bridge.state]}`,
+    `${heading}: ${runtimeLine(report)}`,
+    `Data space: ${report.data_dir}`,
+    `App connections: ${BRIDGE_LABELS[report.bridge.state]}`,
   ];
   for (const name of SECTION_NAMES) {
     lines.push(
-      `${SECTION_LABELS[name]}：${sectionLine(report.sections[name])}`,
+      `${SECTION_LABELS[name]}: ${sectionLine(report.sections[name])}`,
     );
   }
   if (report.summary.state === "partial") {
     const notes = [
       report.summary.degraded.length > 0
-        ? `${report.summary.degraded.join("、")} 异常`
+        ? `${report.summary.degraded.join(", ")} issues`
         : "",
       report.summary.not_checked.length > 0
-        ? `${report.summary.not_checked.join("、")} 未能读到`
+        ? `${report.summary.not_checked.join(", ")} could not be read`
         : "",
     ].filter((note) => note.length > 0);
-    lines.push(`注意：${notes.join("；")}，以上不是完整状态。`);
+    lines.push(
+      `Note: ${notes.join("; ")}; the above is not a complete status.`,
+    );
   }
   lines.push("");
   return lines.join("\n");
@@ -202,17 +204,20 @@ export function renderStatusText(
 
 function runtimeLine(report: StatusDocument): string {
   if (report.runtime.state !== "running") {
-    return report.runtime.state === "stopped" ? "未运行" : "暂时无法确认";
+    return report.runtime.state === "stopped"
+      ? "Not running"
+      : "Cannot confirm yet";
   }
-  return `运行中（${report.runtime.host}:${report.runtime.port}${
-    report.runtime.version ? `，版本 ${report.runtime.version}` : ""
-  }）`;
+  return `Running (${report.runtime.host}:${report.runtime.port}${
+    report.runtime.version ? `, version ${report.runtime.version}` : ""
+  })`;
 }
 
 function sectionLine(section: Section | undefined): string {
-  if (!section) return "未检查";
-  if (section.state === "not_checked") return "未检查";
-  if (section.state !== "ok") return "暂时不可用，请稍后重试";
+  if (!section) return "Not checked";
+  if (section.state === "not_checked") return "Not checked";
+  if (section.state !== "ok")
+    return "Temporarily unavailable; try again shortly";
   return Object.entries(section)
     .filter(([key]) => key !== "state" && key !== "code")
     .map(([key, value]) => `${fieldLabel(key)} ${formatValue(value)}`)
@@ -222,9 +227,9 @@ function sectionLine(section: Section | undefined): string {
 function formatValue(value: unknown): string {
   if (Array.isArray(value))
     return value.length === 0
-      ? "无"
-      : value.map((item) => formatValue(item)).join("；");
-  if (value === null || value === undefined) return "无";
+      ? "None"
+      : value.map((item) => formatValue(item)).join("; ");
+  if (value === null || value === undefined) return "None";
   if (typeof value === "object") {
     return Object.entries(value as Record<string, unknown>)
       .map(([key, item]) => `${fieldLabel(key)} ${formatValue(item)}`)
@@ -235,41 +240,41 @@ function formatValue(value: unknown): string {
 
 function fieldLabel(key: string): string {
   const labels: Record<string, string> = {
-    total: "共",
-    authorized: "已授权",
-    available: "已发现",
-    imported_conversations: "会话",
-    imported_messages: "原文",
-    sources: "来源",
-    running: "进行中",
-    idle: "空闲",
-    degraded: "需留意",
-    unavailable: "不可用",
-    pending: "待处理",
-    fresh_pending: "新对话待处理",
-    backlog_pending: "历史待处理",
-    outside_window_pending: "稍后处理",
-    waiting_for_model: "等待模型",
-    completed: "已完成",
-    failed: "失败",
-    blocked: "卡住",
-    kind: "类型",
-    reason: "原因",
-    count: "数量",
-    profiles: "配置",
-    active: "当前",
-    memory_count: "记忆",
+    total: "Total",
+    authorized: "Authorized",
+    available: "Discovered",
+    imported_conversations: "Conversations",
+    imported_messages: "Originals",
+    sources: "Sources",
+    running: "Running",
+    idle: "Idle",
+    degraded: "Needs attention",
+    unavailable: "Unavailable",
+    pending: "Pending",
+    fresh_pending: "New conversations pending",
+    backlog_pending: "History pending",
+    outside_window_pending: "Process later",
+    waiting_for_model: "Waiting for model",
+    completed: "Completed",
+    failed: "Failed",
+    blocked: "Stuck",
+    kind: "Kind",
+    reason: "Reason",
+    count: "Count",
+    profiles: "Profiles",
+    active: "Current",
+    memory_count: "Memories",
   };
   return labels[key] ?? key;
 }
 
 function valueLabel(value: string): string {
   const labels: Record<string, string> = {
-    extract: "整理对话",
-    waiting_for_model: "等待模型",
-    input_too_long: "内容过长",
-    background_verified: "后台正常",
-    additions_only: "只同步新增内容",
+    extract: "Organize conversations",
+    waiting_for_model: "Waiting for model",
+    input_too_long: "Content too long",
+    background_verified: "Background verified",
+    additions_only: "Only new content is synced",
   };
   return labels[value] ?? value;
 }

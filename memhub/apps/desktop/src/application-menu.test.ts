@@ -15,11 +15,11 @@ it("exports logs from Help without requiring a renderer window", async () => {
     exportLogs,
     reportError: vi.fn(),
   });
-  const help = template.find((item) => item.label === "帮助");
+  const help = template.find((item) => item.label === "Help");
   expect(help).toBeDefined();
   const submenu = help?.submenu as Array<Record<string, unknown>> | undefined;
   const exportItem = submenu?.find(
-    (item) => item.label === "导出日志（发给开发排查）",
+    (item) => item.label === "Export logs (send to developers for debugging)",
   );
   expect(exportItem).toBeDefined();
   const click = exportItem?.click;

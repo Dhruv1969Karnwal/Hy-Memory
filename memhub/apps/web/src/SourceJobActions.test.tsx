@@ -91,13 +91,13 @@ afterEach(() => {
 
 describe("SourceJobActions COLD-12 / A10", () => {
   it.each([
-    ["pending", "等待检查新增", "暂停新增同步"],
-    ["running", "正在检查新增", "暂停新增同步"],
-    ["paused", "新增同步已暂停", "继续新增同步"],
-    ["interrupted", "新增同步已中断", "继续新增同步"],
-    ["failed", "新增同步失败", "重试新增同步"],
-    ["completed", "本次新增检查已完成", null],
-    ["cancelled", "本次新增同步已取消", null],
+    ["pending", "Waiting to check for new items", "Pause new sync"],
+    ["running", "Checking for new items", "Pause new sync"],
+    ["paused", "New sync paused", "Resume new sync"],
+    ["interrupted", "New sync interrupted", "Resume new sync"],
+    ["failed", "New sync failed", "Retry new sync"],
+    ["completed", "New-item check complete", null],
+    ["cancelled", "New sync canceled", null],
   ] satisfies [ImportStatus, string, string | null][])(
     "sync %s has operation-specific state and tools without changing counts",
     (status, label, action) => {
@@ -105,14 +105,18 @@ describe("SourceJobActions COLD-12 / A10", () => {
         job: job({ status, operation: "sync", stored: 0, merged: 81614 }),
       });
       expect(
-        screen.getByRole("group", { name: "Cursor 新增同步任务操作" }),
+        screen.getByRole("group", { name: "Cursor new sync task actions" }),
       ).toBeTruthy();
       expect(screen.getByRole("status").textContent).toContain(label);
-      expect(screen.getByRole("status").textContent).toContain("本次新增 0 条");
-      expect(screen.getByRole("status").textContent).not.toMatch(/导入|81,614/);
+      expect(screen.getByRole("status").textContent).toContain(
+        "0 new this run",
+      );
+      expect(screen.getByRole("status").textContent).not.toMatch(
+        /import|81,614/,
+      );
       if (action) {
         expect(button(action).title).toBe(action);
-        expect(button("取消本次新增同步")).toBeTruthy();
+        expect(button("Cancel this new sync")).toBeTruthy();
       } else expect(screen.queryByRole("button")).toBeNull();
       expect(onAction).not.toHaveBeenCalled();
     },
@@ -131,18 +135,20 @@ describe("SourceJobActions COLD-12 / A10", () => {
         updated_at: "2026-09-14T00:00:03Z",
       }),
     );
-    await userEvent.click(button("取消本次新增同步"));
+    await userEvent.click(button("Cancel this new sync"));
     const dialog = screen.getByRole("dialog", {
-      name: "取消 Cursor 的本次新增同步？",
+      name: "Cancel this new sync for Cursor?",
     });
-    expect(dialog.textContent).toContain("仅停止本次新增同步");
-    expect(dialog.textContent).toContain("本次取消不会关闭持续同步");
-    expect(within(dialog).getByText("本次新增")).toBeTruthy();
+    expect(dialog.textContent).toContain("Only stops this new sync");
+    expect(dialog.textContent).toContain(
+      "Canceling here does not turn off continuous sync",
+    );
+    expect(within(dialog).getByText("New this run")).toBeTruthy();
     expect(onAction).not.toHaveBeenCalled();
-    await userEvent.click(button("确认取消"));
+    await userEvent.click(button("Confirm cancel"));
     expect(onAction.mock.calls).toEqual([["job-a", "cancel"]]);
     expect(screen.getByRole("status").textContent).toContain(
-      "本次新增同步已取消",
+      "New sync canceled",
     );
   });
 
@@ -164,14 +170,14 @@ describe("SourceJobActions COLD-12 / A10", () => {
         updated_at: "2026-09-14T00:00:03Z",
       }),
     );
-    await userEvent.click(button("暂停新增同步"));
-    await userEvent.click(button("继续新增同步"));
+    await userEvent.click(button("Pause new sync"));
+    await userEvent.click(button("Resume new sync"));
     expect(onAction.mock.calls).toEqual([
       ["job-a", "pause"],
       ["job-a", "resume"],
     ]);
     expect(screen.getByRole("status").textContent).toContain(
-      "本次新增检查已完成 · 本次新增 1 条",
+      "New-item check complete · 1 new this run",
     );
   });
 
@@ -181,28 +187,28 @@ describe("SourceJobActions COLD-12 / A10", () => {
       snapshotStale: true,
     });
     expect(screen.getByRole("status").textContent).toContain(
-      "最近回执：正在检查新增",
+      "Last receipt: Checking for new items",
     );
-    await userEvent.click(button("取消本次新增同步"));
+    await userEvent.click(button("Cancel this new sync"));
     update({ job: job({ operation: "history" }) });
-    expect(button("确认取消").disabled).toBe(true);
+    expect(button("Confirm cancel").disabled).toBe(true);
     expect(onAction).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["pending", "暂停导入"],
-    ["running", "暂停导入"],
-    ["paused", "继续导入"],
-    ["interrupted", "继续导入"],
-    ["failed", "重试未完成部分"],
+    ["pending", "Pause import"],
+    ["running", "Pause import"],
+    ["paused", "Resume import"],
+    ["interrupted", "Resume import"],
+    ["failed", "Retry unfinished part"],
   ] satisfies [ImportStatus, string][])(
     "%s exposes only the appropriate action and cancel with named icon tooltips",
     (status, label) => {
       const { onAction } = setup({ job: job({ status }) });
       expect(button(label).querySelector("svg")).toBeTruthy();
       expect(button(label).title).toBe(label);
-      expect(button("取消本次导入").querySelector("svg")).toBeTruthy();
-      expect(button("取消本次导入").title).toBe("取消本次导入");
+      expect(button("Cancel this import").querySelector("svg")).toBeTruthy();
+      expect(button("Cancel this import").title).toBe("Cancel this import");
       expect(screen.getAllByRole("button")).toHaveLength(2);
       expect(onAction).not.toHaveBeenCalled();
     },
@@ -214,7 +220,7 @@ describe("SourceJobActions COLD-12 / A10", () => {
       setup({ job: job({ status }) });
       expect(screen.queryByRole("button")).toBeNull();
       expect(screen.getByRole("status").textContent).toContain(
-        status === "completed" ? "已完成" : "已取消",
+        status === "completed" ? "completed" : "canceled",
       );
       expect(screen.getByRole("status").textContent).toContain("8");
     },
@@ -224,20 +230,20 @@ describe("SourceJobActions COLD-12 / A10", () => {
     const { onAction, update } = setup();
     const pending = deferred<ImportJob>();
     onAction.mockReturnValue(pending.promise);
-    fireEvent.click(button("暂停导入"));
+    fireEvent.click(button("Pause import"));
     expect(onAction).toHaveBeenCalledWith("job-a", "pause");
-    expect(screen.getByRole("status").textContent).toContain("正在暂停");
-    expect(screen.queryByText(/已暂停/)).toBeNull();
-    expect(button("取消本次导入").disabled).toBe(true);
+    expect(screen.getByRole("status").textContent).toContain("Pausing");
+    expect(screen.queryByText(/paused/)).toBeNull();
+    expect(button("Cancel this import").disabled).toBe(true);
     await act(async () =>
       pending.resolve(
         job({ status: "paused", updated_at: "2026-09-14T00:00:03Z" }),
       ),
     );
-    expect(button("继续导入")).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("已暂停");
+    expect(button("Resume import")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("paused");
     update({ job: job({ updated_at: "2026-09-14T00:00:02Z" }) });
-    expect(button("继续导入")).toBeTruthy();
+    expect(button("Resume import")).toBeTruthy();
     update({
       job: job({
         status: "completed",
@@ -255,10 +261,10 @@ describe("SourceJobActions COLD-12 / A10", () => {
       const { onAction } = setup({ job: job({ status }) });
       onAction.mockResolvedValue(job({ updated_at: "2026-09-14T00:00:02Z" }));
       await userEvent.click(
-        button(status === "failed" ? "重试未完成部分" : "继续导入"),
+        button(status === "failed" ? "Retry unfinished part" : "Resume import"),
       );
       expect(onAction.mock.calls).toEqual([["job-a", "resume"]]);
-      expect(screen.getByRole("status").textContent).toContain("正在导入");
+      expect(screen.getByRole("status").textContent).toContain("Importing");
     },
   );
 
@@ -266,20 +272,26 @@ describe("SourceJobActions COLD-12 / A10", () => {
     "requires explicit cancel confirmation and preserves sync=%s",
     async (syncEnabled) => {
       const { onAction } = setup({ syncEnabled });
-      await userEvent.click(button("取消本次导入"));
+      await userEvent.click(button("Cancel this import"));
       const dialog = screen.getByRole("dialog", {
-        name: "取消 Cursor 的本次导入？",
+        name: "Cancel this import for Cursor?",
       });
       expect(onAction).not.toHaveBeenCalled();
-      expect(dialog.textContent).toContain("已保存的本机副本会保留");
-      expect(dialog.textContent).toContain("不会撤回来源读取授权");
-      expect(dialog.textContent).toContain("不会修改或删除原文件");
+      expect(dialog.textContent).toContain("Saved local copies are kept");
+      expect(dialog.textContent).toContain(
+        "Source read authorization is not revoked",
+      );
+      expect(dialog.textContent).toContain(
+        "original files are not modified or deleted",
+      );
       expect(
-        dialog.textContent?.includes("未来新增对话仍可能触发新的同步任务"),
+        dialog.textContent?.includes(
+          "new conversations can still trigger new sync tasks",
+        ),
       ).toBe(syncEnabled);
       expect(within(dialog).getByText("job-a")).toBeTruthy();
       expect(within(dialog).getByText("cursor")).toBeTruthy();
-      expect(button("确认取消")).toBeTruthy();
+      expect(button("Confirm cancel")).toBeTruthy();
     },
   );
 
@@ -287,12 +299,12 @@ describe("SourceJobActions COLD-12 / A10", () => {
     "%s dismisses without any request and restores focus",
     async (method) => {
       const { onAction } = setup();
-      const trigger = button("取消本次导入");
+      const trigger = button("Cancel this import");
       await userEvent.click(trigger);
       if (method === "escape") await userEvent.keyboard("{Escape}");
       else
         await userEvent.click(
-          button(method === "back" ? "返回" : "关闭取消确认"),
+          button(method === "back" ? "Back" : "Close cancel confirmation"),
         );
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(onAction).not.toHaveBeenCalled();
@@ -304,8 +316,8 @@ describe("SourceJobActions COLD-12 / A10", () => {
     const { onAction } = setup();
     const pending = deferred<ImportJob>();
     onAction.mockReturnValue(pending.promise);
-    await userEvent.click(button("取消本次导入"));
-    const confirm = button("确认取消");
+    await userEvent.click(button("Cancel this import"));
+    const confirm = button("Confirm cancel");
     act(() => {
       fireEvent.click(confirm);
       fireEvent.click(confirm);
@@ -315,15 +327,15 @@ describe("SourceJobActions COLD-12 / A10", () => {
     expect(document.activeElement).toBe(screen.getByRole("dialog"));
     await userEvent.keyboard("{Escape}{Tab}{Shift>}{Tab}{/Shift}");
     expect(document.activeElement).toBe(screen.getByRole("dialog"));
-    expect(button("返回").disabled).toBe(true);
-    expect(screen.queryByText(/本次导入已取消/)).toBeNull();
+    expect(button("Back").disabled).toBe(true);
+    expect(screen.queryByText(/Import canceled/)).toBeNull();
     await act(async () =>
       pending.resolve(
         job({ status: "cancelled", updated_at: "2026-09-14T00:00:02Z" }),
       ),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain("本次导入已取消");
+    expect(screen.getByRole("status").textContent).toContain("Import canceled");
   });
 
   it.each(["pause", "cancel"] as const)(
@@ -338,33 +350,37 @@ describe("SourceJobActions COLD-12 / A10", () => {
         }),
       );
       if (action === "cancel") {
-        await userEvent.click(button("取消本次导入"));
-        await userEvent.click(button("确认取消"));
-      } else await userEvent.click(button("暂停导入"));
+        await userEvent.click(button("Cancel this import"));
+        await userEvent.click(button("Confirm cancel"));
+      } else await userEvent.click(button("Pause import"));
       expect(screen.getByRole("status").textContent).toContain(
-        "本次导入已完成",
+        "Import completed",
       );
       expect(screen.getByRole("status").textContent).toContain("15");
-      expect(screen.queryByText(/本次导入已取消|导入已暂停/)).toBeNull();
+      expect(screen.queryByText(/Import canceled|Import paused/)).toBeNull();
       expect(screen.queryByRole("dialog")).toBeNull();
     },
   );
 
   it("keeps cancellation failure close to the confirmation and retries through the controller", async () => {
     const { onAction } = setup({ syncEnabled: true });
-    onAction.mockRejectedValueOnce(new Error("连接中断，状态需核对"));
+    onAction.mockRejectedValueOnce(
+      new Error("Connection dropped; the status needs verification"),
+    );
     onAction.mockResolvedValueOnce(
       job({ status: "cancelled", updated_at: "2026-09-14T00:00:03Z" }),
     );
-    await userEvent.click(button("取消本次导入"));
-    await userEvent.click(button("确认取消"));
+    await userEvent.click(button("Cancel this import"));
+    await userEvent.click(button("Confirm cancel"));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("alert").textContent).toContain(
-      "状态待核对",
+      "Status needs verification",
     );
-    expect(within(dialog).getByRole("alert").textContent).toContain("连接中断");
-    expect(screen.queryByText(/本次导入已取消/)).toBeNull();
-    await userEvent.click(button("核对并重试取消"));
+    expect(within(dialog).getByRole("alert").textContent).toContain(
+      "Connection dropped",
+    );
+    expect(screen.queryByText(/Import canceled/)).toBeNull();
+    await userEvent.click(button("Verify and retry cancel"));
     expect(onAction.mock.calls).toEqual([
       ["job-a", "cancel"],
       ["job-a", "cancel"],
@@ -378,12 +394,14 @@ describe("SourceJobActions COLD-12 / A10", () => {
     onAction.mockResolvedValueOnce(
       job({ status: "paused", updated_at: "2026-09-14T00:00:02Z" }),
     );
-    await userEvent.click(button("暂停导入"));
-    expect(screen.getByRole("alert").textContent).toContain("状态待核对");
-    expect(screen.getByRole("status").textContent).not.toContain("已暂停");
-    await userEvent.click(button("核对并重试暂停"));
+    await userEvent.click(button("Pause import"));
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Status needs verification",
+    );
+    expect(screen.getByRole("status").textContent).not.toContain("paused");
+    await userEvent.click(button("Verify and retry pause"));
     expect(onAction).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("status").textContent).toContain("已暂停");
+    expect(screen.getByRole("status").textContent).toContain("paused");
   });
 
   it.each([
@@ -398,16 +416,16 @@ describe("SourceJobActions COLD-12 / A10", () => {
     "latches an invalid confirmation when %s changes",
     async (_name, change) => {
       const { onAction, update } = setup();
-      await userEvent.click(button("取消本次导入"));
+      await userEvent.click(button("Cancel this import"));
       update(change);
-      expect(button("确认取消").disabled).toBe(true);
+      expect(button("Confirm cancel").disabled).toBe(true);
       expect(
         within(screen.getByRole("dialog")).getByRole("alert").textContent,
-      ).toContain("重新确认");
+      ).toContain("confirm again");
       expect(screen.getByRole("dialog").textContent).toContain("job-a");
       update({ job: job(), sourceLabel: "Cursor", syncEnabled: false });
-      expect(button("确认取消").disabled).toBe(true);
-      fireEvent.click(button("确认取消"));
+      expect(button("Confirm cancel").disabled).toBe(true);
+      fireEvent.click(button("Confirm cancel"));
       expect(onAction).not.toHaveBeenCalled();
     },
   );
@@ -421,7 +439,7 @@ describe("SourceJobActions COLD-12 / A10", () => {
         updated_at: "2026-09-14T00:00:03Z",
       }),
     );
-    await userEvent.click(button("取消本次导入"));
+    await userEvent.click(button("Cancel this import"));
     update({
       job: job({
         stored: 19,
@@ -429,8 +447,8 @@ describe("SourceJobActions COLD-12 / A10", () => {
         updated_at: "2026-09-14T00:00:02Z",
       }),
     });
-    expect(button("确认取消").disabled).toBe(false);
-    await userEvent.click(button("确认取消"));
+    expect(button("Confirm cancel").disabled).toBe(false);
+    await userEvent.click(button("Confirm cancel"));
     expect(onAction.mock.calls).toEqual([["job-a", "cancel"]]);
     expect(screen.getByRole("status").textContent).toContain("19");
   });
@@ -439,17 +457,17 @@ describe("SourceJobActions COLD-12 / A10", () => {
     const pending = deferred<ImportJob>();
     const { onAction, update } = setup();
     onAction.mockReturnValue(pending.promise);
-    fireEvent.click(button("暂停导入"));
+    fireEvent.click(button("Pause import"));
     update({ job: job({ job_id: "job-b" }) });
-    fireEvent.click(button("暂停导入"));
+    fireEvent.click(button("Pause import"));
     expect(onAction).toHaveBeenCalledTimes(1);
     await act(async () =>
       pending.resolve(
         job({ status: "paused", updated_at: "2026-09-14T00:00:02Z" }),
       ),
     );
-    expect(button("暂停导入").disabled).toBe(false);
-    expect(screen.queryByRole("button", { name: "继续导入" })).toBeNull();
+    expect(button("Pause import").disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "Resume import" })).toBeNull();
   });
 
   it.each([
@@ -462,22 +480,26 @@ describe("SourceJobActions COLD-12 / A10", () => {
     async (response) => {
       const { onAction } = setup();
       onAction.mockResolvedValue(response as ImportJob);
-      await userEvent.click(button("取消本次导入"));
-      await userEvent.click(button("确认取消"));
+      await userEvent.click(button("Cancel this import"));
+      await userEvent.click(button("Confirm cancel"));
       expect(screen.getByRole("dialog")).toBeTruthy();
-      expect(screen.getByRole("alert").textContent).toContain("状态待核对");
-      expect(screen.queryByText(/本次导入已取消/)).toBeNull();
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Status needs verification",
+      );
+      expect(screen.queryByText(/Import canceled/)).toBeNull();
     },
   );
 
   it("keeps a cancel response that is still running unresolved", async () => {
     const { onAction } = setup();
     onAction.mockResolvedValue(job({ updated_at: "2026-09-14T00:00:02Z" }));
-    await userEvent.click(button("取消本次导入"));
-    await userEvent.click(button("确认取消"));
+    await userEvent.click(button("Cancel this import"));
+    await userEvent.click(button("Confirm cancel"));
     expect(screen.getByRole("dialog")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain("状态待核对");
-    expect(button("核对并重试取消")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Status needs verification",
+    );
+    expect(button("Verify and retry cancel")).toBeTruthy();
   });
 
   it("makes siblings inert, traps both Tab directions and restores prior inert states", async () => {
@@ -488,7 +510,7 @@ describe("SourceJobActions COLD-12 / A10", () => {
     previous.setAttribute("inert", "");
     document.body.append(outside, previous);
     setup();
-    const trigger = button("取消本次导入");
+    const trigger = button("Cancel this import");
     await userEvent.click(trigger);
     const dialog = screen.getByRole("dialog");
     expect(outside.inert).toBe(true);
@@ -519,7 +541,7 @@ describe("SourceJobActions COLD-12 / A10", () => {
     unrelated.focus();
     update({ job: job({ stored: 20 }) });
     expect(document.activeElement).toBe(unrelated);
-    await userEvent.click(button("取消本次导入"));
+    await userEvent.click(button("Cancel this import"));
     unmount();
     expect(onAction).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -530,8 +552,8 @@ describe("SourceJobActions COLD-12 / A10", () => {
     const { onAction } = setup();
     const pending = deferred<ImportJob>();
     onAction.mockReturnValue(pending.promise);
-    const pause = button("暂停导入"),
-      cancel = button("取消本次导入");
+    const pause = button("Pause import"),
+      cancel = button("Cancel this import");
     act(() => {
       fireEvent.click(pause);
       fireEvent.click(pause);
@@ -544,13 +566,13 @@ describe("SourceJobActions COLD-12 / A10", () => {
 
   it("blocks new writes when disabled, including a dialog already open", async () => {
     const { onAction, update } = setup({ disabled: true });
-    expect(button("暂停导入").disabled).toBe(true);
-    expect(button("取消本次导入").disabled).toBe(true);
+    expect(button("Pause import").disabled).toBe(true);
+    expect(button("Cancel this import").disabled).toBe(true);
     update({ disabled: false });
-    await userEvent.click(button("取消本次导入"));
+    await userEvent.click(button("Cancel this import"));
     update({ disabled: true });
-    expect(button("确认取消").disabled).toBe(true);
-    await userEvent.click(button("返回"));
+    expect(button("Confirm cancel").disabled).toBe(true);
+    await userEvent.click(button("Back"));
     expect(onAction).not.toHaveBeenCalled();
   });
 
@@ -560,7 +582,7 @@ describe("SourceJobActions COLD-12 / A10", () => {
     existing.setAttribute("role", "dialog");
     existing.setAttribute("aria-modal", "true");
     document.body.append(existing);
-    fireEvent.click(button("取消本次导入"));
+    fireEvent.click(button("Cancel this import"));
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 
@@ -575,18 +597,18 @@ describe("SourceJobActions COLD-12 / A10", () => {
     tour.append(tourButton);
     document.body.append(tour);
     tourButton.focus();
-    fireEvent.click(button("取消本次导入"));
+    fireEvent.click(button("Cancel this import"));
     const dialog = screen.getByRole("dialog", {
-      name: "取消 Cursor 的本次导入？",
+      name: "Cancel this import for Cursor?",
     });
     expect(dialog).toBeTruthy();
     expect(document.activeElement).toBe(tourButton);
-    expect(button("确认取消").disabled).toBe(true);
+    expect(button("Confirm cancel").disabled).toBe(true);
     await act(async () => tour.remove());
     await waitFor(() =>
       expect(dialog.contains(document.activeElement)).toBe(true),
     );
-    expect(button("确认取消").disabled).toBe(false);
+    expect(button("Confirm cancel").disabled).toBe(false);
   });
 
   it("keeps closing mounted for 160ms without allowing late submits", async () => {
@@ -597,13 +619,13 @@ describe("SourceJobActions COLD-12 / A10", () => {
     }));
     vi.useFakeTimers();
     const { onAction } = setup();
-    fireEvent.click(button("取消本次导入"));
+    fireEvent.click(button("Cancel this import"));
     expect(screen.getByRole("dialog").getAttribute("data-motion")).toBe("full");
-    fireEvent.click(button("返回"));
+    fireEvent.click(button("Back"));
     expect(screen.getByRole("dialog").getAttribute("data-closing")).toBe(
       "true",
     );
-    fireEvent.click(button("确认取消"));
+    fireEvent.click(button("Confirm cancel"));
     act(() => vi.advanceTimersByTime(159));
     expect(screen.getByRole("dialog")).toBeTruthy();
     act(() => vi.advanceTimersByTime(1));

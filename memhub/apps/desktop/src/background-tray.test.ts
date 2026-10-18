@@ -119,7 +119,7 @@ describe("native macOS background tray", () => {
     await flush();
 
     expect(f.menu()[1]).toMatchObject({ checked: true, enabled: false });
-    expect(f.menu()[1]?.label).toContain("由 CLI 管理");
+    expect(f.menu()[1]?.label).toContain("managed by CLI");
     f.click(1, false);
     expect(f.setLoginPreference).not.toHaveBeenCalled();
   });
@@ -128,7 +128,9 @@ describe("native macOS background tray", () => {
     const f = fixture();
     const dispose = f.install();
     await flush();
-    expect(f.menu()[3]?.label).toContain("后台服务继续运行");
+    expect(f.menu()[3]?.label).toContain(
+      "the background service keeps running",
+    );
     f.click(0);
     expect(f.open).toHaveBeenCalledOnce();
     f.click(3);

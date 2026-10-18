@@ -21,8 +21,8 @@ from one_memory.secrets import InMemorySecretStore
 from tests.source_consent import authorized_request, thaw_source
 
 TOKEN = "log-privacy-token"
-SECRET_TURN = "我的社保号是 91827364550 而且周会避开周五"
-SECRET_QUERY = "周会避开周五"
+SECRET_TURN = "My social security number is 91827364550 and weekly meetings avoid Fridays"
+SECRET_QUERY = "weekly meetings avoid Fridays"
 
 
 def detach(destination) -> None:

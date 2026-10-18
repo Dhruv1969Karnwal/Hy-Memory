@@ -16,7 +16,7 @@ def _row(**overrides: object) -> dict[str, object]:
         "workspace": "/Users/k/one-memory",
         "project": "one-memory",
         "created_at": "2026-10-04T10:00:00Z",
-        "verbatim": "红眼航班要靠过道",
+        "verbatim": "Red-eye flights need an aisle seat",
         "role": "assistant",
         "written_by": "agent",
     }
@@ -37,5 +37,5 @@ def test_a_row_the_person_wrote_is_not_relabelled_on_the_way_out() -> None:
 
 
 def test_a_long_row_is_excerpted_and_an_empty_one_is_not_a_crash() -> None:
-    assert _conversation_hit(_row(verbatim="航" * 400))["excerpt"] == "航" * 200
+    assert _conversation_hit(_row(verbatim="x" * 400))["excerpt"] == "x" * 200
     assert _conversation_hit(_row(verbatim=None))["excerpt"] == ""

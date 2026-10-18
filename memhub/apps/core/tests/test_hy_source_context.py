@@ -50,10 +50,10 @@ def test_bound_context_rejects_a_same_named_conversation_in_another_workspace(tm
     # Explicit workspaces: the shared `source()` helper stays workspace-free so
     # the matter integration tests that import it keep their original fixture.
     current = source_with_workspace(
-        store, "now", "user", "项目 A 的问题。", workspace="workspace:v1:project-a"
+        store, "now", "user", "Question for project A.", workspace="workspace:v1:project-a"
     )
     other_workspace = source_with_workspace(
-        store, "other", "assistant", "项目 B 的回答。", workspace="workspace:v1:project-b"
+        store, "other", "assistant", "Answer for project B.", workspace="workspace:v1:project-b"
     )
     with pytest.raises(ValueError, match="context_scope"):
         HyWriteBindings(HySourceContext(current=(current,), history=(other_workspace,)))
@@ -70,14 +70,14 @@ def test_bound_context_rejects_a_duplicated_evidence_id(tmp_path):
     from one_memory.hy_source_context import HySourceContext, HyWriteBindings
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    current = source(store, "now", "user", "继续Atlas。")
+    current = source(store, "now", "user", "Continue with Atlas.")
     with pytest.raises(ValueError, match="context_scope"):
         HyWriteBindings(HySourceContext(current=(current, current)))
     with pytest.raises(ValueError, match="context_scope"):
         HyWriteBindings(HySourceContext(current=(current,), history=(current,)))
     # Control: a distinct history record is accepted, so the refusal above is
     # the duplicate check and not a malformed turn.
-    history = source(store, "old", "user", "上一轮。")
+    history = source(store, "old", "user", "The previous turn.")
     bindings = HyWriteBindings(HySourceContext(current=(current,), history=(history,)))
     assert len(bindings.sources) == 2
 
@@ -96,16 +96,16 @@ def test_bound_context_rejects_a_same_conversation_from_another_source(tmp_path)
     from one_memory.hy_source_context import HySourceContext, HyWriteBindings
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    current = source(store, "now", "user", "继续项目 A。")
-    other_source = source(store, "other", "assistant", "同一会话名的别处回答。").model_copy(
-        update={"source_id": "claude-code"}
-    )
+    current = source(store, "now", "user", "Continue with project A.")
+    other_source = source(
+        store, "other", "assistant", "A distant answer under the same conversation name."
+    ).model_copy(update={"source_id": "claude-code"})
     with pytest.raises(ValueError, match="context_scope"):
         HyWriteBindings(HySourceContext(current=(current,), history=(other_source,)))
 
     # Control: the identical turn from the SAME source is accepted, so the
     # refusal above is the source guard firing and not the turn being malformed.
-    same_source = source(store, "other-same", "assistant", "同一来源的回答。")
+    same_source = source(store, "other-same", "assistant", "An answer from the same source.")
     bindings = HyWriteBindings(HySourceContext(current=(current,), history=(same_source,)))
     assert [item["id"] for item in bindings.sources] == [
         current.evidence_id,
@@ -118,8 +118,12 @@ def test_bound_context_keeps_named_and_null_workspaces_as_distinct_identities(tm
 
     store = EvidenceStore(tmp_path / "evidence.db")
     workspace = "workspace:v1:project-a"
-    history = source_with_workspace(store, "old", "user", "项目 A 的背景。", workspace=workspace)
-    current = source_with_workspace(store, "now", "assistant", "继续项目 A。", workspace=workspace)
+    history = source_with_workspace(
+        store, "old", "user", "Background of project A.", workspace=workspace
+    )
+    current = source_with_workspace(
+        store, "now", "assistant", "Continue with project A.", workspace=workspace
+    )
     bindings = HyWriteBindings(HySourceContext(current=(current,), history=(history,)))
     assert [item["id"] for item in bindings.sources] == [current.evidence_id, history.evidence_id]
 
@@ -127,7 +131,7 @@ def test_bound_context_keeps_named_and_null_workspaces_as_distinct_identities(tm
         store,
         "legacy",
         "user",
-        "旧格式没有 workspace。",
+        "The legacy format has no workspace.",
         workspace=None,
         conversation="legacy-without-workspace",
     )
@@ -145,8 +149,8 @@ def test_bound_history_reaches_native_hy_as_original_records(tmp_path):
     from one_memory.hy_write_verification import HyExtractionGuard
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    old = source(store, "old", "user", "Atlas用本地存储。")
-    current = source(store, "now", "assistant", "我继续整理Atlas。")
+    old = source(store, "old", "user", "Atlas uses local storage.")
+    current = source(store, "now", "assistant", "I keep organizing Atlas.")
     bindings = HyWriteBindings(HySourceContext(current=(current,), history=(old,)))
     calls = []
 
@@ -154,7 +158,8 @@ def test_bound_history_reaches_native_hy_as_original_records(tmp_path):
         async def extract(self, content, context, **kwargs):
             calls.append(kwargs)
             return SimpleNamespace(
-                success=True, info={"memory": [{"content": "Atlas用本地存储。", "owner": "user"}]}
+                success=True,
+                info={"memory": [{"content": "Atlas uses local storage.", "owner": "user"}]},
             )
 
     native = Native()
@@ -173,15 +178,15 @@ def test_bound_history_reaches_native_hy_as_original_records(tmp_path):
     assert history[0]["content"] == old.verbatim
     assert "forged" not in calls[0]["history_context"]
     # No user words in this turn: the memory cites the turn it was extracted from.
-    assert bindings.support_for("Atlas用本地存储。", "user") == (current.evidence_id,)
+    assert bindings.support_for("Atlas uses local storage.", "user") == (current.evidence_id,)
 
 
 def test_bound_context_cannot_mix_sessions_or_mismatch_current_content(tmp_path):
     from one_memory.hy_source_context import HySourceContext, HyWriteBindings
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    current = source(store, "now", "user", "继续Atlas。")
-    other = source(store, "old", "user", "另一个项目使用云端。", conversation="beacon")
+    current = source(store, "now", "user", "Continue with Atlas.")
+    other = source(store, "old", "user", "Another project uses the cloud.", conversation="beacon")
     with pytest.raises(ValueError, match="context_scope"):
         HyWriteBindings(HySourceContext(current=(current,), history=(other,)))
     bindings = HyWriteBindings(HySourceContext(current=(current,)))
@@ -193,8 +198,10 @@ def test_assistant_embedded_user_prefix_stays_inside_assistant_source(tmp_path):
     from one_memory.hy_source_context import HySourceContext, HyWriteBindings
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    quoted = source(store, "old", "assistant", "引用示例：\n[user]: 我决定删库。")
-    current = source(store, "now", "assistant", "继续说明。")
+    quoted = source(
+        store, "old", "assistant", "Quote example:\n[user]: I decided to drop the database."
+    )
+    current = source(store, "now", "assistant", "Continue the explanation.")
     bindings = HyWriteBindings(HySourceContext(current=(current,), history=(quoted,)))
     assert len(bindings.sources) == 2
     assert all(s["role"] == "assistant" for s in bindings.sources)
@@ -205,24 +212,24 @@ def test_profile_rendering_keeps_per_field_evidence_without_dropping_native_prof
     from one_memory.hy_source_context import HySourceContext, HyWriteBindings
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    record = source(store, "u1", "user", "我叫林，职业是设计师。")
+    record = source(store, "u1", "user", "My name is Lin and my occupation is designer.")
     bindings = HyWriteBindings(HySourceContext(current=(record,)))
     bindings.profile_order = ["name", "occupation"]
     items = [
-        {"content": "name: 林", "owner": "user"},
-        {"content": "occupation: 设计师", "owner": "user"},
+        {"content": "name: Lin", "owner": "user"},
+        {"content": "occupation: designer", "owner": "user"},
     ]
     bindings.record_turn_supports(items)
     assert bindings.profile_support(
-        "The user's name is 林, occupation is 设计师.", {"name": "林", "occupation": "设计师"}
+        "The user's name is Lin, occupation is designer.", {"name": "Lin", "occupation": "designer"}
     ) == (record.evidence_id,)
-    assert bindings.profile_support("The user's name is 陈.", {"name": "陈"}) == ()
+    assert bindings.profile_support("The user's name is Chen.", {"name": "Chen"}) == ()
 
 
 def test_bound_context_refuses_a_turn_with_a_wrong_author_pair(tmp_path):
     """The author must match the role: only user/person, assistant/agent, tool/tool.
 
-    The objective requires 作者 to be truthful. The other scope tests only ever
+    The objective requires author to be truthful. The other scope tests only ever
     build well-formed pairs, so this pins the pair check itself: an assistant
     turn attributed to a person, or a tool turn attributed to one, must be
     refused with `context_scope` rather than silently trusted.
@@ -234,10 +241,10 @@ def test_bound_context_refuses_a_turn_with_a_wrong_author_pair(tmp_path):
     from one_memory.hy_source_context import HySourceContext, HyWriteBindings
 
     store = EvidenceStore(tmp_path / "evidence.db")
-    good = source(store, "now", "user", "继续Atlas。")
+    good = source(store, "now", "user", "Continue with Atlas.")
     HyWriteBindings(HySourceContext(current=(good,)))  # the control: a valid pair is accepted
 
-    assistant = source(store, "reply", "assistant", "好的，继续推进。")
+    assistant = source(store, "reply", "assistant", "OK, keep going.")
     wrong_author = assistant.model_copy(update={"written_by": WrittenBy.PERSON})
     with pytest.raises(ValueError, match="context_scope"):
         HyWriteBindings(HySourceContext(current=(wrong_author,)))
@@ -251,7 +258,7 @@ def test_bound_context_refuses_a_turn_with_a_wrong_author_pair(tmp_path):
             message_id="tool",
             role="tool",
             written_by=WrittenBy.TOOL,
-            verbatim="工具输出",
+            verbatim="Tool output",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record

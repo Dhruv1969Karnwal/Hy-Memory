@@ -30,7 +30,7 @@ def _seed(path: Path, count: int = 25) -> None:
                 message_id=f"m{index}",
                 role="user" if index % 2 else "assistant",
                 written_by=WrittenBy.PERSON if index % 2 else WrittenBy.AGENT,
-                verbatim=f"第 {index} 句原始内容，用于恢复对账。",
+                verbatim=f"original sentence {index} for restore reconciliation.",
                 created_at=datetime.now(UTC),
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )

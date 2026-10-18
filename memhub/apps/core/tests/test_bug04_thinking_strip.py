@@ -20,7 +20,7 @@ from one_memory.imports.models import (
 from one_memory.imports.sources.cursor_unified import strip_thinking
 from one_memory.imports.storage import EvidenceStore
 
-ANSWER = "把标题改成深绿色，正文保持原样。"
+ANSWER = "Change the title to dark green and leave the body as it is."
 THINKING = (
     "I need to check whether the stylesheet already defines a dark green token "
     "before editing it, and I should confirm the body copy is untouched."
@@ -37,7 +37,9 @@ def test_strip_thinking_leaves_an_answer_without_a_tail_alone() -> None:
 
 def test_strip_thinking_keeps_an_answer_that_mentions_its_reasoning() -> None:
     """A real answer can open with the same cue words; it is still the answer."""
-    answer = "我先确认了样式表里已有的深绿色记号，然后改了标题。"
+    answer = (
+        "I first checked the dark green token already in the stylesheet, then changed the title."
+    )
     assert strip_thinking(answer) == answer
 
 
@@ -123,8 +125,9 @@ def test_rescanning_a_whole_batch_after_the_strip_keeps_one_row_each(tmp_path) -
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
     bodies = [
         f"{ANSWER}\n\n{THINKING}",
-        "把按钮改成圆角。\n\nI should check the design tokens before editing the radius.",
-        "已经改好了，按钮现在是圆角。",
+        "Change the button to rounded corners.\n\nI should check the design tokens "
+        "before editing the radius.",
+        "All done, the button is rounded now.",
     ]
 
     def scan(source: list[str]) -> int:

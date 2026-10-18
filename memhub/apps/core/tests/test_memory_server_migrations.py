@@ -1119,7 +1119,7 @@ def test_migration_46_cleans_existing_codex_internal_context(tmp_path) -> None:
         assert tuple(evidence) == (
             "system",
             "agent",
-            "[已清理的 Codex 内部续跑提示]",
+            "[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u7eed\u8dd1\u63d0\u793a]",
             "aa5f8a0411d9c5a64f6b4542ab6120460698c31db9b6b5c025d0c6b684988e99",
         )
         assert (
@@ -1135,7 +1135,8 @@ def test_migration_46_cleans_existing_codex_internal_context(tmp_path) -> None:
         ).fetchone()
         assert tuple(memory[:3]) == (
             "deleted",
-            "[已清理：该记忆包含 Codex 内部续跑提示]",
+            "[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex "
+            "\u5185\u90e8\u7eed\u8dd1\u63d0\u793a]",
             2,
         )
         assert memory[3] is not None
@@ -1146,7 +1147,8 @@ def test_migration_46_cleans_existing_codex_internal_context(tmp_path) -> None:
         ).fetchone() == (
             "cleanup_internal_context",
             "deleted",
-            "[已清理：该记忆包含 Codex 内部续跑提示]",
+            "[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex "
+            "\u5185\u90e8\u7eed\u8dd1\u63d0\u793a]",
         )
         assert (
             connection.execute(
@@ -1245,9 +1247,9 @@ def test_migration_47_cleans_heartbeat_from_every_codex_role(tmp_path) -> None:
             "SELECT role,written_by,verbatim FROM evidence ORDER BY evidence_id"
         ).fetchall()
     assert [tuple(row) for row in rows] == [
-        ("system", "agent", "[已清理的 Codex 内部提示]"),
-        ("system", "agent", "[已清理的 Codex 内部提示]"),
-        ("system", "agent", "[已清理的 Codex 内部提示]"),
+        ("system", "agent", "[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u63d0\u793a]"),
+        ("system", "agent", "[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u63d0\u793a]"),
+        ("system", "agent", "[\u5df2\u6e05\u7406\u7684 Codex \u5185\u90e8\u63d0\u793a]"),
     ]
     with main_database(path).read() as connection:
         memory = connection.execute(
@@ -1257,7 +1259,10 @@ def test_migration_47_cleans_heartbeat_from_every_codex_role(tmp_path) -> None:
             "SELECT active FROM governed_memory_evidence "
             "WHERE memory_id='heartbeat-memory' AND evidence_id='heartbeat-1'"
         ).fetchone()[0]
-    assert tuple(memory) == ("deleted", "[已清理：该记忆包含 Codex 内部提示]")
+    assert tuple(memory) == (
+        "deleted",
+        "[\u5df2\u6e05\u7406\uff1a\u8be5\u8bb0\u5fc6\u5305\u542b Codex \u5185\u90e8\u63d0\u793a]",
+    )
     assert active == 0
     with main_database(path).read() as connection:
         assert (
@@ -2140,9 +2145,7 @@ def test_upgrade_drops_obsolete_hy_node_permissions_without_touching_memories(
     with sqlite3.connect(path) as connection:
         tables = {
             row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
     assert "hy_node_permissions" not in tables
     assert "governed_memories" in tables

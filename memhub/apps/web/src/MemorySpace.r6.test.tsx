@@ -52,12 +52,12 @@ vi.mock("./MemoryNoteComposer", () => ({
       onClick={() =>
         onPendingChange?.({
           evidenceId: "note-1",
-          text: "项目周会统一安排在周三上午。",
+          text: "Project weekly meetings are on Wednesday mornings.",
           state: "waiting_for_model",
         })
       }
     >
-      补充记忆
+      Add a memory
     </button>
   ),
 }));
@@ -73,7 +73,7 @@ function setup() {
   const items = [
     {
       memory_id: "m1",
-      content: "已保存的记忆",
+      content: "Saved memory",
       status: "confirmed",
       kind: "chat",
       origin: "extracted",
@@ -90,7 +90,7 @@ function setup() {
         node_id: "memory:m1",
         node_type: "memory",
         memory_id: "m1",
-        label: "已保存的记忆",
+        label: "Saved memory",
       },
     ],
     edges: [],
@@ -126,7 +126,7 @@ function setup() {
         written_by: "person",
         created_at: null,
         imported_at: "2026-09-23T06:47:00Z",
-        excerpt: "刚同步的原话",
+        excerpt: "Quote just synced",
         truncated: false,
       },
     ],
@@ -143,7 +143,7 @@ function setup() {
         role: "user",
         written_by: "person",
         created_at: null,
-        verbatim: "刚同步的原话全文",
+        verbatim: "Full text of the quote just synced",
       },
     ],
   });
@@ -152,12 +152,16 @@ function setup() {
 it("keeps a saved note visible while it waits for model processing", async () => {
   setup();
   render(<MemorySpace simplified onConfigureModel={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "补充记忆" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a memory" }));
   expect(
-    screen.getByText(/原话已保存，正在等待整理：项目周会统一安排在周三上午。/),
+    screen.getByText(
+      /Note saved, waiting to be processed: Project weekly meetings are on Wednesday mornings./,
+    ),
   ).toBeTruthy();
-  expect(screen.getByRole("button", { name: "配置整理模型" })).toBeTruthy();
-  expect(screen.queryByText("还没有已生成的记忆")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Configure the processing model" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("No memories have been generated yet")).toBeNull();
 });
 // D96: the memory page no longer has the raw-dialogue tab; runs again if it comes back.
 it.skipIf(!DIALOGUE_PANE_VISIBLE)(
@@ -165,13 +169,17 @@ it.skipIf(!DIALOGUE_PANE_VISIBLE)(
   async () => {
     setup();
     render(<MemorySpace simplified />);
-    await screen.findByText("已保存的记忆");
-    fireEvent.click(screen.getByRole("tab", { name: "原始对话" }));
-    expect(await screen.findByText("刚同步的原话")).toBeTruthy();
-    expect(await screen.findByText("刚同步的原话全文")).toBeTruthy();
-    expect(screen.getByText("刚导入的原话，还不是沉淀后的记忆")).toBeTruthy();
+    await screen.findByText("Saved memory");
+    fireEvent.click(screen.getByRole("tab", { name: "Raw dialogue" }));
+    expect(await screen.findByText("Quote just synced")).toBeTruthy();
+    expect(
+      await screen.findByText("Full text of the quote just synced"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Freshly imported dialogue, not a settled memory yet"),
+    ).toBeTruthy();
     expect(screen.queryByTestId("graph-owner")).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Memory" }));
     expect(await screen.findByTestId("graph-owner")).toBeTruthy();
   },
 );
@@ -181,8 +189,8 @@ it("hides a recoverable graph read failure on the three-column surface", async (
   render(<MemorySpace simplified />);
   // Two copies now: the library list, and the detail pane naming what the
   // conversation settled (OBS-14). Waiting on one copy used to be enough.
-  await screen.findAllByText("已保存的记忆");
-  expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+  await screen.findAllByText("Saved memory");
+  expect(screen.queryByText(/Failed to load the memory graph/)).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
 });
 it("shows the three-column surface without four modes or a management button", async () => {
@@ -194,11 +202,15 @@ it("shows the three-column surface without four modes or a management button", a
     expect.any(AbortSignal),
   );
   expect(reads.library).not.toHaveBeenCalled();
-  expect(screen.queryByRole("tablist", { name: "记忆空间模式" })).toBeNull();
-  expect(screen.queryByLabelText("向记忆提问")).toBeNull();
-  expect(screen.queryByRole("button", { name: "管理记忆" })).toBeNull();
+  expect(
+    screen.queryByRole("tablist", { name: "Memory space mode" }),
+  ).toBeNull();
+  expect(screen.queryByLabelText("Ask memories")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Manage memories" })).toBeNull();
   fireEvent(window, new Event("one-memory:manage"));
-  expect(screen.getByRole("navigation", { name: "记忆治理状态" })).toBeTruthy();
+  expect(
+    screen.getByRole("navigation", { name: "Memory governance status" }),
+  ).toBeTruthy();
   await waitFor(() =>
     expect(reads.library).toHaveBeenCalledWith(
       { query: "", status: "confirmed", offset: 0, limit: 100 },

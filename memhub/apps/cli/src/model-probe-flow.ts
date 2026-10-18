@@ -201,19 +201,21 @@ export function modelProbeExitCode(document: ModelProbeFlowDocument): number {
 export function renderModelProbeText(document: ModelProbeFlowDocument): string {
   if (document.state === "preview") {
     return [
-      "预览：模型能力探测",
-      `模型配置：${document.plan.profile_id}`,
-      `预期版本：${document.plan.expected_profile_revision}`,
-      `操作 ID：${document.plan.operation_id}`,
-      `确认摘要：${document.plan.digest}`,
-      "未发起模型请求。请保存 --json 输出，再用 models probe --plan-file <path> --confirm。",
+      "Preview: model capability probe",
+      `Model profile: ${document.plan.profile_id}`,
+      `Expected revision: ${document.plan.expected_profile_revision}`,
+      `Operation ID: ${document.plan.operation_id}`,
+      `Confirmation digest: ${document.plan.digest}`,
+      "No model request was made. Save the --json output, then run models probe --plan-file <path> --confirm.",
       "",
     ].join("\n");
   }
   return [
-    `探测状态：${document.state}`,
-    `操作 ID：${document.operation_id ?? "无"}`,
-    "code" in document ? `代码：${document.code}` : "已返回有界操作回执。",
+    `Probe state: ${document.state}`,
+    `Operation ID: ${document.operation_id ?? "none"}`,
+    "code" in document
+      ? `Code: ${document.code}`
+      : "A bounded operation receipt was returned.",
     "",
   ].join("\n");
 }

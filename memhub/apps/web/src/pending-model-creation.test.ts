@@ -120,7 +120,7 @@ it("enforces the inclusive 256 UTF-8 byte limit before JSON parsing", () => {
   const oversized = JSON.stringify({
     schemaVersion: 1,
     operationId: ID,
-    raw: "界".repeat(70),
+    raw: "\u754c".repeat(70),
   });
   expect(oversized.length).toBeLessThan(256);
   expect(new TextEncoder().encode(oversized).length).toBeGreaterThan(256);

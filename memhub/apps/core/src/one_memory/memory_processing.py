@@ -1040,7 +1040,7 @@ class MemoryTaskRunner:
                     # agent's turns. `written_by` still labels the display and
                     # decides owner — it no longer decides what is sent.
                     record.role == "user"
-                    # The assistant's side goes too. Without it 「就按你说的那个来」
+                    # The assistant's side goes too. Without it "just do the one you suggested"
                     # arrives with nothing to resolve it against, and HY's own
                     # prompt is written expecting both — its first example is
                     # about resolving a pronoun against an earlier assistant
@@ -1561,7 +1561,7 @@ class MemoryProcessingSupervisor:
         """`(planned, current)` for the task centre copy.
 
         `current` is the batch that has actually been handed to the queue, not
-        the one that will be next: a plan of three that says "第 3 批" while
+        the one that will be next: a plan of three that says "batch 3" while
         only one has been let through would be the same overstatement the
         single 675 total was.
         """
@@ -3722,7 +3722,7 @@ def _semantic_segment_spans(text: str, limit: int) -> list[tuple[int, int]]:
         return [(0, len(text))]
     spans: list[tuple[int, int]] = []
     start = 0
-    separators = ("\n\n", "\n", "。", "！", "？", ". ", "! ", "? ")
+    separators = ("\n\n", "\n", "\u3002", "\uff01", "\uff1f", ". ", "! ", "? ")
     while start < len(text):
         hard_end = min(len(text), start + limit)
         if hard_end == len(text):

@@ -1,6 +1,6 @@
 """Rule 5: a blocked head must not stop the rest from ever being scheduled.
 
-hy memory app's worst recorded failure (§三 反模式 4) was a "deterministic
+hy memory app's worst recorded failure (§3 anti-pattern 4) was a "deterministic
 starvation": the fallback sweep did `ORDER BY MIN(created_at) LIMIT 128`, so it
 always picked up the very oldest rows — which were exactly the zombie users
 that could never be drained. The other 32,000 users never got another turn.

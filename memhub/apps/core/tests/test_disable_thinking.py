@@ -1,4 +1,5 @@
-"""运行期生成请求须按档案可选关闭思考；默认不向厂商下发未知字段。"""
+"""Runtime generation requests may disable thinking per profile; by default no unknown field is \
+sent to the vendor."""
 
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ def _evidence(database):
                 correlation_id="m",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim="我一直偏好简洁回答。",
+                verbatim="I have always preferred concise answers.",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )
         )
@@ -66,8 +67,8 @@ def _ok_batch(evidence_id: str) -> httpx.Response:
                                 "memories": [
                                     {
                                         "evidence_id": evidence_id,
-                                        "support_quote": "我一直偏好简洁回答",
-                                        "content": "用户偏好简洁回答",
+                                        "support_quote": "I have always preferred concise answers",
+                                        "content": "The user prefers concise answers",
                                         "layer": "L2_FACT",
                                     }
                                 ]
@@ -202,9 +203,9 @@ def test_openai_ask_payload_omits_thinking_unless_profile_opts_in(tmp_path) -> N
         ),
         secrets,
     )
-    _m, _u, _h, payload_off = _answer_request(off, "sk-test", "我偏好什么？", ())
+    _m, _u, _h, payload_off = _answer_request(off, "sk-test", "What do I prefer?", ())
     assert "reasoning_effort" not in payload_off
-    _m, _u, _h, payload_on = _answer_request(on, "sk-test", "我偏好什么？", ())
+    _m, _u, _h, payload_on = _answer_request(on, "sk-test", "What do I prefer?", ())
     assert payload_on["reasoning_effort"] == "none"
 
 

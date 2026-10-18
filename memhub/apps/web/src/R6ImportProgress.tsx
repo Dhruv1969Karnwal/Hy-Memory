@@ -41,7 +41,7 @@ export function R6ImportProgress({
   return (
     <section
       className="r6-import-progress"
-      aria-label="本次应用导入进度"
+      aria-label="Import progress for this app"
       data-count={ids.length <= 2 ? String(ids.length) : "many"}
       ref={scroller}
       onPointerDown={markUserScrollIntent}
@@ -80,19 +80,19 @@ export function R6ImportProgress({
           job.stored === 0 &&
           job.discovered === 0;
         const names: Record<ImportJob["status"], string> = {
-          pending: "正在导入",
-          running: "正在导入",
-          paused: "已暂停",
-          interrupted: "已中断",
-          failed: "导入遇到问题",
-          cancelled: "已取消",
-          completed: "已保存",
+          pending: "Importing",
+          running: "Importing",
+          paused: "Paused",
+          interrupted: "Interrupted",
+          failed: "Import hit a problem",
+          cancelled: "Cancelled",
+          completed: "Saved",
         };
         return (
           <article
             className="r6-import-progress-card"
             key={id}
-            aria-label={`${source?.display_name ?? id} 导入进度`}
+            aria-label={`${source?.display_name ?? id} import progress`}
             data-running={running ? "true" : "false"}
           >
             <div className="r6-import-progress-orbit" aria-hidden="true">
@@ -103,22 +103,22 @@ export function R6ImportProgress({
             </div>
             <h2>{source?.display_name ?? id}</h2>
             {job && job.stored > 0 ? (
-              <p>{`已保存 ${job.stored.toLocaleString()} 条消息`}</p>
+              <p>{`Saved ${job.stored.toLocaleString()} messages`}</p>
             ) : job && job.discovered > 0 ? (
-              <p>{`已扫描 ${job.discovered.toLocaleString()} 条，正在保存`}</p>
+              <p>{`Scanned ${job.discovered.toLocaleString()} entries, saving`}</p>
             ) : noImportedHistory ? (
-              <p>没有可保存的历史对话</p>
+              <p>No historical conversations to save</p>
             ) : null}
             <small role="status">
               {stale
-                ? "状态待核对"
+                ? "Status pending verification"
                 : source?.authorized !== true
-                  ? "读取授权不可用"
+                  ? "Read authorization unavailable"
                   : job
                     ? names[job.status]
-                    : "正在导入"}
+                    : "Importing"}
               {job && job.errors > 0
-                ? ` · ${job.errors.toLocaleString()} 条读取异常`
+                ? ` - ${job.errors.toLocaleString()} read errors`
                 : ""}
             </small>
           </article>

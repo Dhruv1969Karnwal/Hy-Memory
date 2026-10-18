@@ -37,7 +37,8 @@ const detail = {
   memory: {
     memory_id: "m1",
     revision: 2,
-    content: "项目发布前先确认范围。设计预览不代表产品验收。",
+    content:
+      "Confirm the scope before the release. A design preview is not product sign-off.",
     status: "confirmed",
     scopes: ["private"],
   },
@@ -48,7 +49,7 @@ const detail = {
       written_by: "person",
       created_at: "2026-09-19T00:00:00Z",
       available: true,
-      verbatim: "这次先确认范围。",
+      verbatim: "Confirm the scope first this time.",
     },
   ],
   history: [],
@@ -64,7 +65,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-it("OBS-21: names a manually added memory 手动添加, not the internal source id", () => {
+it("OBS-21: names a manually added memory Added manually, not the internal source id", () => {
   render(
     <SelectedMemoryDetail
       detail={{
@@ -77,7 +78,7 @@ it("OBS-21: names a manually added memory 手动添加, not the internal source 
       hideActions
     />,
   );
-  expect(screen.getByText(/^来源 手动添加 · /)).toBeTruthy();
+  expect(screen.getByText(/^Source Manually added · /)).toBeTruthy();
   expect(screen.queryByText(/one-memory-manual/)).toBeNull();
 });
 
@@ -97,15 +98,22 @@ it("keeps the simplified memory inspector informational", () => {
     />,
   );
   expect(
-    screen.getByRole("heading", { name: "项目发布前先确认范围。" }),
+    screen.getByRole("heading", {
+      name: "Confirm the scope before the release. A design preview is not product sign-off.",
+    }),
   ).toBeTruthy();
-  for (const label of ["编辑", "查看原文", "版本记录", "更多管理"])
+  for (const label of [
+    "Edit",
+    "View source text",
+    "Version history",
+    "More management",
+  ])
     expect(screen.queryByText(label)).toBeNull();
 });
 it.each([
-  ["confirmed", "已沉淀"],
-  ["deleted", "已删除"],
-  ["superseded", "已被取代"],
+  ["confirmed", "Stored"],
+  ["deleted", "Deleted"],
+  ["superseded", "Superseded"],
 ] as const)("labels a %s memory with its actual state", (status, label) => {
   render(
     <SelectedMemoryDetail
@@ -118,24 +126,24 @@ it.each([
       hideActions
     />,
   );
-  expect(screen.getByText(`${label} · 第 2 版`)).toBeTruthy();
-  expect(screen.queryByText("待核对 · 第 2 版")).toBeNull();
+  expect(screen.getByText(`${label} · revision 2`)).toBeTruthy();
+  expect(screen.queryByText("Pending verification · revision 2")).toBeNull();
 });
 it("opens full editor and saves content without rewriting scope", async () => {
   const changed = vi.fn();
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={changed} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "新正文" },
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "New body text" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
     expect(correct).toHaveBeenCalledWith(
       "m1",
       2,
-      "新正文",
+      "New body text",
       undefined,
       expect.any(String),
       expect.any(String),
@@ -148,32 +156,41 @@ it("keeps draft after conflict until latest revision is explicitly acknowledged"
   errorCode.mockReturnValue("memory_revision_conflict");
   read.mockResolvedValue({
     ...detail,
-    memory: { ...detail.memory, revision: 3, content: "新的远端版本" },
+    memory: {
+      ...detail.memory,
+      revision: 3,
+      content: "The new remote version",
+    },
   });
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={() => {}} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "我的草稿" },
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "My draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
-  await screen.findByText("已有新版本");
-  expect(screen.getByLabelText("记忆内容")).toHaveProperty("value", "我的草稿");
-  expect(screen.getByRole("button", { name: "保存修改" })).toHaveProperty(
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("A newer version exists");
+  expect(screen.getByLabelText("Memory content")).toHaveProperty(
+    "value",
+    "My draft",
+  );
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty(
     "disabled",
     true,
   );
-  fireEvent.click(screen.getByRole("button", { name: "查看新版本" }));
-  await screen.findByText("新的远端版本");
-  fireEvent.click(screen.getByRole("button", { name: "基于此版本继续编辑" }));
+  fireEvent.click(screen.getByRole("button", { name: "View the new version" }));
+  await screen.findByText("The new remote version");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Keep editing from this version" }),
+  );
   correct.mockResolvedValue(detail.memory);
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
     expect(correct).toHaveBeenLastCalledWith(
       "m1",
       3,
-      "我的草稿",
+      "My draft",
       undefined,
       expect.any(String),
       expect.any(String),
@@ -184,8 +201,10 @@ it("original page never substitutes unavailable evidence with stale text", () =>
   const view = render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={() => {}} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "查看原文" }));
-  expect(screen.getAllByText("这次先确认范围。").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "View source text" }));
+  expect(
+    screen.getAllByText("Confirm the scope first this time.").length,
+  ).toBeGreaterThan(0);
   view.rerender(
     <SelectedMemoryDetail
       detail={{
@@ -196,11 +215,15 @@ it("original page never substitutes unavailable evidence with stale text", () =>
       onChanged={() => {}}
     />,
   );
-  expect(screen.queryByText("这次先确认范围。")).toBeNull();
-  expect(screen.getByText("来源权限已变化或原文不可用。")).toBeTruthy();
+  expect(screen.queryByText("Confirm the scope first this time.")).toBeNull();
+  expect(
+    screen.getByText(
+      "Source access changed or the source text is unavailable.",
+    ),
+  ).toBeTruthy();
 });
 
-it.each(["编辑", "查看原文", "删除记忆"])(
+it.each(["Edit", "View source text", "Delete memory"])(
   "returns focus to %s without scrolling the background",
   (name) => {
     render(
@@ -214,7 +237,8 @@ it.each(["编辑", "查看原文", "删除记忆"])(
         </div>
       </StrictMode>,
     );
-    if (name === "删除记忆") fireEvent.click(screen.getByText("更多管理"));
+    if (name === "Delete memory")
+      fireEvent.click(screen.getByText("More management"));
     const trigger = screen.getByRole("button", { name });
     trigger.focus();
     const restore = vi.spyOn(trigger, "focus");
@@ -235,27 +259,27 @@ it.each(["escape", "cancel"])(
     render(
       <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    fireEvent.change(screen.getByLabelText("记忆内容"), {
-      target: { value: "尚未保存的草稿" },
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Memory content"), {
+      target: { value: "An unsaved draft" },
     });
     const close = () =>
       mode === "escape"
-        ? fireEvent.keyDown(screen.getByLabelText("记忆内容"), {
+        ? fireEvent.keyDown(screen.getByLabelText("Memory content"), {
             key: "Escape",
           })
-        : fireEvent.click(screen.getByRole("button", { name: "取消" }));
+        : fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     close();
-    expect(confirm).toHaveBeenCalledWith("放弃尚未保存的修改？");
-    expect(screen.getByLabelText("记忆内容")).toHaveProperty(
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved changes?");
+    expect(screen.getByLabelText("Memory content")).toHaveProperty(
       "value",
-      "尚未保存的草稿",
+      "An unsaved draft",
     );
-    expect(screen.getByText("这次先确认范围。")).toBeTruthy();
+    expect(screen.getByText("Confirm the scope first this time.")).toBeTruthy();
     expect(correct).not.toHaveBeenCalled();
     confirm.mockReturnValue(true);
     close();
-    expect(screen.queryByLabelText("记忆内容")).toBeNull();
+    expect(screen.queryByLabelText("Memory content")).toBeNull();
   },
 );
 
@@ -270,17 +294,20 @@ it("keeps draft and request identity after a failed save; pending escape cannot 
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "保留草稿" },
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "Kept draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
-  fireEvent.keyDown(screen.getByLabelText("记忆内容"), { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  fireEvent.keyDown(screen.getByLabelText("Memory content"), { key: "Escape" });
   expect(confirm).not.toHaveBeenCalled();
   await act(async () => reject(Error("offline")));
-  expect(screen.getByRole("alert").textContent).toContain("草稿已保留");
-  expect(screen.getByLabelText("记忆内容")).toHaveProperty("value", "保留草稿");
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  expect(screen.getByRole("alert").textContent).toContain("the draft is kept");
+  expect(screen.getByLabelText("Memory content")).toHaveProperty(
+    "value",
+    "Kept draft",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(correct).toHaveBeenCalledTimes(2));
   // The durable request id must be reused across a retry; the trace id is a
   // fresh id per user attempt so each try forms its own four-line chain.
@@ -302,10 +329,10 @@ it("does not apply a late conflict read after its editor has closed", async () =
   const view = render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
-  await screen.findByText("已有新版本");
-  fireEvent.click(screen.getByRole("button", { name: "查看新版本" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("A newer version exists");
+  fireEvent.click(screen.getByRole("button", { name: "View the new version" }));
   view.unmount();
   await act(async () =>
     resolve({
@@ -322,12 +349,16 @@ it("keeps failed deletion on its confirmation page and retries only the same ver
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={changed} />,
   );
-  fireEvent.click(screen.getByText("更多管理"));
-  fireEvent.click(screen.getByRole("button", { name: "删除记忆" }));
-  const buttons = screen.getAllByRole("button", { name: "删除记忆" });
+  fireEvent.click(screen.getByText("More management"));
+  fireEvent.click(screen.getByRole("button", { name: "Delete memory" }));
+  const buttons = screen.getAllByRole("button", { name: "Delete memory" });
   fireEvent.click(buttons[buttons.length - 1]);
   await screen.findByRole("alert");
-  expect(screen.getByText(/来源 App 中的原始对话不会删除/)).toBeTruthy();
+  expect(
+    screen.getByText(
+      /the original conversation in the source app is not deleted/,
+    ),
+  ).toBeTruthy();
   fireEvent.click(buttons[buttons.length - 1]);
   await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
   expect(remove.mock.calls[1][0]).toBe(remove.mock.calls[0][0]);
@@ -352,16 +383,16 @@ it("reports a definite save refusal as not submitted, not as an unknown write", 
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "被拒绝的草稿" },
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "A rejected draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "修改未提交",
+    "The change was not submitted",
   );
-  expect(screen.queryByText(/修改尚未确认/)).toBeNull();
+  expect(screen.queryByText(/The change is not confirmed yet/)).toBeNull();
   expect(trace.done).toHaveBeenLastCalledWith("failed", {
     reason: "memory_correct_failed",
   });
@@ -375,15 +406,15 @@ it("reports a definite delete refusal as not submitted and keeps the same reques
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
   );
-  fireEvent.click(screen.getByText("更多管理"));
-  fireEvent.click(screen.getByRole("button", { name: "删除记忆" }));
-  const buttons = screen.getAllByRole("button", { name: "删除记忆" });
+  fireEvent.click(screen.getByText("More management"));
+  fireEvent.click(screen.getByRole("button", { name: "Delete memory" }));
+  const buttons = screen.getAllByRole("button", { name: "Delete memory" });
   fireEvent.click(buttons[buttons.length - 1]);
 
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "删除未提交",
+    "The delete was not submitted",
   );
-  expect(screen.queryByText(/删除尚未确认/)).toBeNull();
+  expect(screen.queryByText(/The delete is not confirmed yet/)).toBeNull();
   expect(trace.done).toHaveBeenLastCalledWith("failed", {
     reason: "memory_delete_failed",
   });
@@ -411,13 +442,13 @@ it("reports a definite undo refusal as not submitted, not as an unknown write", 
       onChanged={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByText("更多管理"));
-  fireEvent.click(screen.getByRole("button", { name: "撤销上次修改" }));
+  fireEvent.click(screen.getByText("More management"));
+  fireEvent.click(screen.getByRole("button", { name: "Undo last change" }));
 
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "撤销未提交",
+    "The undo was not submitted",
   );
-  expect(screen.queryByText(/操作尚未确认/)).toBeNull();
+  expect(screen.queryByText(/The operation is not confirmed yet/)).toBeNull();
   expect(trace.done).toHaveBeenLastCalledWith("failed", {
     reason: "memory_undo_failed",
   });
@@ -434,19 +465,21 @@ it("keeps a timeout save as unknown and does not replace its request identity", 
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "超时草稿" },
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "A timed-out draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await act(async () => reject(new Error("offline")));
 
-  expect(screen.getByRole("alert").textContent).toContain("修改尚未确认");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "The change is not confirmed yet",
+  );
   expect(trace.done).toHaveBeenLastCalledWith("unknown", {
     reason: "memory_correct_result_unknown",
   });
   correct.mockResolvedValue(detail.memory);
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(correct).toHaveBeenCalledTimes(2));
   expect(correct.mock.calls[1][4]).toBe(correct.mock.calls[0][4]);
 });
@@ -458,23 +491,26 @@ it("keeps the original CAS and draft when reading a conflict fails", async () =>
   render(
     <SelectedMemoryDetail detail={detail} sources={[]} onChanged={vi.fn()} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "冲突草稿" },
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "A conflicting draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
-  await screen.findByText("已有新版本");
-  fireEvent.click(screen.getByRole("button", { name: "查看新版本" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("A newer version exists");
+  fireEvent.click(screen.getByRole("button", { name: "View the new version" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "草稿已保留",
+    "the draft is kept",
   );
-  expect(screen.getByLabelText("记忆内容")).toHaveProperty("value", "冲突草稿");
-  expect(screen.getByRole("button", { name: "保存修改" })).toHaveProperty(
+  expect(screen.getByLabelText("Memory content")).toHaveProperty(
+    "value",
+    "A conflicting draft",
+  );
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty(
     "disabled",
     true,
   );
   expect(
-    screen.queryByRole("button", { name: "基于此版本继续编辑" }),
+    screen.queryByRole("button", { name: "Keep editing from this version" }),
   ).toBeNull();
   expect(correct.mock.calls[0][1]).toBe(2);
 });
@@ -486,11 +522,11 @@ it("suspends the editor without losing its draft or leaving the background inert
       <SelectedMemoryDetail {...p} />
     </div>,
   );
-  const trigger = screen.getByRole("button", { name: "编辑" });
+  const trigger = screen.getByRole("button", { name: "Edit" });
   trigger.focus();
   fireEvent.click(trigger);
-  fireEvent.change(screen.getByLabelText("记忆内容"), {
-    target: { value: "暂存草稿" },
+  fireEvent.change(screen.getByLabelText("Memory content"), {
+    target: { value: "A parked draft" },
   });
   view.rerender(
     <div className="r6-shell">
@@ -504,7 +540,10 @@ it("suspends the editor without losing its draft or leaving the background inert
       <SelectedMemoryDetail {...p} />
     </div>,
   );
-  expect(screen.getByLabelText("记忆内容")).toHaveProperty("value", "暂存草稿");
+  expect(screen.getByLabelText("Memory content")).toHaveProperty(
+    "value",
+    "A parked draft",
+  );
   expect(document.querySelector<HTMLElement>(".r6-shell")?.inert).toBe(true);
   expect(document.activeElement).toBe(
     screen.getByRole("heading", { level: 1 }),
@@ -527,9 +566,11 @@ it("stamps today's source time the same way as 06A and 06E", () => {
       onChanged={vi.fn()}
     />,
   );
-  expect(screen.getByText(/来源 workbuddy · 今天 /)).toBeTruthy();
-  expect(screen.getByText(/原对话 今天 /)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "查看原文" }));
-  expect(screen.getByRole("heading", { name: "原始对话" })).toBeTruthy();
-  expect(screen.getByText(/^workbuddy · 今天 /)).toBeTruthy();
+  expect(screen.getByText(/Source workbuddy · Today /)).toBeTruthy();
+  expect(screen.getByText(/Original conversation Today /)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "View source text" }));
+  expect(
+    screen.getByRole("heading", { name: "Original conversation" }),
+  ).toBeTruthy();
+  expect(screen.getByText(/^workbuddy · Today /)).toBeTruthy();
 });

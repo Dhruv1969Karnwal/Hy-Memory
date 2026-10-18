@@ -316,7 +316,7 @@ describe("RecallBroker", () => {
       response.end(
         JSON.stringify({
           state: "grounded",
-          query: "产品经理",
+          query: "product manager",
           scope: "all-apps",
           hits: [],
           used_characters: 0,
@@ -341,7 +341,7 @@ describe("RecallBroker", () => {
 
     const response = await axios.post(
       `http://127.0.0.1:${broker.port}/recall`,
-      { query: "产品经理" },
+      { query: "product manager" },
       {
         headers: {
           "Content-Type": "application/json",

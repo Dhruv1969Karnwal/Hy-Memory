@@ -94,14 +94,16 @@ function setup(overrides: Partial<SourceDirectoryPickerProps> = {}) {
 }
 const choose = () =>
   screen.getByRole<HTMLButtonElement>("button", {
-    name: "选择 Cursor 历史目录",
+    name: "Choose Cursor history directory",
   });
 const consent = () =>
   screen.getByRole<HTMLInputElement>("checkbox", {
-    name: "仅保存此候选位置，不授权读取历史",
+    name: "Only this candidate location is saved, with no history read authorization",
   });
 const save = () =>
-  screen.getByRole<HTMLButtonElement>("button", { name: "保存候选位置" });
+  screen.getByRole<HTMLButtonElement>("button", {
+    name: "Save candidate location",
+  });
 async function review() {
   await userEvent.click(choose());
   await screen.findByRole("dialog");
@@ -170,9 +172,9 @@ describe("SourceDirectoryPicker COLD04", () => {
       ["cursor", "/isolated/custom/../custom/cursor"],
     ]);
     expect(screen.getByRole("dialog").textContent).toContain(preview.path);
-    expect(screen.getByRole("dialog").textContent).toContain("持续同步");
-    expect(screen.getByRole("dialog").textContent).toContain("模型");
-    expect(screen.getByRole("dialog").textContent).toContain("安装");
+    expect(screen.getByRole("dialog").textContent).toContain("continuous sync");
+    expect(screen.getByRole("dialog").textContent).toContain("model");
+    expect(screen.getByRole("dialog").textContent).toContain("install");
     expect(consent().checked).toBe(false);
     expect(save().disabled).toBe(true);
     expect(api.save).not.toHaveBeenCalled();
@@ -232,7 +234,8 @@ describe("SourceDirectoryPicker COLD04", () => {
       await review();
       await userEvent.click(consent());
       if (method === "escape") await userEvent.keyboard("{Escape}");
-      else await userEvent.click(screen.getByRole("button", { name: "取消" }));
+      else
+        await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
       expect(api.save).not.toHaveBeenCalled();
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(document.activeElement).toBe(trigger);
@@ -247,9 +250,13 @@ describe("SourceDirectoryPicker COLD04", () => {
     );
     setup();
     await userEvent.click(choose());
-    expect((await screen.findByRole("alert")).textContent).toContain("目录");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Directory",
+    );
     expect(screen.queryByRole("checkbox")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "重新核对目录" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Check the directory again" }),
+    );
     expect(api.preview).toHaveBeenCalledTimes(2);
     expect(consent().checked).toBe(false);
     expect(api.save).not.toHaveBeenCalled();
@@ -264,9 +271,13 @@ describe("SourceDirectoryPicker COLD04", () => {
     await review();
     await userEvent.click(consent());
     await userEvent.click(save());
-    expect(screen.getByRole("alert").textContent).toContain("候选位置已保存");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Candidate location saved",
+    );
     expect(screen.queryByRole("checkbox")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "刷新来源状态" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh source status" }),
+    );
     expect(api.save).toHaveBeenCalledOnce();
     expect(onSaved).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -278,12 +289,18 @@ describe("SourceDirectoryPicker COLD04", () => {
     await review();
     await userEvent.click(consent());
     await userEvent.click(save());
-    expect(screen.getByRole("alert").textContent).toContain("保存结果待核对");
-    expect(screen.queryByRole("button", { name: "保存候选位置" })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "刷新来源状态" }));
+    expect(screen.getByRole("alert").textContent).toContain(
+      "save result is pending verification",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Save candidate location" }),
+    ).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh source status" }),
+    );
     expect(props.onSaved).toHaveBeenCalledOnce();
     expect(api.save).toHaveBeenCalledOnce();
-    expect(screen.queryByText("候选位置已保存")).toBeNull();
+    expect(screen.queryByText("Candidate location saved")).toBeNull();
   });
 
   it("opens a chain for the folder save, and never logs failed while the copy says unconfirmed", async () => {
@@ -342,7 +359,9 @@ describe("SourceDirectoryPicker COLD04", () => {
       update({ source: source(change) });
       expect(save().disabled).toBe(true);
       expect(consent().checked).toBe(false);
-      expect(screen.getByRole("alert").textContent).toContain("重新选择");
+      expect(screen.getByRole("alert").textContent).toContain(
+        "choose the directory again",
+      );
       update({ source: source() });
       fireEvent.click(save());
       expect(api.save).not.toHaveBeenCalled();
@@ -439,10 +458,16 @@ describe("SourceDirectoryPicker COLD04", () => {
     );
     expect(props.onSaved).not.toHaveBeenCalled();
     expect(newRefresh).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toContain("候选位置已保存");
-    expect(screen.getByRole("alert").textContent).toContain("来源状态已变化");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Candidate location saved",
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "the source status changed",
+    );
     expect(api.save).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: "保存候选位置" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Save candidate location" }),
+    ).toBeNull();
   });
 
   it.each([
@@ -451,11 +476,11 @@ describe("SourceDirectoryPicker COLD04", () => {
         candidate_change_allowed: false,
         candidate_change_reason: "source_has_history",
       },
-      "已有历史",
+      "already has history",
     ],
-    [{ candidate_kind: "environment_override" }, "环境变量"],
+    [{ candidate_kind: "environment_override" }, "environment variable"],
     [{ candidate_change_allowed: undefined }, "Core"],
-    [{ authorized: true }, "已有历史"],
+    [{ authorized: true }, "already has history"],
   ] satisfies [Partial<SourceResponse>, string][])(
     "explains why changing a source is blocked: %j",
     async (change, explanation) => {
@@ -472,7 +497,11 @@ describe("SourceDirectoryPicker COLD04", () => {
     vi.stubGlobal("oneMemory", undefined);
     setup();
     expect(choose().disabled).toBe(true);
-    expect(screen.getByText(/当前桌面版本不支持目录选择/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /This desktop version doesn't support directory picking/,
+      ),
+    ).toBeTruthy();
     expect(document.querySelector('input[type="file"]')).toBeNull();
   });
 
@@ -511,7 +540,7 @@ describe("SourceDirectoryPicker COLD04", () => {
     controls[0].focus();
     await userEvent.tab({ shift: true });
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "取消" }),
+      screen.getByRole("button", { name: "Cancel" }),
     );
     outside.focus();
     expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(
@@ -533,7 +562,7 @@ describe("SourceDirectoryPicker COLD04", () => {
     setup();
     await review();
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("dialog").getAttribute("data-closing")).toBe(
       "true",
     );

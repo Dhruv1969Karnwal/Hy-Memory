@@ -88,7 +88,7 @@ describe("service-aware launchd session", () => {
     await expect(
       stopManagedService({ serviceId: SERVICE_ID, uid: UID, runCaptured: run }),
     ).resolves.toBe("stopped");
-    // The real停用 is a launchctl bootout, not a signal to a receipt pid.
+    // The real stop is a launchctl bootout, not a signal to a receipt pid.
     expect(calls.some((c) => c[0] === "launchctl" && c[1] === "bootout")).toBe(
       true,
     );

@@ -37,7 +37,10 @@ def test_source_revocation_stops_every_outward_read_but_keeps_other_sources(tmp_
         ):
             ids = []
             evidence = []
-            for source, content in [("a", "项目周会 禁用信息"), ("b", "项目周会 保留信息")]:
+            for source, content in [
+                ("a", "project weekly meeting forbidden info"),
+                ("b", "project weekly meeting kept info"),
+            ]:
                 folder = home / source
                 folder.mkdir()
                 app.state.source_grant_store.grant(
@@ -73,14 +76,16 @@ def test_source_revocation_stops_every_outward_read_but_keeps_other_sources(tmp_
                 MemoryDraft(
                     user_id="local",
                     kind=MemoryKind.CHAT,
-                    content="项目周会 混合来源",
+                    content="project weekly meeting mixed sources",
                     scopes=("all-apps",),
                     evidence_ids=tuple(evidence),
                 ),
                 request_id="mixed",
             )
             ids.append(mixed.memory_id)
-            before = (await client.post("/api/v1/recall", json={"query": "项目周会"})).json()
+            before = (
+                await client.post("/api/v1/recall", json={"query": "project weekly meeting"})
+            ).json()
             assert {hit["memory_id"] for hit in before["hits"]} == set(ids)
             app.state.source_grant_store.revoke(user_id="local", source_id="a")
 
@@ -89,21 +94,29 @@ def test_source_revocation_stops_every_outward_read_but_keeps_other_sources(tmp_
 
             app.state.memory_processing_supervisor.digest = must_not_digest
             assert (await client.post("/api/v1/memories/graph/digest")).status_code == 403
-            recalled = (await client.post("/api/v1/recall", json={"query": "项目周会"})).json()
+            recalled = (
+                await client.post("/api/v1/recall", json={"query": "project weekly meeting"})
+            ).json()
             assert [hit["memory_id"] for hit in recalled["hits"]] == [ids[1]]
             answer = (
-                await client.post("/api/v1/memories/ask", json={"question": "项目周会"})
+                await client.post(
+                    "/api/v1/memories/ask", json={"question": "project weekly meeting"}
+                )
             ).json()
-            assert "禁用信息" not in str(answer) and "保留信息" in str(answer)
-            stream = await client.post("/api/v1/memories/ask/stream", json={"question": "项目周会"})
-            assert "禁用信息" not in stream.text and "保留信息" in stream.text
+            assert "forbidden info" not in str(answer) and "kept info" in str(answer)
+            stream = await client.post(
+                "/api/v1/memories/ask/stream", json={"question": "project weekly meeting"}
+            )
+            assert "forbidden info" not in stream.text and "kept info" in stream.text
             memories = (await client.get("/api/v1/memories")).json()
             assert [m["memory_id"] for m in memories] == [ids[1]]
             graph = (await client.get("/api/v1/memories/graph")).json()
-            assert "禁用信息" not in str(graph)
+            assert "forbidden info" not in str(graph)
             assert (await client.get("/api/v1/memories/" + ids[0])).status_code == 403
             found = (
-                await client.get("/api/v1/conversations/search", params={"query": "项目周会"})
+                await client.get(
+                    "/api/v1/conversations/search", params={"query": "project weekly meeting"}
+                )
             ).json()
             assert [hit["evidence_id"] for hit in found["hits"]] == [evidence[1]]
             assert (await client.get("/api/v1/conversations/" + evidence[0])).status_code == 404
@@ -151,7 +164,7 @@ def test_revocation_during_model_wait_prevents_late_answer(tmp_path, stream):
                     message_id="m",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="项目周会 原文",
+                    verbatim="project weekly meeting original words",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
@@ -159,7 +172,7 @@ def test_revocation_during_model_wait_prevents_late_answer(tmp_path, stream):
                 MemoryDraft(
                     user_id="local",
                     kind=MemoryKind.CHAT,
-                    content="项目周会 内容",
+                    content="project weekly meeting content",
                     scopes=("all-apps",),
                     evidence_ids=(item.evidence_id,),
                 ),
@@ -194,7 +207,7 @@ def test_revocation_during_model_wait_prevents_late_answer(tmp_path, stream):
             async def delayed(*args):
                 entered.set()
                 await release.wait()
-                return _ModelAnswer(answer="迟到正文", citations=(memory.memory_id,))
+                return _ModelAnswer(answer="late answer body", citations=(memory.memory_id,))
 
             async def chunks(*args):
                 value = await delayed()
@@ -206,14 +219,14 @@ def test_revocation_during_model_wait_prevents_late_answer(tmp_path, stream):
             request = asyncio.create_task(
                 client.post(
                     "/api/v1/memories/ask" + ("/stream" if stream else ""),
-                    json={"question": "项目周会"},
+                    json={"question": "project weekly meeting"},
                 )
             )
             await asyncio.wait_for(entered.wait(), 5)
             app.state.source_grant_store.revoke(user_id="local", source_id="a")
             release.set()
             response = await request
-            assert "迟到正文" not in response.text
+            assert "late answer body" not in response.text
             assert "memory_answer_context_changed" in response.text
 
     asyncio.run(scenario())

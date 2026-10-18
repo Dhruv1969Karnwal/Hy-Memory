@@ -67,7 +67,7 @@ def test_structured_log_is_private_correlated_and_owner_only(tmp_path):
         )
     finally:
         reset_trace_id(token)
-    # 写入交给专属线程，调用方不再等磁盘；要读文件就得先排空。
+    # Writing moves to its own thread so callers stop waiting on disk; drain first to read the file.
     assert log.flush()
     value = json.loads(log.path.read_text())
     assert value["trace_id"] == trace

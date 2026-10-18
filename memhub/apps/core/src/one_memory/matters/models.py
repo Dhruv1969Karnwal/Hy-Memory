@@ -65,7 +65,7 @@ class MatterDraft(Contract):
 
 class Matter(MatterDraft):
     # Unavailable versions contain no derived user text.
-    title: str = "来源不可用"
+    title: str = "Source unavailable"
     purpose: str = ""
     boundary: str = ""
     anchors: list[str] = Field(default_factory=list)

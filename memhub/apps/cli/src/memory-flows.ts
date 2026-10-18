@@ -349,35 +349,37 @@ export function renderMemoryFlowText(document: MemoryFlowDocument): string {
   if (document.state === "preview") {
     const plan = document.plan;
     const lines = [
-      `记忆操作预览：${plan.operation}`,
-      `request_id：${plan.request_id}`,
+      `Memory operation preview: ${plan.operation}`,
+      `request_id: ${plan.request_id}`,
     ];
-    if (plan.memory_id) lines.push(`memory_id：${plan.memory_id}`);
+    if (plan.memory_id) lines.push(`memory_id: ${plan.memory_id}`);
     if (plan.expected_revision) {
       lines.push(
-        `当前版本：${plan.expected_revision}  状态：${plan.expected_status}  来源方式：${plan.expected_origin}`,
+        `current revision: ${plan.expected_revision}  status: ${plan.expected_status}  origin: ${plan.expected_origin}`,
       );
     }
-    if (plan.scopes) lines.push(`使用范围：${plan.scopes.join(",")}`);
+    if (plan.scopes) lines.push(`usage scopes: ${plan.scopes.join(",")}`);
     if (plan.current) {
       for (const evidence of plan.current.evidence) {
         lines.push(
-          `证据 ${evidence.evidence_id}：source=${evidence.source_id ?? "unknown"} author=${evidence.written_by ?? "unknown"} available=${evidence.available}`,
+          `evidence ${evidence.evidence_id}: source=${evidence.source_id ?? "unknown"} author=${evidence.written_by ?? "unknown"} available=${evidence.available}`,
         );
       }
     }
     if (plan.content_characters !== undefined) {
       lines.push(
-        `正文：${plan.content_characters} 字符，sha256=${plan.content_sha256}`,
+        `body: ${plan.content_characters} characters, sha256=${plan.content_sha256}`,
       );
     }
-    lines.push("尚未写入；保存 JSON 计划后用 memories apply --confirm 执行。");
+    lines.push(
+      "Nothing has been written yet; save the JSON plan and run memories apply --confirm.",
+    );
     return `${lines.join("\n")}\n`;
   }
   if (document.state === "committed" || document.state === "recovered") {
-    return `记忆操作${document.state === "recovered" ? "已从治理回执恢复" : "已提交"}：${document.operation_id}\n${JSON.stringify(document.receipt)}\n`;
+    return `Memory operation ${document.state === "recovered" ? "recovered from the governance receipt" : "submitted"}: ${document.operation_id}\n${JSON.stringify(document.receipt)}\n`;
   }
-  return `记忆操作未完成：${document.state}（${"code" in document ? document.code : "memory_operation_state_invalid"}）${document.operation_id ? ` request_id=${document.operation_id}` : ""}\n`;
+  return `Memory operation incomplete: ${document.state} (${"code" in document ? document.code : "memory_operation_state_invalid"})${document.operation_id ? ` request_id=${document.operation_id}` : ""}\n`;
 }
 
 function operationRequest(

@@ -65,7 +65,7 @@ def library(tmp_path):
                 correlation_id=f"m-{index}",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim=f"第 {index} 条真实对话内容。",
+                verbatim=f"Real conversation content number {index}.",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )
         ).record
@@ -73,7 +73,7 @@ def library(tmp_path):
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"第 {index} 条真实对话内容。",
+                content=f"Real conversation content number {index}.",
                 scopes=("all-apps",),
                 evidence_ids=(record.evidence_id,),
             ),

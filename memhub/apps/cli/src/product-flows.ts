@@ -129,7 +129,7 @@ export function parseProductCommand(
   // The first token is the verb for commands that have one (`path add`,
   // `backup create`). It used to fall into the flag loop and be rejected as an
   // unknown flag, which made every one of these commands permanently
-  // unparseable — `path add --root X` printed "参数无效" even though `help`
+  // unparseable — `path add --root X` printed "Invalid arguments" even though `help`
   // documented it. The tests missed this because they asserted
   // `parsed?.plan!` and null satisfies `?.` + `!`.
   const verb = args[0];

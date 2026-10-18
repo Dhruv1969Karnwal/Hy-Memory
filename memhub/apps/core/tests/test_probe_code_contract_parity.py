@@ -1,11 +1,12 @@
-"""探测码在三处必须同时存在：python 枚举、TS 契约、界面文案表。
+"""Probe codes must exist in three places at once: the python enum, the TS contract, the UI \
+label table.
 
-起因：新增 ProbeCode.MODEL_LIST_UNSUPPORTED 时只改了 python，
-TS 契约的联合类型和 ModelSettings 的 probeLabel 表都没同步。
-TS 那个联合类型是手写的，缺一个成员不会让构建失败；
-probeLabel 用的是 Record<ProbeCode, string>，查不到就返回 undefined，
-于是界面上那一栏渲染成空白 —— 看起来像坏了，但没有任何测试会红。
-这个文件就是补上那道守卫。
+Trigger: adding ProbeCode.MODEL_LIST_UNSUPPORTED changed only python;
+neither the TS contract's union type nor ModelSettings' probeLabel table was synced.
+The TS union type is hand-written, and a missing member does not fail the build;
+probeLabel is a Record<ProbeCode, string>, so a lookup miss returns undefined and
+that column renders blank -- it looks broken, but no test ever goes red.
+This file is exactly that missing guard.
 """
 
 import re
@@ -21,7 +22,7 @@ MODEL_SETTINGS = REPO_ROOT / "apps" / "web" / "src" / "ModelSettings.tsx"
 def _typescript_union_members() -> set[str]:
     source = CONTRACT.read_text(encoding="utf-8")
     match = re.search(r"export type ProbeCode =(.*?);", source, re.DOTALL)
-    assert match, f"没在 {CONTRACT} 里找到 ProbeCode 联合类型"
+    assert match, f"found no ProbeCode union type in {CONTRACT}"
     return set(re.findall(r'"([a-z_]+)"', match.group(1)))
 
 
@@ -32,7 +33,7 @@ def _probe_label_keys() -> set[str]:
         source,
         re.DOTALL,
     )
-    assert match, f"没在 {MODEL_SETTINGS} 里找到 probeLabel 的文案表"
+    assert match, f"found no probeLabel label table in {MODEL_SETTINGS}"
     return set(re.findall(r"^\s*([a-z_]+):", match.group(1), re.MULTILINE))
 
 
@@ -40,8 +41,8 @@ def test_every_probe_code_exists_in_the_typescript_contract() -> None:
     python_codes = {code.value for code in ProbeCode}
     missing = python_codes - _typescript_union_members()
     assert not missing, (
-        f"这些探测码只有 python 有、TS 契约没有：{sorted(missing)}。"
-        f"请同步 {CONTRACT.relative_to(REPO_ROOT)} 的 ProbeCode 联合类型。"
+        f"These probe codes exist in python but not in the TS contract: {sorted(missing)}. "
+        f"Sync the ProbeCode union type in {CONTRACT.relative_to(REPO_ROOT)}."
     )
 
 
@@ -49,17 +50,18 @@ def test_every_probe_code_has_a_label_in_the_settings_ui() -> None:
     python_codes = {code.value for code in ProbeCode}
     missing = python_codes - _probe_label_keys()
     assert not missing, (
-        f"这些探测码在界面文案表里没有对应文案：{sorted(missing)}。"
-        f"缺文案时 probeLabel 返回 undefined，界面会渲染成空白。"
-        f"请补 {MODEL_SETTINGS.relative_to(REPO_ROOT)} 的 probeLabel。"
+        f"These probe codes have no matching label in the UI label table: {sorted(missing)}. "
+        f"With a label missing, probeLabel returns undefined and the UI renders blank."
+        f"Add the probeLabel entry in {MODEL_SETTINGS.relative_to(REPO_ROOT)}."
     )
 
 
 def test_the_contract_does_not_carry_codes_python_no_longer_emits() -> None:
-    """反向对照：TS 侧不该留着 python 已经删掉的码。
+    """Reverse control: the TS side must not keep codes python has already deleted.
 
-    没有这条，前两条可以被「往 TS 和文案表里塞一堆用不到的码」骗过。
+    Without this, the first two checks can be fooled by stuffing TS and the label table with a \
+pile of unused codes.
     """
     python_codes = {code.value for code in ProbeCode}
     stale = _typescript_union_members() - python_codes
-    assert not stale, f"TS 契约里有 python 不再产出的码：{sorted(stale)}"
+    assert not stale, f"the TS contract carries codes python no longer emits: {sorted(stale)}"

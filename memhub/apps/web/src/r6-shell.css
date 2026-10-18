@@ -102,7 +102,7 @@
   .r6-shell .r6-home {
     padding: 24px;
   }
-  /* Only 首页 tightens here; 设置 keeps its 40px until 700px, so the footer
+  /* Only the Home view tightens here; Settings keeps its 40px until 700px, so the footer
      stays on the 40px vertical rather than matching one page and breaking the
      other. The packaged window is 1440 wide, where both pages are at 40px. */
 }

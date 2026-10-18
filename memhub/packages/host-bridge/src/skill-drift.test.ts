@@ -333,7 +333,7 @@ describe("skill drift (R-33)", () => {
     const { applyRecallInstall } = await import("./recall-installer.js");
     if (sync === null) throw new Error("expected a sync plan");
     await expect(applyRecallInstall(sync.plan)).rejects.toThrow(
-      /modified|确认|confirmation|conflict/i,
+      /modified|confirmation|conflict/i,
     );
     expect(await readFile(skillPath, "utf8")).toBe(before);
   }, 30_000);
@@ -400,7 +400,7 @@ describe("skill drift (R-33)", () => {
       "utf8",
     );
 
-    expect(skill).toMatch(/必须先调|must (?:first )?call|must recall/i);
+    expect(skill).toMatch(/must (?:first )?call|must recall/i);
     expect(skill).toContain("When the answer would depend on");
     expect(skill).toContain("Skip recall when prior context is irrelevant");
   }, 30_000);

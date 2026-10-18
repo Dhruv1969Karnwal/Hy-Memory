@@ -257,15 +257,15 @@ def test_qwen_native_parts_preserve_visible_text_not_reasoning_or_tools(
                     {"text": "PRIVATE_THOUGHT", "thought": True},
                     {"functionResponse": {"response": {"output": SECRET}}},
                     {"functionCall": {"name": "example", "args": {"value": SECRET}}},
-                    {"text": "预算<5；尚未批准。"},
-                    {"text": "保留后续可见回复。", "thought": False},
+                    {"text": "Budget<5; not approved yet."},
+                    {"text": "Keep the later visible reply.", "thought": False},
                 ],
             },
         },
         context,
     )
     assert isinstance(result, ParsedMessage)
-    assert result.verbatim == "预算<5；尚未批准。\n保留后续可见回复。"
+    assert result.verbatim == "Budget<5; not approved yet.\nKeep the later visible reply."
     assert result.written_by == written_by
     assert result.role == ("user" if written_by is WrittenBy.PERSON else "assistant")
     assert result.message_id == "native-1"
@@ -961,11 +961,11 @@ def test_pi_a_scan_stopped_between_a_reply_and_its_call_resumes_with_the_call(
         root / "session-r.jsonl",
         [
             {"type": "session", "id": "session-r", "cwd": "/private/project"},
-            {"type": "message", "id": "u1", "message": {"role": "user", "content": "看看"}},
+            {"type": "message", "id": "u1", "message": {"role": "user", "content": "Take a look"}},
             {
                 "type": "message",
                 "id": "c1",
-                "message": {"role": "assistant", "content": [{"type": "text", "text": "好"}, call]},
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "OK"}, call]},
             },
         ],
     )
@@ -1006,8 +1006,8 @@ def test_hermes_a_scan_stopped_between_a_reply_and_its_call_resumes_with_the_cal
     connection.executemany(
         "INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            (1, "s", "user", "看看", None, None, 1000, 1),
-            (2, "s", "assistant", "好", calls, None, 1001, 1),
+            (1, "s", "user", "Take a look", None, None, 1000, 1),
+            (2, "s", "assistant", "OK", calls, None, 1001, 1),
         ],
     )
     connection.commit()

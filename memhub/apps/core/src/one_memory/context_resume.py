@@ -19,14 +19,39 @@ Observation = Literal["current", "observed_at", "unverified"]
 
 _FIELD_RULES: tuple[tuple[ResumeField, re.Pattern[str]], ...] = (
     ("resources", re.compile(r"https?://|(?:^|\s)/(?:[^\s/]+/)+[^\s]+|\b[A-Za-z]:\\")),
-    ("open_items", re.compile(r"待办|未完成|下一步|阻塞|open item|todo|next step", re.I)),
-    ("constraints", re.compile(r"必须|不得|禁止|限制|约束|must|cannot|constraint", re.I)),
-    ("decisions", re.compile(r"决定|选定|确认采用|改用|decision|decided|chosen", re.I)),
+    (
+        "open_items",
+        re.compile(
+            r"\u5f85\u529e|\u672a\u5b8c\u6210|\u4e0b\u4e00\u6b65|"
+            r"\u963b\u585e|open item|todo|next step",
+            re.I,
+        ),
+    ),
+    (
+        "constraints",
+        re.compile(
+            r"\u5fc5\u987b|\u4e0d\u5f97|\u7981\u6b62|\u9650\u5236|\u7ea6\u675f|must|cannot|constraint",
+            re.I,
+        ),
+    ),
+    (
+        "decisions",
+        re.compile(
+            r"\u51b3\u5b9a|\u9009\u5b9a|\u786e\u8ba4\u91c7\u7528|\u6539\u7528|decision|decided|chosen",
+            re.I,
+        ),
+    ),
     (
         "reported_progress",
-        re.compile(r"已完成|已经实现|通过|提交|进展|done|passed|implemented", re.I),
+        re.compile(
+            r"\u5df2\u5b8c\u6210|\u5df2\u7ecf\u5b9e\u73b0|\u901a\u8fc7|\u63d0\u4ea4|\u8fdb\u5c55|done|passed|implemented",
+            re.I,
+        ),
     ),
-    ("goal", re.compile(r"目标|目的|要做|负责|goal|objective", re.I)),
+    (
+        "goal",
+        re.compile(r"\u76ee\u6807|\u76ee\u7684|\u8981\u505a|\u8d1f\u8d23|goal|objective", re.I),
+    ),
 )
 
 

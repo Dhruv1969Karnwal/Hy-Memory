@@ -61,9 +61,9 @@ describe("SourcesView", () => {
       changeJob: vi.fn(),
     } as unknown as ReturnType<typeof useImportSources>;
     render(<SourcesView imports={imports} />);
-    expect(screen.getByText("导入有异常")).toBeTruthy();
-    expect(screen.getByText(/2 条异常/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "重新扫描" })).toBeTruthy();
+    expect(screen.getByText("Import has issues")).toBeTruthy();
+    expect(screen.getByText(/2 issues/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rescan" })).toBeTruthy();
   });
 
   it("turns one source switch into one explicit authorization and import", async () => {
@@ -133,10 +133,10 @@ describe("SourcesView", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("一次超时不写成「失败」：结果未确认，且不提示重试", async () => {
+  it("one timeout is not written as a failure: the result is unconfirmed and no retry is offered", async () => {
     // A timeout means Core may or may not have applied the switch. Reporting it
-    // as 未能开启读取 would assert something the client cannot know, and
-    // "请核对后重试" invites a retry of a write that may already have landed.
+    // as "could not turn reading on" would assert something the client cannot know, and
+    // "check and retry" invites a retry of a write that may already have landed.
     // The trace must say `unknown` for the same reason.
     const emitted: Array<Record<string, unknown>> = [];
     (
@@ -201,9 +201,13 @@ describe("SourcesView", () => {
       });
       expect(result?.status).toBe("unknown");
       // The copy must not claim failure, and must not invite a retry.
-      expect(screen.queryByText("未能关闭读取，请核对后重试。")).toBeNull();
       expect(
-        screen.getByText(/结果尚未确认，请刷新核对；不会自动重试/),
+        screen.queryByText("Could not turn reading off, check and retry."),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          /processing switch result is unconfirmed; refresh and verify; there is no automatic retry/,
+        ),
       ).toBeTruthy();
     } finally {
       delete (window as unknown as { oneMemory?: unknown }).oneMemory;
@@ -256,17 +260,19 @@ describe("SourcesView", () => {
     } as unknown as ReturnType<typeof useImportSources>;
 
     render(<SourcesView imports={imports} />);
-    expect(screen.getByText(/环境变量覆盖路径/)).toBeTruthy();
+    expect(screen.getByText(/Environment variable override path/)).toBeTruthy();
     await user.click(screen.getByRole("checkbox", { name: /Cursor/ }));
 
     expect(connectSelected).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", {
-      name: "确认读取这些自定义路径？",
+      name: "Confirm reading these custom paths?",
     });
     expect(within(dialog).getByText("/Volumes/custom/cursor")).toBeTruthy();
 
     await user.click(
-      screen.getByRole("button", { name: "确认路径并授权导入" }),
+      screen.getByRole("button", {
+        name: "Confirm paths and authorize import",
+      }),
     );
     expect(connectSelected).toHaveBeenCalledWith(
       ["cursor"],
@@ -348,8 +354,10 @@ describe("SourcesView", () => {
       document.querySelector(".application-coverage")?.textContent,
     ).toContain("Missing AI");
     expect(screen.getAllByText("Connected AI")).toHaveLength(3);
-    expect(screen.getByText("已授权，导入任务已开始")).toBeTruthy();
-    expect(screen.getByText("未能授权：授权记录未建立")).toBeTruthy();
+    expect(screen.getByText("Authorized, import job started")).toBeTruthy();
+    expect(
+      screen.getByText("Could not authorize: Grant record not created"),
+    ).toBeTruthy();
   });
 
   it("shows the edit and installs only once it is approved", async () => {
@@ -459,7 +467,7 @@ describe("SourcesView", () => {
 
     // Cursor is already installed, so only Claude Code offers an install.
     const button = await screen.findByRole("button", {
-      name: "一键安装到 Claude Code",
+      name: "Install to Claude Code in one click",
     });
     await user.click(button);
 
@@ -472,12 +480,10 @@ describe("SourcesView", () => {
     expect(dialog.textContent).toContain('+     "one-memory": {}');
     expect(dialog.textContent).toContain('-   "mcpServers": {}');
 
-    expect(dialog.textContent).toContain(
-      "确认后会一并按默认范围允许 Claude Code",
-    );
+    expect(dialog.textContent).toContain("Confirming also allows Claude Code");
     expect(setRecallPermission).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "连接并允许使用记忆" }),
+      screen.getByRole("button", { name: "Connect and allow memory use" }),
     );
 
     // The approval carries the fingerprint of the state that was shown, so it
@@ -487,12 +493,14 @@ describe("SourcesView", () => {
     await waitFor(() =>
       expect(
         within(
-          screen.getByRole("region", { name: "Claude Code 调用权限" }),
-        ).getByRole("button", { name: "调整调用权限" }),
+          screen.getByRole("region", { name: "Claude Code call permissions" }),
+        ).getByRole("button", { name: "Adjust call permissions" }),
       ).toHaveProperty("disabled", false),
     );
     expect(
-      await screen.findAllByRole("button", { name: "已安装 · 点击断开" }),
+      await screen.findAllByRole("button", {
+        name: "Installed · click to disconnect",
+      }),
     ).toHaveLength(2);
     expect(getRecallPermission).toHaveBeenCalledExactlyOnceWith("claude-code");
     expect(getRecallHosts).toHaveBeenCalledTimes(2);
@@ -557,14 +565,18 @@ describe("SourcesView", () => {
     render(<SourcesView imports={emptyImports()} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "一键安装到 Claude Code" }),
+      await screen.findByRole("button", {
+        name: "Install to Claude Code in one click",
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "取消" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(installRecall).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
-      screen.getByRole("button", { name: "一键安装到 Claude Code" }),
+      screen.getByRole("button", {
+        name: "Install to Claude Code in one click",
+      }),
     ).toBeTruthy();
   });
 
@@ -619,7 +631,9 @@ describe("SourcesView", () => {
     render(<SourcesView imports={emptyImports()} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "已安装 · 点击断开" }),
+      await screen.findByRole("button", {
+        name: "Installed · click to disconnect",
+      }),
     );
 
     // Disconnecting rewrites the host's own file just as installing did, so it
@@ -629,13 +643,17 @@ describe("SourcesView", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain('-     "one-memory": {}');
     // A file that goes away is said to go away, not rendered as a diff.
-    expect(dialog.textContent).toContain("整个文件会被移除");
+    expect(dialog.textContent).toContain("The whole file is removed");
 
-    await user.click(screen.getByRole("button", { name: "确认断开" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirm disconnect" }),
+    );
 
     expect(uninstallRecall).toHaveBeenCalledWith("cursor", "fp-out");
     expect(
-      await screen.findByRole("button", { name: "一键安装到 Cursor" }),
+      await screen.findByRole("button", {
+        name: "Install to Cursor in one click",
+      }),
     ).toBeTruthy();
   });
 
@@ -675,15 +693,17 @@ describe("SourcesView", () => {
     render(<SourcesView imports={emptyImports()} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "已安装 · 点击断开" }),
+      await screen.findByRole("button", {
+        name: "Installed · click to disconnect",
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "取消" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(uninstallRecall).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
     // Still installed, because declining changed nothing.
     expect(
-      screen.getByRole("button", { name: "已安装 · 点击断开" }),
+      screen.getByRole("button", { name: "Installed · click to disconnect" }),
     ).toBeTruthy();
   });
 
@@ -713,15 +733,19 @@ describe("SourcesView", () => {
     render(<SourcesView imports={emptyImports()} />);
 
     expect(
-      await screen.findByRole("button", { name: "一键安装到 Cursor" }),
+      await screen.findByRole("button", {
+        name: "Install to Cursor in one click",
+      }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "一键安装到 Claude Code" }),
+      screen.queryByRole("button", {
+        name: "Install to Claude Code in one click",
+      }),
     ).toBeNull();
   });
 
   it("says the link is not through, not merely that it is installed", async () => {
-    // "已安装" is the word that hid the recorded failure: three hosts were
+    // "Installed" is the word that hid the recorded failure: three hosts were
     // installed, and installed was all the list said, while recall returned
     // nothing. So a host whose last self-check did not go through must not
     // read as working.
@@ -770,13 +794,13 @@ describe("SourcesView", () => {
 
     render(<SourcesView imports={emptyImports()} />);
 
-    expect(await screen.findByText(/未接通/)).toBeTruthy();
+    expect(await screen.findByText(/Not connected/)).toBeTruthy();
 
     // Diagnosing offers the repair, and the repair goes through the ordinary
     // preview rather than writing to their file unannounced.
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "诊断" }));
-    await user.click(await screen.findByRole("button", { name: "重新指向" }));
+    await user.click(await screen.findByRole("button", { name: "Diagnose" }));
+    await user.click(await screen.findByRole("button", { name: "Repoint" }));
 
     expect(window.oneMemory?.previewRecallInstall).toHaveBeenCalledWith(
       "cursor",
@@ -828,15 +852,17 @@ describe("SourcesView", () => {
 
     render(<SourcesView imports={emptyImports()} />);
 
-    expect(await screen.findByText(/已安装，但取不到记忆/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Installed, but no memories come back/),
+    ).toBeTruthy();
     await userEvent
       .setup()
-      .click(await screen.findByRole("button", { name: "诊断" }));
+      .click(await screen.findByRole("button", { name: "Diagnose" }));
 
     expect(
       await screen.findByText(/not running or its recall broker/),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "重新指向" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Repoint" })).toBeNull();
   });
 
   it("still lists a host whose journal predates self-checks", async () => {
@@ -865,7 +891,9 @@ describe("SourcesView", () => {
     render(<SourcesView imports={emptyImports()} />);
 
     expect(
-      await screen.findByRole("button", { name: "已安装 · 点击断开" }),
+      await screen.findByRole("button", {
+        name: "Installed · click to disconnect",
+      }),
     ).toBeTruthy();
   });
 
@@ -905,8 +933,8 @@ describe("SourcesView", () => {
 
     render(<SourcesView imports={emptyImports()} />);
 
-    expect(await screen.findByText(/已接通/)).toBeTruthy();
-    expect(await screen.findByText(/需更新/)).toBeTruthy();
+    expect(await screen.findByText(/Connected/)).toBeTruthy();
+    expect(await screen.findByText(/Needs update/)).toBeTruthy();
   });
 
   it("warns before overwriting a hand-edited call rule", async () => {
@@ -950,11 +978,11 @@ describe("SourcesView", () => {
 
     render(<SourcesView imports={emptyImports()} />);
 
-    expect(await screen.findByText(/你手动改过/)).toBeTruthy();
+    expect(await screen.findByText(/Manually edited by you/)).toBeTruthy();
     await userEvent
       .setup()
-      .click(await screen.findByRole("button", { name: "更新调用规则" }));
-    expect(await screen.findByText(/会覆盖你的修改/)).toBeTruthy();
+      .click(await screen.findByRole("button", { name: "Update call rule" }));
+    expect(await screen.findByText(/will overwrite your changes/)).toBeTruthy();
   });
 });
 function emptyImports(): ReturnType<typeof useImportSources> {
@@ -1020,13 +1048,13 @@ describe("SourcesView complementary sync Hook", () => {
     const api = hookHostApi();
     render(<SourcesView imports={emptyImports()} />);
     expect(
-      await screen.findByRole("region", { name: "Claude Code 同步 Hook" }),
+      await screen.findByRole("region", { name: "Claude Code Sync Hook" }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("region", { name: "Claude Code 调用权限" }),
+      screen.getByRole("region", { name: "Claude Code call permissions" }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("region", { name: "Cursor 同步 Hook" }),
+      screen.queryByRole("region", { name: "Cursor Sync Hook" }),
     ).toBeNull();
     await waitFor(() =>
       expect(api.getSyncHookStatus).toHaveBeenCalledExactlyOnceWith(
@@ -1046,27 +1074,33 @@ describe("SourcesView complementary sync Hook", () => {
         api.previewRecallUninstall.mockRejectedValueOnce(error);
       else api.uninstallRecall.mockRejectedValueOnce(error);
       render(<SourcesView imports={emptyImports()} />);
-      await screen.findByText("同步 Hook 已安装");
+      await screen.findByText("Sync Hook installed");
       const claude = screen
-        .getByRole("region", { name: "Claude Code 同步 Hook" })
+        .getByRole("region", { name: "Claude Code Sync Hook" })
         .closest("li");
       if (!claude) throw new Error("missing Claude host row");
       await userEvent.click(
-        within(claude).getByRole("button", { name: "已安装 · 点击断开" }),
+        within(claude).getByRole("button", {
+          name: "Installed · click to disconnect",
+        }),
       );
       if (stage === "apply")
         await userEvent.click(
-          await screen.findByRole("button", { name: "确认断开" }),
+          await screen.findByRole("button", { name: "Confirm disconnect" }),
         );
       expect(
-        await screen.findByText("请先移除同步 Hook，再断开应用连接。"),
-      ).toBeTruthy();
-      expect(screen.queryByText("无法读取安装状态。")).toBeNull();
-      expect(
-        screen.getByRole("region", { name: "Claude Code 同步 Hook" }),
+        await screen.findByText(
+          "Remove the Sync Hook before disconnecting the app connection.",
+        ),
       ).toBeTruthy();
       expect(
-        screen.getByRole("button", { name: "卸载同步 Hook" }),
+        screen.queryByText("Cannot read the installation state."),
+      ).toBeNull();
+      expect(
+        screen.getByRole("region", { name: "Claude Code Sync Hook" }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Uninstall Sync Hook" }),
       ).toBeTruthy();
       expect(api.applySyncHook).not.toHaveBeenCalled();
     },
@@ -1120,7 +1154,7 @@ it("S1.3 COLD-19: application entry leaves every ungranted source unselected", (
   }
   expect(
     screen.getByRole<HTMLButtonElement>("button", {
-      name: "逐个开启来源授权",
+      name: "Turn on source authorization one by one",
     }).disabled,
   ).toBe(true);
   expect(imports.connectSelected).not.toHaveBeenCalled();
@@ -1134,17 +1168,19 @@ it("S1.3 COLD-10: stale source state is qualified and refresh cannot start a con
   };
   imports.refresh = vi.fn().mockRejectedValue(new Error("offline"));
   render(<SourcesView imports={imports} />);
-  expect(screen.getByText("状态待核对")).toBeTruthy();
-  expect(screen.getByText(/上次确认/).querySelector("time")?.dateTime).toBe(
-    imports.sourceSnapshot.confirmedAt,
-  );
+  expect(screen.getByText("Status pending verification")).toBeTruthy();
+  expect(
+    screen.getByText(/Last confirmed/).querySelector("time")?.dateTime,
+  ).toBe(imports.sourceSnapshot.confirmedAt);
   expect(document.querySelector(".coverage-line")?.textContent).toContain(
-    "个待核对的活动任务",
+    "active jobs pending verification",
   );
-  await userEvent.click(screen.getByRole("button", { name: "刷新来源状态" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Refresh source status" }),
+  );
   expect(imports.refresh).toHaveBeenCalledOnce();
   expect(imports.connectSelected).not.toHaveBeenCalled();
-  expect(screen.getByRole("alert").textContent).toContain("尚未取得新状态");
+  expect(screen.getByRole("alert").textContent).toContain("No new status yet");
 });
 
 it("does not turn an unconfirmed source read into zero coverage", () => {
@@ -1153,10 +1189,10 @@ it("does not turn an unconfirmed source read into zero coverage", () => {
   imports.jobs = [];
   render(<SourcesView imports={imports} />);
   const coverage = document.querySelector(".coverage-line")?.textContent ?? "";
-  expect(coverage).toContain("来源状态尚未核对");
-  expect(coverage).not.toContain("0 个已连接");
-  expect(coverage).not.toContain("0 个可连接");
-  expect(coverage).not.toContain("0 个待核对");
+  expect(coverage).toContain("The source state has not been verified");
+  expect(coverage).not.toContain("0 apps connected");
+  expect(coverage).not.toContain("0 can connect");
+  expect(coverage).not.toContain("0 active jobs pending verification");
 });
 
 it("S1.3 COLD-19: late discovery and returning to applications do not infer selection", async () => {
@@ -1301,13 +1337,13 @@ function syncImports(): ReturnType<typeof useImportSources> {
 }
 
 it.each([
-  ["pending", "等待检查新增"],
-  ["running", "正在检查新增"],
-  ["paused", "新增同步已暂停"],
-  ["interrupted", "新增同步已中断"],
-  ["failed", "新增同步失败"],
-  ["completed", "新增检查已完成"],
-  ["cancelled", "新增同步已取消"],
+  ["pending", "Waiting to check additions"],
+  ["running", "Checking for additions"],
+  ["paused", "Additions sync paused"],
+  ["interrupted", "Additions sync interrupted"],
+  ["failed", "Additions sync failed"],
+  ["completed", "Additions check completed"],
+  ["cancelled", "Additions sync cancelled"],
 ] as const)(
   "sync %s preserves cumulative history and removes engineering verification wording",
   (status, label) => {
@@ -1341,18 +1377,18 @@ it.each([
     const { container } = render(<SourcesView imports={imports} />);
     expect(container.querySelector(".source-state")?.textContent).toBe(label);
     expect(container.querySelector(".source-counts")?.textContent).toContain(
-      "81614 条消息",
+      "81614 messages",
     );
     expect(container.querySelector(".source-counts")?.textContent).toContain(
-      "本次同步新增 0 条",
+      "0 new from this sync",
     );
-    expect(container.textContent).not.toContain("已通过真实样本回放");
+    expect(container.textContent).not.toContain("real sample replay");
     expect(
       container.querySelector(".coverage-line")?.textContent,
-    ).not.toContain("个正在导入");
+    ).not.toContain("importing history");
     if (status === "running" || status === "pending")
       expect(container.querySelector(".coverage-line")?.textContent).toContain(
-        "1 个正在检查新增",
+        "1 checking for additions",
       );
   },
 );
@@ -1386,26 +1422,30 @@ it("S1.3 COLD-12: source rows expose real job controls without coupling cancella
     updated_at: "2026-09-14T00:00:02Z",
   });
   render(<SourcesView imports={imports} />);
-  const actions = screen.getByRole("group", { name: "WorkBuddy 导入任务操作" });
+  const actions = screen.getByRole("group", {
+    name: "WorkBuddy import task actions",
+  });
   await userEvent.click(
-    within(actions).getByRole("button", { name: "暂停导入" }),
+    within(actions).getByRole("button", { name: "Pause import" }),
   );
   expect(imports.changeJob).toHaveBeenCalledWith(job.job_id, "pause");
   expect(
-    await within(actions).findByRole("button", { name: "继续导入" }),
+    await within(actions).findByRole("button", { name: "Resume import" }),
   ).toBeTruthy();
   await userEvent.click(
-    within(actions).getByRole("button", { name: "取消本次导入" }),
+    within(actions).getByRole("button", { name: "Cancel this import" }),
   );
   const dialog = screen.getByRole("dialog", {
-    name: "取消 WorkBuddy 的本次导入？",
+    name: "Cancel this import for WorkBuddy?",
   });
-  expect(within(dialog).getByText(/本机副本会保留/)).toBeTruthy();
+  expect(within(dialog).getByText(/local copies are kept/)).toBeTruthy();
   expect(imports.changeJob).toHaveBeenCalledTimes(1);
   await userEvent.keyboard("{Escape}");
   await waitFor(() =>
     expect(
-      screen.queryByRole("dialog", { name: "取消 WorkBuddy 的本次导入？" }),
+      screen.queryByRole("dialog", {
+        name: "Cancel this import for WorkBuddy?",
+      }),
     ).toBeNull(),
   );
   expect(imports.changeJob).toHaveBeenCalledTimes(1);
@@ -1416,11 +1456,11 @@ it("Thaw and Freeze use the one Harness processing switch", async () => {
   const imports = syncImports();
   const view = render(<SourcesView imports={imports} />);
   const processing = screen.getByRole<HTMLInputElement>("checkbox", {
-    name: "处理 WorkBuddy",
+    name: "Process WorkBuddy",
   });
   expect(processing.checked).toBe(false);
   expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "同步来源" })
+    screen.getByRole<HTMLButtonElement>("button", { name: "Sync sources" })
       .disabled,
   ).toBe(true);
   await userEvent.click(processing);
@@ -1442,10 +1482,10 @@ it("Thaw and Freeze use the one Harness processing switch", async () => {
     />,
   );
   const thawed = screen.getByRole<HTMLInputElement>("checkbox", {
-    name: "处理 WorkBuddy",
+    name: "Process WorkBuddy",
   });
   expect(thawed.checked).toBe(true);
-  await userEvent.click(screen.getByRole("button", { name: "同步来源" }));
+  await userEvent.click(screen.getByRole("button", { name: "Sync sources" }));
   expect(imports.syncAll).toHaveBeenCalledTimes(1);
   await userEvent.click(thawed);
   expect(imports.setSync).toHaveBeenLastCalledWith(
@@ -1470,11 +1510,12 @@ it("S1.3: an incomplete permission receipt cannot activate global sync", () => {
     />,
   );
   expect(
-    screen.getByRole<HTMLInputElement>("checkbox", { name: "处理 WorkBuddy" })
-      .checked,
+    screen.getByRole<HTMLInputElement>("checkbox", {
+      name: "Process WorkBuddy",
+    }).checked,
   ).toBe(true);
   expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "同步来源" })
+    screen.getByRole<HTMLButtonElement>("button", { name: "Sync sources" })
       .disabled,
   ).toBe(true);
 });

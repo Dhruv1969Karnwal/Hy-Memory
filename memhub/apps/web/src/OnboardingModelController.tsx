@@ -102,7 +102,10 @@ export function OnboardingModelController({
     setDraft((value) => ({ ...value, ...patch }));
     setFields({});
     if (probe)
-      setProbe({ state: "stale", message: "配置已修改，需要重新测试。" });
+      setProbe({
+        state: "stale",
+        message: "The configuration changed; it needs a new test.",
+      });
   }
 
   function input(): ModelProfileInput | null {
@@ -119,7 +122,7 @@ export function OnboardingModelController({
         value < min ||
         value > max
       )
-        next[key] = `请输入 ${min} 至 ${max} 的整数。`;
+        next[key] = `Enter a whole number between ${min} and ${max}.`;
       return value;
     };
     const timeout = integer("timeout_seconds", 1, 600);
@@ -127,8 +130,9 @@ export function OnboardingModelController({
     const context = draft.context_window.trim()
       ? integer("context_window", 1024, 10_000_000)
       : null;
-    if (!draft.name.trim()) next.name = "请填写配置名称。";
-    if (!draft.model.trim()) next.model = "请填写实际可用的模型 ID。";
+    if (!draft.name.trim()) next.name = "Enter a configuration name.";
+    if (!draft.model.trim())
+      next.model = "Enter a model ID that actually works.";
     try {
       const url = new URL(draft.base_url);
       if (
@@ -138,16 +142,16 @@ export function OnboardingModelController({
       )
         throw new Error();
     } catch {
-      next.base_url = "请填写有效的模型接口地址。";
+      next.base_url = "Enter a valid model endpoint.";
     }
     if (
       draft.provider_kind !== "ollama" &&
       !draft.api_key.trim() &&
       !saved?.has_api_key
     )
-      next.api_key = "请填写 API Key。";
+      next.api_key = "Enter an API Key.";
     if (draft.embedding_mode === "custom" && !draft.embedding_model.trim())
-      next.embedding_model = "请填写向量模型 ID。";
+      next.embedding_model = "Enter an embedding model ID.";
     if (Object.keys(next).length) {
       setFields(next);
       setAdvanced(true);
@@ -196,7 +200,9 @@ export function OnboardingModelController({
             })
           : await models.create(value);
       if (!profile) {
-        setError("配置结果尚未确认，请在模型设置中核对后重试。");
+        setError(
+          "The configuration result is unconfirmed; check it in model settings and retry.",
+        );
         return;
       }
       setSaved(profile);
@@ -212,11 +218,13 @@ export function OnboardingModelController({
       setProbe({
         state: passed ? "passed" : "failed",
         message: passed
-          ? "模型连接测试通过，可以启用。"
-          : "连接未通过，请核对模型、密钥和接收方。",
+          ? "The model connection test passed; it can be enabled."
+          : "The connection failed; check the model, key and recipient.",
       });
     } catch {
-      setError("配置或测试结果暂未确认，请核对后重试。");
+      setError(
+        "The configuration or test result is not confirmed yet; check and retry.",
+      );
     } finally {
       flight.current = false;
       setPhase("idle");
@@ -236,7 +244,7 @@ export function OnboardingModelController({
       onEnabled?.();
     } catch {
       trace.done("unknown", { reason: "model_enable_unconfirmed" });
-      setError("模型未能确认启用，请在设置中核对。");
+      setError("Enabling the model was not confirmed; check it in settings.");
     } finally {
       flight.current = false;
       setPhase("idle");
@@ -255,7 +263,7 @@ export function OnboardingModelController({
         })),
         {
           id: "custom",
-          label: "自定义兼容服务",
+          label: "Custom compatible service",
           keyRequired: true,
           supported: true,
         },
@@ -286,20 +294,26 @@ export function OnboardingModelController({
       sourceNames={sourceNames}
       importedConversationCount={importedConversationCount}
       connectionSummary={
-        connectionAlreadyApplied ? "所选连接已启用" : "本次未选择应用连接"
+        connectionAlreadyApplied
+          ? "The selected connection is enabled"
+          : "No app connection was chosen this time"
       }
-      generationRecipient={draft.base_url || "尚未填写接收方"}
+      generationRecipient={draft.base_url || "No recipient filled in yet"}
       embeddingRecipient={
         draft.embedding_mode === "local"
-          ? "本机内置向量模型"
-          : draft.embedding_base_url || draft.base_url || "尚未填写接收方"
+          ? "Built-in local embedding model"
+          : draft.embedding_base_url ||
+            draft.base_url ||
+            "No recipient filled in yet"
       }
       onSaveDraft={() => save(false)}
       onTest={() => save(true)}
       onSaveAndEnable={enable}
       onBack={onBack}
       onSkip={onSkip}
-      onActionError={() => setError("操作未确认，草稿已保留。")}
+      onActionError={() =>
+        setError("The operation is unconfirmed; the draft is kept.")
+      }
     />
   );
 }

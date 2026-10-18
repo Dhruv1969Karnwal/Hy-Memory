@@ -28,7 +28,9 @@ describe("status default output", () => {
 
     const text = renderStatusText(report, "MemHub");
     expect(text).not.toContain("[object Object]");
-    expect(text).toContain("卡住 类型 整理对话/原因 等待模型/数量 2");
+    expect(text).toContain(
+      "Stuck Kind Organize conversations/Reason Waiting for model/Count 2",
+    );
     expect(text).not.toMatch(/background_verified|additions_only|error_codes=/);
     expect(text).not.toMatch(
       /provider_kind|has_api_key|credential_state|observed_at/,

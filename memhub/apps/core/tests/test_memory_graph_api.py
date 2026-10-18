@@ -58,8 +58,8 @@ def test_graph_labels_where_every_edge_came_from(tmp_path) -> None:
         ):
             for index, (message_id, content) in enumerate(
                 (
-                    ("message-1", "用户要求看板只用真实数据。"),
-                    ("message-2", "用户希望问答给出引用。"),
+                    ("message-1", "The user requires the dashboard to use only real data."),
+                    ("message-2", "The user wants the Q&A to provide citations."),
                 )
             ):
                 evidence = app.state.evidence_store.put(
@@ -84,11 +84,17 @@ def test_graph_labels_where_every_edge_came_from(tmp_path) -> None:
                     correlation_id="message-3",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="用户在另一次对话里提到偏好。",
+                    verbatim="The user mentioned a preference in another conversation.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
-            await _confirm(app, client, "用户在另一次对话里提到偏好。", other.evidence_id, 2)
+            await _confirm(
+                app,
+                client,
+                "The user mentioned a preference in another conversation.",
+                other.evidence_id,
+                2,
+            )
 
             graph = await client.get("/api/v1/memories/graph")
 
@@ -130,7 +136,7 @@ def test_a_created_memory_is_on_the_map_with_its_source_links(tmp_path):
                     message_id="c1",
                     role="assistant",
                     written_by=WrittenBy.AGENT,
-                    verbatim="Agent建议蓝色按钮。",
+                    verbatim="The Agent suggested a blue button.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
@@ -141,7 +147,7 @@ def test_a_created_memory_is_on_the_map_with_its_source_links(tmp_path):
                     "draft": {
                         "user_id": "local",
                         "kind": "chat",
-                        "content": "Agent建议蓝色按钮。",
+                        "content": "The Agent suggested a blue button.",
                         "origin": "agent",
                         "scopes": ["all-apps"],
                         "evidence_ids": [evidence.evidence_id],
@@ -200,11 +206,11 @@ def test_drawing_the_map_does_not_stop_the_app_answering(tmp_path) -> None:
                         correlation_id=f"message-{index}",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim=f"用户说了第 {index} 件事。",
+                        verbatim=f"The user said item {index}.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
-                said = f"用户说了第 {index} 件事。"
+                said = f"The user said item {index}."
                 await _confirm(app, client, said, evidence.evidence_id, index)
 
             # Each evidence read takes a moment, the way a contended one does.
@@ -252,11 +258,11 @@ def test_drawing_the_map_does_not_stop_the_app_answering(tmp_path) -> None:
             assert graph.json()["projected_memories"] == 4
             # Read on the loop, not one of these got an answer until the map
             # was finished, which is the whole defect.
-            assert answered > 1, "画图期间没有任何请求被应答：循环被堵住了"
+            assert answered > 1, "no request was answered while drawing: the loop was blocked"
             # Several tenth-of-a-second reads happen while the map is drawn;
             # on the loop none of these could have been answered until it
             # finished.
-            assert longest < delay * 3, f"画图期间循环被堵住 {longest:.3f}s"
+            assert longest < delay * 3, f"loop blocked for {longest:.3f}s while drawing"
 
     asyncio.run(scenario())
 
@@ -283,14 +289,17 @@ def _confirm_tagged(app, client, content: str, evidence_id: str, index: int, tag
 
 
 def test_a_shared_tag_becomes_a_topic_on_the_map(tmp_path) -> None:
-    """标签要在图上长成一个点，并把带它的记忆连起来。
+    """A tag must grow into one node on the graph and connect the memories that carry it.
 
-    图上原先只有三种点：记忆、来源 App、以及 HY 自己 TOPIC 层的归纳。我们从 HY
-    接回来的 tags 只在左栏当文字展示，没有进图 —— 于是一张记忆还很少的库打开来
-    满屏都是来源 App，看起来像是按 App 聚类，而不是按事项聚类。
+    The graph used to have only three kinds of nodes: memories, source apps, and HY's own \
+TOPIC-layer summaries. The tags
+    we import from HY were only shown as text in the left \
+column and never entered the graph -- so opening a library
+    with few memories fills the screen with source apps, \
+which looks like clustering by app rather than by matter.
 
-    只连「被两条以上记忆共用」的标签：只出现一次的标签连出去的是一根挂着单个
-    记忆的线，那不是聚类，只是把同一条记忆画了两遍。
+    Only connect tags "shared by two or more memories": a tag that appears once connects to a single
+    memory hanging off a line; that is not clustering, it just draws the same memory twice.
     """
 
     async def scenario() -> None:
@@ -313,9 +322,13 @@ def test_a_shared_tag_becomes_a_topic_on_the_map(tmp_path) -> None:
             ) as client,
         ):
             plans = (
-                ("m-1", "用户要求前端统一走 axios 封装。", ("axios", "frontend")),
-                ("m-2", "用户要求测试先行。", ("axios", "testing")),
-                ("m-3", "用户在做记忆产品。", ("memory-product",)),
+                (
+                    "m-1",
+                    "The user requires the frontend to use one axios wrapper.",
+                    ("axios", "frontend"),
+                ),
+                ("m-2", "The user requires tests first.", ("axios", "testing")),
+                ("m-3", "The user is building a memory product.", ("memory-product",)),
             )
             for index, (message_id, content, tags) in enumerate(plans):
                 evidence = app.state.evidence_store.put(
@@ -339,9 +352,9 @@ def test_a_shared_tag_becomes_a_topic_on_the_map(tmp_path) -> None:
                 for node in body["nodes"]
                 if node["node_type"] == "topic"
             }
-            # axios 被两条记忆共用，所以它是一个主题。
+            # axios is shared by two memories, so it is a topic.
             assert "axios" in topics
-            # frontend / testing / memory-product 各只出现一次 —— 不成聚类。
+            # frontend / testing / memory-product each appear once -- no cluster.
             assert set(topics) == {"axios"}
 
             tagged = [edge for edge in body["edges"] if edge["origin"] == "shared_tag"]
@@ -352,10 +365,12 @@ def test_a_shared_tag_becomes_a_topic_on_the_map(tmp_path) -> None:
 
 
 def test_a_tag_used_once_does_not_become_a_topic(tmp_path) -> None:
-    """正向对照：全库只有一条带标签的记忆时，图上不许出现主题点。
+    """Positive control: with only one tagged memory \
+in the library, the graph must show no topic node.
 
-    没有这条，上一条可以被「每个标签都建一个点」骗过 —— 那样 axios 照样在，
-    只是同时多出三个各挂一条记忆的孤点。
+    Without this, the previous test could be fooled by \
+"make a node for every tag" -- axios would still be there,
+    just with three extra isolated nodes each holding a single memory.
     """
 
     async def scenario() -> None:
@@ -385,12 +400,17 @@ def test_a_tag_used_once_does_not_become_a_topic(tmp_path) -> None:
                     correlation_id="m-solo",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="用户要求前端统一走 axios 封装。",
+                    verbatim="The user requires the frontend to use one axios wrapper.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
             await _confirm_tagged(
-                app, client, "用户要求前端统一走 axios 封装。", evidence.evidence_id, 9, ("axios",)
+                app,
+                client,
+                "The user requires the frontend to use one axios wrapper.",
+                evidence.evidence_id,
+                9,
+                ("axios",),
             )
 
             body = (await client.get("/api/v1/memories/graph")).json()
@@ -444,12 +464,12 @@ def test_the_map_only_verifies_the_memories_it_draws(tmp_path) -> None:
                         correlation_id=f"m-{index}",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim=f"第 {index} 条真实对话内容。",
+                        verbatim=f"Real conversation content {index}.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
                 await _confirm(
-                    app, client, f"第 {index} 条真实对话内容。", evidence.evidence_id, index
+                    app, client, f"Real conversation content {index}.", evidence.evidence_id, index
                 )
 
             app.state.source_read_access.memories = counting
@@ -512,12 +532,16 @@ def test_the_map_resolves_the_source_catalog_once(tmp_path) -> None:
                             correlation_id=f"m-{index}",
                             role="user",
                             written_by=WrittenBy.PERSON,
-                            verbatim=f"第 {index} 条真实对话内容。",
+                            verbatim=f"Real conversation content {index}.",
                             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                         )
                     ).record
                     await _confirm(
-                        app, client, f"第 {index} 条真实对话内容。", evidence.evidence_id, index
+                        app,
+                        client,
+                        f"Real conversation content {index}.",
+                        evidence.evidence_id,
+                        index,
                     )
 
                 calls.clear()
@@ -576,12 +600,16 @@ def test_the_map_count_leaves_a_revoked_source_out(tmp_path) -> None:
                         correlation_id=f"m-{source_id}",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim=f"{source_id} 的真实对话内容。",
+                        verbatim=f"Real conversation content for {source_id}.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
                 await _confirm(
-                    app, client, f"{source_id} 的真实对话内容。", evidence.evidence_id, index
+                    app,
+                    client,
+                    f"Real conversation content for {source_id}.",
+                    evidence.evidence_id,
+                    index,
                 )
 
             before = (await client.get("/api/v1/memories/graph")).json()
@@ -645,12 +673,16 @@ def test_the_map_reads_its_evidence_in_one_pass(tmp_path) -> None:
                             correlation_id=f"m-{index}",
                             role="user",
                             written_by=WrittenBy.PERSON,
-                            verbatim=f"第 {index} 条真实对话内容。",
+                            verbatim=f"Real conversation content {index}.",
                             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                         )
                     ).record
                     await _confirm(
-                        app, client, f"第 {index} 条真实对话内容。", evidence.evidence_id, index
+                        app,
+                        client,
+                        f"Real conversation content {index}.",
+                        evidence.evidence_id,
+                        index,
                     )
 
                 calls.clear()
@@ -712,12 +744,12 @@ def test_a_timed_out_map_falls_back_to_the_last_good_one(tmp_path) -> None:
                         correlation_id=f"m-{index}",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim=f"第 {index} 条真实对话内容。",
+                        verbatim=f"Real conversation content {index}.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
                 await _confirm(
-                    app, client, f"第 {index} 条真实对话内容。", evidence.evidence_id, index
+                    app, client, f"Real conversation content {index}.", evidence.evidence_id, index
                 )
 
             api_module._governed_graph_part = counting
@@ -776,11 +808,11 @@ def test_a_changed_library_is_drawn_again(tmp_path) -> None:
                     correlation_id="m-0",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="第 0 条真实对话内容。",
+                    verbatim="Real conversation content 0.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
-            await _confirm(app, client, "第 0 条真实对话内容。", evidence.evidence_id, 0)
+            await _confirm(app, client, "Real conversation content 0.", evidence.evidence_id, 0)
 
             api_module._governed_graph_part = counting
             try:
@@ -797,11 +829,11 @@ def test_a_changed_library_is_drawn_again(tmp_path) -> None:
                         correlation_id="m-1",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim="第 1 条真实对话内容。",
+                        verbatim="Real conversation content 1.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
-                await _confirm(app, client, "第 1 条真实对话内容。", second.evidence_id, 1)
+                await _confirm(app, client, "Real conversation content 1.", second.evidence_id, 1)
 
                 body = await client.get("/api/v1/memories/graph")
             finally:
@@ -866,12 +898,16 @@ def test_withdrawing_a_second_source_redraws_the_map(tmp_path) -> None:
                         correlation_id=f"m-{source_id}",
                         role="user",
                         written_by=WrittenBy.PERSON,
-                        verbatim=f"{source_id} 的真实对话内容。",
+                        verbatim=f"Real conversation content for {source_id}.",
                         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                     )
                 ).record
                 await _confirm(
-                    app, client, f"{source_id} 的真实对话内容。", evidence.evidence_id, source_id
+                    app,
+                    client,
+                    f"Real conversation content for {source_id}.",
+                    evidence.evidence_id,
+                    source_id,
                 )
 
             api_module._governed_graph_part = counting

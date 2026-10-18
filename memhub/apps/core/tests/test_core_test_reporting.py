@@ -251,4 +251,4 @@ def test_generated_test_index_covers_every_test_file_once() -> None:
 
     assert len(rows) == len(files)
     assert [row.split("`", 2)[1] for row in rows] == files
-    assert rendered.endswith(f"共 {len(files)} 个测试文件。\n")
+    assert rendered.endswith(f"{len(files)} test files in total.\n")

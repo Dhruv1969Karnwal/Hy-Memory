@@ -25,12 +25,12 @@ const detail: MemoryDetail = {
   memory: {
     memory_id: "m1",
     user_id: "local",
-    content: "周会避开周五",
+    content: "Avoid Fridays for the weekly meeting",
     kind: "chat",
     status: "confirmed",
     origin: "extracted",
     scopes: ["all-apps"],
-    tags: ["项目周会"],
+    tags: ["Project weekly meeting"],
     evidence_ids: ["e1"],
     revision: 1,
     created_at: "2026-09-01T00:00:00Z",
@@ -44,7 +44,7 @@ const detail: MemoryDetail = {
       written_by: "agent",
       role: "assistant",
       created_at: null,
-      verbatim: "建议把周会安排在其他工作日。",
+      verbatim: "Suggest moving the weekly meeting to another weekday.",
       available: true,
     },
   ],
@@ -56,7 +56,7 @@ const second: MemoryDetail = {
   memory: {
     ...detail.memory,
     memory_id: "m2",
-    content: "第二条背景",
+    content: "Second background",
     evidence_ids: ["e2"],
   },
   evidence: [{ ...detail.evidence[0], evidence_id: "e2", source_id: "codex" }],
@@ -104,8 +104,9 @@ function show() {
 async function ready() {
   await waitFor(() =>
     expect(
-      (screen.getByLabelText("开场白完整预览") as HTMLTextAreaElement).value,
-    ).toContain("周五"),
+      (screen.getByLabelText("Full opener preview") as HTMLTextAreaElement)
+        .value,
+    ).toContain("Friday"),
   );
 }
 
@@ -115,15 +116,20 @@ describe("first-use guide", () => {
     show();
     await ready();
     getMemory.mockRejectedValue(new Error("access revoked"));
-    await user.click(screen.getByRole("button", { name: "复制开场白" }));
+    await user.click(screen.getByRole("button", { name: "Copy opener" }));
     expect(copyText).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("开场白完整预览")).toHaveProperty("value", "");
+    expect(screen.getByLabelText("Full opener preview")).toHaveProperty(
+      "value",
+      "",
+    );
   });
   it("opens without a cloud request, auto copy or launch; keeps author and unknown time", async () => {
     show();
     await ready();
-    expect(screen.getByText(/Agent · 时间未知/)).toBeTruthy();
-    expect(screen.getByText(/系统整理，需你核对/)).toBeTruthy();
+    expect(screen.getByText(/Agent · Time unknown/)).toBeTruthy();
+    expect(
+      screen.getByText(/Organized automatically; needs your review/),
+    ).toBeTruthy();
     expect(copyText).not.toHaveBeenCalled();
     expect(openHandoff).not.toHaveBeenCalled();
   });
@@ -132,42 +138,56 @@ describe("first-use guide", () => {
     show();
     await ready();
     expect(screen.queryByRole("option", { name: "Codex" })).toBeNull();
-    await user.click(screen.getByRole("radio", { name: /换个应用继续/ }));
+    await user.click(
+      screen.getByRole("radio", { name: /Continue in another app/ }),
+    );
     expect(screen.getByRole("option", { name: "Codex" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Cursor" })).toBeNull();
-    await user.click(screen.getByRole("radio", { name: /让新工具了解我/ }));
+    await user.click(
+      screen.getByRole("radio", { name: /Let a new tool get to know me/ }),
+    );
     expect(screen.getByRole("option", { name: "Cursor" })).toBeTruthy();
     expect(
-      (screen.getByLabelText("开场白完整预览") as HTMLTextAreaElement).value,
-    ).toContain("不代表完整个人画像");
+      (screen.getByLabelText("Full opener preview") as HTMLTextAreaElement)
+        .value,
+    ).toContain("it is not a complete personal profile");
   });
   it("only enables query for a connected destination, and excludes the answer", async () => {
     const user = userEvent.setup();
     show();
     await ready();
-    expect(screen.getByRole("radio", { name: "让应用查询" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-    await user.selectOptions(screen.getByLabelText("在哪个应用试用"), "cursor");
-    await user.click(screen.getByRole("radio", { name: "让应用查询" }));
     expect(
-      (screen.getByLabelText("开场白完整预览") as HTMLTextAreaElement).value,
-    ).not.toContain("周五");
-    await user.click(screen.getByRole("button", { name: "复制开场白" }));
-    expect(copyText.mock.calls[0][0]).not.toContain("周五");
-    expect(screen.getByText(/尚无本次外部调用回执/)).toBeTruthy();
+      screen.getByRole("radio", { name: "Let the app query" }),
+    ).toHaveProperty("disabled", true);
+    await user.selectOptions(
+      screen.getByLabelText("Which app to try it in"),
+      "cursor",
+    );
+    await user.click(screen.getByRole("radio", { name: "Let the app query" }));
+    expect(
+      (screen.getByLabelText("Full opener preview") as HTMLTextAreaElement)
+        .value,
+    ).not.toContain("Friday");
+    await user.click(screen.getByRole("button", { name: "Copy opener" }));
+    expect(copyText.mock.calls[0][0]).not.toContain("Friday");
+    expect(
+      screen.getByText(/No receipt for this external call yet/),
+    ).toBeTruthy();
   });
   it("does not turn copy or user feedback into an automatic adoption pass", async () => {
     const user = userEvent.setup();
     show();
     await ready();
-    await user.click(screen.getByRole("button", { name: "复制开场白" }));
+    await user.click(screen.getByRole("button", { name: "Copy opener" }));
     expect(getMemory).toHaveBeenCalledTimes(2);
     expect(getSources).toHaveBeenCalledOnce();
-    expect(screen.getByRole("status").textContent).toContain("尚未发送");
-    await user.click(screen.getByRole("button", { name: "我已核对结果" }));
-    expect(screen.getByText(/这不是系统自动验收记录/)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Not sent yet");
+    await user.click(
+      screen.getByRole("button", { name: "I verified the result" }),
+    );
+    expect(
+      screen.getByText(/This is not an automatic acceptance record/),
+    ).toBeTruthy();
   });
   it.each(["revision", "revocation", "evidence"] as const)(
     "rechecks %s before copying",
@@ -185,13 +205,15 @@ describe("first-use guide", () => {
       if (kind === "evidence")
         getMemory.mockResolvedValue({
           ...detail,
-          evidence: [{ ...detail.evidence[0], verbatim: "新的原文" }],
+          evidence: [{ ...detail.evidence[0], verbatim: "New source text" }],
         });
-      await user.click(screen.getByRole("button", { name: "复制开场白" }));
+      await user.click(screen.getByRole("button", { name: "Copy opener" }));
       expect(copyText).not.toHaveBeenCalled();
       expect(openHandoff).not.toHaveBeenCalled();
-      expect(screen.getByRole("alert").textContent).toContain("授权已变化");
-      expect(screen.getByLabelText("开场白完整预览")).toHaveProperty(
+      expect(screen.getByRole("alert").textContent).toContain(
+        "authorization has changed",
+      );
+      expect(screen.getByLabelText("Full opener preview")).toHaveProperty(
         "value",
         "",
       );
@@ -208,17 +230,19 @@ describe("first-use guide", () => {
     );
     const user = userEvent.setup();
     show();
-    await screen.findByLabelText("选择一条记忆");
-    await user.selectOptions(screen.getByLabelText("选择一条记忆"), "m2");
+    await screen.findByLabelText("Choose a memory");
+    await user.selectOptions(screen.getByLabelText("Choose a memory"), "m2");
     await waitFor(() =>
       expect(
-        (screen.getByLabelText("开场白完整预览") as HTMLTextAreaElement).value,
-      ).toContain("第二条背景"),
+        (screen.getByLabelText("Full opener preview") as HTMLTextAreaElement)
+          .value,
+      ).toContain("Second background"),
     );
     await act(async () => first(detail));
     expect(
-      (screen.getByLabelText("开场白完整预览") as HTMLTextAreaElement).value,
-    ).not.toContain("周五");
+      (screen.getByLabelText("Full opener preview") as HTMLTextAreaElement)
+        .value,
+    ).not.toContain("Friday");
   });
   it("does not launch after unmount while the pre-copy check is pending", async () => {
     let resolve: (data: MemoryDetail) => void = () => undefined;
@@ -231,8 +255,13 @@ describe("first-use guide", () => {
           resolve = done;
         }),
     );
-    await user.selectOptions(screen.getByLabelText("在哪个应用试用"), "cursor");
-    await user.click(screen.getByRole("button", { name: "复制并打开 Cursor" }));
+    await user.selectOptions(
+      screen.getByLabelText("Which app to try it in"),
+      "cursor",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Copy and open Cursor" }),
+    );
     view.unmount();
     await act(async () => resolve(detail));
     expect(copyText).not.toHaveBeenCalled();
@@ -243,24 +272,41 @@ describe("first-use guide", () => {
     const user = userEvent.setup();
     show();
     await ready();
-    await user.selectOptions(screen.getByLabelText("在哪个应用试用"), "cursor");
-    await user.click(screen.getByRole("button", { name: "复制并打开 Cursor" }));
+    await user.selectOptions(
+      screen.getByLabelText("Which app to try it in"),
+      "cursor",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Copy and open Cursor" }),
+    );
     expect(openHandoff).not.toHaveBeenCalled();
-    expect(screen.getByRole("status").textContent).toContain("未能核对");
-    expect(screen.queryByRole("button", { name: "我已核对结果" })).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Could not verify",
+    );
+    expect(
+      screen.queryByRole("button", { name: "I verified the result" }),
+    ).toBeNull();
   });
   it("keeps the empty state truthful and retryable", async () => {
     getMemories.mockResolvedValue([]);
     show();
-    expect(await screen.findByText("先留下一条真正有用的背景")).toBeTruthy();
-    expect(screen.queryByLabelText("开场白完整预览")).toBeNull();
-    expect(screen.getByRole("button", { name: "查看导入与连接" })).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Leave behind one piece of background that really helps",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Full opener preview")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "View imports and connections" }),
+    ).toBeTruthy();
   });
   it("refuses missing evidence without replacing it with invented content", async () => {
     getMemory.mockResolvedValue({ ...detail, evidence: [] });
     show();
-    await screen.findByText(/原文或当前授权不可用/);
-    expect(screen.getByRole("button", { name: "复制开场白" })).toHaveProperty(
+    await screen.findByText(
+      /The source text or current authorization is unavailable/,
+    );
+    expect(screen.getByRole("button", { name: "Copy opener" })).toHaveProperty(
       "disabled",
       true,
     );
@@ -270,7 +316,9 @@ describe("first-use guide", () => {
       onDismiss = vi.fn(),
       onOpen = vi.fn();
     render(<FirstUseInvitation onDismiss={onDismiss} onOpen={onOpen} />);
-    await user.click(screen.getByRole("button", { name: "关闭上手邀请" }));
+    await user.click(
+      screen.getByRole("button", { name: "Close getting-started invite" }),
+    );
     expect(onDismiss).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
     expect(getMemories).not.toHaveBeenCalled();

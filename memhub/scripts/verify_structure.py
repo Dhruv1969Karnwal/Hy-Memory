@@ -30,22 +30,24 @@ REQUIRED_PATHS = (
 #: UI was never copied into the image, and the compose port bound loopback
 #: only, so a remote deploy was unreachable even if it had built.
 FORBIDDEN_PATHS = {
-    "deploy/docker": "无法构建的部署入口，2026-09-09 RL-31 移除；桌面壳走 pyinstaller + extraResources",
-    "AGENTS.md": "内部 Agent 协作说明不属于公开源码",
-    "HANDSOFF.md": "内部交接和验收状态不属于公开源码",
-    "docs/mvp/PREREQUISITES.md": "内部发布前置与审批跟踪不属于公开源码",
-    "docs/mvp/SCOPE.md": "历史开源规划快照不属于公开源码",
-    "docs/mvp/packaging-smoke-checklist.md": "内部实包验收记录不属于公开源码",
+    "deploy/docker": "Deploy entry that could not be built, removed by RL-31 on 2026-09-09; the desktop shell uses pyinstaller + extraResources",
+    "AGENTS.md": "Internal agent collaboration notes are not part of the public source",
+    "HANDSOFF.md": "Internal handoff and acceptance state is not part of the public source",
+    "docs/mvp/PREREQUISITES.md": "Internal release prerequisites and approval tracking are not part of the public source",
+    "docs/mvp/SCOPE.md": "Historical open-source planning snapshot is not part of the public source",
+    "docs/mvp/packaging-smoke-checklist.md": "Internal packaging acceptance records are not part of the public source",
 }
 
 FORBIDDEN_ROOT_GLOBS = {
-    "_tmp_*": "临时文件不得进入仓库根目录",
+    "_tmp_*": "Temporary files must not enter the repository root",
 }
 
 
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
-    missing = [relative for relative in REQUIRED_PATHS if not (root / relative).exists()]
+    missing = [
+        relative for relative in REQUIRED_PATHS if not (root / relative).exists()
+    ]
     if missing:
         for relative in missing:
             print(f"missing: {relative}")

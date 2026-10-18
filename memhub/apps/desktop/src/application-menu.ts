@@ -11,7 +11,7 @@ export function installApplicationMenu(options: {
     try {
       await options.exportLogs();
     } catch {
-      options.reportError("日志未能导出，请稍后重试。");
+      options.reportError("The log export failed; try again shortly.");
     }
   };
   options.setMenu(
@@ -23,10 +23,10 @@ export function installApplicationMenu(options: {
       { role: "editMenu" },
       { role: "windowMenu" },
       {
-        label: "帮助",
+        label: "Help",
         submenu: [
           {
-            label: "导出日志（发给开发排查）",
+            label: "Export logs (send to developers for debugging)",
             click: runExport,
           },
         ],

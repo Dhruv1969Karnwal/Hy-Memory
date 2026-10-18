@@ -5,7 +5,7 @@ const MAX_INTENTS = 64;
 const MAX_ATTEMPTS = 16;
 const INSTANCE_ID = /^[A-Za-z0-9-]{1,80}$/;
 const STORAGE_ERROR =
-  "无法保留连接请求编号，请核对本地存储后重试。尚未提交新的授权。";
+  "The connection request id could not be persisted; verify local storage and retry. No new authorization was submitted.";
 
 interface JournalEntry {
   fingerprint: string;
@@ -47,14 +47,18 @@ export function freezeConnection(
         importUploadId,
       ))
   ) {
-    throw new Error("上传回执编号无效，请重新核对已确认的文件。");
+    throw new Error(
+      "The upload receipt id is invalid; re-verify the confirmed files.",
+    );
   }
   if (
     !snapshot ||
     !sourceIds.length ||
     new Set(sourceIds).size !== sourceIds.length
   ) {
-    throw new Error("来源身份尚未核对，请重新检测位置并确认所选来源。");
+    throw new Error(
+      "The source identity has not been verified; re-detect the location and confirm the selected source.",
+    );
   }
   const sources = [...sourceIds].sort().map((id) => {
     const matches = snapshot.filter((item) => item.source_id === id);
@@ -72,7 +76,9 @@ export function freezeConnection(
         !(source.candidate_revision && source.candidate_revision > 0)) ||
       (source.location_state && source.location_state !== "found")
     ) {
-      throw new Error("来源身份尚未核对，请重新检测位置并确认所选来源。");
+      throw new Error(
+        "The source identity has not been verified; re-detect the location and confirm the selected source.",
+      );
     }
     const generation = connectionGeneration(source);
     return Object.freeze({
@@ -121,14 +127,18 @@ export function assertCheckedConnection(
         ),
     )
   ) {
-    throw new Error("来源位置或目录身份已变化，请重新检测并确认。");
+    throw new Error(
+      "The source location or directory identity has changed; re-detect and confirm.",
+    );
   }
 }
 
 function connectionGeneration(source: SourceResponse): number {
   const revision = source.grant_revision ?? 0;
   if (!Number.isSafeInteger(revision) || revision < 0) {
-    throw new Error("来源授权版本尚未核对，请刷新后重新确认。");
+    throw new Error(
+      "The source authorization version has not been verified; refresh and confirm again.",
+    );
   }
   // Grant increments revision; revoke retains it. A completed grant must still
   // resolve its uncertain request, while a later regrant needs a new intent.
@@ -168,14 +178,16 @@ export function appendIntentRequest(
   const entry = journal.find((item) => item.fingerprint === fingerprint);
   const current = entry?.requestIds ?? [];
   if (JSON.stringify(current) !== JSON.stringify(expected)) {
-    throw new Error("连接请求状态已变化，请重新核对回执。");
+    throw new Error(
+      "The connection request state has changed; re-verify the receipts.",
+    );
   }
   if (
     current.length >= MAX_ATTEMPTS ||
     (!entry && journal.length >= MAX_INTENTS)
   ) {
     throw new Error(
-      "连接回执保留数量已达上限，请先核对已有请求。尚未提交新的授权。",
+      "The stored connection receipts reached their limit; verify the existing requests first. No new authorization was submitted.",
     );
   }
   const bound = instanceId ?? entry?.instanceId;
@@ -187,7 +199,9 @@ export function appendIntentRequest(
     entry?.instanceId !== undefined &&
     entry.instanceId !== instanceId
   ) {
-    throw new Error("连接请求状态已变化，请重新核对回执。");
+    throw new Error(
+      "The connection request state has changed; re-verify the receipts.",
+    );
   }
   writeJournal([
     ...journal.filter((item) => item.fingerprint !== fingerprint),
@@ -214,7 +228,9 @@ export function forgetIntentRequest(
     JSON.stringify(current) !== JSON.stringify(expected) ||
     !current.includes(requestId)
   ) {
-    throw new Error("连接请求状态已变化，请重新核对回执。");
+    throw new Error(
+      "The connection request state has changed; re-verify the receipts.",
+    );
   }
   const requestIds = current.filter((id) => id !== requestId);
   const rest = journal.filter((item) => item.fingerprint !== fingerprint);

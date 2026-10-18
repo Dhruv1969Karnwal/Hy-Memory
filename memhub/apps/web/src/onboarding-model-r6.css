@@ -118,9 +118,9 @@
   gap: 16px;
   margin-top: 0;
 }
-/* `.onboarding-model-form` is a 560px scroll container. Once 配置详情 is
-   expanded the fields overflow it, which pushed 测试连接 and 保存草稿 below the
-   fold — so the first screen showed a disabled 保存并启用 in the footer with no
+/* `.onboarding-model-form` is a 560px scroll container. Once Configuration details is
+   expanded the fields overflow it, which pushed Test connection and Save draft below the
+   fold -- so the first screen showed a disabled Save and enable in the footer with no
    visible way to satisfy it. Pinning the operations row to the bottom of the
    scroll container keeps the action that unlocks the footer on screen. A solid
    fill is used rather than a fade so the reduced-transparency branch needs no
@@ -330,7 +330,7 @@
   color: #63707b;
 }
 /* The pinned row overlays the tail of the scrolling fields, so the last field
-   (关闭思考模式, and the vector fields when 自定义向量 is picked) would sit
+   (Turn off thinking mode, and the embedding fields when Custom embedding is picked) would sit
    permanently underneath it. This reserves its height. Note this only stops the
    tail being unreachable — the expanded form still does not fit 560px, which is
    why the source splits it onto its own page (143:2854). */
@@ -491,7 +491,7 @@
    Pointer feedback for step 3 (143:2786 / 143:2854).
 
    Like the other two steps this file had no `:hover` and no `transition`, so
-   the provider dropdown, the key field and the "配置详情与高级设置" toggle all
+   the provider dropdown, the key field and the "Configuration details and advanced settings" toggle all
    looked inert until clicked. Field geometry and palette are unchanged.
    --------------------------------------------------------------------------- */
 .onboarding-model-field :is(input, select),

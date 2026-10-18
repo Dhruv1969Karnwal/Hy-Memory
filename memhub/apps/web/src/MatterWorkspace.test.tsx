@@ -46,7 +46,7 @@ vi.mock("./MemoryGraph3D", () => ({
           key={node.node_id}
           onClick={() => onSelectNode(node)}
         >
-          {`图节点 ${node.label}`}
+          {`Map node ${node.label}`}
         </button>
       ))}
     </div>
@@ -57,12 +57,12 @@ const matter: Matter = {
   source_engine: "legacy_direct",
   content_review: "needs_review",
   matter_id: "m1",
-  title: "Atlas 产品开发",
-  purpose: "发布可用产品",
-  boundary: "产品设计和开发",
+  title: "Atlas product development",
+  purpose: "Ship a usable product",
+  boundary: "Product design and development",
   anchors: ["e1"],
-  tags: ["产品"],
-  uncertainties: ["Windows 尚未验收"],
+  tags: ["Product"],
+  uncertainties: ["Windows is not accepted yet"],
   version: 1,
   scope_confirmed: false,
   agent_access: false,
@@ -73,18 +73,18 @@ const matter: Matter = {
   evidence_count: 1,
   claims: [
     {
-      statement: "发布目标为 9 月 23 日",
+      statement: "The launch target is September 23",
       memory_refs: [],
       state: "current",
       change_note: "",
       kind: "decision",
-      scope: "开源发布",
+      scope: "Open-source release",
       basis: "human_statement",
       verification: "model_reviewed",
       citations: [
         {
           evidence_id: "e1",
-          quote: "计划 9 月 23 日开源",
+          quote: "plan to open source on September 23",
           revision: 1,
           source_id: "cursor",
           written_by: "person",
@@ -109,7 +109,7 @@ beforeEach(() => {
     role: "user",
     created_at: null,
     observed_at: "2026-09-11T00:00:00Z",
-    text: "我们计划 9 月 23 日开源，并做好验收。",
+    text: "We plan to open source on September 23 and finish acceptance.",
   });
   api.patchMatter.mockResolvedValue({
     ...matter,
@@ -125,7 +125,7 @@ it("separates write verification from provider failures without automatic retrie
     {
       run_id: "failed-run",
       status: "failed",
-      phase: "整理未完成",
+      phase: "Organization incomplete",
       error: "hy_memory_write_verification_failed",
       observations: [],
       selected_records: 3,
@@ -137,7 +137,7 @@ it("separates write verification from provider failures without automatic retrie
   render(<MatterWorkspace onOpenSources={() => {}} />);
   expect(
     await screen.findByText(
-      /记忆内容未通过来源与作者核验，当前批次未完成，原话已保留。/,
+      /The memory content did not pass source and author verification; the current batch is incomplete, and the original text is kept./,
     ),
   ).toBeTruthy();
   expect(api.discoverMatters).not.toHaveBeenCalled();
@@ -147,12 +147,16 @@ it("does not turn a failed matters read into zero matters", async () => {
   api.getMatters.mockRejectedValue(new Error("offline"));
   api.getMatterRuns.mockRejectedValue(new Error("offline"));
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  const list = await screen.findByRole("complementary", { name: "事项列表" });
-  expect(list.textContent).toContain("待核对");
+  const list = await screen.findByRole("complementary", {
+    name: "Matter list",
+  });
+  expect(list.textContent).toContain("Pending verification");
   expect(list.textContent).not.toContain("0");
-  expect(screen.queryByRole("heading", { name: "尚未整理事项" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "No matters organized yet" }),
+  ).toBeNull();
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "未能读取事项档案",
+    "Could not read the matter files",
   );
 });
 
@@ -163,10 +167,10 @@ it("does not turn a failed matters read plus a query into no matches", async () 
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await screen.findByRole("alert");
   await user.type(
-    screen.getByRole("textbox", { name: "搜索事项" }),
-    "不存在的",
+    screen.getByRole("textbox", { name: "Search matters" }),
+    "nonexistent",
   );
-  expect(screen.queryByText("没有匹配的事项")).toBeNull();
+  expect(screen.queryByText("No matching matters")).toBeNull();
 });
 
 function deferred<T>() {
@@ -188,15 +192,15 @@ const context: MatterContext = {
 
 it("opens source evidence and preserves unknown message time", async () => {
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  await screen.findByRole("heading", { name: "Atlas 产品开发" });
-  await userEvent.click(screen.getByRole("tab", { name: "知识档案" }));
-  await userEvent.click(screen.getByRole("button", { name: /查看原话/ }));
-  expect(await screen.findByText("消息时间未知")).toBeTruthy();
+  await screen.findByRole("heading", { name: "Atlas product development" });
+  await userEvent.click(screen.getByRole("tab", { name: "Knowledge file" }));
+  await userEvent.click(screen.getByRole("button", { name: /View quote/ }));
+  expect(await screen.findByText("Message time unknown")).toBeTruthy();
   expect(document.querySelector(".evidence-verbatim")?.textContent).toBe(
-    "我们计划 9 月 23 日开源，并做好验收。",
+    "We plan to open source on September 23 and finish acceptance.",
   );
   expect(document.querySelector(".evidence-verbatim mark")?.textContent).toBe(
-    "计划 9 月 23 日开源",
+    "plan to open source on September 23",
   );
   expect(api.getMatterEvidence).toHaveBeenCalledWith("m1", "e1");
 });
@@ -207,7 +211,7 @@ it("links real governed memories, map nodes and raw evidence without losing the 
     revision: 1,
     status: "confirmed",
     kind: "working",
-    content: "项目周会安排在周三",
+    content: "The project weekly meeting is on Wednesday",
     evidence_ids: ["e1"],
     tags: [],
     scopes: ["all-apps"],
@@ -231,7 +235,7 @@ it("links real governed memories, map nodes and raw evidence without losing the 
       {
         evidence_id: "e1",
         available: true,
-        verbatim: "周会改到周三。",
+        verbatim: "The weekly meeting moved to Wednesday.",
         written_by: "person",
         source_id: "codex",
         created_at: null,
@@ -241,18 +245,22 @@ it("links real governed memories, map nodes and raw evidence without losing the 
   });
   render(<MatterWorkspace onOpenSources={() => {}} />);
   const node = await screen.findByRole("button", {
-    name: "图节点 项目周会安排在周三",
+    name: "Map node The project weekly meeting is on Wednesday",
   });
   await userEvent.click(node);
-  expect(await screen.findByText("周会改到周三。")).toBeTruthy();
+  expect(
+    await screen.findByText("The weekly meeting moved to Wednesday."),
+  ).toBeTruthy();
   const canvas = screen.getByTestId("matter-map");
   expect(canvas.dataset.selected).toBe("memory:base-1");
-  await userEvent.click(screen.getByRole("tab", { name: "知识档案" }));
-  await userEvent.click(screen.getByRole("tab", { name: "记忆地图" }));
+  await userEvent.click(screen.getByRole("tab", { name: "Knowledge file" }));
+  await userEvent.click(screen.getByRole("tab", { name: "Memory map" }));
   expect(screen.getByTestId("matter-map")).toBe(canvas);
   expect(canvas.dataset.selected).toBe("memory:base-1");
   await userEvent.click(
-    screen.getByRole("button", { name: "选择记忆 项目周会安排在周三" }),
+    screen.getByRole("button", {
+      name: "Select memory The project weekly meeting is on Wednesday",
+    }),
   );
   expect(api.getMemory).toHaveBeenCalledWith("base-1");
 });
@@ -260,7 +268,7 @@ it("links real governed memories, map nodes and raw evidence without losing the 
 it("confirms scope using optimistic version without confirming claims", async () => {
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "确认事项范围" }),
+    await screen.findByRole("button", { name: "Confirm matter scope" }),
   );
   await waitFor(() =>
     expect(api.patchMatter).toHaveBeenCalledWith(
@@ -278,7 +286,7 @@ it("shows a failed read rather than a misleading empty library", async () => {
   api.getMatters.mockRejectedValue(new Error("offline"));
   render(<MatterWorkspace onOpenSources={() => {}} />);
   expect(await screen.findByRole("alert")).toBeTruthy();
-  expect(screen.queryByText("尚未整理事项")).toBeNull();
+  expect(screen.queryByText("No matters organized yet")).toBeNull();
 });
 
 it("blocks stale context after new evidence", async () => {
@@ -286,9 +294,9 @@ it("blocks stale context after new evidence", async () => {
     { ...matter, availability: "needs_update" },
   ]);
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  const button = await screen.findByRole("button", { name: "任务上下文" });
+  const button = await screen.findByRole("button", { name: "Task context" });
   expect((button as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText(/新资料待整理/)).toBeTruthy();
+  expect(screen.getByText(/New material awaits organization/)).toBeTruthy();
 });
 
 it.each(["source_unavailable", "needs_update", "memory_changed"] as const)(
@@ -297,7 +305,7 @@ it.each(["source_unavailable", "needs_update", "memory_changed"] as const)(
     api.getMatterContext.mockResolvedValue(context);
     render(<MatterWorkspace onOpenSources={() => {}} />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "任务上下文" }),
+      await screen.findByRole("button", { name: "Task context" }),
     );
     expect(await screen.findByDisplayValue(context.text)).toBeTruthy();
     api.getMatters.mockResolvedValue([{ ...matter, availability, claims: [] }]);
@@ -306,7 +314,7 @@ it.each(["source_unavailable", "needs_update", "memory_changed"] as const)(
       expect(
         (
           screen.getByRole("button", {
-            name: "任务上下文",
+            name: "Task context",
           }) as HTMLButtonElement
         ).disabled,
       ).toBe(true),
@@ -321,14 +329,14 @@ it("does not reopen context from a request started before switching matters", as
   api.getMatterContext.mockReturnValue(response.promise);
   api.getMatters.mockResolvedValue([
     matter,
-    { ...matter, matter_id: "m2", title: "Cedar 计划" },
+    { ...matter, matter_id: "m2", title: "Cedar plan" },
   ]);
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "任务上下文" }),
+    await screen.findByRole("button", { name: "Task context" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: /Cedar 计划/ }));
-  await screen.findByRole("heading", { name: "Cedar 计划" });
+  await userEvent.click(screen.getByRole("button", { name: /Cedar plan/ }));
+  await screen.findByRole("heading", { name: "Cedar plan" });
   await act(async () => {
     response.resolve(context);
   });
@@ -340,7 +348,7 @@ it("rejects a context returned for a different revision", async () => {
   api.getMatterContext.mockResolvedValue({ ...context, version: 2 });
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "任务上下文" }),
+    await screen.findByRole("button", { name: "Task context" }),
   );
   await waitFor(() => expect(api.getMatterContext).toHaveBeenCalledOnce());
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -350,13 +358,15 @@ it("clears history and ignores its late response after source revocation", async
   const response = deferred<Matter[]>();
   api.getMatterHistory.mockReturnValue(response.promise);
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  await userEvent.click(await screen.findByRole("tab", { name: "版本记录" }));
+  await userEvent.click(
+    await screen.findByRole("tab", { name: "Version history" }),
+  );
   const privateHistory = { ...matter, title: "A private historical title" };
   api.getMatters.mockResolvedValue([
     { ...matter, availability: "source_unavailable", claims: [] },
   ]);
   fireEvent(document, new Event("visibilitychange"));
-  await screen.findByText(/旧档案已隐藏/);
+  await screen.findByText(/the old file is hidden/);
   await act(async () => {
     response.resolve([privateHistory]);
   });
@@ -368,13 +378,15 @@ it("clears already loaded history when its matter becomes unavailable", async ()
     { ...matter, title: "Private prior version" },
   ]);
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  await userEvent.click(await screen.findByRole("tab", { name: "版本记录" }));
+  await userEvent.click(
+    await screen.findByRole("tab", { name: "Version history" }),
+  );
   await screen.findByText("Private prior version");
   api.getMatters.mockResolvedValue([
     { ...matter, availability: "source_unavailable", claims: [] },
   ]);
   fireEvent(document, new Event("visibilitychange"));
-  await screen.findByText(/旧档案已隐藏/);
+  await screen.findByText(/the old file is hidden/);
   expect(screen.queryByText("Private prior version")).toBeNull();
 });
 
@@ -383,13 +395,13 @@ it("does not restore a late context after a known revocation", async () => {
   api.getMatterContext.mockReturnValue(response.promise);
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "任务上下文" }),
+    await screen.findByRole("button", { name: "Task context" }),
   );
   api.getMatters.mockResolvedValue([
     { ...matter, availability: "source_unavailable", claims: [] },
   ]);
   fireEvent(document, new Event("visibilitychange"));
-  await screen.findByText(/旧档案已隐藏/);
+  await screen.findByText(/the old file is hidden/);
   await act(async () => {
     response.resolve(context);
   });
@@ -401,7 +413,7 @@ it("applies a successful source invalidation even when run-status loading fails"
   api.getMatterContext.mockResolvedValue(context);
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "任务上下文" }),
+    await screen.findByRole("button", { name: "Task context" }),
   );
   await screen.findByDisplayValue(context.text);
   api.getMatters.mockResolvedValue([
@@ -412,7 +424,7 @@ it("applies a successful source invalidation even when run-status loading fails"
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.queryByDisplayValue(context.text)).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "任务上下文" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Task context" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
 });
@@ -421,7 +433,7 @@ it("does not wait for a pending progress request to apply source revocation", as
   api.getMatterContext.mockResolvedValue(context);
   render(<MatterWorkspace onOpenSources={() => {}} />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "任务上下文" }),
+    await screen.findByRole("button", { name: "Task context" }),
   );
   await screen.findByDisplayValue(context.text);
   const progress = deferred<[]>();
@@ -433,8 +445,11 @@ it("does not wait for a pending progress request to apply source revocation", as
   try {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(
-      (screen.getByRole("button", { name: "任务上下文" }) as HTMLButtonElement)
-        .disabled,
+      (
+        screen.getByRole("button", {
+          name: "Task context",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
   } finally {
     await act(async () => {
@@ -498,7 +513,7 @@ it.each([false, true])(
     render(<MatterWorkspace onOpenSources={() => {}} />);
     await userEvent.click(
       await screen.findByRole("button", {
-        name: "选择记忆 Memory before update",
+        name: "Select memory Memory before update",
       }),
     );
     if (!pending) await screen.findByText("Private source before update");
@@ -506,7 +521,7 @@ it.each([false, true])(
       { ...item, availability: "needs_update" },
     ]);
     fireEvent(document, new Event("visibilitychange"));
-    await screen.findByText(/新资料待整理/);
+    await screen.findByText(/New material awaits organization/);
     if (pending)
       await act(async () => {
         response.resolve(detail);
@@ -559,9 +574,11 @@ it.each([
     });
     render(<MatterWorkspace onOpenSources={() => {}} />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "选择记忆 Referenced memory" }),
+      await screen.findByRole("button", {
+        name: "Select memory Referenced memory",
+      }),
     );
-    await screen.findByText(/这条基础记忆已变化或不可读取/);
+    await screen.findByText(/This base memory has changed or cannot be read/);
     expect(screen.queryByText("Mismatched source text")).toBeNull();
   },
 );
@@ -571,8 +588,8 @@ it("separates full input coverage from failed dossier checks", async () => {
     {
       run_id: "r1",
       status: "failed",
-      phase: "整理未完成",
-      failed_phase: "整理当前结论与变化历史",
+      phase: "Organization incomplete",
+      failed_phase: "Organizing current conclusions and change history",
       selected_records: 77,
       hy_input_records: 77,
       omitted_records: 0,
@@ -583,10 +600,10 @@ it("separates full input coverage from failed dossier checks", async () => {
     },
   ]);
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  expect(await screen.findByText(/已读取 77 条/)).toBeTruthy();
-  expect(screen.getByText(/HY 输入 77 条/)).toBeTruthy();
-  expect(screen.getByText(/关键记忆未完整保留/)).toBeTruthy();
-  expect(screen.queryByText("档案待核对")).toBeNull();
+  expect(await screen.findByText(/Read 77 records/)).toBeTruthy();
+  expect(screen.getByText(/HY input 77 records/)).toBeTruthy();
+  expect(screen.getByText(/Key memories were not fully retained/)).toBeTruthy();
+  expect(screen.queryByText("File pending verification")).toBeNull();
 });
 
 it("reports deferred conversations instead of implying complete coverage", async () => {
@@ -594,7 +611,7 @@ it("reports deferred conversations instead of implying complete coverage", async
     {
       run_id: "r2",
       status: "failed",
-      phase: "整理未完成",
+      phase: "Organization incomplete",
       selected_records: 3,
       hy_input_records: 0,
       omitted_records: 42,
@@ -604,8 +621,8 @@ it("reports deferred conversations instead of implying complete coverage", async
     },
   ]);
   render(<MatterWorkspace onOpenSources={() => {}} />);
-  expect(await screen.findByText(/42 条未处理/)).toBeTruthy();
-  expect(screen.getByText(/本轮读取未完整/)).toBeTruthy();
+  expect(await screen.findByText(/42 records not processed/)).toBeTruthy();
+  expect(screen.getByText(/Incomplete read this run/)).toBeTruthy();
 });
 
 it("refreshes idle matters so external revocation cannot leave old claims visible", async () => {
@@ -616,19 +633,21 @@ it("refreshes idle matters so external revocation cannot leave old claims visibl
       ...matter,
       availability: "source_unavailable",
       claims: [],
-      title: "来源不可用",
+      title: "Source unavailable",
       purpose: "",
     },
   ]);
   await waitFor(
     () =>
       expect(
-        screen.getByText("来源或基础记忆已变化，旧档案已隐藏。"),
+        screen.getByText(
+          "The sources or base memories have changed; the old file is hidden.",
+        ),
       ).toBeTruthy(),
     { timeout: 7500 },
   );
   expect(
-    (screen.getByRole("button", { name: "任务上下文" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Task context" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
 }, 9000);

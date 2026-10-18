@@ -19,7 +19,13 @@ def no_network(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "text", ["中文😀e\u0301末尾", "👩‍💻链接", "e\u0301 cafe\u0301", "URL路径 /Case/末尾"]
+    "text",
+    [
+        "\u4e2d\u6587😀e\u0301\u672b\u5c3e",
+        "👩‍💻\u94fe\u63a5",
+        "e\u0301 cafe\u0301",
+        "URL\u8def\u5f84 /Case/\u672b\u5c3e",
+    ],
 )
 def test_real_locked_tokenizer_offsets_are_unicode_codepoints(text):
     embedder = LocalEmbedder()
@@ -42,7 +48,7 @@ def test_real_locked_tokenizer_offsets_are_unicode_codepoints(text):
 
 
 def test_known_emoji_and_combining_offsets_are_not_utf8_or_utf16_units():
-    value = LocalEmbedder().tokenize_with_offsets("中文😀e\u0301末尾")
+    value = LocalEmbedder().tokenize_with_offsets("\u4e2d\u6587😀e\u0301\u672b\u5c3e")
     offsets = [(o.start_cp, o.end_cp) for o in value.offsets if not o.special]
     assert offsets == [(0, 1), (1, 2), (2, 5), (5, 6), (6, 7)]
 
@@ -50,8 +56,8 @@ def test_known_emoji_and_combining_offsets_are_not_utf8_or_utf16_units():
 def test_offsets_are_not_truncated_or_padded_and_do_not_create_onnx_session(monkeypatch):
     monkeypatch.setattr(local_embedding, "import_module", lambda *args: pytest.fail("ONNX load"))
     embedder = LocalEmbedder()
-    long = embedder.tokenize_with_offsets("中" * 1600)
-    short = embedder.tokenize_with_offsets("中")
+    long = embedder.tokenize_with_offsets("\u4e2d" * 1600)
+    short = embedder.tokenize_with_offsets("\u4e2d")
     empty = embedder.tokenize_with_offsets("")
     assert len(long.token_ids) == 1602
     assert len(short.token_ids) == 3
@@ -63,7 +69,7 @@ def test_offsets_are_not_truncated_or_padded_and_do_not_create_onnx_session(monk
 
 def test_parallel_offset_calls_share_one_lazy_tokenizer_without_shared_encoder_mutation():
     embedder = LocalEmbedder()
-    texts = ["中" * 700, "😀中e\u0301", "short"] * 8
+    texts = ["\u4e2d" * 700, "😀\u4e2de\u0301", "short"] * 8
     with ThreadPoolExecutor(max_workers=8) as pool:
         actual = list(pool.map(embedder.tokenize_with_offsets, texts))
     assert actual == [embedder.tokenize_with_offsets(text) for text in texts]
@@ -72,31 +78,33 @@ def test_parallel_offset_calls_share_one_lazy_tokenizer_without_shared_encoder_m
 
 def test_offset_tokenizer_does_not_modify_encode_state_or_vectors():
     embedder = LocalEmbedder()
-    baseline = embedder.encode(["原有编码必须保持", "短句"])
+    baseline = embedder.encode(["\u539f\u6709\u7f16\u7801\u5fc5\u987b\u4fdd\u6301", "\u77ed\u53e5"])
     session, tokenizer = embedder._session, embedder._tokenizer
     truncation, padding = tokenizer.truncation.copy(), tokenizer.padding.copy()
     with ThreadPoolExecutor(max_workers=4) as pool:
-        tokenized = pool.submit(embedder.tokenize_with_offsets, "中" * 1100)
-        encoded = pool.submit(embedder.encode, ["原有编码必须保持", "短句"])
+        tokenized = pool.submit(embedder.tokenize_with_offsets, "\u4e2d" * 1100)
+        encoded = pool.submit(
+            embedder.encode, ["\u539f\u6709\u7f16\u7801\u5fc5\u987b\u4fdd\u6301", "\u77ed\u53e5"]
+        )
         assert len(tokenized.result().token_ids) == 1102
         assert encoded.result() == baseline
     assert embedder._session is session and embedder._tokenizer is tokenizer
     assert tokenizer.truncation == truncation and tokenizer.padding == padding
-    assert len(tokenizer.encode("中" * 1100).ids) == 512
+    assert len(tokenizer.encode("\u4e2d" * 1100).ids) == 512
 
 
 def test_offset_assets_reject_unlocked_tokenizer_without_loading_weights(tmp_path, monkeypatch):
     (tmp_path / "tokenizer.json").write_bytes(b'{"invalid":"not locked"}')
     monkeypatch.setattr(local_embedding, "resolve_asset_dir", lambda: tmp_path)
     with pytest.raises(AssetVerificationError):
-        LocalEmbedder().tokenize_with_offsets("中")
+        LocalEmbedder().tokenize_with_offsets("\u4e2d")
 
 
 def test_offset_tokenization_uses_only_tokenizer_asset(tmp_path, monkeypatch):
     # Tokenization must not require another ONNX session or even the weights file.
     (tmp_path / "tokenizer.json").write_bytes((resolve_asset_dir() / "tokenizer.json").read_bytes())
     monkeypatch.setattr(local_embedding, "resolve_asset_dir", lambda: tmp_path)
-    assert len(LocalEmbedder().tokenize_with_offsets("中文").token_ids) == 4
+    assert len(LocalEmbedder().tokenize_with_offsets("\u4e2d\u6587").token_ids) == 4
 
 
 def test_real_adjacent_wordpieces_and_long_ascii_unknown_keep_original_offsets():
@@ -126,7 +134,7 @@ def test_parallel_initial_load_constructs_one_offsets_tokenizer(monkeypatch):
     monkeypatch.setattr(Tokenizer, "from_str", counted)
     embedder = LocalEmbedder()
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(embedder.tokenize_with_offsets, ["中😀e\u0301"] * 16))
+        results = list(pool.map(embedder.tokenize_with_offsets, ["\u4e2d😀e\u0301"] * 16))
     assert len(calls) == 1
     assert all(value == results[0] for value in results)
     assert embedder._session is None

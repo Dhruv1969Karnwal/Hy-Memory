@@ -108,7 +108,7 @@ export function FirstUseGuide({
         if (!cancelled) {
           setMemories([]);
           setSelectedId("");
-          setError("暂时无法读取记忆，可稍后重试。");
+          setError("Memories cannot be read right now. Try again later.");
         }
       })
       .finally(() => {
@@ -138,12 +138,15 @@ export function FirstUseGuide({
           throw new Error("wrong identity");
         setDetail(result);
         setTopic(
-          result.memory.tags.slice(0, 2).join("、").slice(0, 160) ||
-            "之前讨论的工作",
+          result.memory.tags.slice(0, 2).join(", ").slice(0, 160) ||
+            "Work discussed before",
         );
       })
       .catch(() => {
-        if (!cancelled) setError("这条记忆暂不可读，请换一条或刷新。");
+        if (!cancelled)
+          setError(
+            "This memory is not readable right now. Pick another one or refresh.",
+          );
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -171,8 +174,8 @@ export function FirstUseGuide({
   ];
   const nameOf = (id: string) =>
     sources.find((item) => item.source_id === id)?.display_name ??
-    (id === "one-memory-manual" ? "端内添加" : id);
-  const sourceLabel = sourceIds.map(nameOf).join("、") || "原应用";
+    (id === "one-memory-manual" ? "Added in app" : id);
+  const sourceLabel = sourceIds.map(nameOf).join(", ") || "Original app";
   const draft =
     available && detail
       ? draftForScenario(scene, effectiveRoute, topic, detail, sourceLabel)
@@ -218,7 +221,9 @@ export function FirstUseGuide({
       ) {
         setDetail(null);
         setCopiedKey("");
-        setError("记忆内容或授权已变化，请刷新后重新核对。");
+        setError(
+          "The memory content or authorization has changed. Refresh and check again.",
+        );
         return;
       }
       if (
@@ -232,7 +237,9 @@ export function FirstUseGuide({
         )
       ) {
         setCopiedKey("");
-        setNotice("连接状态已变化，尚未复制。请重新选择方式。");
+        setNotice(
+          "The connection status changed, so nothing was copied. Choose the method again.",
+        );
         return;
       }
       validated = true;
@@ -245,22 +252,31 @@ export function FirstUseGuide({
           if (current())
             setNotice(
               result.opened
-                ? `已复制并请求打开 ${host.label}。尚未发送，请核对输入框。`
-                : "已完整复制，未能预填。可在目标应用粘贴，尚未发送。",
+                ? `Copied, and ${host.label} was asked to open. Not sent yet; check the input box.`
+                : "Copied in full, but nothing was pre-filled. You can paste it in the target app; not sent yet.",
             );
         } catch {
           if (current())
-            setNotice("已完整复制，但未能打开目标应用。尚未发送。");
+            setNotice(
+              "Copied in full, but the target app could not be opened. Not sent yet.",
+            );
         }
-      } else setNotice("已完整复制。尚未发送，也没有新增读取授权。");
+      } else
+        setNotice(
+          "Copied in full. Not sent yet, and no new read authorization was added.",
+        );
     } catch {
       if (current()) {
         if (!validated) {
           setDetail(null);
           setCopiedKey("");
-          setError("无法核对当前记忆与授权，旧预览已收起。请刷新后重试。");
+          setError(
+            "The current memory and authorization could not be verified, and the old preview was cleared. Refresh and retry.",
+          );
         }
-        setNotice("未能核对最新内容或完成复制。请重试；没有打开目标应用。");
+        setNotice(
+          "Could not verify the latest content or finish copying. Retry; the target app was not opened.",
+        );
       }
     } finally {
       if (current()) setBusy(false);
@@ -271,16 +287,18 @@ export function FirstUseGuide({
     <section className="view first-use-view" aria-labelledby="first-use-title">
       <header className="first-use-heading">
         <div>
-          <p className="first-use-eyebrow">上手体验</p>
-          <h1 id="first-use-title">让下一次对话接得上</h1>
+          <p className="first-use-eyebrow">Get started</p>
+          <h1 id="first-use-title">
+            Make the next conversation pick up where this one ends
+          </h1>
         </div>
         <button type="button" className="quiet" onClick={onClose}>
           <ArrowLeft size={16} aria-hidden="true" />
-          返回记忆
+          Back to memories
         </button>
       </header>
       <fieldset className="first-use-scenarios">
-        <legend className="sr-only">选择使用场景</legend>
+        <legend className="sr-only">Choose a use scenario</legend>
         {GUIDE_SCENARIOS.map((item, index) => (
           <label key={item.id} data-selected={scene === item.id}>
             <input
@@ -303,19 +321,20 @@ export function FirstUseGuide({
       <p className="first-use-description">{scenario.description}</p>
       {importedMessages > 0 && (
         <p className="first-use-receipt">
-          本机已保存 {importedMessages.toLocaleString()} 条原始消息 ·{" "}
+          This device has saved {importedMessages.toLocaleString()} raw messages
+          ·{" "}
           {loading
-            ? "正在读取已整理记忆"
-            : `本页已加载 ${memories.length} 条可用记忆`}
-          。两个阶段分别计数。
+            ? "Reading organized memories"
+            : `This page has loaded ${memories.length} usable memories`}
+          The two stages are counted separately.
         </p>
       )}
       <div className="first-use-path">
-        <span>选择背景</span>
+        <span>Pick a background</span>
         <ArrowRight size={14} aria-hidden="true" />
-        <span>核对来源</span>
+        <span>Check the sources</span>
         <ArrowRight size={14} aria-hidden="true" />
-        <span>到新对话试用</span>
+        <span>Try it in a new chat</span>
       </div>
       {error && (
         <p className="error-banner" role="alert">
@@ -323,20 +342,22 @@ export function FirstUseGuide({
         </p>
       )}
       {loading ? (
-        <p role="status">正在读取本机已有记忆…</p>
+        <p role="status">Reading existing memories on this device...</p>
       ) : !memories.length ? (
         <section className="first-use-empty">
           <FileText size={28} aria-hidden="true" />
-          <h2>先留下一条真正有用的背景</h2>
+          <h2>Leave behind one piece of background that really helps</h2>
           <p>
-            目前没有可用于这次体验的记忆。已导入的原文不等于已经整理好；候选内容也不会被自动带出。
+            There are no usable memories for this walkthrough yet. Imported
+            source text is not the same as organized memories, and candidate
+            content is not carried out automatically.
           </p>
           <div>
             <button type="button" onClick={onClose}>
-              去添加记忆
+              Go add a memory
             </button>
             <button type="button" className="secondary" onClick={onSources}>
-              查看导入与连接
+              View imports and connections
             </button>
             <button
               type="button"
@@ -344,7 +365,7 @@ export function FirstUseGuide({
               onClick={() => setReload((n) => n + 1)}
             >
               <RefreshCw size={15} />
-              刷新
+              Refresh
             </button>
           </div>
         </section>
@@ -355,12 +376,12 @@ export function FirstUseGuide({
             aria-labelledby="guide-background-title"
           >
             <header>
-              <h2 id="guide-background-title">这次用到的背景</h2>
+              <h2 id="guide-background-title">The background used this time</h2>
               <button
                 type="button"
                 className="quiet"
-                title="刷新示例"
-                aria-label="刷新示例"
+                title="Refresh examples"
+                aria-label="Refresh examples"
                 onClick={() => {
                   changed();
                   setDetail(null);
@@ -372,7 +393,7 @@ export function FirstUseGuide({
               </button>
             </header>
             <label className="first-use-field">
-              选择一条记忆
+              Choose a memory
               <select
                 value={selectedId}
                 onChange={(event) => {
@@ -390,46 +411,50 @@ export function FirstUseGuide({
               </select>
             </label>
             <p className="first-use-meta">
-              从当前已加载的 {memories.length}{" "}
-              条可用记忆中选择，不代表全部历史。
+              Chosen from the {memories.length} usable memories loaded here, not
+              your full history.
             </p>
             {detailLoading ? (
-              <p role="status">正在核对原始依据…</p>
+              <p role="status">Checking the original evidence...</p>
             ) : available && detail ? (
               <>
                 <blockquote className="first-use-memory">
                   {detail.memory.content}
                 </blockquote>
                 <p className="first-use-meta">
-                  {sourceLabel} · 版本 {detail.memory.revision} ·
-                  系统整理，需你核对
+                  {sourceLabel} · Revision {detail.memory.revision} · Organized
+                  automatically; needs your review
                 </p>
                 <p className="first-use-scope">
-                  适用范围：
+                  Scope:
                   {detail.memory.scopes.includes("all-apps")
-                    ? "已设为跨应用可用，不等于个人偏好"
+                    ? "Set as available across apps; not a personal preference"
                     : detail.memory.scopes.includes("private")
-                      ? "已停止外部记忆召回；手动带出需另行确认"
-                      : "限定范围，未扩大外部召回范围"}
+                      ? "External memory recall is off; carrying it out manually needs separate confirmation"
+                      : "Limited scope; the external recall range has not been widened"}
                 </p>
                 <details className="first-use-evidence" open>
-                  <summary>原始依据 · {detail.evidence.length} 段</summary>
+                  <summary>
+                    Original evidence · {detail.evidence.length} segments
+                  </summary>
                   {detail.evidence.map((item) => (
                     <article key={item.evidence_id}>
                       <header>
                         <span>
-                          {item.source_id ? nameOf(item.source_id) : "未知来源"}
+                          {item.source_id
+                            ? nameOf(item.source_id)
+                            : "Unknown source"}
                         </span>
                         <span>
                           {item.written_by === "person"
-                            ? "你"
+                            ? "You"
                             : item.written_by === "agent"
                               ? "Agent"
-                              : "作者未识别"}{" "}
+                              : "Author not identified"}{" "}
                           ·{" "}
                           {item.created_at
                             ? new Date(item.created_at).toLocaleString()
-                            : "时间未知"}
+                            : "Time unknown"}
                         </span>
                       </header>
                       <p>{item.verbatim}</p>
@@ -439,7 +464,8 @@ export function FirstUseGuide({
               </>
             ) : (
               <p className="first-use-unavailable">
-                原文或当前授权不可用。换一条背景或刷新后再试，不会带出这条内容。
+                The source text or current authorization is unavailable. Try
+                another memory or refresh; this content will not be carried out.
               </p>
             )}
           </section>
@@ -447,9 +473,9 @@ export function FirstUseGuide({
             className="first-use-destination"
             aria-labelledby="guide-draft-title"
           >
-            <h2 id="guide-draft-title">下一段对话的开场白</h2>
+            <h2 id="guide-draft-title">The opener for the next conversation</h2>
             <label className="first-use-field">
-              在哪个应用试用
+              Which app to try it in
               <select
                 value={host?.hostId ?? ""}
                 onChange={(event) => {
@@ -458,7 +484,7 @@ export function FirstUseGuide({
                   setRoute("context");
                 }}
               >
-                <option value="">自行选择应用 · 仅复制</option>
+                <option value="">Pick an app yourself · copy only</option>
                 {destinations.map((item) => (
                   <option key={item.hostId} value={item.hostId}>
                     {item.label}
@@ -468,14 +494,14 @@ export function FirstUseGuide({
             </label>
             <p className="first-use-connection">
               {hostsError
-                ? "暂时无法读取连接状态，可重试或仅复制背景。"
+                ? "The connection status cannot be read right now; retry or just copy the background."
                 : !host
-                  ? "尚未选择已连接的应用。手动带入不等于安装连接。"
+                  ? "No connected app selected yet. Carrying text in manually is not an installed connection."
                   : canQuery
-                    ? "上次自检可达，本次是否用对仍需核对。"
+                    ? "The last self-check reached it; whether this call used it correctly still needs checking."
                     : host.installed
-                      ? "已安装连接，尚未验证读取。"
-                      : "尚未安装读取连接。"}
+                      ? "The connection is installed; read access is not verified yet."
+                      : "No read connection installed."}
             </p>
             <button
               type="button"
@@ -483,10 +509,10 @@ export function FirstUseGuide({
               onClick={onSources}
             >
               <Link2 size={15} aria-hidden="true" />
-              管理应用连接
+              Manage app connections
             </button>
             <fieldset className="first-use-routes">
-              <legend className="sr-only">选择带入方式</legend>
+              <legend className="sr-only">Choose how to carry it in</legend>
               <label>
                 <input
                   type="radio"
@@ -497,7 +523,7 @@ export function FirstUseGuide({
                     setRoute("context");
                   }}
                 />
-                带入背景
+                Carry the background in
               </label>
               <label>
                 <input
@@ -510,12 +536,12 @@ export function FirstUseGuide({
                     setRoute("query");
                   }}
                 />
-                让应用查询
+                Let the app query
               </label>
             </fieldset>
             {effectiveRoute === "query" && (
               <label className="first-use-field">
-                要接续的主题
+                The topic to continue
                 <input
                   value={topic}
                   maxLength={160}
@@ -528,17 +554,17 @@ export function FirstUseGuide({
             )}
             <p className="first-use-meta">
               {effectiveRoute === "query"
-                ? "只带查询，不把上方的预期答案塞进新会话。"
+                ? "Carries the query only; the expected answer above is not pushed into the new session."
                 : scene === "new"
-                  ? "仅带你选择的这一条，不自动生成个人画像。"
-                  : "完整带入这一条背景与引用；这不是自动召回测试。"}
+                  ? "Carries only the memory you chose; no personal profile is generated automatically."
+                  : "Carries this memory and its citations in full; this is not an automatic recall test."}
             </p>
             <textarea
               className="first-use-draft"
-              aria-label="开场白完整预览"
+              aria-label="Full opener preview"
               readOnly
               value={draft}
-              placeholder="原始依据可用后显示开场白"
+              placeholder="The opener appears once the original evidence is available"
               spellCheck={false}
             />
             <div className="first-use-actions">
@@ -548,7 +574,7 @@ export function FirstUseGuide({
                 onClick={() => void carry(false)}
               >
                 <Copy size={16} aria-hidden="true" />
-                {busy ? "正在核对…" : "复制开场白"}
+                {busy ? "Checking..." : "Copy opener"}
               </button>
               {host?.handoff === "open" && (
                 <button
@@ -558,7 +584,7 @@ export function FirstUseGuide({
                   onClick={() => void carry(true)}
                 >
                   <ExternalLink size={16} aria-hidden="true" />
-                  复制并打开 {host.label}
+                  Copy and open {host.label}
                 </button>
               )}
             </div>
@@ -569,29 +595,31 @@ export function FirstUseGuide({
             )}
             {copiedKey === contextKey && (
               <section className="first-use-result">
-                <p>尚无本次外部调用回执。新对话是否引用了正确的背景？</p>
+                <p>
+                  No receipt for this external call yet. Did the new
+                  conversation reference the right background?
+                </p>
                 <div>
                   <button
                     type="button"
                     className="quiet"
                     onClick={() => setReported("ok")}
                   >
-                    <Check size={15} />
-                    我已核对结果
+                    <Check size={15} />I verified the result
                   </button>
                   <button
                     type="button"
                     className="quiet"
                     onClick={() => setReported("missing")}
                   >
-                    没有找回来
+                    Nothing was recalled
                   </button>
                 </div>
                 {reported && (
                   <p role="status">
                     {reported === "ok"
-                      ? "你的反馈：已核对。这不是系统自动验收记录。"
-                      : "你的反馈：没有找回来。先检查来源是否导入、记忆范围与应用连接。"}
+                      ? "Your feedback: verified. This is not an automatic acceptance record."
+                      : "Your feedback: nothing was recalled. First check whether the source was imported, the memory scopes, and the app connection."}
                   </p>
                 )}
               </section>
@@ -611,17 +639,19 @@ export function FirstUseInvitation({
   onDismiss(): void;
 }) {
   return (
-    <aside className="first-use-invitation" aria-label="上手体验邀请">
-      <span>用一条自己的记忆，试着接续下一次对话。</span>
+    <aside className="first-use-invitation" aria-label="Getting-started invite">
+      <span>
+        Try carrying one of your own memories into the next conversation.
+      </span>
       <button type="button" className="quiet" onClick={onOpen}>
-        试一次
+        Try it once
         <ArrowRight size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
         className="quiet"
-        title="稍后再看"
-        aria-label="关闭上手邀请"
+        title="Show me later"
+        aria-label="Close getting-started invite"
         onClick={onDismiss}
       >
         <X size={15} />

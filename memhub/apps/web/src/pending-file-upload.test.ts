@@ -116,7 +116,7 @@ it("enforces 256 UTF-8 bytes including whitespace before parsing", () => {
   expect(readPendingFileUpload(store(exact))).toBe(ID);
   expect(() => readPendingFileUpload(store(`${exact} `))).toThrowError(ERROR);
   expect(() =>
-    readPendingFileUpload(store(encode() + "界".repeat(80))),
+    readPendingFileUpload(store(encode() + "\u754c".repeat(80))),
   ).toThrowError(ERROR);
 });
 

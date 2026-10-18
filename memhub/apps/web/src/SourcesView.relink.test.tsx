@@ -176,12 +176,12 @@ describe("existing connection belongs to a different profile", () => {
       const api = setup(reason);
       const user = userEvent.setup();
       const button = await screen.findByRole("button", {
-        name: "一键重新连接",
+        name: "Reconnect in one click",
       });
-      expect(screen.queryByText("链路：已接通")).toBeNull();
-      expect(screen.getByText("链路：需要重新连接")).toBeTruthy();
+      expect(screen.queryByText("Link: Connected")).toBeNull();
+      expect(screen.getByText("Link: needs reconnection")).toBeTruthy();
       expect(
-        screen.getByRole("button", { name: "允许使用记忆" }),
+        screen.getByRole("button", { name: "Allow memory use" }),
       ).toHaveProperty("disabled", true);
       await user.click(button);
       expect(api.previewRecallInstall).toHaveBeenCalledWith("cursor");
@@ -191,7 +191,7 @@ describe("existing connection belongs to a different profile", () => {
       expect((await screen.findByRole("dialog")).textContent).toContain(
         "current-profile",
       );
-      await user.click(screen.getByRole("button", { name: "取消" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
       expect(api.installRecall).not.toHaveBeenCalled();
     },
   );
@@ -200,15 +200,15 @@ describe("existing connection belongs to a different profile", () => {
     const api = setup();
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键重新连接" }),
+      await screen.findByRole("button", { name: "Reconnect in one click" }),
     );
     expect(screen.getByRole("dialog").textContent).toContain(
-      "确认后会一并按默认范围允许 Cursor",
+      "Confirming also allows Cursor",
     );
     expect(api.installRecall).not.toHaveBeenCalled();
     expect(api.setRecallPermission).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "连接并允许使用记忆" }),
+      screen.getByRole("button", { name: "Connect and allow memory use" }),
     );
     expect(api.installRecall).toHaveBeenCalledTimes(1);
     expect(api.installRecall).toHaveBeenCalledWith(
@@ -241,9 +241,9 @@ describe("existing connection belongs to a different profile", () => {
     );
     await waitFor(() => expect(api.getRecallHosts).toHaveBeenCalledTimes(2));
     expect(
-      await screen.findByRole("button", { name: "调整调用权限" }),
+      await screen.findByRole("button", { name: "Adjust call permissions" }),
     ).toBeTruthy();
-    expect(screen.queryByText("链路：已接通")).toBeNull();
+    expect(screen.queryByText("Link: Connected")).toBeNull();
     expect(api.uninstallRecall).not.toHaveBeenCalled();
   });
 
@@ -254,18 +254,21 @@ describe("existing connection belongs to a different profile", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键重新连接" }),
+      await screen.findByRole("button", { name: "Reconnect in one click" }),
     );
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "未能读取连接变更预览",
+      "Could not read the connection change preview",
     );
-    expect(screen.getByRole("button", { name: "一键重新连接" })).toHaveProperty(
-      "disabled",
-      false,
-    );
-    expect(screen.queryByText("无法读取安装状态。")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Reconnect in one click" }),
+    ).toHaveProperty("disabled", false);
+    expect(
+      screen.queryByText("Cannot read the installation state."),
+    ).toBeNull();
     expect(api.installRecall).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "一键重新连接" }));
+    await user.click(
+      screen.getByRole("button", { name: "Reconnect in one click" }),
+    );
     expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
@@ -276,10 +279,10 @@ describe("existing connection belongs to a different profile", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键重新连接" }),
+      await screen.findByRole("button", { name: "Reconnect in one click" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "连接并允许使用记忆" }),
+      screen.getByRole("button", { name: "Connect and allow memory use" }),
     );
     await waitFor(() => expect(api.getRecallHosts).toHaveBeenCalledTimes(2));
     expect(api.installRecall).toHaveBeenCalledExactlyOnceWith(
@@ -298,12 +301,15 @@ describe("existing connection belongs to a different profile", () => {
       allowedScopes: ["all-apps", "source:cursor"],
       userConfirmed: true,
     });
-    expect(await screen.findByText("已安装，尚未允许使用记忆")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "允许使用记忆" })).toHaveProperty(
-      "disabled",
-      false,
-    );
-    expect(screen.queryByRole("button", { name: "调整调用权限" })).toBeNull();
+    expect(
+      await screen.findByText("Installed; memory use is not allowed yet"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Allow memory use" }),
+    ).toHaveProperty("disabled", false);
+    expect(
+      screen.queryByRole("button", { name: "Adjust call permissions" }),
+    ).toBeNull();
     expect(api.uninstallRecall).not.toHaveBeenCalled();
   });
 
@@ -317,10 +323,10 @@ describe("existing connection belongs to a different profile", () => {
     });
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键重新连接" }),
+      await screen.findByRole("button", { name: "Reconnect in one click" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "连接并允许使用记忆" }),
+      screen.getByRole("button", { name: "Connect and allow memory use" }),
     );
     await waitFor(() => expect(api.getRecallHosts).toHaveBeenCalledTimes(2));
     expect(api.getRecallPermission).toHaveBeenCalledExactlyOnceWith("cursor");

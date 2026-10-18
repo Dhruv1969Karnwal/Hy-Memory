@@ -163,7 +163,7 @@ describe("useImportSources", () => {
     );
     await userEvent.click(button);
     expect(screen.getByLabelText("error").textContent).toBe(
-      "来源目录暂时不可读取，请核对位置和权限后重试。",
+      "The source directory cannot be read right now; check the location and permissions, then retry.",
     );
   });
   it("does not enqueue a live sync job for uploaded snapshots", async () => {
@@ -749,7 +749,7 @@ describe("useImportSources", () => {
     expect(result.current.jobs.map((item) => item.job_id)).toEqual([
       "accepted-job",
     ]);
-    expect(result.current.error).toContain("刷新");
+    expect(result.current.error).toContain("refresh");
   });
 
   it("does not reject a saved sync decision because refresh failed", async () => {
@@ -761,7 +761,7 @@ describe("useImportSources", () => {
       ).resolves.toBeUndefined();
     });
     expect(setSourceSync).toHaveBeenCalledTimes(1);
-    expect(result.current.error).toContain("刷新");
+    expect(result.current.error).toContain("refresh");
   });
 
   it("refuses a new write when recovery storage cannot retain its request ID", async () => {
@@ -849,7 +849,7 @@ describe("useImportSources", () => {
     expect(result.current.jobs.map((item) => item.job_id)).toEqual([
       "committed",
     ]);
-    expect(result.current.error).toContain("刷新");
+    expect(result.current.error).toContain("refresh");
   });
 
   it("recovers an uncertain failed-only retry after remount without replaying accepted sources", async () => {
@@ -910,7 +910,7 @@ describe("useImportSources", () => {
       pending.resolve([source("ok")]);
       await earlier;
     });
-    expect(result.current.error).toContain("刷新");
+    expect(result.current.error).toContain("refresh");
   });
 
   it("coalesces duplicate submissions while the committed request's refresh is pending", async () => {
@@ -1138,7 +1138,7 @@ describe("useImportSources", () => {
     await act(async () => {
       const refused = expect(
         result.current.connectSelected(["ok"], [source("ok")], options),
-      ).rejects.toThrow("另一连接请求");
+      ).rejects.toThrow("Another connection request");
       pending.resolve(health());
       await Promise.all([operation, refused]);
     });
@@ -1208,7 +1208,7 @@ describe("useImportSources", () => {
         result.current.connectSelected(["ok"], [source("ok")], {
           importUploadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         }),
-      ).rejects.toThrow("身份已变化");
+      ).rejects.toThrow("directory identity");
     });
     expect(connectSources).not.toHaveBeenCalled();
     expect(localStorage.length).toBe(0);
@@ -1306,7 +1306,7 @@ describe("useImportSources", () => {
         expect(result.current.health).toBeNull();
         expect(result.current.sources).toEqual([]);
         expect(result.current.jobs).toEqual([]);
-        expect(result.current.error).toContain("刷新");
+        expect(result.current.error).toContain("refresh");
       },
     );
 
@@ -1342,7 +1342,7 @@ describe("useImportSources", () => {
         expect(result.current.health).toBe(before.health);
         expect(result.current.sources).toBe(before.sources);
         expect(result.current.jobs).toBe(before.jobs);
-        expect(result.current.error).toContain("刷新超时");
+        expect(result.current.error).toContain("refresh timed out");
       },
     );
 
@@ -1361,7 +1361,7 @@ describe("useImportSources", () => {
         confirmedAt: null,
         stale: true,
       });
-      expect(result.current.error).toContain("刷新");
+      expect(result.current.error).toContain("refresh");
       vi.setSystemTime(new Date(lastObserved));
       await act(async () => {
         pending.resolve([job("recovered", "ok")]);
@@ -1390,7 +1390,7 @@ describe("useImportSources", () => {
         await result.current.refresh().catch(() => {});
       });
       const failure = result.current.error;
-      expect(failure).toContain("刷新超时");
+      expect(failure).toContain("refresh timed out");
       vi.setSystemTime(new Date(lastObserved));
       await act(async () => {
         old.resolve([{ ...source("old"), imported_messages: 99 }]);
@@ -1550,7 +1550,7 @@ describe("useImportSources", () => {
           confirmedAt: firstObserved,
           stale: true,
         });
-        expect(result.current.error).toContain("刷新");
+        expect(result.current.error).toContain("refresh");
         vi.setSystemTime(new Date(lastObserved));
         await act(async () => {
           nextSources.resolve([
@@ -1622,7 +1622,7 @@ describe("useImportSources", () => {
           confirmedAt: firstObserved,
           stale: true,
         });
-        expect(result.current.error).toContain("刷新");
+        expect(result.current.error).toContain("refresh");
       },
     );
 
@@ -1778,7 +1778,7 @@ describe("useImportSources", () => {
         getImportJob.mockResolvedValue(response);
         await act(async () => {
           await expect(result.current.changeJob("a", "pause")).rejects.toThrow(
-            "待核对",
+            "pending verification",
           );
         });
         expect(result.current.jobs).toEqual([original]);
@@ -1845,11 +1845,11 @@ describe("useImportSources", () => {
       getImportJob.mockResolvedValue(actionJob("a", "running", 2));
       await act(async () => {
         await expect(result.current.changeJob("a", "resume")).rejects.toThrow(
-          "待核对",
+          "pending verification",
         );
         await result.current.refresh();
         await expect(result.current.changeJob("a", "cancel")).rejects.toThrow(
-          "待核对",
+          "pending verification",
         );
       });
       expect(changeImportJob).toHaveBeenCalledTimes(1);
@@ -2001,14 +2001,16 @@ describe("useImportSources", () => {
       expect(result.current.jobActions?.get("b")).toMatchObject({
         pending: false,
         uncertain: false,
-        error: expect.stringContaining("权限"),
+        error: expect.stringContaining("permission"),
       });
       expect(result.current.error).toBeNull();
       await act(async () => {
         a.resolve(actionJob("a", "paused", 2));
         await first;
       });
-      expect(result.current.jobActions?.get("b")?.error).toContain("权限");
+      expect(result.current.jobActions?.get("b")?.error).toContain(
+        "permission",
+      );
       expect(
         result.current.jobs.find((item) => item.job_id === "a")?.status,
       ).toBe("paused");
@@ -2066,9 +2068,9 @@ describe("useImportSources", () => {
         await poll;
       });
       expect(result.current.jobs).toEqual([completed]);
-      expect(result.current.error).toContain("最后已确认");
+      expect(result.current.error).toContain("last confirmed");
       expect(result.current.error).not.toMatch(
-        /后台.*(?:继续|不会中断)|正在自动重试/,
+        /background.*(?:continues|will not interrupt)|automatically retrying/,
       );
     });
 
@@ -2147,7 +2149,7 @@ describe("useImportSources", () => {
         getImportJob.mockResolvedValue(actionJob("a", status, 2));
         await act(async () => {
           await expect(result.current.changeJob("a", "resume")).rejects.toThrow(
-            "待核对",
+            "pending verification",
           );
         });
         expect(result.current.jobActions?.get("a")).toMatchObject({
@@ -2156,7 +2158,7 @@ describe("useImportSources", () => {
         });
         await act(async () => {
           await expect(result.current.changeJob("a", "resume")).rejects.toThrow(
-            "待核对",
+            "pending verification",
           );
         });
         expect(changeImportJob).toHaveBeenCalledTimes(1);
@@ -2180,7 +2182,7 @@ describe("useImportSources", () => {
       getImportJob.mockRejectedValue(new Error("offline"));
       await act(async () => {
         await expect(result.current.changeJob("a", "pause")).rejects.toThrow(
-          "待核对",
+          "pending verification",
         );
       });
       expect(result.current.jobs).toEqual([running]);
@@ -2202,7 +2204,7 @@ describe("useImportSources", () => {
       );
       await act(async () => {
         await expect(result.current.changeJob("a", "resume")).rejects.toThrow(
-          "权限",
+          "permission",
         );
       });
       expect(getImportJob).not.toHaveBeenCalled();
@@ -2301,9 +2303,9 @@ describe("useImportSources", () => {
         await act(async () => {
           await result.current.refresh().catch(() => {});
         });
-        expect(result.current.error).toContain("最后已确认");
+        expect(result.current.error).toContain("last confirmed");
         expect(result.current.error).not.toMatch(
-          /仍在后台继续|后台任务不会中断|正在自动重试/,
+          /still continuing in the background|background jobs are not interrupted|automatically retrying/,
         );
       },
     );

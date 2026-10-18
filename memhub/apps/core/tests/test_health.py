@@ -509,9 +509,9 @@ def test_a_failed_catch_up_leaves_a_traceback_behind(tmp_path, monkeypatch, capl
     assert "database is locked" in reported["memory_backfill_error"]
     # And now also written down, with the stack that says where from.
     complaints = [record for record in caplog.records if record.levelno >= logging.ERROR]
-    assert complaints, "追赶失败了却没有任何日志"
+    assert complaints, "the catch-up failed with no log line at all"
     assert any(record.exc_info is not None for record in complaints), (
-        "记了一行日志但没有栈，等于还是只有那句 database is locked"
+        "a log line without a stack still leaves you with just that database is locked sentence"
     )
     frames = [
         frame
@@ -521,5 +521,5 @@ def test_a_failed_catch_up_leaves_a_traceback_behind(tmp_path, monkeypatch, capl
     ]
     assert any(frame.name == "_run_backfill" for frame in frames)
     assert any(frame.name == "failing" and frame.filename == __file__ for frame in frames), (
-        "栈里没有出事的那个调用"
+        "the stack does not contain the call that failed"
     )

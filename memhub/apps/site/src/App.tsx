@@ -6,12 +6,18 @@
  */
 
 const REFUSALS: ReadonlyArray<{ name: string; note: string }> = [
-  { name: "不截屏，不读屏幕内容", note: "没有屏幕录制，也没有截图权限" },
-  { name: "不用辅助功能接口", note: "不借系统辅助功能读别的窗口里的内容" },
-  { name: "不做 OCR", note: "不从图像里认字" },
-  { name: "不记键盘和鼠标", note: "没有输入监听" },
-  { name: "不读剪贴板", note: "复制的东西不会进记忆" },
-  { name: "不后台录音", note: "没有麦克风采集" },
+  {
+    name: "No screenshots, no screen reading",
+    note: "No screen recording and no screenshot permission",
+  },
+  {
+    name: "No accessibility APIs",
+    note: "Never reads other windows through system accessibility",
+  },
+  { name: "No OCR", note: "Never reads text out of images" },
+  { name: "No keyboard or mouse logging", note: "No input monitoring" },
+  { name: "No clipboard reading", note: "What you copy never enters memory" },
+  { name: "No background recording", note: "No microphone capture" },
 ];
 
 function Hero() {
@@ -19,18 +25,19 @@ function Hero() {
     <header className="band hero">
       <div className="page">
         <p className="eyebrow">Local-first memory for your AI tools</p>
-        <h1>一份可以核对的记忆</h1>
+        <h1>Memory you can check</h1>
         <p className="lead">
-          你已经在各个 AI 里把偏好、判断和踩过的坑说过一遍了。MemHub
-          把这些话汇到本机的一份记忆里，让别的 AI 按你的授权取用 ——
-          而每一条记忆都能翻回它出自的那句原话。
+          You have already told every AI your preferences, your judgement and
+          the traps you fell into. MemHub gathers those words into one memory on
+          this machine and lets other AI use it under your authorization -- and
+          every memory leads back to the exact sentence it came from.
         </p>
         <div className="hero-actions">
           <a className="btn btn-primary" href="#download">
-            下载 macOS 版
+            Download for macOS
           </a>
           <a className="btn btn-quiet" href="#how">
-            先看它怎么工作
+            See how it works first
           </a>
         </div>
       </div>
@@ -42,22 +49,27 @@ function Evidence() {
   return (
     <section className="band" id="how">
       <div className="page">
-        <p className="eyebrow">为什么可以核对</p>
-        <h2>抽取可以出错，原话不会丢</h2>
+        <p className="eyebrow">Why it can be checked</p>
+        <h2>Extraction can be wrong; your words are never lost</h2>
         <div className="prose">
           <p>
-            记忆系统真正的失败方式不是没记住，是记错了还理直气壮，而你无从查证。
-            模型总结你的时候会走形，而走形之后，原来那句话通常就没了 ——
-            剩下的只有一句听起来很像你、但你从没说过的话。
+            A memory system does not really fail by forgetting. It fails by
+            remembering wrong with confidence, leaving you no way to verify.
+            Models drift when they summarize you, and once they drift the
+            original sentence is usually gone -- what remains is a line that
+            sounds a lot like you but that you never said.
           </p>
           <p>
-            所以 MemHub 分两步走：先把原话原样存下来，再从里面抽取记忆。
-            抽取归抽取，原话归原话。模型抽错了，你改的是抽取结果，
-            不是重新回忆一遍；抽取彻底失败了，那句话也还在。
+            So MemHub works in two steps: store the source text verbatim first,
+            then extract memory from it. Extraction is extraction, source text
+            is source text. When the model extracts wrongly you edit the
+            extraction, not a fresh recollection; and if extraction fails
+            completely, the sentence is still there.
           </p>
           <p>
-            这也是每条记忆都带出处的原因。它不是一句让你选择相信的总结，
-            是一条你随时可以翻回去对照的记录。
+            That is also why every memory carries its source. It is not a
+            summary you are asked to trust; it is a record you can look up and
+            compare at any time.
           </p>
         </div>
       </div>
@@ -69,11 +81,12 @@ function Refusals() {
   return (
     <section className="band" id="privacy">
       <div className="page">
-        <p className="eyebrow">我们不做的事</p>
-        <h2>它只读你已经写下来的对话</h2>
+        <p className="eyebrow">What we do not do</p>
+        <h2>It only reads conversations you already wrote down</h2>
         <p className="lead">
-          能读到多少，取决于用什么方式读。下面这六种方式我们一种都不用，
-          而且不是承诺，是每次提交都要过的一道门禁。
+          How much can be read depends on how it is read. We use none of the six
+          ways below, and that is not a promise but a gate every commit has to
+          pass.
         </p>
         <div className="refusals">
           {REFUSALS.map((item) => (
@@ -85,7 +98,10 @@ function Refusals() {
         </div>
         <p className="gate">
           <code>scripts/verify_zero_collection.py</code>
-          <span>扫源码、依赖和系统权限三层；不通过就进不了主干。</span>
+          <span>
+            Scans three layers: source, dependencies and system permissions; a
+            failure keeps it out of the trunk.
+          </span>
         </p>
       </div>
     </section>

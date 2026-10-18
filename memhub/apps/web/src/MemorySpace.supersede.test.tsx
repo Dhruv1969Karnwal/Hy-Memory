@@ -52,7 +52,7 @@ vi.mock("./MemoryMap", () => ({
 }));
 vi.mock("./MemoryRecallScope", () => ({
   MemoryRecallScope: () => null,
-  memoryProvenanceLabel: () => "原话",
+  memoryProvenanceLabel: () => "Source quote",
 }));
 
 const memory = (
@@ -78,12 +78,22 @@ const memory = (
   updated_at: "2026-09-19T00:00:00Z",
   deleted_at: null,
 });
-const old = memory("old", "发布前做一次权限评审", "superseded", {
-  superseded_by: ["new"],
-});
-const head = memory("new", "发布前做两次权限评审", "confirmed", {
-  supersedes: ["old"],
-});
+const old = memory(
+  "old",
+  "Run one access review before release",
+  "superseded",
+  {
+    superseded_by: ["new"],
+  },
+);
+const head = memory(
+  "new",
+  "Run two access reviews before release",
+  "confirmed",
+  {
+    supersedes: ["old"],
+  },
+);
 const page = (items: GovernedMemory[]): MemoryLibraryPage => ({
   items,
   total: items.length,
@@ -119,7 +129,7 @@ async function openSuperseded() {
   render(<MemorySpace simplified />);
   await waitFor(() => expect(api.mapLibrary).toHaveBeenCalled());
   fireEvent(window, new Event("one-memory:manage"));
-  const tab = await screen.findByRole("button", { name: "已被取代" });
+  const tab = await screen.findByRole("button", { name: "Superseded" });
   fireEvent.click(tab);
   await waitFor(() =>
     expect(api.library.mock.lastCall?.[0]).toMatchObject({
@@ -127,25 +137,31 @@ async function openSuperseded() {
     }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: /发布前做一次权限评审/ }),
+    await screen.findByRole("button", {
+      name: /Run one access review before release/,
+    }),
   );
-  return screen.findByRole("complementary", { name: "记忆详情" });
+  return screen.findByRole("complementary", { name: "Memory detail" });
 }
 
 it("labels a superseded memory, jumps to its replacement, and shows what the head replaced", async () => {
   const inspector = await openSuperseded();
-  expect(within(inspector).getByText(/已被取代/)).toBeTruthy();
+  expect(within(inspector).getByText(/Superseded/)).toBeTruthy();
 
   fireEvent.click(
-    within(inspector).getByRole("button", { name: "查看替代它的记忆" }),
+    within(inspector).getByRole("button", {
+      name: "View the memory that replaced this one",
+    }),
   );
   await waitFor(() => expect(api.detail).toHaveBeenLastCalledWith("new"));
   const current = await screen.findByRole("complementary", {
-    name: "记忆详情",
+    name: "Memory detail",
   });
-  await within(current).findByText(/已确认/);
+  await within(current).findByText(/Confirmed/);
   fireEvent.click(
-    within(current).getByRole("button", { name: "查看它取代的旧记忆" }),
+    within(current).getByRole("button", {
+      name: "View the older memory this one replaced",
+    }),
   );
   await waitFor(() => expect(api.detail).toHaveBeenLastCalledWith("old"));
 });
@@ -154,23 +170,29 @@ it("offers no confirm, correction or undo on a superseded memory, but still dele
   const inspector = await openSuperseded();
   // Positive control: the current memory with the same history offers them.
   expect(
-    within(inspector).queryByRole("button", { name: "保存纠正" }),
+    within(inspector).queryByRole("button", { name: "Save correction" }),
   ).toBeNull();
   expect(
-    within(inspector).queryByRole("button", { name: "撤销上次修改" }),
+    within(inspector).queryByRole("button", { name: "Undo last change" }),
   ).toBeNull();
-  expect(within(inspector).queryByRole("button", { name: "确认" })).toBeNull();
-  expect(within(inspector).getByRole("button", { name: "删除" })).toBeTruthy();
+  expect(
+    within(inspector).queryByRole("button", { name: "Confirm" }),
+  ).toBeNull();
+  expect(
+    within(inspector).getByRole("button", { name: "Delete" }),
+  ).toBeTruthy();
 
   fireEvent.click(
-    within(inspector).getByRole("button", { name: "查看替代它的记忆" }),
+    within(inspector).getByRole("button", {
+      name: "View the memory that replaced this one",
+    }),
   );
   const current = await screen.findByRole("complementary", {
-    name: "记忆详情",
+    name: "Memory detail",
   });
-  await within(current).findByRole("button", { name: "保存纠正" });
+  await within(current).findByRole("button", { name: "Save correction" });
   expect(
-    within(current).getByRole("button", { name: "撤销上次修改" }),
+    within(current).getByRole("button", { name: "Undo last change" }),
   ).toBeTruthy();
 });
 
@@ -206,14 +228,14 @@ it("names every history step in words, including records carried over from an ol
     .map((item) => item.textContent);
 
   expect(steps).toEqual([
-    "r9 · 旧版确认记录",
-    "r8 · 创建",
-    "r7 · 纠正",
-    "r6 · 调整使用范围",
-    "r5 · 撤销修改",
-    "r4 · 模型更新",
-    "r3 · 被新记忆取代",
-    "r2 · 删除",
-    "r1 · 其他操作",
+    "r9 · Legacy confirmation record",
+    "r8 · Create",
+    "r7 · Correct",
+    "r6 · Adjust usage scopes",
+    "r5 · Undo edit",
+    "r4 · Model update",
+    "r3 · Replaced by a newer memory",
+    "r2 · Delete",
+    "r1 · Other action",
   ]);
 });

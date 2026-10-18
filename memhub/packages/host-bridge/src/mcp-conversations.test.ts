@@ -11,7 +11,8 @@ const FOUND = {
       workspace: null,
       project: null,
       created_at: "2026-08-20T10:00:00Z",
-      excerpt: "我们说好这个任务先做导入不阻塞",
+      excerpt:
+        "We agreed to do the import first for this task and not block on it",
     },
   ],
   empty_reason: null,
@@ -50,25 +51,25 @@ async function call(
 }
 
 describe("om_conversations", () => {
-  it("把原始对话原话连同来自哪个 App、什么时候一起交回去", async () => {
+  it("returns the original conversation quote with the app it came from and when", async () => {
     const { search, instance } = session();
 
     const response = await call(instance, {
-      query: "导入不阻塞",
+      query: "do the import first",
       limit: 5,
     });
 
     expect(search).toHaveBeenCalledWith("/fixture/discovery.json", {
-      query: "导入不阻塞",
+      query: "do the import first",
       limit: 5,
     });
     const hit = response.result.structuredContent.hits[0];
     expect(hit.source_id).toBe("cursor");
     expect(hit.created_at).toBe("2026-08-20T10:00:00Z");
-    expect(hit.excerpt).toContain("导入不阻塞");
+    expect(hit.excerpt).toContain("do the import first");
   });
 
-  it("工具说明写清楚它和 om_recall 的分工", async () => {
+  it("the tool description spells out how it divides work with om_recall", async () => {
     const { instance } = session();
 
     const listed = JSON.parse(
@@ -81,14 +82,14 @@ describe("om_conversations", () => {
       (item: { name: string }) => item.name === "MemHub_conversations",
     );
 
-    // 宿主的模型只凭这段字判断要不要调它。含糊一点，
-    // 「你记得我在 Cursor 聊的那个任务吗」就不会触发。
+    // The host's model judges whether to call it from this text alone. Wording that
+    // is too vague means (do you remember that task I discussed in Cursor) won't trigger it.
     expect(tool.description).toContain("another app");
     expect(tool.description).toContain("MemHub_recall");
     expect(tool.annotations.readOnlyHint).toBe(true);
   });
 
-  it("只读，不接受任何写入意图的参数", async () => {
+  it("read-only, and it rejects parameters that carry write intent", async () => {
     const { search, instance } = session();
 
     const response = await call(instance, {
@@ -100,7 +101,7 @@ describe("om_conversations", () => {
     expect(search).not.toHaveBeenCalled();
   });
 
-  it("超出范围的 limit 被挡下来，不会传给 Core", async () => {
+  it("an out-of-range limit is blocked and never reaches Core", async () => {
     const { search, instance } = session();
 
     const response = await call(instance, { query: "x", limit: 500 });
@@ -109,8 +110,8 @@ describe("om_conversations", () => {
     expect(search).not.toHaveBeenCalled();
   });
 
-  it("范围内的 limit 会传下去", async () => {
-    // 上一条的正面对照：否则「永远不调用」也能让它通过。
+  it("an in-range limit is passed through", async () => {
+    // The positive counterpart to the case above; otherwise (never call the tool) would pass too.
     const { search, instance } = session();
 
     await call(instance, { query: "x", limit: 50 });
@@ -121,7 +122,7 @@ describe("om_conversations", () => {
     });
   });
 
-  it("MemHub 没开的时候明说，而不是回一个空结果", async () => {
+  it("it says so when MemHub isn't running instead of returning an empty result", async () => {
     const { instance } = session(
       vi.fn().mockRejectedValue(new Error("MemHub is not running")),
     );

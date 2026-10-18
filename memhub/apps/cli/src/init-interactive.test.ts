@@ -204,7 +204,7 @@ describe("A2 dual-mode init", () => {
       streams.restore();
     }
     expect(prompter.asked).toBe(0);
-    expect(streams.value()).toContain("可接入的来源");
+    expect(streams.value()).toContain("Connectable sources");
     expect(streams.value()).toContain("codex");
     expect(get).toHaveBeenCalled();
   });
@@ -255,8 +255,8 @@ describe("A2 dual-mode init", () => {
     expect(connectCalls).toHaveLength(1);
     const body = connectCalls[0]![1] as { source_ids: string[] };
     expect(body.source_ids).toEqual(["codex", "cursor"]);
-    expect(streams.value()).toContain("已接入来源：codex、cursor");
-    expect(streams.value()).toContain("处理：已开启");
+    expect(streams.value()).toContain("Sources connected: codex, cursor");
+    expect(streams.value()).toContain("Processing: enabled");
   });
 
   it("continues the TTY wizard through model setup and probe", async () => {
@@ -395,8 +395,8 @@ describe("A2 dual-mode init", () => {
     } finally {
       streams.restore();
     }
-    expect(streams.value()).toContain("已接入来源：codex");
-    expect(streams.value()).toContain("首次设置完成。");
+    expect(streams.value()).toContain("Sources connected: codex");
+    expect(streams.value()).toContain("First-time setup complete.");
     expect(`${streams.value()}\n${prompt.written.join("\n")}`).not.toContain(
       "sk-never-print-this",
     );
@@ -467,7 +467,7 @@ describe("A2 dual-mode init", () => {
       streams.restore();
     }
     expect(code).toBe(0);
-    expect(streams.value()).toContain("已接入来源：codex");
+    expect(streams.value()).toContain("Sources connected: codex");
     const dataEntries = await readdir(dataDir);
     expect(
       dataEntries.some((entry) => entry.startsWith(".cli-init-attempt-")),
@@ -502,7 +502,7 @@ describe("A2 dual-mode init", () => {
       (call: unknown[]) => call[0] === "/api/v1/sources/connect",
     );
     expect(connectCalls).toHaveLength(0);
-    expect(streams.value()).toContain("处理：已冻结");
+    expect(streams.value()).toContain("Processing: frozen");
   });
 });
 

@@ -66,7 +66,7 @@ const query = {
   role: "user",
   written_by: "person",
   created_at: "2026-09-13T12:10:00Z",
-  excerpt: "真实用户原文样例",
+  excerpt: "Real user source text sample",
   truncated: false,
   query_start: 0,
   query_end: 8,
@@ -89,7 +89,7 @@ const receipt: SourceImportReceipt = {
       role: "assistant",
       written_by: "agent",
       created_at: null,
-      excerpt: "助手声称任务已完成",
+      excerpt: "The assistant claimed the task was done",
       truncated: false,
     },
   ],
@@ -131,7 +131,7 @@ beforeEach(() => {
         role: "assistant",
         written_by: "agent",
         created_at: null,
-        verbatim: "助手在原始会话中的回复",
+        verbatim: "The assistant's reply in the original session",
       },
     ],
   });
@@ -141,18 +141,24 @@ afterEach(cleanup);
 it("shows true job counts and the standing import note, never excerpts or percentages", () => {
   setup();
   expect(
-    screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+    screen.getByRole("heading", {
+      name: "Your conversations are coming in; memory starts here",
+    }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("heading", { name: "正在导入你的会话" }),
+    screen.getByRole("heading", { name: "Importing your conversations" }),
   ).toBeTruthy();
   expect(
-    screen.getByText("后台将持续为你导入，可以放心进入下一步"),
+    screen.getByText(
+      "The background keeps importing; you can safely move to the next step",
+    ),
   ).toBeTruthy();
-  expect(screen.getByText("已保存 7 条消息")).toBeTruthy();
+  expect(screen.getByText("Saved 7 messages")).toBeTruthy();
   expect(screen.queryByText(query.excerpt)).toBeNull();
-  expect(screen.queryByText("助手声称任务已完成")).toBeNull();
-  expect(screen.queryByRole("button", { name: "查看原文" })).toBeNull();
+  expect(
+    screen.queryByText("The assistant claimed the task was done"),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "View source text" })).toBeNull();
   expect(screen.queryByRole("progressbar")).toBeNull();
   expect(document.body.textContent).not.toContain("100%");
   expect(api.receipt).not.toHaveBeenCalled();
@@ -162,16 +168,18 @@ it("explains that one large harness limits every first-import source to three da
   setup({
     jobs: [{ ...job, history_after: "2026-10-13T05:00:00Z" }],
   });
-  expect(screen.getByText(/本次所有应用仅导入最近 3 天/).textContent).toContain(
-    "本次所有应用仅导入最近 3 天",
+  expect(screen.getByText(/only the last 3 days/).textContent).toContain(
+    "only the last 3 days",
   );
 });
 it("continues to step3 while sample GET is pending without calling completion APIs", () => {
   api.receipt.mockReturnValue(new Promise(() => {}));
   const { props } = setup();
-  fireEvent.click(screen.getByRole("button", { name: "配置模型，沉淀记忆" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Configure a model to build memory" }),
+  );
   expect(props.onContinue).toHaveBeenCalledWith("settings");
-  expect(screen.queryByText(/^已生成.*记忆/)).toBeNull();
+  expect(screen.queryByText(/^Generated.*memory/)).toBeNull();
 });
 it.each([
   "pending",
@@ -187,47 +195,51 @@ it.each([
       jobs: [{ ...job, status, stored: 0 }],
       sources: [{ ...source, imported_messages: 0 }],
     });
-    expect(screen.getByText("已扫描 100 条，正在保存")).toBeTruthy();
+    expect(screen.getByText("Scanned 100 entries, saving")).toBeTruthy();
     expect(api.receipt).not.toHaveBeenCalled();
   },
 );
 it("does not manufacture zero when task receipt is absent", () => {
   setup({ jobs: [] });
-  expect(screen.getByText("正在导入")).toBeTruthy();
-  expect(screen.queryByText("等待任务回执")).toBeNull();
-  expect(screen.queryByText("已保存 0 条消息")).toBeNull();
+  expect(screen.getByText("Importing")).toBeTruthy();
+  expect(screen.queryByText("Waiting for job receipt")).toBeNull();
+  expect(screen.queryByText("Saved 0 messages")).toBeNull();
   expect(api.receipt).not.toHaveBeenCalled();
 });
 it("retains accepted progress and routes partial failures without leaking raw errors", () => {
   const { props } = setup({
     failedSources: { workbuddy: "sensitive server message" },
   });
-  expect(screen.getByText(/workbuddy 未能开始导入/)).toBeTruthy();
+  expect(screen.getByText(/workbuddy failed to start importing/)).toBeTruthy();
   expect(screen.queryByText(/sensitive/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "查看未导入的应用" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "View apps not imported" }),
+  );
   expect(props.onContinue).toHaveBeenCalledWith("sources");
 });
 it("keeps the saved count when authority or freshness changes, without a conversation list", () => {
   const view = setup();
   view.update({ sources: [{ ...source, authorized: false }] });
-  expect(screen.getByText("读取授权不可用")).toBeTruthy();
-  expect(screen.getByText("已保存 7 条消息")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "查看原文" })).toBeNull();
+  expect(screen.getByText("Read authorization unavailable")).toBeTruthy();
+  expect(screen.getByText("Saved 7 messages")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "View source text" })).toBeNull();
   view.update({
     sources: [source],
     sourceSnapshot: { confirmedAt: null, stale: true },
   });
-  expect(screen.queryByText("状态待核对")).toBeNull();
+  expect(screen.queryByText("Status needs verification")).toBeNull();
   expect(view.container.querySelector('[data-running="true"]')).toBeTruthy();
-  expect(screen.getByText("已保存 7 条消息")).toBeTruthy();
+  expect(screen.getByText("Saved 7 messages")).toBeTruthy();
   expect(
-    screen.getAllByText("正在重新核对来源；已保存数量仍按任务回执显示。"),
+    screen.getAllByText(
+      "Re-checking sources; saved counts still follow task receipts.",
+    ),
   ).toHaveLength(1);
   view.update({
     sourceSnapshot: { confirmedAt: "2026-09-14T00:00:02Z", stale: false },
     jobs: [{ ...job, stored: 20 }],
   });
-  expect(screen.getByText("已保存 20 条消息")).toBeTruthy();
+  expect(screen.getByText("Saved 20 messages")).toBeTruthy();
   expect(screen.queryByText(query.excerpt)).toBeNull();
   expect(api.receipt).not.toHaveBeenCalled();
   expect(api.conversation).not.toHaveBeenCalled();

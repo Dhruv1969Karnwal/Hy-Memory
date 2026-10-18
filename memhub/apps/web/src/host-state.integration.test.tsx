@@ -123,7 +123,7 @@ function Detail() {
 }
 
 function access() {
-  return screen.getByText("应用访问").closest("div")?.textContent ?? "";
+  return screen.getByText("App access").closest("div")?.textContent ?? "";
 }
 
 let visibility: DocumentVisibilityState = "visible";
@@ -178,22 +178,26 @@ describe("one host state shared by the home and detail pages", () => {
         <Detail />
       </>,
     );
-    await waitFor(() => expect(access()).toContain("1 个应用已接入"));
-    const insertion = screen.getByRole("switch", { name: "一键插入应用" });
+    await waitFor(() => expect(access()).toContain("1 apps connected"));
+    const insertion = screen.getByRole("switch", {
+      name: "One-click insertion",
+    });
     await waitFor(() =>
       expect(insertion.getAttribute("aria-checked")).toBe("true"),
     );
     hosts = [cursorHost(false, installOnly)];
     const before = getRecallHosts.mock.calls.length;
     fireEvent.click(
-      screen.getByRole("button", { name: /检测中|已接通|未接通|未开启关联/ }),
+      screen.getByRole("button", {
+        name: /Checking|Connected|Not connected|Association off/,
+      }),
     );
     await waitFor(() =>
       expect(insertion.getAttribute("aria-checked")).toBe("false"),
     );
     // Only the detail page's re-read went out; the home page must follow it.
     expect(getRecallHosts.mock.calls.length).toBe(before + 1);
-    await waitFor(() => expect(access()).toContain("0 个应用已接入"), {
+    await waitFor(() => expect(access()).toContain("0 apps connected"), {
       timeout: 1_000,
     });
   });
@@ -218,11 +222,11 @@ describe("one host state shared by the home and detail pages", () => {
     } as unknown as NonNullable<typeof window.oneMemory>;
     const imports = importsWith([cursor]);
     const home = render(<Home imports={imports} />);
-    await waitFor(() => expect(access()).toContain("1 个应用已接入"));
+    await waitFor(() => expect(access()).toContain("1 apps connected"));
     home.unmount();
     const detail = render(<Detail />);
     const insertion = await screen.findByRole("switch", {
-      name: "一键插入应用",
+      name: "One-click insertion",
     });
     await waitFor(() =>
       expect(insertion.getAttribute("aria-checked")).toBe("true"),
@@ -238,7 +242,7 @@ describe("one host state shared by the home and detail pages", () => {
     // The home page's own read never lands: only shared state can answer.
     getRecallHosts.mockImplementation(() => new Promise(() => {}));
     render(<Home imports={imports} />);
-    expect(access()).toContain("0 个应用已接入");
+    expect(access()).toContain("0 apps connected");
   });
 });
 
@@ -298,7 +302,7 @@ describe("remembered insertion is applied once, not on every source change", () 
     expect(preview).toHaveBeenCalledOnce();
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Cursor");
-    expect(alert.textContent).toContain("连接组件");
+    expect(alert.textContent).toContain("connection component");
   });
 });
 
@@ -310,7 +314,7 @@ describe("home host polling", () => {
       typeof window.oneMemory
     >;
     render(<Home imports={importsWith([cursor])} />);
-    await waitFor(() => expect(access()).toContain("1 个应用已接入"));
+    await waitFor(() => expect(access()).toContain("1 apps connected"));
     const settled = getRecallHosts.mock.calls.length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_100);
@@ -367,7 +371,7 @@ describe("host writes land in the shared state", () => {
     const getRecallHosts = installBridge();
     const detail = render(<Detail />);
     const insertion = await screen.findByRole("switch", {
-      name: "一键插入应用",
+      name: "One-click insertion",
     });
     await waitFor(() =>
       expect(insertion.getAttribute("aria-checked")).toBe("false"),
@@ -384,7 +388,7 @@ describe("host writes land in the shared state", () => {
     detail.unmount();
     getRecallHosts.mockImplementation(() => new Promise(() => {}));
     render(<Home imports={importsWith([cursor])} />);
-    expect(access()).toContain("1 个应用已接入");
+    expect(access()).toContain("1 apps connected");
   });
 
   it("re-reads once after a failed turn-on and shows what is really there", async () => {
@@ -396,17 +400,17 @@ describe("host writes land in the shared state", () => {
       </>,
     );
     const insertion = await screen.findByRole("switch", {
-      name: "一键插入应用",
+      name: "One-click insertion",
     });
-    await waitFor(() => expect(access()).toContain("0 个应用已接入"));
+    await waitFor(() => expect(access()).toContain("0 apps connected"));
     const before = getRecallHosts.mock.calls.length;
     fireEvent.click(insertion);
     expect(
       await screen.findByText(
-        "此应用的一键接入未完成，其他应用不受影响。原因：应用控制通道暂不可用。",
+        "One-click connection for this app didn't finish. Other apps are unaffected.Reason: The app control channel is unavailable.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(access()).toContain("1 个应用已接入"));
+    await waitFor(() => expect(access()).toContain("1 apps connected"));
     // One read before the install, one after the failure; no polling in between.
     expect(getRecallHosts.mock.calls.length).toBe(before + 2);
   });
@@ -435,7 +439,7 @@ describe("host writes land in the shared state", () => {
     } as unknown as NonNullable<typeof window.oneMemory>;
     render(<Detail />);
     const insertion = await screen.findByRole("switch", {
-      name: "一键插入应用",
+      name: "One-click insertion",
     });
     await waitFor(() =>
       expect(insertion.getAttribute("aria-checked")).toBe("true"),
@@ -444,7 +448,7 @@ describe("host writes land in the shared state", () => {
     fireEvent.click(insertion);
     expect(
       await screen.findByText(
-        "连接未能移除，记忆权限也未能撤销，Cursor 仍可使用记忆，请重试。原因：应用控制通道暂不可用。",
+        "The connection wasn't removed and the memory permission wasn't revoked, so Cursor can still use memories. Try again. Reason: The app control channel is unavailable.",
       ),
     ).toBeTruthy();
     await waitFor(() =>
@@ -470,7 +474,7 @@ describe("the remembered apply stands aside", () => {
     void enableHostConnection("cursor").catch(() => {});
     await waitFor(() => expect(previewRecallInstall).toHaveBeenCalledOnce());
     render(<Home imports={importsWith([cursor])} />);
-    await waitFor(() => expect(access()).not.toContain("0 个应用已接入"));
+    await waitFor(() => expect(access()).not.toContain("0 apps connected"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
@@ -491,13 +495,13 @@ describe("the remembered apply stands aside", () => {
     } as unknown as NonNullable<typeof window.oneMemory>;
     const detail = render(<Detail />);
     const insertion = await screen.findByRole("switch", {
-      name: "一键插入应用",
+      name: "One-click insertion",
     });
     await waitFor(() =>
       expect(insertion.getAttribute("aria-checked")).toBe("false"),
     );
     fireEvent.click(insertion);
-    await screen.findByText(/此应用的一键接入未完成/);
+    await screen.findByText(/One-click connection for this app didn't finish/);
     expect(previewRecallInstall).toHaveBeenCalledOnce();
     detail.unmount();
     render(<Home imports={importsWith([cursor])} />);
@@ -538,7 +542,7 @@ describe("the remembered apply stands aside", () => {
     await waitFor(() =>
       expect(readConnectionPreferences().hostSourceIds).toEqual([]),
     );
-    await waitFor(() => expect(access()).toContain("0 个应用已接入"));
+    await waitFor(() => expect(access()).toContain("0 apps connected"));
     expect(previewRecallInstall).not.toHaveBeenCalled();
   });
 });
@@ -553,7 +557,7 @@ it("shows a turn-off as off while the removal is still running", async () => {
   } as unknown as NonNullable<typeof window.oneMemory>;
   render(<Detail />);
   const insertion = await screen.findByRole("switch", {
-    name: "一键插入应用",
+    name: "One-click insertion",
   });
   await waitFor(() =>
     expect(insertion.getAttribute("aria-checked")).toBe("true"),
@@ -575,13 +579,14 @@ it("keeps the last host state on the home page and says so when a poll fails", a
     typeof window.oneMemory
   >;
   render(<Home imports={importsWith([cursor])} />);
-  await waitFor(() => expect(access()).toContain("1 个应用已接入"));
+  await waitFor(() => expect(access()).toContain("1 apps connected"));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3_100);
   });
   await waitFor(() => expect(getRecallHosts.mock.calls.length).toBe(2));
-  expect(access()).toContain("1 个应用已接入");
+  expect(access()).toContain("1 apps connected");
   expect(
-    (await screen.findByRole("status", { name: "应用接入状态" })).textContent,
-  ).toContain("当前为上次状态");
+    (await screen.findByRole("status", { name: "App connection status" }))
+      .textContent,
+  ).toContain("the last known state is shown");
 });

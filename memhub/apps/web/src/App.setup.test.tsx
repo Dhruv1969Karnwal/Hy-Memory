@@ -45,9 +45,9 @@ vi.mock("./use-import-sources", () => ({
 }));
 vi.mock("./MemorySpace", () => ({
   MemorySpace: ({ onConfigureModel }: { onConfigureModel(): void }) => (
-    <section aria-label="测试工作台">
+    <section aria-label="Test workbench">
       <button type="button" onClick={onConfigureModel}>
-        设置记忆整理
+        Set up memory organizing
       </button>
     </section>
   ),
@@ -65,24 +65,24 @@ vi.mock("./ModelSettings", () => ({
         add: vi.fn(() => true),
         test: vi.fn(),
       };
-    return <input aria-label="保留的模型草稿" defaultValue="" />;
+    return <input aria-label="Preserved model draft" defaultValue="" />;
   },
 }));
 vi.mock("./OnboardingFlow", () => ({
   OnboardingFlow: ({ onFinish }: { onFinish(target: string): void }) => (
     <div>
       <button type="button" onClick={() => onFinish("settings")}>
-        完成导入去设置
+        Finish import and go to settings
       </button>
       <button type="button" onClick={() => onFinish("memory")}>
-        后台继续去工作台
+        Continue in background and go to workbench
       </button>
     </div>
   ),
 }));
-vi.mock("./SourcesView", () => ({ SourcesView: () => <p>应用列表</p> }));
+vi.mock("./SourcesView", () => ({ SourcesView: () => <p>App list</p> }));
 vi.mock("./ApplicationsHome", () => ({
-  ApplicationsHome: () => <p>应用首页</p>,
+  ApplicationsHome: () => <p>Applications home</p>,
 }));
 vi.mock("./ImportProgressStrip", () => ({ ImportProgressStrip: () => null }));
 vi.mock("./HealthPanel", () => ({ HealthPanel: () => null }));
@@ -107,23 +107,33 @@ it("enters D47 settings without a tour or mandatory second scope-confirmation fl
   getOnboarding.mockResolvedValue({ status: "new" });
   render(<App />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "完成导入去设置" }),
+    await screen.findByRole("button", {
+      name: "Finish import and go to settings",
+    }),
   );
   expect(window.location.search).toBe("?view=settings");
-  expect(screen.queryByRole("dialog", { name: "功能教学" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Feature tour" })).toBeNull();
   // The teaching flow is gone: finishing setup must not write a learning
   // preference that nothing reads any more.
   expect(localStorage.getItem("one-memory.learning.s1-3")).toBeNull();
   await waitFor(() => expect(modelProps).toHaveBeenCalled());
   expect(modelProps.mock.calls.at(-1)?.[0].compactSingle).toBe(true);
   expect(
-    screen.queryByRole("button", { name: "继续：确认整理范围" }),
+    screen.queryByRole("button", {
+      name: "Continue: confirm organizing scope",
+    }),
   ).toBeNull();
   noModelWrites();
-  expect(screen.queryByRole("button", { name: "管理已有授权" })).toBeNull();
-  expect(screen.getByRole("button", { name: "模型" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "连接其他应用" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "帮助与诊断" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Manage existing authorizations" }),
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Model" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Connect other apps" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Help and diagnostics" }),
+  ).toBeTruthy();
   noModelWrites();
 });
 
@@ -131,16 +141,20 @@ it("enters the workbench without an automatic tour or removed help section", asy
   getOnboarding.mockResolvedValue({ status: "new" });
   render(<App />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "后台继续去工作台" }),
+    await screen.findByRole("button", {
+      name: "Continue in background and go to workbench",
+    }),
   );
   expect(window.location.search).toBe("?view=memory");
-  expect(screen.getByRole("region", { name: "测试工作台" })).toBeTruthy();
-  expect(screen.queryByRole("dialog", { name: "功能教学" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Test workbench" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Feature tour" })).toBeNull();
   expect(localStorage.getItem("one-memory.learning.s1-3")).toBeNull();
-  const nav = screen.getByRole("navigation", { name: "主要导航" });
-  await userEvent.click(within(nav).getByRole("button", { name: "设置" }));
-  expect(screen.getByRole("button", { name: "帮助与诊断" })).toBeTruthy();
-  expect(screen.queryByRole("dialog", { name: "功能教学" })).toBeNull();
+  const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+  await userEvent.click(within(nav).getByRole("button", { name: "Settings" }));
+  expect(
+    screen.getByRole("button", { name: "Help and diagnostics" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Feature tour" })).toBeNull();
   noModelWrites();
 });
 
@@ -155,7 +169,7 @@ it("does not resume a pending tour over a settings deep link", async () => {
   render(<App />);
   await waitFor(() => expect(modelProps).toHaveBeenCalled());
   expect(modelProps.mock.calls.at(-1)?.[0].compactSingle).toBe(true);
-  expect(screen.queryByRole("dialog", { name: "功能教学" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Feature tour" })).toBeNull();
   expect(window.location.search).toBe("?view=settings");
   // Still pending: nothing read or rewrote it.
   expect(
@@ -167,12 +181,14 @@ it("does not resume a pending tour over a settings deep link", async () => {
 
 it("keeps the applications default while explicit model configuration remains reachable", async () => {
   render(<App />);
-  await screen.findByText("应用首页");
-  expect(screen.queryByRole("region", { name: "测试工作台" })).toBeNull();
+  await screen.findByText("Applications home");
+  expect(screen.queryByRole("region", { name: "Test workbench" })).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
-  const nav = screen.getByRole("navigation", { name: "主要导航" });
-  await userEvent.click(within(nav).getByRole("button", { name: "记忆" }));
-  await userEvent.click(screen.getByRole("button", { name: "设置记忆整理" }));
+  const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+  await userEvent.click(within(nav).getByRole("button", { name: "Memory" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Set up memory organizing" }),
+  );
   await waitFor(() => expect(modelProps).toHaveBeenCalled());
   expect(window.location.search).toBe("?view=settings");
   expect(modelProps.mock.calls.at(-1)?.[0].compactSingle).toBe(true);
@@ -184,15 +200,19 @@ it("keeps an open model draft while switching settings groups", async () => {
   window.history.replaceState({}, "", "/?view=settings");
   render(<App />);
   await waitFor(() => expect(modelProps).toHaveBeenCalled());
-  await userEvent.click(screen.getByRole("button", { name: "配置模型" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Configure model" }),
+  );
   await userEvent.type(
-    screen.getByLabelText("保留的模型草稿"),
+    screen.getByLabelText("Preserved model draft"),
     "unsaved draft",
   );
-  await userEvent.click(screen.getByRole("button", { name: "连接其他应用" }));
-  await userEvent.click(screen.getByRole("button", { name: "模型" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Connect other apps" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Model" }));
   expect(window.location.search).toBe("?view=settings");
-  expect(screen.getByLabelText("保留的模型草稿")).toHaveProperty(
+  expect(screen.getByLabelText("Preserved model draft")).toHaveProperty(
     "value",
     "unsaved draft",
   );

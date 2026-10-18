@@ -23,19 +23,19 @@ import "./r6-settings.css";
 type Group = "model" | "connections" | "help";
 
 const labels: Record<Group, string> = {
-  model: "模型",
-  connections: "连接其他应用",
-  help: "帮助与诊断",
+  model: "Model",
+  connections: "Connect other apps",
+  help: "Help and diagnostics",
 };
 const primaryGroups: Group[] = ["model", "connections"];
 
 function safeEndpoint(value: string | null) {
-  if (!value) return "本机 / 受管端点";
+  if (!value) return "Local / managed endpoint";
   try {
     const endpoint = new URL(value);
     return `${endpoint.origin}${endpoint.pathname.replace(/\/$/, "")}`;
   } catch {
-    return "接口地址待核对";
+    return "Endpoint pending verification";
   }
 }
 
@@ -119,7 +119,7 @@ export function R6Settings({
     } catch {
       setLoginReadFailed(true);
       setReadError(
-        "部分运行状态暂时无法读取，当前显示最后读到的状态，请重试。",
+        "Some runtime state cannot be read right now; the last state that was read is shown. Try again.",
       );
     }
     setDataReady(true);
@@ -132,7 +132,9 @@ export function R6Settings({
 
   async function changeLogin(enabled: boolean) {
     if (!window.oneMemory?.setLoginPreference) {
-      setDataError("当前安装还不能设置登录后后台启动。");
+      setDataError(
+        "This install cannot set the start-at-login background service yet.",
+      );
       return;
     }
     setLoginPending(true);
@@ -144,7 +146,7 @@ export function R6Settings({
       });
       setLoginPreference(nextLogin);
     } catch {
-      setDataError("登录后后台启动设置未能确认，请重试。");
+      setDataError("The start-at-login setting was not confirmed; try again.");
       await readData();
     } finally {
       setLoginPending(false);
@@ -163,7 +165,9 @@ export function R6Settings({
   async function quitApplication() {
     if (quitting) return;
     if (!window.oneMemory?.requestQuit) {
-      setQuitError("当前安装还不能退出界面，请从菜单栏退出。");
+      setQuitError(
+        "This install cannot quit the interface; quit from the menu bar.",
+      );
       return;
     }
     setQuitting(true);
@@ -171,7 +175,7 @@ export function R6Settings({
     try {
       await window.oneMemory.requestQuit(true);
     } catch {
-      setQuitError("退出界面未能确认，请重试。");
+      setQuitError("Quitting the interface was not confirmed; try again.");
     } finally {
       setQuitting(false);
     }
@@ -204,10 +208,10 @@ export function R6Settings({
   }
 
   return (
-    <section className="r6-settings" aria-label="设置">
-      <h1>设置</h1>
+    <section className="r6-settings" aria-label="Settings">
+      <h1>Settings</h1>
       <div className="r6-settings-layout">
-        <nav aria-label="设置分组">
+        <nav aria-label="Settings groups">
           {groups.map((key) => (
             <button
               type="button"
@@ -229,16 +233,16 @@ export function R6Settings({
             hidden={group !== "model"}
             className="r6-settings-model"
           >
-            <h2>记忆模型</h2>
+            <h2>Memory model</h2>
             <div className="r6-model-overview">
-              <p className="r6-model-caption">当前模型</p>
+              <p className="r6-model-caption">Current model</p>
               <h3 className="r6-current-model">
                 {currentModel?.name ??
                   (profiles === null
-                    ? "正在读取模型…"
+                    ? "Reading the model..."
                     : modelError
-                      ? "模型状态暂不可读"
-                      : "尚未配置模型")}
+                      ? "Model state unavailable"
+                      : "No model configured")}
               </h3>
               {currentModel && (
                 <p className="r6-model-state">
@@ -251,12 +255,12 @@ export function R6Settings({
                   disabled={profiles === null}
                   onClick={openConfiguration}
                 >
-                  {currentModel ? "修改模型" : "配置模型"}
+                  {currentModel ? "Change model" : "Configure model"}
                 </R6Button>
                 <R6Button
                   variant="quiet"
-                  aria-label="刷新模型状态"
-                  title="刷新模型状态"
+                  aria-label="Refresh model status"
+                  title="Refresh model status"
                   onClick={() => setModelVersion((value) => value + 1)}
                 >
                   <RefreshCw size={16} aria-hidden="true" />
@@ -265,21 +269,24 @@ export function R6Settings({
               {modelError && (
                 <p role="alert" className="r6-settings-error">
                   {profiles === null
-                    ? "模型状态未能读取，请重试。"
-                    : "模型状态刷新未成功，仍显示上次确认的模型状态；请重试。"}
+                    ? "The model status could not be read; try again."
+                    : "The model status did not refresh; the last confirmed model status is still shown. Try again."}
                 </p>
               )}
               {configurationRefusal && (
                 <p role="alert" className="r6-settings-error">
-                  模型配置暂时无法打开：正在处理上一次创建或测试，或本机存储暂时不可用。
-                  请等待当前操作结束后重试；现有配置和原文不会被改动。
+                  Model configuration cannot open right now: the earlier
+                  creation or test is still in flight, or local storage is
+                  unavailable. Wait for the current operation to finish and try
+                  again; the existing configuration and source text are not
+                  changed.
                 </p>
               )}
             </div>
             <section
               className="r6-model-owner"
               hidden={!configurationOpen}
-              aria-label="模型配置表单"
+              aria-label="Model configuration form"
             >
               <ModelSettings
                 compactSingle
@@ -295,7 +302,7 @@ export function R6Settings({
             hidden={group !== "connections"}
             className="r6-settings-connections"
           >
-            <h2>连接其他应用</h2>
+            <h2>Connect other apps</h2>
             <ConnectionFallback />
           </section>
           {showDiagnostics && (
@@ -305,14 +312,17 @@ export function R6Settings({
               hidden={group !== "help"}
               className="r6-settings-help"
             >
-              <h2>帮助与诊断</h2>
+              <h2>Help and diagnostics</h2>
               <div className="r6-setting-row">
                 <div>
-                  <h3>登录后启动后台服务</h3>
-                  <p>无需打开界面，持续同步、整理和提供记忆。</p>
+                  <h3>Start the background service at login</h3>
+                  <p>
+                    Syncs, organizes and serves memories without opening the
+                    interface.
+                  </p>
                 </div>
                 <R6Switch
-                  label="登录后启动后台服务"
+                  label="Start the background service at login"
                   checked={login?.enabled === true}
                   disabled={
                     !dataReady ||
@@ -330,10 +340,10 @@ export function R6Settings({
               )}
               <div className="r6-setting-row">
                 <div>
-                  <h3>导出日志</h3>
+                  <h3>Export logs</h3>
                   <p>
                     {exportMessage ||
-                      "把本机运行日志打包成一个文件，发给开发排查。"}
+                      "Bundles the local runtime logs into one file to send to development."}
                   </p>
                 </div>
                 <R6Button
@@ -342,7 +352,7 @@ export function R6Settings({
                   onClick={() => void handleExportLogs()}
                 >
                   <Download size={16} aria-hidden="true" />
-                  导出日志
+                  Export logs
                 </R6Button>
               </div>
             </section>
@@ -381,8 +391,11 @@ export function R6Settings({
               }
             }}
           >
-            <h2 id={`${id}-quit-title`}>确定退出 One Memory 界面吗？</h2>
-            <p>后台服务会继续同步、整理和提供记忆。</p>
+            <h2 id={`${id}-quit-title`}>Quit the One Memory interface?</h2>
+            <p>
+              The background service keeps syncing, organizing and serving
+              memories.
+            </p>
             {quitError && (
               <p role="alert" className="r6-settings-error">
                 {quitError}
@@ -390,14 +403,14 @@ export function R6Settings({
             )}
             <footer>
               <R6Button disabled={quitting} onClick={() => setQuitOpen(false)}>
-                取消
+                Cancel
               </R6Button>
               <R6Button
                 variant="primary"
                 pending={quitting}
                 onClick={() => void quitApplication()}
               >
-                退出界面
+                Quit the interface
               </R6Button>
             </footer>
           </section>

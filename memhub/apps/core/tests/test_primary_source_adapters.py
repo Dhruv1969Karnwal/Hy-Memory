@@ -264,7 +264,8 @@ def test_cursor_bare_image_prefixes_keep_only_the_user_query(tmp_path) -> None:
                     {
                         "role": "user",
                         "content": (
-                            "[Image]\n[Image]\n<user_query>\n只保留这段真实问题\n</user_query>"
+                            "[Image]\n[Image]\n<user_query>\nKeep only this real "
+                            "question\n</user_query>"
                         ),
                     }
                 ),
@@ -276,7 +277,7 @@ def test_cursor_bare_image_prefixes_keep_only_the_user_query(tmp_path) -> None:
 
     records = evidence(asyncio.run(scan(CursorUnifiedSourceAdapter(grant=grant("cursor", root)))))
 
-    assert [item.evidence.verbatim for item in records] == ["只保留这段真实问题"]
+    assert [item.evidence.verbatim for item in records] == ["Keep only this real question"]
     assert records[0].evidence.written_by is WrittenBy.PERSON
 
 
@@ -593,21 +594,25 @@ def test_workbuddy_receiver_agent_is_not_the_author(tmp_path) -> None:
                 "type": "message",
                 "role": "user",
                 "id": "u1",
-                "content": [{"type": "input_text", "text": "预算<5，这是用户要求。"}],
+                "content": [
+                    {"type": "input_text", "text": "budget<5, this is the user's requirement."}
+                ],
                 "providerData": {"agent": "cli"},
             },
             {
                 "type": "message",
                 "role": "user",
                 "id": "u2",
-                "content": [{"type": "input_text", "text": "另一位主Agent接收的原话。"}],
+                "content": [
+                    {"type": "input_text", "text": "Source text received by the other main Agent."}
+                ],
                 "providerData": {"agent": "custom-main"},
             },
             {
                 "type": "message",
                 "role": "user",
                 "id": "u3",
-                "content": [{"type": "input_text", "text": "机器委派输入。"}],
+                "content": [{"type": "input_text", "text": "Machine-delegated input."}],
                 "providerData": {"agent": "cli", "isSubAgent": True},
             },
         ],
@@ -618,7 +623,7 @@ def test_workbuddy_receiver_agent_is_not_the_author(tmp_path) -> None:
         WrittenBy.PERSON,
         WrittenBy.AGENT,
     ]
-    assert records[0].evidence.verbatim == "预算<5，这是用户要求。"
+    assert records[0].evidence.verbatim == "budget<5, this is the user's requirement."
 
 
 def test_workbuddy_imports_real_input_and_output_text_blocks(tmp_path) -> None:
@@ -635,7 +640,7 @@ def test_workbuddy_imports_real_input_and_output_text_blocks(tmp_path) -> None:
                     {
                         "type": "input_text",
                         "text": "<system-reminder>hidden</system-reminder>"
-                        "<user_query>记住我偏好本地模型</user_query>",
+                        "<user_query>Remember that I prefer local models</user_query>",
                     }
                 ],
                 "sessionId": "real-session",
@@ -645,7 +650,7 @@ def test_workbuddy_imports_real_input_and_output_text_blocks(tmp_path) -> None:
                 "timestamp": 1788164057681,
                 "type": "message",
                 "role": "assistant",
-                "content": [{"type": "output_text", "text": "已记录。"}],
+                "content": [{"type": "output_text", "text": "Recorded."}],
                 "sessionId": "real-session",
             },
         ],
@@ -654,8 +659,8 @@ def test_workbuddy_imports_real_input_and_output_text_blocks(tmp_path) -> None:
     records = evidence(asyncio.run(scan(create_workbuddy_adapter(grant("workbuddy", root)))))
 
     assert [item.evidence.verbatim for item in records] == [
-        "记住我偏好本地模型",
-        "已记录。",
+        "Remember that I prefer local models",
+        "Recorded.",
     ]
 
 
@@ -821,7 +826,7 @@ def test_workbuddy_imports_tool_name_and_a_clipped_redacted_result(tmp_path) -> 
                 "role": "user",
                 "id": "u1",
                 "sessionId": "s",
-                "content": "跑一下测试",
+                "content": "Run the tests",
             },
             {
                 "type": "function_call",

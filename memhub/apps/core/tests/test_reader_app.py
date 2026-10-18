@@ -95,7 +95,7 @@ def test_reader_governance_supports_non_probe_recall(tmp_path) -> None:
                 message_id="message",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim="用户偏好本地优先架构。",
+                verbatim="The user prefers a local-first architecture.",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )
         )
@@ -106,7 +106,7 @@ def test_reader_governance_supports_non_probe_recall(tmp_path) -> None:
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户偏好本地优先架构",
+            content="The user prefers a local-first architecture",
             scopes=("all-apps",),
             evidence_ids=(evidence.evidence_id,),
         ),
@@ -114,7 +114,7 @@ def test_reader_governance_supports_non_probe_recall(tmp_path) -> None:
     )
 
     result = GovernedRecallTarget(_ReaderGovernance(database)).recall(
-        RecallRequest(query="本地优先架构")
+        RecallRequest(query="local-first architecture")
     )
 
     assert result.state is RecallState.GROUNDED

@@ -87,7 +87,7 @@ it("returns and retains the authoritative created profile when list refresh fail
   expect(saved).toEqual(profile);
   expect(result.current.profiles).toEqual([profile]);
   expect(result.current.error).toBeNull();
-  expect(result.current.refreshError).toContain("已完成");
+  expect(result.current.refreshError).toContain("operation completed");
   expect(api.createModelProfile).toHaveBeenCalledTimes(1);
   vi.mocked(api.getModelProfiles).mockResolvedValue([profile]);
   await act(async () => {

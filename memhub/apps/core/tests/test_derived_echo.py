@@ -42,7 +42,7 @@ def test_a_restatement_is_not_broadcast_and_a_correction_still_is(tmp_path) -> N
     with closing(sqlite3.connect(path)) as db:
         db.row_factory = sqlite3.Row
         db.execute("BEGIN IMMEDIATE")
-        decision = store.put(_evidence("decision", "周五前交一版"), connection=db)
+        decision = store.put(_evidence("decision", "Ship a draft before Friday"), connection=db)
         ChangeOutbox(path).record(
             db,
             event_id=evidence_event_id(decision.record.evidence_id, decision.record.revision),
@@ -67,7 +67,7 @@ def test_a_restatement_is_not_broadcast_and_a_correction_still_is(tmp_path) -> N
         db.row_factory = sqlite3.Row
         db.execute("BEGIN IMMEDIATE")
         correction = store.put(
-            _evidence("correction", injected + "\n不对，改成下周三"), connection=db
+            _evidence("correction", injected + "\nNo, change it to next Wednesday"), connection=db
         )
         ChangeOutbox(path).record(
             db,
@@ -86,17 +86,17 @@ def test_stripping_removes_the_notice_block_as_well_as_the_memory_block() -> Non
     from one_memory.derived_echo import strip_injected_memory
 
     merged = (
-        "把按钮改成蓝色\n"
-        '<system-reminder data-role="hook"><memhub_memory_context>\n[1] 深绿色\n'
-        "</memhub_memory_context>\n\n<memhub_session_notice>\n来源 codex 修订 1 证据 ev\n"
+        "Change the button to blue\n"
+        '<system-reminder data-role="hook"><memhub_memory_context>\n[1] Dark green\n'
+        "</memhub_memory_context>\n\n<memhub_session_notice>\nSource codex revision 1 evidence ev\n"
         "</memhub_session_notice></system-reminder>"
     )
     notice_only = (
-        '<system-reminder data-role="hook"><memhub_session_notice>\n来源 codex\n'
-        "</memhub_session_notice></system-reminder>\n把按钮改成蓝色"
+        '<system-reminder data-role="hook"><memhub_session_notice>\nSource codex\n'
+        "</memhub_session_notice></system-reminder>\nChange the button to blue"
     )
-    assert strip_injected_memory(merged) == "把按钮改成蓝色"
-    assert strip_injected_memory(notice_only) == "把按钮改成蓝色"
+    assert strip_injected_memory(merged) == "Change the button to blue"
+    assert strip_injected_memory(notice_only) == "Change the button to blue"
 
 
 def test_injected_blocks_are_stripped_in_case_and_spacing_variants() -> None:
@@ -108,8 +108,8 @@ def test_injected_blocks_are_stripped_in_case_and_spacing_variants() -> None:
         ("< memhub_session_notice>", "< /memhub_session_notice>"),
         ("<Memhub_Session_Notice>", "</memhub_session_notice\n>"),
     ):
-        text = f"真正的问题\n{opening}\n回忆出来的内容\n{closing_tag}"
-        assert strip_injected_memory(text) == "真正的问题", opening
+        text = f"The real question\n{opening}\nRecalled content\n{closing_tag}"
+        assert strip_injected_memory(text) == "The real question", opening
 
 
 def test_the_tags_stripped_here_are_the_tags_the_hook_writes() -> None:
@@ -155,7 +155,7 @@ def test_core_strips_an_injected_block_in_any_spelling_the_hook_would_recognize(
 
     cases = _shared_cases()
     for block in cases["blocks"]:
-        assert strip_injected_memory(f"前{block}后") == "前后", block
+        assert strip_injected_memory(f"pre{block}post") == "prepost", block
     for text in cases["ordinary"]:
         assert strip_injected_memory(text) == text, text
 
@@ -190,7 +190,7 @@ def test_a_long_message_with_brackets_but_no_tag_is_not_walked_character_by_char
 
     from one_memory.derived_echo import strip_injected_memory
 
-    text = "<" + "普通中文消息，a < b。" * 400_000
+    text = "<" + "ordinary message text, a < b. " * 400_000
     started = time.perf_counter()
     assert strip_injected_memory(text) == text
     assert time.perf_counter() - started < 1.5

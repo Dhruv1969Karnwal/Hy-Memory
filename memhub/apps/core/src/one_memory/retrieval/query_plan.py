@@ -27,13 +27,13 @@ _SECRET_QUERY = frozenset(
 )
 
 _ISO_DAY = r"(\d{4})-(\d{2})-(\d{2})"
-_ISO_RANGE = re.compile(rf"{_ISO_DAY}\s*(?:到|至|~|—|–)\s*{_ISO_DAY}")
+_ISO_RANGE = re.compile(rf"{_ISO_DAY}\s*(?:\u5230|\u81f3|~|—|–)\s*{_ISO_DAY}")
 _ISO_SINGLE = re.compile(_ISO_DAY)
-_RECENT_DAYS = re.compile(r"(?:最近|近|过去)\s*(\d{1,3})\s*天")
-_RECENT_VAGUE = re.compile(r"最近|近期")
+_RECENT_DAYS = re.compile(r"(?:\u6700\u8fd1|\u8fd1|\u8fc7\u53bb)\s*(\d{1,3})\s*\u5929")
+_RECENT_VAGUE = re.compile(r"\u6700\u8fd1|\u8fd1\u671f")
 #: Asking what holds *now* is a question about the present, so a date mentioned
 #: alongside it describes the conversation, not the window to search.
-_PRESENT = re.compile(r"现在|目前|当前|最新|如今")
+_PRESENT = re.compile(r"\u73b0\u5728|\u76ee\u524d|\u5f53\u524d|\u6700\u65b0|\u5982\u4eca")
 _DEFAULT_TIMEZONE = "Asia/Shanghai"
 TimeMode = Literal["none", "hard", "soft"]
 
@@ -82,18 +82,18 @@ def _time(
         only := _day(found.group(1, 2, 3), zone)
     ) is not None:
         return span(only, 1)
-    for phrase, offset in (("今天", 0), ("昨天", -1), ("前天", -2)):
+    for phrase, offset in (("\u4eca\u5929", 0), ("\u6628\u5929", -1), ("\u524d\u5929", -2)):
         if phrase in text:
             return span(midnight + timedelta(days=offset), 1)
     monday = midnight - timedelta(days=midnight.weekday())
-    if "本周" in text:
+    if "\u672c\u5468" in text:
         return span(monday, 7)
-    if "上周" in text:
+    if "\u4e0a\u5468" in text:
         return span(monday - timedelta(days=7), 7)
     if found := _RECENT_DAYS.search(text):
         days = int(found.group(1))
         if days >= 1:
-            # Inclusive of today, so "最近 3 天" ends at tomorrow's midnight.
+            # Inclusive of today, so "the last 3 days" ends at tomorrow's midnight.
             return span(midnight - timedelta(days=days - 1), days)
     if _RECENT_VAGUE.search(text):
         # No number to honour; inventing a window would filter on a guess.

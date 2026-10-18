@@ -138,8 +138,8 @@ export function useModelProfiles() {
           return;
         setRefreshError(
           afterOperation
-            ? "操作已完成，但配置列表暂未刷新。已保留操作回执，请刷新核对，不要重复保存。"
-            : "暂时无法刷新模型配置，已确认的配置仍保留。请重试刷新。",
+            ? "The operation completed, but the configuration list was not refreshed. The operation receipt is kept; refresh and verify, and do not save again."
+            : "The model configuration cannot be refreshed right now; confirmed configurations are kept. Please retry the refresh.",
         );
       }
     },
@@ -181,7 +181,9 @@ export function useModelProfiles() {
       try {
         const pending = readProbePending();
         if (pending && key !== `probe:${pending.profileId}`) {
-          setError("请先核对上次模型测试结果，暂不修改或启用配置。");
+          setError(
+            "Please verify the last model test result first; the configuration must not be changed or activated.",
+          );
           return Promise.resolve(undefined);
         }
       } catch {
@@ -409,8 +411,8 @@ export function useModelProfiles() {
           setError(
             reason instanceof Error &&
               reason.message === "creation_receipt_not_found"
-              ? "未找到上次创建记录。确认放弃旧记录后可重新配置；系统不会自动重试。"
-              : "创建结果仍待核对，不会重复创建。请稍后再次核对。",
+              ? "The previous creation record was not found. After you confirm dropping the old record you can reconfigure; the system will not retry automatically."
+              : "The creation result is still pending verification; it will not be created again. Please check again shortly.",
           ),
       );
     },
@@ -428,7 +430,9 @@ export function useModelProfiles() {
       } catch {
         setCreationStorageFailed(true);
         setCreationMissing(null);
-        setError("本地恢复记录已变化，仍保持锁定。请重新打开后核对。");
+        setError(
+          "The local recovery record has changed; the lock is kept. Reopen and verify.",
+        );
         return undefined;
       }
       setBusy("creation-discard");
@@ -471,7 +475,9 @@ export function useModelProfiles() {
           setRefreshError(null);
           if (currentProfiles.length > 0) {
             setCreationMissing(null);
-            setError("已发现模型配置，旧创建记录仍保留。请先核对已有配置。");
+            setError(
+              "Model configurations were found; the old creation record is kept. Please verify the existing configurations first.",
+            );
             return undefined;
           }
           clearPendingModelCreation(operationId);
@@ -486,7 +492,9 @@ export function useModelProfiles() {
         } catch {
           if (alive.current && owner === session.current) {
             setCreationMissing(null);
-            setError("旧创建记录尚未安全解除，配置仍保持锁定。请重新核对。");
+            setError(
+              "The old creation record has not been safely released; the configuration remains locked. Please verify again.",
+            );
           }
           return undefined;
         } finally {
@@ -569,10 +577,13 @@ export function useModelProfiles() {
           if (profile) mergeProfile(profile);
           else
             setError(
-              "配置未保存，请检查模型地址和参数后重试；已填写内容保留。",
+              "Configuration not saved; check the model address and parameters, then retry. Your entries are kept.",
             );
         },
-        () => setError("创建结果尚未确认，请核对已保存结果，不要重复提交。"),
+        () =>
+          setError(
+            "The creation result is unconfirmed. Check what was saved; do not submit again.",
+          ),
       ),
     probeProfile: testProfile,
     activate: (profileId: string) =>
@@ -617,18 +628,18 @@ export function useModelProfiles() {
 function message(reason: unknown): string {
   if (reason instanceof Error && reason.message.startsWith("model_probe_")) {
     if (reason.message === "model_probe_operation_stale")
-      return "模型配置已变化，旧测试结果不会用于启用，请重新核对配置。";
+      return "The model configuration changed; the old test result will not be used for activation. Please verify the configuration again.";
     if (reason.message === "model_probe_capability_unavailable")
-      return "暂时无法核对测试服务，本次未发送测试，请恢复连接后重试。";
+      return "The test service cannot be reached; no test was sent this time. Restore the connection and retry.";
     if (reason.message === "model_probe_other_profile_pending")
-      return "另一个模型的测试结果尚未确认，请先在该模型上核对测试结果。";
-    return "测试结果尚未确认。再次点击测试连接将核对原操作，不会重复发送测试。";
+      return "Another model's test result is unconfirmed; verify that model's test result first.";
+    return "The test result is unconfirmed. Clicking Test connection again verifies the original operation without sending a duplicate test.";
   }
   const code = apiErrorCode(reason);
   if (code === "model_profile_probe_required")
-    return "请先点击测试连接，通过后再设为当前模型。";
+    return "Click Test connection first; set it as the current model once it passes.";
   if (code === "active_model_profile")
-    return "这是当前正在使用的模型，请先切换到别的模型再删除。";
+    return "This is the model currently in use. Switch to another model before deleting it.";
   if (
     code &&
     [
@@ -640,5 +651,5 @@ function message(reason: unknown): string {
   )
     return modelErrorText(code);
   // Raw transport errors can contain a request body or pasted credential.
-  return "模型配置操作未成功，请核对输入后重试。";
+  return "The model configuration operation did not succeed. Check your input and retry.";
 }

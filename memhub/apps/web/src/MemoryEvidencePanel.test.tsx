@@ -34,8 +34,8 @@ it("OVL-01/02: rapid reversal ignores the old animation completion and restores 
   trigger.focus();
   const content = (open: boolean) => (
     <MemoryEvidencePanel open={open} onClose={() => {}}>
-      <button type="button">关闭</button>
-      <p>原文</p>
+      <button type="button">Close</button>
+      <p>Source text</p>
     </MemoryEvidencePanel>
   );
   const view = render(content(false));
@@ -71,13 +71,13 @@ it("SYS-01: reduced motion skips animation and does not require animationend", (
   }));
   const view = render(
     <MemoryEvidencePanel open onClose={() => {}}>
-      <button type="button">关闭</button>
+      <button type="button">Close</button>
     </MemoryEvidencePanel>,
   );
   expect(screen.getByRole("dialog").dataset.phase).toBe("open");
   view.rerender(
     <MemoryEvidencePanel open={false} onClose={() => {}}>
-      原文
+      Source text
     </MemoryEvidencePanel>,
   );
   expect(screen.queryByRole("dialog")).toBeNull();

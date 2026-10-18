@@ -1,40 +1,43 @@
-/** 后端的错误代号 → 一句能照着做的话。
+/** Backend error codes → one sentence you can act on.
  *
- * 之前这一层不存在，`use-model-profiles` 直接把代号返回给界面，于是粘完 key
- * 点「设为当前模型」时，屏幕上出现的是 `model_profile_probe_required`。
- * 代号是给我们排查用的，不是给读它的人用的。
+ * This layer did not exist before: `use-model-profiles` returned the raw code straight to the UI, so after pasting the key
+ * and clicking "Set as current model", the screen showed `model_profile_probe_required`.
+ * The codes are for our debugging, not for the person reading the screen.
  *
- * 认不出来的代号原样带出去，不换成一句笼统的「出错了」：那样虽然屏幕上不再
- * 出现下划线，但排查线索也一起没了，而下一个人只能回来重现一次。
+ * Unknown codes are passed through as-is, not replaced by a generic "something went wrong": that would keep the screen free of
+ * underscores, but it would also erase the debugging trail, leaving the next person to reproduce it once more.
  */
 const TEXT: Record<string, string> = {
   model_profile_probe_required:
-    "这张卡还没测过。点一次「设为当前模型」会先自动测，如果还是不行，说明端点、key 或模型名有一处不对。",
-  model_provider_not_supported: "这类模型接口暂时用不了，换一张卡。",
-  embedding_model_required: "这张卡缺了向量化模型，补上才能启用。",
-  model_profile_not_found: "这张卡已经不在了，可能刚被删掉。刷新一下。",
+    'This card has not been tested yet. Clicking "Set as current model" runs the test first; if it still fails, the endpoint, key, or model name is wrong somewhere.',
+  model_provider_not_supported:
+    "This kind of model endpoint cannot be used right now; switch to another card.",
+  embedding_model_required:
+    "This card is missing an embedding model; add one to enable it.",
+  model_profile_not_found:
+    "This card no longer exists, it may have just been deleted. Refresh.",
   model_profile_conflict:
-    "这张卡刚被改过。刷新一下再试，免得覆盖掉别处的改动。",
+    "This card was just modified. Refresh and try again so you do not overwrite changes made elsewhere.",
 };
 
 export function modelErrorText(code: string): string {
-  return TEXT[code] ?? `操作没成功：${code}`;
+  return TEXT[code] ?? `Operation failed: ${code}`;
 }
 
 export function memoryWriteErrorText(
   code: string | null | undefined,
 ): string | null {
   if (code?.startsWith("model_content_")) {
-    return "原话已保存在本机；当前内容、模型接收方或授权版本尚未通过核对，未继续整理。";
+    return "The original text is saved on this device; the current content, model recipient, or authorization version has not passed verification, so organizing did not continue.";
   }
   if (code === "hy_memory_import_no_readable_output") {
-    return "HY 未返回可核对的已有记忆，未创建替代内容；原始记录已保留，可重试处理。";
+    return "HY returned no verifiable existing memory, and no substitute content was created; the original record is kept and processing can be retried.";
   }
   if (code === "hy_memory_write_verification_historical_support_only") {
-    return "历史引用尚未绑定到原始来源，当前批次未完成，原话已保留。";
+    return "History references are not yet bound to their original sources; the current batch is incomplete, and the original text is kept.";
   }
   if (code?.startsWith("hy_memory_write_verification_")) {
-    return "记忆内容未通过来源与作者核验，当前批次未完成，原话已保留。";
+    return "The memory content did not pass source and author verification; the current batch is incomplete, and the original text is kept.";
   }
   return null;
 }

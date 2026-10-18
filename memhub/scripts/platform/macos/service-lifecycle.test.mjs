@@ -163,9 +163,9 @@ test("the label is stable for one root and different across roots", () => {
 });
 
 test("a root with spaces and non-ASCII characters still yields a valid label", () => {
-  // Real users install under paths like `/Users/张三/Library/Application Support/…`.
+  // Real users install under paths containing spaces and non-ASCII characters.
   // The label must stay an ASCII bundle-id-shaped token, not echo the path.
-  const root = "/Users/张三/Application Support/One Memory Hourly/运行目录";
+  const root = "/Users/Renée Doe/Application Support/One Memory Hourly/runtime";
   const label = scopedLabel("darwin", `${root}/current`, DAILY);
   assert.match(label, /^com\.tencent\.onememory\.runtime\.[a-f0-9]{16}$/);
   assert.equal(label, scopedLabel("darwin", root, DAILY));

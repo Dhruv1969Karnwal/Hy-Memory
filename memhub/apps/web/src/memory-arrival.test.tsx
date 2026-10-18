@@ -24,9 +24,13 @@ it("import-only feedback does not imply HY generation", () => {
       onConnect={noop}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("正在导入对话");
-  expect(container.textContent).not.toContain("更多记忆会陆续出现");
-  expect(container.textContent).not.toContain("正在沉淀记忆");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Importing conversations",
+  );
+  expect(container.textContent).not.toContain(
+    "more memories will appear as they arrive",
+  );
+  expect(container.textContent).not.toContain("Settling memories");
 });
 
 it("confirmed running generation retains partial errors without looking stopped", () => {
@@ -52,23 +56,23 @@ it("confirmed running generation retains partial errors without looking stopped"
       onConnect={noop}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("正在沉淀记忆");
+  expect(screen.getByRole("status").textContent).toBe("Settling memories");
   expect(container.querySelector(".memory-arrival-spinner")).toBeTruthy();
   expect(container.querySelector("details")?.textContent).toContain(
-    "模型认证失败。更新 key 后",
+    "Model authentication failed. Update the key",
   );
-  expect(container.querySelector("details")?.textContent).toContain("5 项");
+  expect(container.querySelector("details")?.textContent).toContain("5 items");
 });
 
 it.each([
-  ["checking", "进度待更新", false],
-  ["importing", "正在导入对话", true],
-  ["model-required", "尚未设置整理模型", false],
-  ["processing", "正在沉淀记忆", true],
-  ["failed", "待继续", false],
-  ["idle", "待继续", false],
-  ["stopped", "待继续", false],
-  ["unavailable", "进度待更新", false],
+  ["checking", "Progress needs refreshing", false],
+  ["importing", "Importing conversations", true],
+  ["model-required", "No organizing model set up", false],
+  ["processing", "Settling memories", true],
+  ["failed", "Waiting to resume", false],
+  ["idle", "Waiting to resume", false],
+  ["stopped", "Waiting to resume", false],
+  ["unavailable", "Progress needs refreshing", false],
 ] satisfies [MemoryArrivalPhase, string, boolean][])(
   "renders honest %s without invented percentage",
   (phase, title, spinner) => {
@@ -100,10 +104,10 @@ it("offers explicit connection only for the truly empty idle state", async () =>
       onConnect={connect}
     />,
   );
-  expect(screen.getByText("还没有保存的对话")).toBeDefined();
-  expect(screen.queryByText(/已保存/)).toBeNull();
+  expect(screen.getByText("No conversations saved yet")).toBeDefined();
+  expect(screen.queryByText(/Saved/)).toBeNull();
   expect(connect).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "关联应用" }));
+  await userEvent.click(screen.getByRole("button", { name: "Connect an app" }));
   expect(connect).toHaveBeenCalledOnce();
   view.rerender(
     <MemoryArrivalPanel
@@ -112,7 +116,7 @@ it("offers explicit connection only for the truly empty idle state", async () =>
       onConnect={connect}
     />,
   );
-  expect(screen.queryByRole("button", { name: "关联应用" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Connect an app" })).toBeNull();
 });
 
 it.each(["suspended", "reduced-motion"])(
@@ -157,8 +161,12 @@ it("keeps idle existing memories free of an empty-state message", () => {
       onConnect={noop}
     />,
   );
-  expect(screen.getByText("原文仍在导入")).toBeDefined();
-  expect(screen.queryByText("对话已保存，尚无生成的记忆")).toBeNull();
+  expect(screen.getByText("Source text still importing")).toBeDefined();
+  expect(
+    screen.queryByText(
+      "Conversations are saved, but no memories have been generated yet",
+    ),
+  ).toBeNull();
 });
 
 it("keeps background progress compact and exact failures collapsed", () => {
@@ -180,20 +188,24 @@ it("keeps background progress compact and exact failures collapsed", () => {
       onConnect={noop}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("正在沉淀记忆");
-  expect(screen.getByText("先整理近期对话，更多记忆会陆续出现")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe("Settling memories");
+  expect(
+    screen.getByText(
+      "Recent conversations are organized first; more memories will appear as they arrive",
+    ),
+  ).toBeTruthy();
   const details = container.querySelector("details");
   expect(details?.open).toBe(false);
   expect(details?.textContent).toContain(
-    "这段对话含过长原文，暂未整理；原文已保留",
+    "This conversation contains oversized source text; not organized yet, source text kept",
   );
-  expect(details?.textContent).toContain("3 项");
+  expect(details?.textContent).toContain("3 items");
   // The code stays on the task row in Core. This panel is read by whoever
   // hit the stall, and `hy_memory_input_exceeds_window` is not an answer to
   // anything they can do.
   expect(details?.textContent).not.toContain("hy_memory_input_exceeds_window");
   expect(details?.textContent).toContain(
-    "存量数据较大，为保证质量，正在后台分批整理",
+    "There is a large backlog; batches are being organized in the background to protect quality",
   );
   expect(screen.queryByRole("alert")).toBeNull();
 });
@@ -206,7 +218,9 @@ it("does not spin or say checking without a live refresh", () => {
       onConnect={noop}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("进度待更新");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Progress needs refreshing",
+  );
   expect(view.container.querySelector(".memory-arrival-spinner")).toBeNull();
   view.rerender(
     <MemoryArrivalPanel
@@ -216,7 +230,7 @@ it("does not spin or say checking without a live refresh", () => {
     />,
   );
   expect(screen.getByRole("status").textContent).toBe(
-    "已保存内容保留，正在核对进度",
+    "Saved content kept; checking progress",
   );
   view.rerender(
     <MemoryArrivalPanel
@@ -225,7 +239,9 @@ it("does not spin or say checking without a live refresh", () => {
       onConnect={noop}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("进度待更新");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Progress needs refreshing",
+  );
 });
 
 it("keeps a stopped authentication failure neutral without claiming processing never began", () => {
@@ -247,12 +263,14 @@ it("keeps a stopped authentication failure neutral without claiming processing n
       onConnect={noop}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("待继续");
+  expect(screen.getByRole("status").textContent).toBe("Waiting to resume");
   expect(container.querySelector(".memory-arrival-spinner")).toBeNull();
-  expect(container.textContent).not.toContain("还没有开始");
+  expect(container.textContent).not.toContain("Nothing has started yet");
   expect(container.querySelector("details")?.textContent).toContain(
-    "模型认证失败。更新 key 后",
+    "Model authentication failed. Update the key",
   );
   expect(container.textContent).not.toContain("hy_memory_");
-  expect(screen.getByRole("button", { name: "设置记忆整理" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Set up memory organizing" }),
+  ).toBeTruthy();
 });

@@ -285,7 +285,7 @@ describe("diagnostic log", () => {
     const outputDir = await root();
     const crashDir = await root();
     const secret = "sk-fake-secret-token";
-    const conversation = "我喜欢吃绝密蓝莓";
+    const conversation = "I love eating top secret blueberries";
     const home = "/Users/private-person";
     await mkdir(path.join(dataDir, "logs"), { recursive: true });
     await writeFile(
@@ -326,7 +326,7 @@ describe("diagnostic log", () => {
       markers: [
         {
           timestamp: "2026-10-05T01:30:00.000Z",
-          description: "蓝莓没出来",
+          description: "The blueberries never showed up",
         },
       ],
       summary: {
@@ -350,7 +350,7 @@ describe("diagnostic log", () => {
     const readme = files["README.txt"];
     if (!summary || !readme) throw new Error("missing support bundle metadata");
     expect(strFromU8(summary)).toContain("model_failed");
-    expect(strFromU8(readme)).toContain("蓝莓没出来");
+    expect(strFromU8(readme)).toContain("The blueberries never showed up");
     const all = Object.values(files)
       .map((value) => strFromU8(value))
       .join("\n");

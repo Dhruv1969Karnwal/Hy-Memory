@@ -48,11 +48,11 @@ describe("desktop window frame", () => {
       ).toHaveLength(1);
       expect(container.querySelector(".onboarding-r6-traffic")).toBeNull();
       // The user removed the mark, the "One Memory" wordmark and the
-      // "第一次见面" caption on 2026-09-20. The bar stays empty; MemHub is not
+      // "First meeting" caption on 2026-09-20. The bar stays empty; MemHub is not
       // put back into it.
       expect(screen.queryByText("MemHub")).toBeNull();
       expect(screen.queryByText("One Memory")).toBeNull();
-      expect(screen.queryByText("第一次见面")).toBeNull();
+      expect(screen.queryByText("First meeting")).toBeNull();
       expect(
         container.querySelector(".onboarding-r6-titlebar")?.children.length,
       ).toBe(0);

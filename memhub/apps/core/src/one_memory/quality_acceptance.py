@@ -90,9 +90,11 @@ def build_acceptance_pack(
             WHERE e.role = 'user' AND e.written_by = 'person'
               AND LENGTH(e.verbatim) <= 300
               AND (
-                e.verbatim LIKE '%我是一名%' OR e.verbatim LIKE '%我是一个%'
-                OR e.verbatim LIKE '%我偏好%' OR e.verbatim LIKE '%我喜欢%'
-                OR e.verbatim LIKE '%请记住%' OR e.verbatim LIKE '%以后给我%'
+                e.verbatim LIKE '%\u6211\u662f\u4e00\u540d%'"""
+            """ OR e.verbatim LIKE '%\u6211\u662f\u4e00\u4e2a%'
+                OR e.verbatim LIKE '%\u6211\u504f\u597d%' OR e.verbatim LIKE '%\u6211\u559c\u6b22%'
+                OR e.verbatim LIKE '%\u8bf7\u8bb0\u4f4f%'"""
+            """ OR e.verbatim LIKE '%\u4ee5\u540e\u7ed9\u6211%'
               )
             """
         ):

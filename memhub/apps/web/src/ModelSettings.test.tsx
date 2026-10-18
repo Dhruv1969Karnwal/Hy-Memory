@@ -28,7 +28,7 @@ const update = vi.fn();
 
 it("explains an insufficient model balance with the required recovery", () => {
   expect(probeLabel("insufficient_balance")).toBe(
-    "模型账户余额不足；充值或换 key 后再检测，会自动接着处理",
+    "The model account balance is exhausted; top up or change the key and test again, processing resumes automatically",
   );
 });
 
@@ -66,7 +66,7 @@ const profile: ModelProfile = {
 const preset: ModelProfile = {
   ...profile,
   profile_id: "preset-1",
-  name: "预配置模型服务",
+  name: "Preconfigured model service",
   base_url: "https://models.example.com/v1",
   model: "memory-model",
   has_api_key: false,
@@ -99,15 +99,15 @@ describe("ModelSettings", () => {
     act(() => {
       expect(controls.current?.edit(profile.profile_id)).toBe(true);
     });
-    expect((screen.getByLabelText("配置名称") as HTMLInputElement).value).toBe(
-      profile.name,
-    );
+    expect(
+      (screen.getByLabelText("Configuration name") as HTMLInputElement).value,
+    ).toBe(profile.name);
     act(() => {
       expect(controls.current?.add()).toBe(true);
     });
-    expect((screen.getByLabelText("配置名称") as HTMLInputElement).value).toBe(
-      "",
-    );
+    expect(
+      (screen.getByLabelText("Configuration name") as HTMLInputElement).value,
+    ).toBe("");
     await act(async () => {
       await controls.current?.test(profile.profile_id);
     });
@@ -137,14 +137,16 @@ describe("ModelSettings", () => {
     expect((screen.getByLabelText(/^API Key/) as HTMLInputElement).type).toBe(
       "password",
     );
-    // 默认视图里不该有 embedding。它是内置的、用户改不了的实现细节，
-    // 摆一个只读输入框在这儿，读者只会以为自己漏配了什么。
+    // The default view should not contain embedding. It is a built-in implementation detail users cannot change;
+    // a read-only input here would only make readers think they missed some configuration.
     expect(screen.queryByLabelText("Embedding")).toBeNull();
-    expect(screen.queryByText(/已内置 bge-small-zh-v1.5/)).toBeNull();
-    await user.type(screen.getByLabelText("配置名称"), "My provider");
-    await user.type(screen.getByLabelText("生成模型名"), "model-v1");
+    expect(screen.queryByText(/Built-in bge-small-zh-v1.5/)).toBeNull();
+    await user.type(screen.getByLabelText("Configuration name"), "My provider");
+    await user.type(screen.getByLabelText("Generation model name"), "model-v1");
     await user.type(screen.getByLabelText(/^API Key/), "secret-value");
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,14 +157,18 @@ describe("ModelSettings", () => {
       }),
     );
     expect(create.mock.calls[0][0].embedding_model).toBeUndefined();
-    expect(screen.getByText(/只需配置生成模型/)).toBeTruthy();
+    expect(
+      screen.getByText(/You only need to configure the generation model/),
+    ).toBeTruthy();
   });
 
   it("edits an existing custom profile without creating another UUID or refilling the stored key", async () => {
     update.mockResolvedValue(profile);
     render(<ModelSettings />);
-    await userEvent.click(screen.getByRole("button", { name: "编辑配置" }));
-    expect(screen.getByLabelText("生成模型名")).toHaveProperty(
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
+    expect(screen.getByLabelText("Generation model name")).toHaveProperty(
       "value",
       profile.model,
     );
@@ -170,13 +176,13 @@ describe("ModelSettings", () => {
       "value",
       profile.base_url,
     );
-    expect(screen.getByLabelText("配置名称")).toHaveProperty(
+    expect(screen.getByLabelText("Configuration name")).toHaveProperty(
       "value",
       profile.name,
     );
     expect(screen.getByLabelText(/^API Key/)).toHaveProperty("value", "");
-    expect(screen.getByText(/留空保留已保存密钥/)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    expect(screen.getByText(/Leave blank to keep the saved key/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenCalledExactlyOnceWith(profile.profile_id, {
       expected_revision: 1,
     });
@@ -184,8 +190,9 @@ describe("ModelSettings", () => {
     expect(probeProfile).not.toHaveBeenCalled();
     expect(activate).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("article", { name: "已保存的模型配置" }).textContent,
-    ).toContain("版本 1");
+      screen.getByRole("article", { name: "Saved model configurations" })
+        .textContent,
+    ).toContain("Revision 1");
   });
 
   it("offers the same vendor choices while editing and does not reuse the saved key", async () => {
@@ -200,8 +207,10 @@ describe("ModelSettings", () => {
       },
     ];
     render(<ModelSettings />);
-    await user.click(screen.getByRole("button", { name: "编辑配置" }));
-    const vendor = screen.getByLabelText("服务商预设");
+    await user.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
+    const vendor = screen.getByLabelText("Provider preset");
     expect(vendor.textContent).toContain("DeepSeek");
     await user.click(vendor);
     expect(
@@ -210,29 +219,29 @@ describe("ModelSettings", () => {
         .map((item) => item.textContent),
     ).toEqual([
       ...PROVIDER_PRESETS.map((item) => item.label),
-      "自定义兼容服务",
+      "Custom compatible service",
     ]);
-    await user.click(screen.getByRole("option", { name: "Kimi（月之暗面）" }));
+    await user.click(screen.getByRole("option", { name: "Kimi (Moonshot)" }));
     expect(screen.getByLabelText("Base URL")).toHaveProperty(
       "value",
       "https://api.moonshot.cn/v1",
     );
-    expect(screen.getByLabelText("生成模型名")).toHaveProperty(
+    expect(screen.getByLabelText("Generation model name")).toHaveProperty(
       "value",
       "kimi-k3",
     );
-    expect(screen.getByLabelText("配置名称")).toHaveProperty(
+    expect(screen.getByLabelText("Configuration name")).toHaveProperty(
       "value",
-      "Kimi（月之暗面）",
+      "Kimi (Moonshot)",
     );
-    expect(screen.getByText(/不会带到新地址/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    expect(screen.getByText(/carried to the new address/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).not.toHaveBeenCalled();
     await user.type(screen.getByLabelText(/^API Key/), "new-key");
-    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenCalledExactlyOnceWith(profile.profile_id, {
       expected_revision: 1,
-      name: "Kimi（月之暗面）",
+      name: "Kimi (Moonshot)",
       model: "kimi-k3",
       base_url: "https://api.moonshot.cn/v1",
       api_key: "new-key",
@@ -253,18 +262,20 @@ describe("ModelSettings", () => {
       },
     ];
     render(<ModelSettings />);
-    await user.click(screen.getByRole("button", { name: "编辑配置" }));
-    await user.click(screen.getByLabelText("服务商预设"));
+    await user.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
+    await user.click(screen.getByLabelText("Provider preset"));
     await user.click(
       within(screen.getByRole("listbox")).getByRole("option", {
-        name: "Ollama（本机）",
+        name: "Ollama (local)",
       }),
     );
-    await user.type(screen.getByLabelText("生成模型名"), "qwen2.5");
-    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    await user.type(screen.getByLabelText("Generation model name"), "qwen2.5");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledExactlyOnceWith({
-      name: "Ollama（本机）",
+      name: "Ollama (local)",
       provider_kind: "ollama",
       model: "qwen2.5",
       base_url: "http://127.0.0.1:11434",
@@ -280,15 +291,20 @@ describe("ModelSettings", () => {
       is_active: false,
     });
     render(<ModelSettings />);
-    await userEvent.click(screen.getByRole("button", { name: "编辑配置" }));
-    await userEvent.clear(screen.getByLabelText("生成模型名"));
-    await userEvent.type(screen.getByLabelText("生成模型名"), "changed");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
+    await userEvent.clear(screen.getByLabelText("Generation model name"));
+    await userEvent.type(
+      screen.getByLabelText("Generation model name"),
+      "changed",
+    );
     await userEvent.type(
       screen.getByLabelText(/^API Key/),
       "synthetic-replacement",
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
-    expect(screen.getByLabelText("生成模型名")).toHaveProperty(
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(screen.getByLabelText("Generation model name")).toHaveProperty(
       "value",
       "changed",
     );
@@ -299,7 +315,7 @@ describe("ModelSettings", () => {
     expect(screen.getByRole("alert").textContent).not.toContain(
       "synthetic-replacement",
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenLastCalledWith(profile.profile_id, {
       expected_revision: 1,
       model: "changed",
@@ -309,8 +325,9 @@ describe("ModelSettings", () => {
     expect(activate).not.toHaveBeenCalled();
     expect(probeProfile).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("article", { name: "已保存的模型配置" }).textContent,
-    ).toContain("版本 2");
+      screen.getByRole("article", { name: "Saved model configurations" })
+        .textContent,
+    ).toContain("Revision 2");
     expect(screen.queryByLabelText(/^API Key/)).toBeNull();
   });
 
@@ -327,12 +344,14 @@ describe("ModelSettings", () => {
     profiles = [existing];
     update.mockResolvedValue(existing);
     render(<ModelSettings />);
-    await userEvent.click(screen.getByRole("button", { name: "编辑配置" }));
-    expect(screen.getByLabelText("向量模型名")).toHaveProperty(
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
+    expect(screen.getByLabelText("Embedding model name")).toHaveProperty(
       "value",
       "local-embedding",
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenCalledExactlyOnceWith(profile.profile_id, {
       expected_revision: 1,
     });
@@ -340,39 +359,54 @@ describe("ModelSettings", () => {
 
   it("does not replace an edit draft with a newer external profile revision", async () => {
     const view = render(<ModelSettings />);
-    await userEvent.click(screen.getByRole("button", { name: "编辑配置" }));
-    await userEvent.type(screen.getByLabelText("生成模型名"), "-draft");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("Generation model name"),
+      "-draft",
+    );
     profiles = [{ ...profile, revision: 2, model: "external" }];
     view.rerender(<ModelSettings />);
-    expect(screen.getByLabelText("生成模型名")).toHaveProperty(
+    expect(screen.getByLabelText("Generation model name")).toHaveProperty(
       "value",
       "memory-model-draft",
     );
-    expect(screen.getByRole("button", { name: "保存修改" })).toHaveProperty(
+    expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty(
       "disabled",
       true,
     );
-    expect(screen.getByText(/配置已在其他位置变化/)).toBeTruthy();
+    expect(
+      screen.getByText(/The configuration changed elsewhere/),
+    ).toBeTruthy();
     expect(update).not.toHaveBeenCalled();
   });
 
   it("preserves a new custom embedding when its disclosure is collapsed", async () => {
     render(<ModelSettings />);
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("生成模型名"), "model-v1");
+    await user.type(screen.getByLabelText("Generation model name"), "model-v1");
     await user.type(screen.getByLabelText(/^API Key/), "synthetic-key");
     const disclosure = screen.getByRole("button", {
-      name: "高级：自行配置向量模型",
+      name: "Advanced: configure the embedding model yourself",
     });
     await user.click(disclosure);
-    await user.selectOptions(screen.getByLabelText("向量配置模式"), "custom");
-    await user.type(screen.getByLabelText("向量模型名"), "custom-vector");
+    await user.selectOptions(
+      screen.getByLabelText("Embedding configuration mode"),
+      "custom",
+    );
     await user.type(
-      screen.getByLabelText("向量模型 Base URL"),
+      screen.getByLabelText("Embedding model name"),
+      "custom-vector",
+    );
+    await user.type(
+      screen.getByLabelText("Embedding model Base URL"),
       "https://api.openai.com/v1",
     );
     await user.click(disclosure);
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         embedding_provider_kind: "openai_compatible",
@@ -386,12 +420,19 @@ describe("ModelSettings", () => {
 
   it("does not turn opening advanced fields into an embedding mode change", async () => {
     render(<ModelSettings />);
-    await userEvent.type(screen.getByLabelText("生成模型名"), "model-v1");
+    await userEvent.type(
+      screen.getByLabelText("Generation model name"),
+      "model-v1",
+    );
     await userEvent.type(screen.getByLabelText(/^API Key/), "synthetic-key");
     await userEvent.click(
-      screen.getByRole("button", { name: "高级：自行配置向量模型" }),
+      screen.getByRole("button", {
+        name: "Advanced: configure the embedding model yourself",
+      }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
     expect(create).toHaveBeenCalledOnce();
     expect(create.mock.calls[0][0].embedding_model).toBeUndefined();
   });
@@ -406,13 +447,20 @@ describe("ModelSettings", () => {
       },
     ];
     render(<ModelSettings />);
-    await userEvent.click(screen.getByRole("button", { name: "编辑配置" }));
-    await userEvent.clear(screen.getByLabelText("向量模型名"));
-    await userEvent.type(screen.getByLabelText("向量模型名"), "vector-new");
     await userEvent.click(
-      screen.getByRole("button", { name: "高级：自行配置向量模型" }),
+      screen.getByRole("button", { name: "Edit configuration" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await userEvent.clear(screen.getByLabelText("Embedding model name"));
+    await userEvent.type(
+      screen.getByLabelText("Embedding model name"),
+      "vector-new",
+    );
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Advanced: configure the embedding model yourself",
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenCalledWith(profile.profile_id, {
       expected_revision: 1,
       embedding_model: "vector-new",
@@ -430,12 +478,14 @@ describe("ModelSettings", () => {
       },
     ];
     render(<ModelSettings />);
-    await userEvent.click(screen.getByRole("button", { name: "编辑配置" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit configuration" }),
+    );
     await userEvent.selectOptions(
-      screen.getByLabelText("向量配置模式"),
+      screen.getByLabelText("Embedding configuration mode"),
       "local",
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(update).toHaveBeenCalledWith(profile.profile_id, {
       expected_revision: 1,
       embedding_provider_kind: "local_onnx",
@@ -446,22 +496,29 @@ describe("ModelSettings", () => {
 
   it("reopens invalid custom fields instead of saving builtin after collapse", async () => {
     render(<ModelSettings />);
-    await userEvent.type(screen.getByLabelText("生成模型名"), "model-v1");
+    await userEvent.type(
+      screen.getByLabelText("Generation model name"),
+      "model-v1",
+    );
     await userEvent.type(screen.getByLabelText(/^API Key/), "synthetic-key");
     const disclosure = screen.getByRole("button", {
-      name: "高级：自行配置向量模型",
+      name: "Advanced: configure the embedding model yourself",
     });
     await userEvent.click(disclosure);
     await userEvent.selectOptions(
-      screen.getByLabelText("向量配置模式"),
+      screen.getByLabelText("Embedding configuration mode"),
       "custom",
     );
     await userEvent.click(disclosure);
-    await userEvent.click(screen.getByRole("button", { name: "保存配置" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
     expect(create).not.toHaveBeenCalled();
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
     expect(
-      screen.getByLabelText(/^向量模型名/).getAttribute("aria-invalid"),
+      screen
+        .getByLabelText(/^Embedding model name/)
+        .getAttribute("aria-invalid"),
     ).toBe("true");
   });
 
@@ -492,16 +549,16 @@ describe("ModelSettings", () => {
     };
     const view = render(<ModelSettings />);
     const result = screen.getByRole("region", {
-      name: "Saved provider 版本 1 测试结果",
+      name: "Saved provider revision 1 test result",
     });
-    expect(result.textContent).toContain("认证失败");
+    expect(result.textContent).toContain("Authentication failed");
     expect(result.textContent).toContain("https://models.example.com/v1");
     expect(
-      screen.queryByRole("region", { name: "Second 版本 1 测试结果" }),
+      screen.queryByRole("region", { name: "Second revision 1 test result" }),
     ).toBeNull();
     profiles = [{ ...profile, revision: 2 }, profiles[1]];
     view.rerender(<ModelSettings />);
-    expect(screen.queryByText(/认证失败/)).toBeNull();
+    expect(screen.queryByText(/Authentication failed/)).toBeNull();
   });
 
   it("does not enable activation from older capability flags after this revision's failed test", () => {
@@ -532,14 +589,14 @@ describe("ModelSettings", () => {
       },
     };
     render(<ModelSettings />);
-    expect(screen.getByRole("button", { name: "设为当前模型" })).toHaveProperty(
-      "disabled",
-      true,
-    );
     expect(
-      screen.getByRole("region", { name: "Saved provider 版本 1 测试结果" })
-        .textContent,
-    ).toContain("认证失败");
+      screen.getByRole("button", { name: "Set as current model" }),
+    ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByRole("region", {
+        name: "Saved provider revision 1 test result",
+      }).textContent,
+    ).toContain("Authentication failed");
     expect(activate).not.toHaveBeenCalled();
   });
 
@@ -553,10 +610,16 @@ describe("ModelSettings", () => {
       },
     ];
     render(<ModelSettings />);
-    expect(screen.getByText(/需要允许 MemHub 访问钥匙串/)).toBeTruthy();
-    expect(screen.getByText(/始终允许/)).toBeTruthy();
-    expect(screen.queryByText(/此版本尚不能读取钥匙串中的旧凭据/)).toBeNull();
-    expect(screen.queryByText(/等待 key/)).toBeNull();
+    expect(
+      screen.getByText(/MemHub needs access to the keychain/),
+    ).toBeTruthy();
+    expect(screen.getByText(/Always Allow/)).toBeTruthy();
+    expect(
+      screen.queryByText(
+        /This version cannot read old keychain credentials yet/,
+      ),
+    ).toBeNull();
+    expect(screen.queryByText(/Waiting for a key/)).toBeNull();
   });
 
   it("does not render a stored key and exposes explicit activation", async () => {
@@ -575,7 +638,9 @@ describe("ModelSettings", () => {
     const { container } = render(<ModelSettings />);
 
     expect(container.textContent).not.toContain("secret-value");
-    await user.click(screen.getByRole("button", { name: "设为当前模型" }));
+    await user.click(
+      screen.getByRole("button", { name: "Set as current model" }),
+    );
     expect(activate).toHaveBeenCalledWith("profile-1");
   });
 
@@ -583,17 +648,26 @@ describe("ModelSettings", () => {
     profiles = [];
     const user = userEvent.setup();
     render(<ModelSettings />);
-    await user.type(screen.getByLabelText("生成模型名"), "memory-model");
+    await user.type(
+      screen.getByLabelText("Generation model name"),
+      "memory-model",
+    );
     await user.type(screen.getByLabelText(/^API Key/), "test-only-key");
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
-    const card = screen.getByRole("article", { name: "已保存的模型配置" });
-    expect(card.textContent).toContain("已保存，待测试");
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
+    const card = screen.getByRole("article", {
+      name: "Saved model configurations",
+    });
+    expect(card.textContent).toContain("Saved, pending test");
     expect(card.textContent).toContain("models.example.com");
     expect(document.activeElement).toBe(card);
-    expect(screen.queryByRole("button", { name: "保存配置" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Save configuration" }),
+    ).toBeNull();
     expect(probeProfile).not.toHaveBeenCalled();
     expect(activate).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "新增配置" }));
+    await user.click(screen.getByRole("button", { name: "Add configuration" }));
     expect(screen.getByLabelText(/^API Key/)).toHaveProperty("value", "");
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -601,25 +675,25 @@ describe("ModelSettings", () => {
   it("suggests an editable name without changing the endpoint or model", async () => {
     const user = userEvent.setup();
     render(<ModelSettings />);
-    await user.type(screen.getByLabelText("生成模型名"), "model-v1");
-    expect(screen.getByLabelText("配置名称")).toHaveProperty(
+    await user.type(screen.getByLabelText("Generation model name"), "model-v1");
+    expect(screen.getByLabelText("Configuration name")).toHaveProperty(
       "value",
       "OpenAI-compatible · model-v1",
     );
-    await user.clear(screen.getByLabelText("配置名称"));
-    await user.type(screen.getByLabelText("配置名称"), "My choice");
-    await user.type(screen.getByLabelText("生成模型名"), "-v2");
+    await user.clear(screen.getByLabelText("Configuration name"));
+    await user.type(screen.getByLabelText("Configuration name"), "My choice");
+    await user.type(screen.getByLabelText("Generation model name"), "-v2");
     await user.clear(screen.getByLabelText("Base URL"));
     await user.type(
       screen.getByLabelText("Base URL"),
       "https://gateway.example/v1",
     );
-    await user.selectOptions(screen.getByLabelText("协议"), "ollama");
-    expect(screen.getByLabelText("配置名称")).toHaveProperty(
+    await user.selectOptions(screen.getByLabelText("Protocol"), "ollama");
+    expect(screen.getByLabelText("Configuration name")).toHaveProperty(
       "value",
       "My choice",
     );
-    expect(screen.getByLabelText("生成模型名")).toHaveProperty(
+    expect(screen.getByLabelText("Generation model name")).toHaveProperty(
       "value",
       "model-v1-v2",
     );
@@ -632,13 +706,19 @@ describe("ModelSettings", () => {
   it("shows field-local Chinese required errors for mouse and keyboard submission", async () => {
     const user = userEvent.setup();
     render(<ModelSettings />);
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
-    expect(screen.getByText("请填写生成模型名。")).toBeTruthy();
-    expect(screen.getByText("请填写 API Key。")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
+    expect(screen.getByText("Enter the generation model name.")).toBeTruthy();
+    expect(screen.getByText("Enter an API Key.")).toBeTruthy();
     expect(
-      screen.getByLabelText("生成模型名").getAttribute("aria-invalid"),
+      screen
+        .getByLabelText("Generation model name")
+        .getAttribute("aria-invalid"),
     ).toBe("true");
-    expect(document.activeElement).toBe(screen.getByLabelText("生成模型名"));
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Generation model name"),
+    );
     await user.keyboard("{Enter}");
     expect(create).not.toHaveBeenCalled();
   });
@@ -651,12 +731,17 @@ describe("ModelSettings", () => {
     async (key) => {
       const user = userEvent.setup();
       const { container } = render(<ModelSettings />);
-      await user.type(screen.getByLabelText("生成模型名"), "model-v1");
+      await user.type(
+        screen.getByLabelText("Generation model name"),
+        "model-v1",
+      );
       await user.type(screen.getByLabelText(/^API Key/), key);
-      await user.click(screen.getByRole("button", { name: "保存配置" }));
+      await user.click(
+        screen.getByRole("button", { name: "Save configuration" }),
+      );
       expect(
         screen.getByText(
-          "这里需要 API Key，不是网址。请填写服务方提供的密钥。",
+          "This needs an API Key, not a URL. Enter the key provided by the provider.",
         ),
       ).toBeTruthy();
       expect(container.textContent).not.toContain(key);
@@ -679,17 +764,17 @@ describe("ModelSettings", () => {
     );
     const user = userEvent.setup();
     render(<ModelSettings />);
-    await user.type(screen.getByLabelText("生成模型名"), "model-v1");
+    await user.type(screen.getByLabelText("Generation model name"), "model-v1");
     await user.type(screen.getByLabelText(/^API Key/), "test-only-key");
     const form = screen
-      .getByRole("button", { name: "保存配置" })
+      .getByRole("button", { name: "Save configuration" })
       .closest("form");
     if (!form) throw new Error("Missing model form");
     fireEvent.submit(form);
     fireEvent.submit(form);
     expect(create).toHaveBeenCalledTimes(1);
     await act(async () => resolve(undefined));
-    expect(screen.getByLabelText("生成模型名")).toHaveProperty(
+    expect(screen.getByLabelText("Generation model name")).toHaveProperty(
       "value",
       "model-v1",
     );
@@ -697,20 +782,24 @@ describe("ModelSettings", () => {
       "value",
       "test-only-key",
     );
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
     expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("rejects invalid endpoint input without changing it", async () => {
     const user = userEvent.setup();
     render(<ModelSettings />);
-    await user.type(screen.getByLabelText("生成模型名"), "model-v1");
+    await user.type(screen.getByLabelText("Generation model name"), "model-v1");
     await user.type(screen.getByLabelText(/^API Key/), "test-only-key");
     await user.clear(screen.getByLabelText("Base URL"));
     await user.type(screen.getByLabelText("Base URL"), "not-an-endpoint");
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
     expect(
-      screen.getByText("请填写完整的 http:// 或 https:// 接口地址。"),
+      screen.getByText("Enter a complete http:// or https:// endpoint."),
     ).toBeTruthy();
     expect(screen.getByLabelText("Base URL")).toHaveProperty(
       "value",
@@ -723,25 +812,41 @@ describe("ModelSettings", () => {
     const user = userEvent.setup();
     render(<ModelSettings />);
 
-    // 能力还在，只是收进了折叠区：默认看不见，展开才有。
-    expect(screen.queryByLabelText("向量模型名")).toBeNull();
+    // The capability is still there, just tucked into the collapsible section: hidden by default, shown when expanded.
+    expect(screen.queryByLabelText("Embedding model name")).toBeNull();
     await user.click(
-      screen.getByRole("button", { name: "高级：自行配置向量模型" }),
+      screen.getByRole("button", {
+        name: "Advanced: configure the embedding model yourself",
+      }),
     );
-    await user.selectOptions(screen.getByLabelText("向量配置模式"), "custom");
+    await user.selectOptions(
+      screen.getByLabelText("Embedding configuration mode"),
+      "custom",
+    );
     await user.type(
-      screen.getByLabelText("配置名称"),
+      screen.getByLabelText("Configuration name"),
       "Remote with local embedding",
     );
-    await user.type(screen.getByLabelText("生成模型名"), "remote-model");
-    await user.type(screen.getByLabelText("向量模型名"), "nomic-embed-text");
-    await user.selectOptions(screen.getByLabelText("向量模型来源"), "ollama");
     await user.type(
-      screen.getByLabelText("向量模型 Base URL"),
+      screen.getByLabelText("Generation model name"),
+      "remote-model",
+    );
+    await user.type(
+      screen.getByLabelText("Embedding model name"),
+      "nomic-embed-text",
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Embedding model source"),
+      "ollama",
+    );
+    await user.type(
+      screen.getByLabelText("Embedding model Base URL"),
       "http://127.0.0.1:11434",
     );
     await user.type(screen.getByLabelText(/^API Key/), "secret-value");
-    await user.click(screen.getByRole("button", { name: "保存配置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save configuration" }),
+    );
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -751,10 +856,12 @@ describe("ModelSettings", () => {
     );
   });
 
-  it("后端激活不了的协议根本不出现在下拉里", () => {
+  it("Protocols the backend cannot activate never appear in the dropdown", () => {
     render(<ModelSettings />);
 
-    const providerSelect = screen.getByLabelText("协议") as HTMLSelectElement;
+    const providerSelect = screen.getByLabelText(
+      "Protocol",
+    ) as HTMLSelectElement;
     const labels = Array.from(providerSelect.options).map(
       (option) => option.textContent ?? "",
     );
@@ -762,27 +869,27 @@ describe("ModelSettings", () => {
     expect(labels.some((text) => text.startsWith("OpenAI-compatible"))).toBe(
       true,
     );
-    expect(labels.some((text) => text.startsWith("Ollama（本机）"))).toBe(true);
+    expect(labels.some((text) => text.startsWith("Ollama (local)"))).toBe(true);
 
-    // ModelProfileStore.activate() 对这两个 provider 抛
-    // model_provider_not_supported。之前它们以 disabled 的形态留在下拉里，
-    // 等于把两条死路摆在明面上让人去读懂括号里的「暂不支持」。
+    // ModelProfileStore.activate() throws for these two providers:
+    // model_provider_not_supported. They used to stay in the dropdown as disabled options,
+    // which put two dead ends in plain sight and made people parse the "not supported yet" in parentheses.
     expect(labels.some((text) => text.includes("Anthropic"))).toBe(false);
     expect(labels.some((text) => text.includes("HY Memory"))).toBe(false);
     expect(providerSelect.options.length).toBe(2);
   });
 
-  it("已保存的配置不印内置向量模型", () => {
+  it("Saved configurations do not print the built-in embedding model", () => {
     profiles = [profile];
     render(<ModelSettings />);
 
-    // Core 给每个配置都回填 bge-small-zh-v1.5，所以这行原本每条都在印一个
-    // 用户既没选过也改不了的东西。
+    // Core backfills bge-small-zh-v1.5 for every configuration, so this line used to print something
+    // that users neither chose nor can change.
     expect(screen.queryByText(/bge-small-zh-v1\.5/)).toBeNull();
     expect(screen.getByText(/memory-model/)).toBeTruthy();
   });
 
-  it("但用户自己配过的向量模型要印出来", () => {
+  it("But embedding models the user configured must be printed", () => {
     profiles = [
       {
         ...profile,
@@ -796,72 +903,76 @@ describe("ModelSettings", () => {
     expect(screen.getByText(/nomic-embed-text/)).toBeTruthy();
   });
 
-  it("有预置档案时，先给贴 key 的那条路，自定义表单收起来", () => {
+  it("With a preset profile, offer the paste-a-key path first and collapse the custom form", () => {
     profiles = [preset];
     render(<ModelSettings />);
 
-    expect(screen.getByRole("region", { name: "预配置模型服务" })).toBeTruthy();
-    // 贴一个 key 就能用的时候，没理由让人先面对协议、Base URL 和超时。
-    expect(screen.queryByLabelText("协议")).toBeNull();
-    expect(screen.getByRole("button", { name: "自定义一个模型" })).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Preconfigured model service" }),
+    ).toBeTruthy();
+    // When pasting a key is all it takes, there is no reason to confront people with protocol, Base URL and timeouts first.
+    expect(screen.queryByLabelText("Protocol")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Add a custom model" }),
+    ).toBeTruthy();
   });
 
-  it("没有预置档案时表单直接摊开，不用多点一下", () => {
+  it("Without a preset profile the form opens directly, with no extra click", () => {
     profiles = [];
     render(<ModelSettings />);
 
-    expect(screen.getByLabelText("协议")).toBeTruthy();
+    expect(screen.getByLabelText("Protocol")).toBeTruthy();
   });
 
   it("no longer promises an HY default model that will not arrive", () => {
     render(<ModelSettings />);
-    expect(screen.queryByText(/尚未开放/)).toBeNull();
+    expect(screen.queryByText(/not open yet/)).toBeNull();
   });
 
-  describe("预置档案", () => {
-    it("只问一个 key，端点与模型名不摆在明面上", async () => {
+  describe("Preset profile", () => {
+    it("Asks for one key only; endpoint and model name stay out of sight", async () => {
       profiles = [preset];
       render(<ModelSettings />);
 
       const card = screen.getByRole("region", {
-        name: "预配置模型服务",
+        name: "Preconfigured model service",
       });
-      expect(card.textContent).toContain("粘贴 API Key");
-      // 用户不需要知道 Base URL 是什么，也不需要知道该写哪个模型名：
-      // 这两件事摆出来只会让人以为自己还得做点什么。
+      expect(card.textContent).toContain("Paste API Key");
+      // Users do not need to know what a Base URL is or which model name to write:
+      // showing those two things only makes them think they still have something to do.
       expect(card.textContent).not.toContain("models.example.com");
       expect(card.textContent).not.toContain("memory-model");
     });
 
-    it("key 为空时说等待 key，不说配置错误", async () => {
-      // 「等着你贴一个 key」和「你填错了」是两件事。混成一句，用户会去
-      // 检查自己没填错的东西，而真正要做的那一步反倒没提。
+    it("When the key is empty it says waiting for a key, not a configuration error", async () => {
+      // "Waiting for you to paste a key" and "you filled something in wrong" are different things. Mixed into one sentence, users go
+      // rechecking things they got right while the step that actually matters never comes up.
       profiles = [preset];
       render(<ModelSettings />);
 
       const card = screen.getByRole("region", {
-        name: "预配置模型服务",
+        name: "Preconfigured model service",
       });
-      expect(card.textContent).toContain("等待 key");
-      expect(card.textContent).not.toContain("配置错误");
-      expect(card.textContent).not.toContain("配置有误");
+      expect(card.textContent).toContain("Waiting for a key");
+      expect(card.textContent).not.toContain("Configuration error");
+      expect(card.textContent).not.toContain("Invalid configuration");
     });
 
-    it("给出可点击的申请入口", async () => {
+    it("Provides a clickable way to apply for a key", async () => {
       profiles = [preset];
       render(<ModelSettings />);
 
-      const link = screen.getByRole("link", { name: /申请/ });
+      const link = screen.getByRole("link", { name: /Get one/ });
       expect(link.getAttribute("href")).toBe("https://models.example.com");
     });
 
-    it("粘上 key 就走，不必再填别的", async () => {
+    it("Paste the key and go; nothing else to fill in", async () => {
       profiles = [preset];
       const user = userEvent.setup();
       render(<ModelSettings />);
 
-      await user.type(screen.getByLabelText("粘贴 API Key"), "preset-key");
-      await user.click(screen.getByRole("button", { name: "保存 key" }));
+      await user.type(screen.getByLabelText("Paste API Key"), "preset-key");
+      await user.click(screen.getByRole("button", { name: "Save key" }));
 
       expect(update).toHaveBeenCalledWith("preset-1", {
         expected_revision: 1,
@@ -876,54 +987,59 @@ describe("ModelSettings", () => {
       const user = userEvent.setup();
       render(<ModelSettings />);
       await user.type(
-        screen.getByLabelText("粘贴 API Key"),
+        screen.getByLabelText("Paste API Key"),
         "https://keys.example/path",
       );
-      await user.click(screen.getByRole("button", { name: "保存 key" }));
+      await user.click(screen.getByRole("button", { name: "Save key" }));
       expect(
         screen.getByText(
-          "这里需要 API Key，不是网址。请填写服务方提供的密钥。",
+          "This needs an API Key, not a URL. Enter the key provided by the provider.",
         ),
       ).toBeTruthy();
       expect(update).not.toHaveBeenCalled();
     });
 
-    it("预置档案在场也不让自定义变难", async () => {
+    it("A preset profile present must not make customization harder", async () => {
       const user = userEvent.setup();
       profiles = [preset];
       render(<ModelSettings />);
 
-      // 「必须先删掉预置才能新建」这类顺序依赖不许出现。表单现在默认收起，
-      // 但收起不是顺序依赖：一次点开，不用先动预置分毫。
-      await user.click(screen.getByRole("button", { name: "自定义一个模型" }));
-
-      expect(screen.getByLabelText("配置名称")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "保存配置" })).toHaveProperty(
-        "disabled",
-        false,
+      // No ordering dependencies like "delete the preset before creating one" are allowed. The form starts collapsed,
+      // but collapsed is not an ordering dependency: one click opens it without touching the preset.
+      await user.click(
+        screen.getByRole("button", { name: "Add a custom model" }),
       );
-      expect(screen.getByRole("button", { name: "删除这张卡" })).toBeTruthy();
+
+      expect(screen.getByLabelText("Configuration name")).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Save configuration" }),
+      ).toHaveProperty("disabled", false);
+      expect(
+        screen.getByRole("button", { name: "Delete this card" }),
+      ).toBeTruthy();
     });
 
-    it("普通档案不会被当成预置来渲染", () => {
-      // 断言的是「没有以它命名的预置卡片」，而不是「没有出现某句文案」：
-      // 后者在这个档案已有 key 时压根不会出现，测过也测不出东西来。
+    it("A regular profile is not rendered as a preset", () => {
+      // The assertion is that there is no preset card named after it, not that some phrase is absent:
+      // the latter never shows up once this profile has a key, so it would pass without testing anything.
       render(<ModelSettings />);
 
       expect(
         screen.queryByRole("region", { name: "Saved provider" }),
       ).toBeNull();
-      expect(screen.getByRole("button", { name: "测试连接" })).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Test connection" }),
+      ).toBeTruthy();
     });
   });
 });
 
-describe("把一张预置卡设为当前模型", () => {
+describe("Setting a preset card as the current model", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // 粘完 key 之后的样子：key 有了，但从来没探测过，所以能力位全是假。
+    // How it looks after pasting the key: the key is there, but nothing was probed, so all capability flags are false.
     profiles = [{ ...preset, has_api_key: true, revision: 2 }];
     probeProfile.mockResolvedValue({
       profile_id: "preset-1",
@@ -945,17 +1061,17 @@ describe("把一张预置卡设为当前模型", () => {
     render(<ModelSettings />);
 
     // Saving, testing and activation are separate user actions.
-    await user.click(screen.getByRole("button", { name: "测试连接" }));
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
 
     expect(probeProfile).toHaveBeenCalledWith("preset-1");
     expect(activate).not.toHaveBeenCalled();
   });
 
-  it("探测失败就不去启用，也不假装成功", async () => {
+  it("A failed probe neither activates nor fakes success", async () => {
     const user = userEvent.setup();
-    // 真实的 probeProfile 从不抛异常 —— 它把失败吞进 error 再返回 undefined。
-    // 第一版这条测试用 mockRejectedValue 写，于是它守的是一个生产里不存在的
-    // 行为。改成返回一张探测失败的卡，这才是真会发生的那件事。
+    // The real probeProfile never throws; it swallows failures into an error and returns undefined.
+    // The first version of this test used mockRejectedValue, so it guarded behavior that does not exist in production.
+    // Return a card whose probe failed instead; that is what really happens.
     probeProfile.mockResolvedValue({
       profile_id: "preset-1",
       profile_revision: 2,
@@ -969,14 +1085,14 @@ describe("把一张预置卡设为当前模型", () => {
     });
     render(<ModelSettings />);
 
-    await user.click(screen.getByRole("button", { name: "测试连接" }));
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
 
-    // 正向对照：没有这条，上一条可以被「不管探测结果都启用」骗过。
+    // Positive control: without this one, the previous assertion could be fooled by activating regardless of the probe result.
     expect(probeProfile).toHaveBeenCalledWith("preset-1");
     expect(activate).not.toHaveBeenCalled();
   });
 
-  it("余额不足时仍然能换到这份配置，只是不能据此启用生成", async () => {
+  it("With insufficient balance you can still switch to this configuration, it just cannot activate generation", async () => {
     profiles = [
       {
         ...profiles[0],
@@ -1011,11 +1127,11 @@ describe("把一张预置卡设为当前模型", () => {
     render(<ModelSettings />);
     const card = screen.getByRole("region", { name: preset.name });
     await userEvent.click(
-      within(card).getByRole("button", { name: "测试连接" }),
+      within(card).getByRole("button", { name: "Test connection" }),
     );
-    expect(await screen.findByText(/余额不足/)).toBeTruthy();
+    expect(await screen.findByText(/balance is exhausted/)).toBeTruthy();
     await userEvent.click(
-      within(card).getByRole("button", { name: "设为当前模型" }),
+      within(card).getByRole("button", { name: "Set as current model" }),
     );
     expect(activate).toHaveBeenCalledWith("preset-1");
   });
@@ -1035,7 +1151,7 @@ describe("把一张预置卡设为当前模型", () => {
     render(<ModelSettings />);
     const card = screen.getByRole("region", { name: preset.name });
     await userEvent.click(
-      within(card).getByRole("button", { name: "设为当前模型" }),
+      within(card).getByRole("button", { name: "Set as current model" }),
     );
     expect(activate).toHaveBeenCalledWith("preset-1");
     expect(probeProfile).not.toHaveBeenCalled();
@@ -1062,21 +1178,26 @@ it("keeps the form open and explains a 401 under the key input instead of collap
     },
   });
   render(<ModelSettings />);
-  await user.type(screen.getByLabelText("配置名称"), "DeepSeek");
-  await user.type(screen.getByLabelText("生成模型名"), "deepseek-flash");
+  await user.type(screen.getByLabelText("Configuration name"), "DeepSeek");
+  await user.type(
+    screen.getByLabelText("Generation model name"),
+    "deepseek-flash",
+  );
   await user.type(screen.getByLabelText(/^API Key/), "wrong-key");
-  await user.click(screen.getByRole("button", { name: "保存并测试启用" }));
+  await user.click(
+    screen.getByRole("button", { name: "Save, test and activate" }),
+  );
   await act(async () => {});
   await act(async () => {});
   expect(await screen.findByLabelText(/^API Key/)).toBeTruthy();
   expect(
     screen.getByText(
-      "服务商拒绝了这个 API Key（401）。请确认密钥属于当前填写的服务地址。",
+      "The provider rejected this API Key (401). Make sure the key belongs to the service address you entered.",
     ),
   ).toBeTruthy();
   expect((screen.getByLabelText(/^API Key/) as HTMLInputElement).value).toBe(
     "wrong-key",
   );
-  expect(screen.queryByText("已保存，连接通过")).toBeNull();
-  expect(screen.queryByText("已保存，测试未通过")).toBeNull();
+  expect(screen.queryByText("Saved, connection passed")).toBeNull();
+  expect(screen.queryByText("Saved, test failed")).toBeNull();
 });

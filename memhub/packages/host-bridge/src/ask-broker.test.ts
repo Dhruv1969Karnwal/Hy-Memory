@@ -34,7 +34,8 @@ describe("RecallBroker /ask", () => {
         response.setHeader("Content-Type", "application/json");
         response.end(
           JSON.stringify({
-            answer: "现有记忆不足以回答这个问题。",
+            answer:
+              "The existing memories are not enough to answer this question.",
             memories: [],
             mode: "empty",
           }),
@@ -58,7 +59,7 @@ describe("RecallBroker /ask", () => {
     const response = await axios.post(
       `http://127.0.0.1:${broker.port}/ask`,
       {
-        question: "我下周的航班是什么？",
+        question: "What is my flight next week?",
         scope: "all-apps",
         workspace_path: "/tmp/project",
       },
@@ -73,12 +74,12 @@ describe("RecallBroker /ask", () => {
     expect(authorization).toBe("Bearer master-secret");
     expect(readContext).toBe("external");
     expect(coreBody).toEqual({
-      question: "我下周的航班是什么？",
+      question: "What is my flight next week?",
       scope: "all-apps",
       workspace_path: "/tmp/project",
     });
     expect(response.data).toEqual({
-      answer: "现有记忆不足以回答这个问题。",
+      answer: "The existing memories are not enough to answer this question.",
       memories: [],
       mode: "empty",
     });

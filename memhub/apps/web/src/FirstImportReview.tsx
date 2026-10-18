@@ -164,7 +164,7 @@ export function FirstImportReview({
       ids.some((id) =>
         sources.some((source) => source.source_id === id && source.authorized),
       ));
-  const title = "对话正在汇入，记忆从这里开始";
+  const title = "Your conversations are coming in; memory starts here";
   const hostEligible = importHostEligible(sources, ids);
   const draftReady = !!connectionDraft && !!onConnectionDraftChange;
 
@@ -263,7 +263,7 @@ export function FirstImportReview({
       }
       if (mounted.current)
         setActionMessage(
-          `${stopBatch.current ? "已停止后续操作；已发出的操作仍按回执核对。" : ""}已确认 ${confirmed} 项，${failed} 项未确认。${failed ? "已确认项保留，请核对未确认任务后重试。" : ""}`,
+          `${stopBatch.current ? "Later actions stopped; operations already sent are still checked against receipts. " : ""}Confirmed ${confirmed}, ${failed} unconfirmed.${failed ? "Confirmed items are kept. Check the unconfirmed tasks and retry." : ""}`,
         );
     } finally {
       batchFlight.current = false;
@@ -275,34 +275,34 @@ export function FirstImportReview({
     <R6ColdStartFrame
       step={2}
       title={title}
-      eyebrow="导入进行中 · 顺手连接应用"
+      eyebrow="Import in progress - connect your apps while you wait"
       footer={
         <>
           <div className="first-import-r6-footer-note">
             <p>
               {allCompleted
-                ? "对话已保存，记忆尚待生成。"
+                ? "Conversations are saved; memory still needs to be generated."
                 : displayImporting
-                  ? "导入在后台继续，无需等待。"
+                  ? "The import continues in the background. No need to wait."
                   : stale
-                    ? "正在重新核对来源；已保存数量仍按任务回执显示。"
+                    ? "Re-checking sources; saved counts still follow task receipts."
                     : allPaused
-                      ? "本次历史导入已暂停，已保存的对话还在。"
-                      : "导入等待处理，已保存的对话还在。"}
+                      ? "This history import is paused. Saved conversations are still here."
+                      : "The import is waiting to run. Saved conversations are still here."}
             </p>
             {(error || actionMessage) && (
               <p
                 role={
-                  error?.includes("应用连接") ||
-                  error?.includes("成功设置已保留")
+                  error?.includes("app connection") ||
+                  error?.includes("successful settings are kept")
                     ? "status"
                     : error
                       ? "alert"
                       : "status"
                 }
                 className={
-                  error?.includes("应用连接") ||
-                  error?.includes("成功设置已保留")
+                  error?.includes("app connection") ||
+                  error?.includes("successful settings are kept")
                     ? "first-import-r6-partial-success"
                     : undefined
                 }
@@ -318,7 +318,7 @@ export function FirstImportReview({
                   stopBatch.current = true;
                 }}
               >
-                停止后续操作
+                Stop later actions
               </R6Button>
             ) : onChangeJob && (canPause || canResume) ? (
               <R6Button
@@ -330,7 +330,7 @@ export function FirstImportReview({
                 ) : (
                   <Play size={16} aria-hidden="true" />
                 )}
-                {canPause ? "暂停导入" : "继续导入"}
+                {canPause ? "Pause import" : "Resume import"}
               </R6Button>
             ) : null}
             {recovery ? (
@@ -343,17 +343,17 @@ export function FirstImportReview({
                   }}
                 >
                   {recovery.destination === "sources"
-                    ? "仍进入应用页"
+                    ? "Go to apps anyway"
                     : recovery.destination === "settings"
-                      ? "仍进入设置"
-                      : "仍进入工作台"}
+                      ? "Go to settings anyway"
+                      : "Go to workspace anyway"}
                 </R6Button>
                 <R6Button
                   variant="primary"
                   disabled={busy}
                   onClick={() => leave(recovery.destination)}
                 >
-                  重试保存并进入
+                  Retry save and continue
                 </R6Button>
               </>
             ) : (
@@ -362,7 +362,7 @@ export function FirstImportReview({
                 disabled={busy}
                 onClick={() => leave("settings")}
               >
-                配置模型，沉淀记忆
+                Configure a model to build memory
               </R6Button>
             )}
           </div>
@@ -370,19 +370,24 @@ export function FirstImportReview({
       }
     >
       <div className="first-import-r6-layout">
-        <section className="first-import-r6-main" aria-label="导入与原文">
+        <section
+          className="first-import-r6-main"
+          aria-label="Import and source text"
+        >
           <p className="first-import-r6-intro">
             {allCompleted
-              ? "本次导入已结束。已保存的对话无需重复导入。"
-              : "对话先保存在本机。你可以同时设置后续连接。"}
+              ? "This import is finished. Saved conversations do not need to be imported again."
+              : "Conversations are saved on this machine first. You can set up the follow-up connections at the same time."}
           </p>
           <p className="first-import-r6-subintro">
-            导入不会自动开放应用读取权限。配置模型后，才会开始生成记忆。
+            Importing does not grant app read access by itself. Memory
+            generation starts only after a model is configured.
           </p>
           {historyWindowLimited && (
             <p className="first-import-r6-history-window" role="status">
-              检测到会话数据量较大。为控制用量并保持各应用时间线一致，本次所有应用仅导入最近
-              3 天的对话。
+              The conversation data set is large. To control usage and keep app
+              timelines aligned, this run imports only the last 3 days of
+              conversations for all apps.
             </p>
           )}
           <R6ImportProgress
@@ -391,21 +396,23 @@ export function FirstImportReview({
             jobs={batch}
             stale={progressStale}
           />
-          <section className="first-import-r6-feed" aria-label="导入说明">
-            <h2>正在导入你的会话</h2>
+          <section className="first-import-r6-feed" aria-label="Import notes">
+            <h2>Importing your conversations</h2>
             <p className="first-import-r6-feed-status">
-              后台将持续为你导入，可以放心进入下一步
+              The background keeps importing; you can safely move to the next
+              step
             </p>
             {Object.keys(failedSources).length > 0 && (
               <section
                 className="first-import-r6-failures"
-                aria-label="未开始的导入"
+                aria-label="Imports that never started"
               >
                 {Object.keys(failedSources).map((id) => (
                   <p key={id}>
                     {sources.find((source) => source.source_id === id)
                       ?.display_name ?? id}{" "}
-                    未能开始导入，其他已接受任务不受影响。
+                    failed to start importing; other accepted tasks are
+                    unaffected.
                   </p>
                 ))}
                 <R6Button
@@ -413,26 +420,28 @@ export function FirstImportReview({
                   disabled={busy}
                   onClick={() => leave("sources")}
                 >
-                  查看未导入的应用
+                  View apps not imported
                 </R6Button>
               </section>
             )}
           </section>
         </section>
-        <aside className="first-import-r6-options" aria-label="连接应用">
-          <p className="first-import-r6-eyebrow">让记忆继续生长</p>
-          <h2>连接你的应用</h2>
+        <aside className="first-import-r6-options" aria-label="Connect apps">
+          <p className="first-import-r6-eyebrow">Keep memory growing</p>
+          <h2>Connect your apps</h2>
           <p className="first-import-r6-options-intro">
-            适用于本次选择且支持的应用。
+            Applies to the supported apps selected in this run.
           </p>
           <SelectionTile
             title={
-              hostConnectionAvailable ? "一键接入应用" : "测试实例不接入应用"
+              hostConnectionAvailable
+                ? "Connect apps in one click"
+                : "Test instance does not connect apps"
             }
             body={
               hostConnectionAvailable
-                ? "安装记忆连接，让所选应用用上 MemHub 中的相关记忆。"
-                : "当前使用独立测试数据目录，不会修改本机应用的连接配置。"
+                ? "Installs a memory connection so the selected apps can use relevant memories from MemHub."
+                : "A separate test data directory is in use, so local app connection config is not modified."
             }
             checked={
               hostConnectionAvailable &&
@@ -460,8 +469,8 @@ export function FirstImportReview({
           )}
           <p className="first-import-r6-options-note">
             {draftReady
-              ? "点击底部按钮后，后台分别接入各应用；某个应用失败不影响其他应用。"
-              : "暂时无法连接应用，当前不会安装连接。"}
+              ? "After you press the bottom button, the background connects each app separately; one app failing does not affect the others."
+              : "Apps cannot be connected right now; no connection is installed."}
           </p>
         </aside>
       </div>

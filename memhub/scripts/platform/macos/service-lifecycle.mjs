@@ -322,7 +322,7 @@ async function appBundleChecks(appPath) {
   //    SMAppService.agent / setLoginItemSettings({type:"agentService"}). The
   //    current repo has no such call, so this is a latent second-registration
   //    path, not live behavior. It still violates the contract clause
-  //    "不能两份同时注册" and contradicts login-item.ts's own comment, so the
+  //    "never two registrations at once" and contradicts login-item.ts's own comment, so the
   //    bundle must not ship it. This check asserts the bundle fact only -- it
   //    does not claim launchd loads it.
   const agentsDir = path.join(contents, "Library", "LaunchAgents");
@@ -2187,7 +2187,7 @@ async function main() {
 
         // The product rule has two branches, and both must be honest:
         //   - `degraded` is REQUIRED only when the outer Runtime process outlives
-        //     its Core ("外层存活但 Core/Broker 失败");
+        //     its Core ("outer process alive but Core/Broker failed");
         //   - `stopped` is correct when the Core's death also took the outer
         //     process down, because then nothing is alive to be degraded.
         // C8 correctly flagged the earlier version: it passed purely because a

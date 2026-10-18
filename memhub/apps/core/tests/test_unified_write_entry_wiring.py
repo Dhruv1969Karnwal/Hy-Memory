@@ -239,7 +239,7 @@ def test_manual_note_creates_one_durable_row_and_replays_idempotently(
             request_id = str(uuid4())
             created = await client.post(
                 "/api/v1/memory-notes",
-                json={"request_id": request_id, "text": "记住这条", "scope": "all-apps"},
+                json={"request_id": request_id, "text": "Remember this", "scope": "all-apps"},
             )
             assert created.status_code == 201
             evidence_id = created.json()["evidence_id"]

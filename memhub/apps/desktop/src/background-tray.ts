@@ -44,26 +44,26 @@ export function installBackgroundTray(options: TrayOptions): () => void {
     const current = ++generation;
     let checked = false;
     let enabled = app.isPackaged && options.allowLoginStartup !== false;
-    let label = `登录时启动 ${productName}`;
+    let label = `Start ${productName} at login`;
     if (options.allowLoginStartup === false) {
-      label += "（阶段包不可用）";
+      label += " (unavailable in the staged package)";
     } else if (app.isPackaged) {
       try {
         const state = await options.readLoginPreference();
         if (disposed || current !== generation) return;
         checked = state.enabled;
         enabled = state.supported;
-        if (state.status === "managed-by-cli") label += "（由 CLI 管理）";
+        if (state.status === "managed-by-cli") label += " (managed by CLI)";
       } catch {
-        label += "（状态不可用）";
+        label += " (status unavailable)";
         enabled = false;
       }
     } else {
-      label += "（开发模式不可用）";
+      label += " (unavailable in development mode)";
     }
     tray.setContextMenu(
       options.buildMenu([
-        { label: `打开 ${productName}`, click: options.open },
+        { label: `Open ${productName}`, click: options.open },
         {
           label,
           type: "checkbox",
@@ -74,14 +74,16 @@ export function installBackgroundTray(options: TrayOptions): () => void {
             void options
               .setLoginPreference(item.checked)
               .catch(() =>
-                options.reportError("无法更改登录启动设置，请重试。"),
+                options.reportError(
+                  "The login startup setting could not be changed; retry.",
+                ),
               )
               .finally(() => void refresh());
           },
         },
         { type: "separator" },
         {
-          label: `退出 ${productName}（后台服务继续运行）`,
+          label: `Quit ${productName} (the background service keeps running)`,
           click: () => {
             if (!disposed) app.quit();
           },

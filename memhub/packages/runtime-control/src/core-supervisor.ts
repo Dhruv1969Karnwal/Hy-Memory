@@ -157,7 +157,9 @@ async function readCoreReceipt(dataDir: string): Promise<CoreReceipt | null> {
     parent_pid:
       typeof record.parent_pid === "number" ? record.parent_pid : null,
     started_at:
-      typeof record.started_at === "string" ? record.started_at : "未知时间",
+      typeof record.started_at === "string"
+        ? record.started_at
+        : "Unknown time",
   };
 }
 
@@ -438,7 +440,7 @@ export class CoreSupervisor {
     } catch (error) {
       if (!(error instanceof RuntimeDiscoveryError)) throw error;
       throw new Error(
-        "无法验证正在运行的 MemHub Core。请先用 one-memory doctor 检查它。",
+        "Cannot verify the running MemHub Core. Check it with one-memory doctor first.",
         { cause: error },
       );
     }
@@ -464,14 +466,14 @@ export class CoreSupervisor {
     // killing that would be taking something we were not given.
     if (receipt.parent_pid === null || processIsAlive(receipt.parent_pid)) {
       return (
-        `另一个 MemHub Core 正在使用同一份数据（进程 ${receipt.pid}，` +
-        `启动于 ${receipt.started_at}）。请先退出它，再打开 MemHub。`
+        `Another MemHub Core is using the same data (process ${receipt.pid}, ` +
+        `started at ${receipt.started_at}). Quit it before opening MemHub.`
       );
     }
     await terminateProcess(receipt.pid, this.options.shutdownTimeoutMs);
     return processIsAlive(receipt.pid)
-      ? `无法结束上一次运行残留的 MemHub Core（进程 ${receipt.pid}）。` +
-          "请手动结束该进程后重试。"
+      ? `The MemHub Core left over from the last run could not be ended (process ${receipt.pid}). ` +
+          "End that process by hand and retry."
       : "cleared";
   }
 

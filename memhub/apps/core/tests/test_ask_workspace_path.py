@@ -39,7 +39,7 @@ def test_ask_with_workspace_path_can_ground_on_project_memory(tmp_path) -> None:
             correlation_id="message",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="项目决定使用本地优先架构。",
+            verbatim="The project decided to use a local-first architecture.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -60,18 +60,18 @@ def test_ask_with_workspace_path_can_ground_on_project_memory(tmp_path) -> None:
         resolve_workspace=lambda _path: ("workspace:v1:project",),
     )
 
-    refused = asyncio.run(answerer.answer("项目采用什么架构？"))
+    refused = asyncio.run(answerer.answer("What architecture does the project use?"))
     assert refused.mode == "empty"
 
     grounded = asyncio.run(
         answerer.answer(
-            "项目采用什么架构？",
+            "What architecture does the project use?",
             workspace_path="/Users/example/hy-memory-admin",
         )
     )
     assert grounded.mode == "extractive"
-    assert grounded.memories[0].content == "项目决定使用本地优先架构。"
-    assert "本地优先" in grounded.answer
+    assert grounded.memories[0].content == "The project decided to use a local-first architecture."
+    assert "local-first" in grounded.answer
 
 
 def test_ask_does_not_invent_answer_when_workspace_path_misses(tmp_path) -> None:
@@ -84,9 +84,9 @@ def test_ask_does_not_invent_answer_when_workspace_path_misses(tmp_path) -> None
     )
     result = asyncio.run(
         answerer.answer(
-            "我下周的航班是什么？",
+            "What is my flight next week?",
             workspace_path="/tmp/elsewhere",
         )
     )
-    assert result.answer == "现有记忆不足以回答这个问题。"
+    assert result.answer == "The available memories are not enough to answer this question."
     assert result.mode == "empty"

@@ -66,21 +66,29 @@ class MemoryBatchExtractor:
                 {
                     "role": "system",
                     "content": (
-                        "你是高精度个人记忆抽取器。输入是多条相互独立的真人原话。"
-                        "每条原话最多输出一条长期有用记忆，也可以不输出。禁止把任务要求、"
-                        "临时上下文、问题、助手行为或推测写成记忆。content 必须自包含、"
-                        "与输入同语言，中文以“用户”开头，英文以“The user”开头，"
-                        "不超过160字符。support_quote 必须从对应 verbatim 中逐字复制"
-                        "2到120字符，不能改写；没有可直接引用的证据就不要输出。"
-                        "evidence_id 必须原样复制输入 id。"
-                        "layer 只能是 L0_BASIC_INFO、L2_FACT、L4_IDENTITY、"
-                        "L7_INTENTION。输出严格 JSON："
-                        '{"memories":[{"evidence_id":"...","support_quote":"原文",'
+                        "You are a high-precision personal memory extractor. The input is several "
+                        "independent real person quotes. "
+                        "Emit at most one long-term useful memory per quote, or none at all. "
+                        "Never write a task request, "
+                        "temporary context, a question, assistant behaviour or a guess as a "
+                        "memory. content must be self-contained, "
+                        "in the language of the input, starting with 'The user' in English and "
+                        "the Chinese equivalent of user otherwise, "
+                        "and at most 160 characters. support_quote must be copied verbatim from "
+                        "the matching verbatim for "
+                        "2 to 120 characters with no rewriting; emit nothing when there is no "
+                        "directly citable evidence. "
+                        "evidence_id must copy the input id exactly. "
+                        "layer may only be L0_BASIC_INFO, L2_FACT, L4_IDENTITY or "
+                        "L7_INTENTION. Output strict JSON: "
+                        '{"memories":[{"evidence_id":"...","support_quote":"source text",'
                         '"content":"...",'
-                        '"layer":"L2_FACT"}]}。'
-                        "负例：“帮我调研一下 X”“Can you review this?”“我需要你修改页面”"
-                        "都是任务，不是个人记忆。正例：“我一直偏好简洁回答”可以提取，"
-                        "support_quote 必须是“我一直偏好简洁回答”。"
+                        '"layer":"L2_FACT"}]}\u3002'
+                        "Negative examples: 'research X for me', 'Can you review this?' and 'I "
+                        "need you to change the page' "
+                        "are tasks, not personal memories. Positive example: 'I have always "
+                        "preferred concise answers' can be extracted, "
+                        "and its support_quote must be 'I have always preferred concise answers'."
                     ),
                 },
                 {

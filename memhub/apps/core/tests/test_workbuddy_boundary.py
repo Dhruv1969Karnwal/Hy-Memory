@@ -43,7 +43,7 @@ def _ready(tmp_path, native_id: str = "child-session"):
                 message_id="m1",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim="接口改成按会话拉",
+                verbatim="Pull the API by conversation",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata(raw_meta={"root": "proj"})},
             ),
             connection=db,
@@ -76,7 +76,7 @@ def test_session_start_and_prompt_submit_carry_context_stop_does_not(tmp_path) -
                 message_id="m2",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim="再补一条",
+                verbatim="Add one more",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata(raw_meta={"root": "proj"})},
             ),
             connection=db,
@@ -98,7 +98,7 @@ def test_session_start_and_prompt_submit_carry_context_stop_does_not(tmp_path) -
         assert isinstance(context, str)
         assert PREFACE in context
         assert "om-derived:" in context
-        assert "来源 codex" in context
+        assert "\u6765\u6e90 codex" in context
         assert "continueRequest" not in body
     assert quiet == {"continue": True}
     assert stopped == {"continue": True}
@@ -248,7 +248,7 @@ def test_a_confirmed_peek_does_not_come_back_and_later_notices_still_do(
     assert len(delivered) == 1 and token is not None
     assert _ack(monkeypatch, path, token) == 0
     assert _peek(monkeypatch, path) == ([], None)
-    _codex_says(store, path, "m2", "再补一条")
+    _codex_says(store, path, "m2", "Add one more")
     later, _token = _peek(monkeypatch, path)
     assert len(later) == 1
     assert later != delivered
@@ -257,7 +257,7 @@ def test_a_confirmed_peek_does_not_come_back_and_later_notices_still_do(
 def test_confirming_moves_only_to_what_that_peek_handed_over(tmp_path, monkeypatch) -> None:
     path, store = _ready(tmp_path)
     handed, token = _peek(monkeypatch, path)
-    _codex_says(store, path, "m2", "peek 之后才到")
+    _codex_says(store, path, "m2", "arrived after the peek")
     assert token is not None
     assert _ack(monkeypatch, path, token) == 0
     after, _token = _peek(monkeypatch, path)
@@ -272,7 +272,7 @@ def test_two_rounds_confirming_out_of_order_do_not_pull_each_other_back(
         (tmp_path / order).mkdir()
         path, store = _ready(tmp_path / order)
         early, early_token = _peek(monkeypatch, path)
-        _codex_says(store, path, "m2", "第二条")
+        _codex_says(store, path, "m2", "the second one")
         late, late_token = _peek(monkeypatch, path)
         assert len(early) == 1 and len(late) == 2 and late[0] == early[0]
         assert early_token is not None and late_token is not None
@@ -280,7 +280,7 @@ def test_two_rounds_confirming_out_of_order_do_not_pull_each_other_back(
         for token in tokens:
             assert _ack(monkeypatch, path, token) == 0
         assert _peek(monkeypatch, path) == ([], None), order
-        _codex_says(store, path, "m3", "第三条")
+        _codex_says(store, path, "m3", "the third one")
         newest, _token = _peek(monkeypatch, path)
         assert len(newest) == 1 and newest[0] not in late, order
 
@@ -362,7 +362,7 @@ def test_a_pull_reads_grants_events_and_epoch_from_one_snapshot(tmp_path) -> Non
     path, store = _ready(tmp_path)
     session_key = SessionRegistry(path).matching_native("workbuddy", "child-session")[0].session_key
     first = SessionInbox(path).pull(session_key, None, 8)
-    _codex_says(store, path, "m2", "第二条")
+    _codex_says(store, path, "m2", "the second one")
     original = SessionInbox._events
     revoked = []
 
@@ -405,7 +405,7 @@ def test_a_confirm_racing_another_process_does_not_move_the_cursor_back(
     session_key = SessionRegistry(path).matching_native("workbuddy", "child-session")[0].session_key
     inbox = SessionInbox(path)
     early = inbox.peek(session_key, 8).position
-    _codex_says(store, path, "m2", "第二条")
+    _codex_says(store, path, "m2", "the second one")
     late = inbox.peek(session_key, 8).position
     assert early.event_id != late.event_id
 

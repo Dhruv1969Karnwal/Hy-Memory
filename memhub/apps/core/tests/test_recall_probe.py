@@ -7,7 +7,7 @@ query is answered by core itself.
 
 Answering it by searching would also make the self-check cost an embedding
 call and leave the probe's own words in whatever records real recalls, which
-R-24's 探针不污染 and R-10 both forbid.
+R-24's probe-leaves-no-trace and R-10 both forbid.
 """
 
 import asyncio
@@ -31,11 +31,11 @@ def _target(tmp_path, *, semantic_search=None) -> GovernedRecallTarget:
             message_id="message",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="我偏好深色主题。",
+            verbatim="I prefer a dark theme.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
-    content = "用户偏好深色主题"
+    content = "The user prefers a dark theme"
     key = hashlib.sha256(content.encode()).hexdigest()
     as_person(governance).create(
         MemoryDraft(
@@ -110,7 +110,7 @@ def test_the_self_check_answer_carries_no_real_memory(tmp_path) -> None:
     receipt = asyncio.run(target.recall_async(RecallRequest(query=PROBE_QUERY)))
 
     (hit,) = receipt.hits
-    assert "用户偏好深色主题" not in hit.content
+    assert "The user prefers a dark theme" not in hit.content
     assert hit.memory_id == ""
 
 
@@ -124,7 +124,7 @@ def test_only_that_exact_query_is_answered_this_way(tmp_path) -> None:
     target = _target(tmp_path)
 
     for near_miss in (
-        f"{PROBE_QUERY} 用户偏好",
+        f"{PROBE_QUERY} user preference",
         f"tell me about {PROBE_QUERY}",
         PROBE_QUERY.upper(),
         PROBE_QUERY.strip("_"),

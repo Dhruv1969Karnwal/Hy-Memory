@@ -36,8 +36,11 @@ CODING_SEARCH_REPLY: Mapping[str, object] = {
     "request_id": "req-1",
     "scene": "productivity",
     "coding_memories": [
-        {"memory_id": "coding-1", "content": "用户在 recall.py 里用过滤下推替换了内存过滤"},
-        {"memory_id": "coding-2", "content": "用户的分页上限是 500"},
+        {
+            "memory_id": "coding-1",
+            "content": "The user replaced in-memory filtering with filter pushdown in recall.py",
+        },
+        {"memory_id": "coding-2", "content": "The user's pagination limit is 500"},
     ],
     "elapsed_ms": 12.0,
 }
@@ -98,7 +101,7 @@ def _bridge(client, tmp_path) -> HyMemoryBridge:
 def test_a_coding_shaped_search_reply_is_not_read_as_no_memories(tmp_path) -> None:
     bridge = _bridge(CodingSceneClient(), tmp_path)
 
-    found = asyncio.run(bridge.search_ids(query="过滤下推", user_id="local", agent_id="*"))
+    found = asyncio.run(bridge.search_ids(query="filter pushdown", user_id="local", agent_id="*"))
 
     assert found == ("coding-1", "coding-2")
 
@@ -121,7 +124,7 @@ def test_an_unrecognised_search_reply_is_an_error_not_an_empty_recall(tmp_path) 
     bridge = _bridge(CodingSceneClient(search_reply={"request_id": "req-2"}), tmp_path)
 
     with pytest.raises(HyMemoryBridgeError):
-        asyncio.run(bridge.search_ids(query="过滤下推", user_id="local", agent_id="*"))
+        asyncio.run(bridge.search_ids(query="filter pushdown", user_id="local", agent_id="*"))
 
 
 def test_an_unrecognised_listing_is_an_error_too(tmp_path) -> None:
@@ -173,7 +176,7 @@ def test_the_three_channels_hy_actually_returns_are_all_read(tmp_path) -> None:
     """
     bridge = _bridge(CodingSceneClient(search_reply=THREE_CHANNEL_REPLY), tmp_path)
 
-    found = asyncio.run(bridge.search_ids(query="花名", user_id="local", agent_id="*"))
+    found = asyncio.run(bridge.search_ids(query="nickname", user_id="local", agent_id="*"))
 
     assert set(found) == {"fact-1", "schema-1", "fact-2", "intention-1"}
 
@@ -189,7 +192,7 @@ def test_the_channels_are_merged_in_hys_own_order_not_ours(tmp_path) -> None:
     """
     bridge = _bridge(CodingSceneClient(search_reply=THREE_CHANNEL_REPLY), tmp_path)
 
-    found = asyncio.run(bridge.search_ids(query="花名", user_id="local", agent_id="*"))
+    found = asyncio.run(bridge.search_ids(query="nickname", user_id="local", agent_id="*"))
 
     assert found == ("fact-1", "schema-1", "fact-2", "intention-1")
 
@@ -198,7 +201,7 @@ def test_search_scores_carries_hys_relevance(tmp_path) -> None:
     """D102: the score is what lets recall blend the two lanes by relevance."""
     bridge = _bridge(CodingSceneClient(search_reply=THREE_CHANNEL_REPLY), tmp_path)
 
-    found = asyncio.run(bridge.search_scores(query="花名", user_id="local", agent_id="*"))
+    found = asyncio.run(bridge.search_scores(query="nickname", user_id="local", agent_id="*"))
 
     assert found == (
         ("fact-1", 0.88),
@@ -219,7 +222,7 @@ def test_a_failed_hy_search_is_not_an_error_here_but_is_still_empty(tmp_path) ->
     """
     bridge = _bridge(CodingSceneClient(search_reply=FAILED_SEARCH_REPLY), tmp_path)
 
-    assert asyncio.run(bridge.search_ids(query="花名", user_id="local", agent_id="*")) == ()
+    assert asyncio.run(bridge.search_ids(query="nickname", user_id="local", agent_id="*")) == ()
 
 
 def test_the_chat_shape_still_reads_the_same(tmp_path) -> None:
@@ -235,7 +238,7 @@ def test_the_chat_shape_still_reads_the_same(tmp_path) -> None:
     )
     bridge = _bridge(chat_client, tmp_path)
 
-    assert asyncio.run(bridge.search_ids(query="花名", user_id="local", agent_id="*")) == (
+    assert asyncio.run(bridge.search_ids(query="nickname", user_id="local", agent_id="*")) == (
         "chat-1",
         "chat-2",
     )
@@ -250,7 +253,7 @@ def test_an_empty_chat_reply_is_still_just_empty(tmp_path) -> None:
         tmp_path,
     )
 
-    assert asyncio.run(bridge.search_ids(query="花名", user_id="local", agent_id="*")) == ()
+    assert asyncio.run(bridge.search_ids(query="nickname", user_id="local", agent_id="*")) == ()
     assert asyncio.run(bridge.list_agent_ids(user_id="local")) == ()
 
 

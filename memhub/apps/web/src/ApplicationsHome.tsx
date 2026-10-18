@@ -53,15 +53,15 @@ type HomeViewState = {
 // The import controller outlives detail routes; a new App owner gets a fresh view.
 // Keep only presentation state, never API data, DOM nodes or running animations.
 /**
- * D96 第 4 点：调用记录详情先不对外。首页“最近调用”照常显示，只隐藏进入
- * 记录页的入口；`CallHistory.tsx` 和接口不动。不能靠不传 `onCalls` 来隐藏：
- * 首页用它是否存在来决定要不要拉最近调用。
+ * D96 item 4: the home "Recent calls" block stays as usual; only the entry into
+ * the record page hides. `CallHistory.tsx` and the API are untouched. `onCalls`
+ * must stay: the home page uses its presence to decide whether to fetch recent calls.
  */
 export const CALL_HISTORY_ENTRY_VISIBLE = false;
 
-// 2026-10-12: Codex 侧曾把 MCP 调试帧（如 `[write_stdout] {"chars":…`）存成
-// 对话摘要，首页“最近更新”会原样露出机器文本。展示层拦掉这类帧，宁可退回
-// 显示记忆或空态，也不把协议帧当动态内容。
+// 2026-10-12: the Codex side once stored MCP debug frames like `[write_stdout] {"chars":...`
+// as conversation summaries, so the home "Recent updates" exposed raw machine text. The
+// presentation layer filters those frames out and prefers falling back to memories or the empty state over treating protocol frames as activity.
 const DEBUG_FRAME_PREFIX = /^\s*\[(?:write_stdout|write_stderr|read_request)\b/;
 function presentableDialogue(text: string): boolean {
   return !DEBUG_FRAME_PREFIX.test(text);
@@ -88,14 +88,14 @@ function clockParts(value: string) {
 
 function stamped(value: string, suffix = "") {
   const parts = clockParts(value);
-  if (!parts) return `时间未知${suffix}`;
-  return `${parts.today ? "今天 " : ""}${parts.clock}${suffix}`;
+  if (!parts) return `Time unknown${suffix}`;
+  return `${parts.today ? "Today " : ""}${parts.clock}${suffix}`;
 }
 
 function memoryAction(action: string | undefined) {
-  if (action === "create") return "新增记忆";
-  if (action === "correct" || action === "restore") return "更新记忆";
-  return "记忆已保存";
+  if (action === "create") return "Memory added";
+  if (action === "correct" || action === "restore") return "Memory updated";
+  return "Memory saved";
 }
 
 type ActivityChoice = "call" | "update";
@@ -136,21 +136,21 @@ function sourceActivity(
   events: CallEvent[],
   callHistoryUnavailable = false,
 ): string {
-  if (!source.authorized) return "尚未关联";
+  if (!source.authorized) return "Not linked";
   const latest = events.find(
     (item) =>
       successfulCall(item) && sourceMatchesHost(source.source_id, item.host_id),
   );
   if (!latest) return "";
   const time = stamped(latest.occurred_at);
-  const prefix = callHistoryUnavailable ? "上次读取：" : "";
+  const prefix = callHistoryUnavailable ? "Last read: " : "";
   return `${prefix}${callDetailHeadline(latest, source.display_name)} · ${time}`;
 }
 
 function sourceSyncActivity(sourceId: string, sync: LiveSyncHealth[]): string {
   const current = sync.find((item) => item.source_id === sourceId);
   return current?.last_success_at
-    ? `最近同步 ${stamped(current.last_success_at)}`
+    ? `Last sync ${stamped(current.last_success_at)}`
     : "";
 }
 
@@ -174,7 +174,7 @@ export function ApplicationsHome({
   imports: ReturnType<typeof useImportSources>;
   onManage(sourceId?: string): void;
   onMemories(memoryId?: string): void;
-  /** 保留兼容旧调用方；“查看会话”入口已按产品要求下线。 */
+  /** Kept for older callers; the "View conversation" entry was retired as required by product. */
   onConversations?(): void;
   onSettings?(): void;
   onCalls?(): void;
@@ -559,8 +559,8 @@ export function ApplicationsHome({
       if (stopped) return;
       if (home.status === "fulfilled") {
         setFailed(false);
-        // stale=true 表示这轮读取超时，数字不代表现状：保留上一次的概览，
-        // 等 10 秒后的下一轮轮询补上，绝不清零也不报错。
+        // stale=true means this read timed out and its numbers do not describe the present:
+        // keep the previous overview, let the next poll 10 seconds later fill it in, never reset to zero or report an error.
         if (!home.value.stale) setSummary(home.value);
       } else {
         setFailed(true);
@@ -652,20 +652,20 @@ export function ApplicationsHome({
     (s) => s.authorized || s.detected === true || s.location_state === "found",
   );
   const stateLabel = processing?.running
-    ? "整理中"
+    ? "Organizing"
     : processing?.blocked_stages?.some((stage) => stage.count > 0)
-      ? "排队处理中"
+      ? "Queued for processing"
       : processing?.waiting_for_model
-        ? "等待模型"
+        ? "Waiting for the model"
         : processing?.failed
-          ? "需要处理"
+          ? "Needs attention"
           : processing?.pending
-            ? "准备中"
+            ? "Preparing"
             : processing
-              ? "一切就绪"
-              : "待核对";
+              ? "All set"
+              : "Pending verification";
   const latestClock = latest ? clockParts(latest.updated_at) : null;
-  const time = latestClock?.clock ?? (latest ? "时间未知" : null);
+  const time = latestClock?.clock ?? (latest ? "Time unknown" : null);
   const checked = visible ? clockParts(visible.observed_at) : null;
   // A failed read leaves the last health in place on purpose: clearing it would
   // drop the instance it names, and that instance is what keeps memory writes
@@ -682,20 +682,20 @@ export function ApplicationsHome({
     (!hostBridge && hostState !== "ready") ||
     (admitted === 0 && hostApplyPending(auto, preferences.hostSourceIds));
   const accessText = accessPending
-    ? "正在核对中"
+    ? "Verifying"
     : hostReadFailed
-      ? "待核对"
+      ? "Pending verification"
       : !unchecked.length
-        ? `${admitted} 个应用已接入`
+        ? `${admitted} apps connected`
         : admitted
-          ? `${admitted} 个应用已接入，${unchecked.length} 个待核对`
-          : `${unchecked.length} 个应用待核对`;
+          ? `${admitted} apps connected, ${unchecked.length} pending verification`
+          : `${unchecked.length} apps pending verification`;
   const accessUnknownText = accessPending
     ? null
     : hostReadFailed
-      ? "应用接入状态暂时没有读到，无法确认有几个应用已接入。"
+      ? "App connection status could not be read right now, so the number of connected apps cannot be confirmed."
       : unchecked.length
-        ? `${unchecked.map((host) => host.label).join("、")} 的记忆权限暂时没有读到，无法确认是否已接入。`
+        ? `The memory permission for ${unchecked.map((host) => host.label).join(", ")} could not be read right now, so the connection cannot be confirmed.`
         : null;
   async function restartBackground() {
     if (restartingBackground) return;
@@ -735,8 +735,8 @@ export function ApplicationsHome({
   const autoFailureText = autoFailures
     .map((failure) =>
       failure.kind === "host"
-        ? `${nameOf(failure.sourceId)} 未能自动接入${failure.reason ? `：${failure.reason}` : ""}。`
-        : `${nameOf(failure.sourceId)} 的持续同步未能自动开启。${failure.reason ?? ""}`,
+        ? `${nameOf(failure.sourceId)} could not be connected automatically${failure.reason ? `: ${failure.reason}` : ""}.`
+        : `Continuous sync for ${nameOf(failure.sourceId)} did not turn on automatically. ${failure.reason ?? ""}`,
     )
     .join("");
   const authorizedSyncSources = imports.sources.filter(
@@ -747,12 +747,12 @@ export function ApplicationsHome({
     (failure) => failure.kind === "sync",
   );
   const syncState = authorizedSyncSources.length
-    ? `${authorizedSyncSources.length} 个应用已开启`
+    ? `${authorizedSyncSources.length} apps enabled`
     : syncApplyFailed
-      ? "未能开启"
+      ? "Not enabled"
       : wantsSync || !visible
-        ? "正在检查状态"
-        : "尚未开启";
+        ? "Checking status"
+        : "Not enabled yet";
   function toggleAll(next: boolean) {
     transition.current(next);
   }
@@ -760,7 +760,7 @@ export function ApplicationsHome({
     <section
       className="r6-home"
       ref={root}
-      aria-label="应用首页"
+      aria-label="App home"
       data-expanded={expanded}
       data-phase={phase}
       onFocusCapture={(event) => {
@@ -769,7 +769,7 @@ export function ApplicationsHome({
       }}
     >
       <header className="r6-home-heading">
-        <h1>{expanded ? "全部应用" : "应用"}</h1>
+        <h1>{expanded ? "All apps" : "Apps"}</h1>
       </header>
       <button
         type="button"
@@ -782,7 +782,7 @@ export function ApplicationsHome({
       >
         <span className="r6-button-label">
           <ArrowLeft size={16} aria-hidden="true" />
-          返回首页
+          Back to home
         </span>
       </button>
       <div
@@ -791,20 +791,20 @@ export function ApplicationsHome({
         hidden={expanded}
         inert={expanded || phase !== "idle"}
       >
-        <HomeCardBoundary label="记忆概览">
-          <section className="r6-home-overview" aria-label="记忆概览">
+        <HomeCardBoundary label="Memory overview">
+          <section className="r6-home-overview" aria-label="Memory overview">
             <header>
-              <h2>记忆概览</h2>
+              <h2>Memory overview</h2>
             </header>
             <div className="r6-home-metrics">
               <div>
-                <p>已沉淀记忆</p>
-                {/* The figure slot used to hold the word 读取中 while the first
-                  read was in flight, which is how "大数字不可见" (D51) shows up
+                <p>Memories distilled</p>
+                {/* The figure slot used to hold the word "Loading" while the first
+                  read was in flight, which is how "the big number is missing" (D51) shows up
                   on a slow link: the biggest type on the page spends the first
                   frame saying something that is not a number. A bar of the same
                   height reserves the digits instead, and the wording moves to a
-                  live region so screen readers still hear it. 暂无法读取 stays a
+                  live region so screen readers still hear it. "Temporarily unreadable" stays a
                   word, because that is a settled state rather than progress. */}
                 {!visible && !summaryUnavailable ? (
                   <>
@@ -814,7 +814,9 @@ export function ApplicationsHome({
                         aria-hidden="true"
                       />
                     </p>
-                    <small role="status">正在读取已沉淀记忆数量…</small>
+                    <small role="status">
+                      Loading the number of distilled memories...
+                    </small>
                   </>
                 ) : (
                   <>
@@ -824,34 +826,35 @@ export function ApplicationsHome({
                           ? new Intl.NumberFormat("zh-CN").format(
                               visible.memory_count,
                             )
-                          : "暂无法读取"}
+                          : "Temporarily unreadable"}
                       </strong>
-                      {visible ? <i>条</i> : null}
+                      {visible ? <i>memories</i> : null}
                     </p>
-                    <small>按应用授权范围使用</small>
+                    <small>Used within each app's authorized scope</small>
                   </>
                 )}
               </div>
               <div>
-                <p>沉淀状态</p>
+                <p>Distillation status</p>
                 <strong className="r6-home-word">{stateLabel}</strong>
                 <small>
                   {processing?.running
-                    ? "新的对话正在整理"
+                    ? "New conversations are being organized"
                     : processing?.pending
-                      ? "等待队列开始处理"
-                      : "以当前处理状态为准"}
+                      ? "Waiting for the queue to start"
+                      : "Based on the current processing status"}
                 </small>
               </div>
               <div>
-                <p>最近更新</p>
+                <p>Recent updates</p>
                 <strong className={time ? "r6-home-time" : "r6-home-word"}>
-                  {time ?? (visible ? "尚未生成" : "待核对")}
+                  {time ??
+                    (visible ? "Not generated yet" : "Pending verification")}
                 </strong>
                 <small>
                   {time
-                    ? `${latestClock?.today ? "今天 · " : ""}记忆已保存`
-                    : "历史与记忆分别处理"}
+                    ? `${latestClock?.today ? "Today - " : ""}Memory saved`
+                    : "History and memories are handled separately"}
                 </small>
               </div>
             </div>
@@ -873,19 +876,19 @@ export function ApplicationsHome({
                       }
                       onClick={() => setActivityView(item)}
                     >
-                      {item === "call" ? "最近调用" : "最近更新"}
+                      {item === "call" ? "Recent calls" : "Recent updates"}
                     </button>
                   ))}
                 </div>
               ) : (
                 <p>
                   {activity === "unavailable"
-                    ? "动态暂不可用"
+                    ? "Activity is unavailable"
                     : activity === "call"
-                      ? "最近调用"
+                      ? "Recent calls"
                       : activity === "dialogue" || activity === "memory"
-                        ? "最近更新"
-                        : "首批沉淀"}
+                        ? "Recent updates"
+                        : "First distillation"}
                 </p>
               )}
               <div>
@@ -925,8 +928,8 @@ export function ApplicationsHome({
                   <h3>
                     {activity === "unavailable"
                       ? callState === "unavailable"
-                        ? "暂时无法读取调用记录"
-                        : "暂时无法读取记忆状态"
+                        ? "Call records cannot be read right now"
+                        : "Memory status cannot be read right now"
                       : activity === "call" && recentCall
                         ? callDetailHeadline(
                             recentCall,
@@ -938,29 +941,29 @@ export function ApplicationsHome({
                           : activity === "dialogue" && latestDialogue
                             ? `${latestDialogue.excerpt}${latestDialogue.truncated ? "…" : ""}`
                             : activity === "importing"
-                              ? "对话持续导入中，即将沉淀你的记忆"
+                              ? "Conversations are still importing; your memories will be distilled shortly"
                               : activity === "first-running"
-                                ? "正在沉淀第一批记忆"
+                                ? "Distilling the first memories"
                                 : activity === "first-queued"
-                                  ? "准备沉淀第一批记忆"
+                                  ? "Preparing to distill the first memories"
                                   : activity === "loading"
-                                    ? "正在读取动态"
-                                    : "还没有已生成的记忆"}
+                                    ? "Loading activity"
+                                    : "No memories generated yet"}
                   </h3>
                   <small>
                     {activity === "unavailable"
                       ? callState === "unavailable"
-                        ? "已有记忆仍可查看；重试不会发起新的调用。"
-                        : "读取失败不会当作没有记忆。"
+                        ? "Existing memories remain available; retrying does not start a new call."
+                        : "A failed read is never treated as having no memories."
                       : activity === "call" && recentCall
-                        ? `${stamped(recentCall.occurred_at)} · ${callRowDetail(recentCall)}${callState === "incomplete" ? " · 有几次调用没被记下来，列表可能不全" : ""}`
+                        ? `${stamped(recentCall.occurred_at)} · ${callRowDetail(recentCall)}${callState === "incomplete" ? " · a few calls were not recorded, so the list may be incomplete" : ""}`
                         : activity === "memory" && latest
-                          ? `${time} · ${memoryAction(latest.action)} · ${latest.source_ids.map((id) => imports.sources.find((s) => s.source_id === id)?.display_name ?? id).join("、")} · 版本 ${latest.revision}`
+                          ? `${time} - ${memoryAction(latest.action)} - ${latest.source_ids.map((id) => imports.sources.find((s) => s.source_id === id)?.display_name ?? id).join(", ")} - version ${latest.revision}`
                           : activity === "dialogue" && latestDialogue
-                            ? `${clockParts(latestDialogue.created_at ?? latestDialogue.imported_at)?.clock ?? "时间未知"} ${latestDialogue.time_basis === "conversation" ? "对话时间" : "导入时间"} · ${imports.sources.find((source) => source.source_id === latestDialogue.source_id)?.display_name ?? latestDialogue.source_id}`
+                            ? `${clockParts(latestDialogue.created_at ?? latestDialogue.imported_at)?.clock ?? "Time unknown"} ${latestDialogue.time_basis === "conversation" ? "Conversation time" : "Import time"} - ${imports.sources.find((source) => source.source_id === latestDialogue.source_id)?.display_name ?? latestDialogue.source_id}`
                             : activity === "importing"
-                              ? "对话正在后台持续保存。"
-                              : "历史已保存，记忆生成后会显示在这里。"}
+                              ? "Conversations are still being saved in the background."
+                              : "History is saved; generated memories will appear here."}
                   </small>
                 </section>
                 {(activity === "unavailable" ||
@@ -981,10 +984,10 @@ export function ApplicationsHome({
                     }
                   >
                     {activity === "unavailable"
-                      ? "重新读取"
+                      ? "Reload"
                       : activity === "call"
-                        ? "查看记录"
-                        : "查看记忆"}
+                        ? "View records"
+                        : "View memories"}
                     {activity === "unavailable" ? null : (
                       <ArrowRight size={14} aria-hidden="true" />
                     )}
@@ -998,8 +1001,8 @@ export function ApplicationsHome({
           <section className="r6-home-auto-failure" role="alert">
             <p>
               {attention.kind === "unavailable"
-                ? "后台服务没有运行，应用暂时查不到记忆"
-                : `${attentionHost} 最近几次没查到记忆，后台可能正忙，稍后会自动恢复`}
+                ? "The background service is not running, so apps cannot query memories right now"
+                : `${attentionHost} found no memories in its last few calls; the background service may be busy and will recover on its own`}
             </p>
             {attention.kind === "unavailable" || CALL_HISTORY_ENTRY_VISIBLE ? (
               <R6Button
@@ -1013,40 +1016,40 @@ export function ApplicationsHome({
                     : onCalls
                 }
               >
-                {attention.kind === "unavailable" ? "重新启动" : "查看记录"}
+                {attention.kind === "unavailable" ? "Restart" : "View records"}
               </R6Button>
             ) : null}
           </section>
         ) : null}
-        <HomeCardBoundary label="运行状态">
+        <HomeCardBoundary label="Runtime status">
           <aside className="r6-home-runtime">
-            <h2>运行状态</h2>
+            <h2>Runtime status</h2>
             <h3>
               {connected
-                ? "后台运行中"
+                ? "Backend running"
                 : imports.healthStale
-                  ? "连接状态待核对"
-                  : "服务未连接"}
+                  ? "Connection status pending verification"
+                  : "Service not connected"}
             </h3>
-            <p>仅处理已授权范围</p>
+            <p>Only authorized scopes are processed</p>
             <dl>
               <div>
-                <dt>对话同步</dt>
+                <dt>Conversation sync</dt>
                 <dd>{syncState}</dd>
               </div>
               <div>
-                <dt>记忆整理</dt>
+                <dt>Memory organization</dt>
                 <dd>{stateLabel}</dd>
               </div>
               <div>
-                <dt>应用访问</dt>
+                <dt>App access</dt>
                 <dd>{accessText}</dd>
               </div>
             </dl>
             {accessUnknownText ? (
               <div
                 role="status"
-                aria-label="应用接入核对"
+                aria-label="App connection verification"
                 className="r6-home-auto-failure"
               >
                 <p>{accessUnknownText}</p>
@@ -1056,22 +1059,23 @@ export function ApplicationsHome({
                   disabled={hostQuery.isFetching}
                   onClick={() => void hostQuery.refetch()}
                 >
-                  {hostQuery.isFetching ? "核对中…" : "重新核对"}
+                  {hostQuery.isFetching ? "Verifying..." : "Verify again"}
                 </button>
               </div>
             ) : null}
             {hostStale ? (
               <p
                 role="status"
-                aria-label="应用接入状态"
+                aria-label="App connection status"
                 className="r6-home-auto-failure"
               >
-                应用接入状态暂时读取失败，当前为上次状态。
+                App connection status could not be read right now; the last
+                known state is shown.
               </p>
             ) : null}
             {autoFailureText ? (
               <div role="alert" className="r6-home-auto-failure">
-                <p>{`${autoFailureText}不会自动重试。`}</p>
+                <p>{`${autoFailureText} It will not retry automatically.`}</p>
                 <button
                   type="button"
                   className="r6-home-activity-link"
@@ -1084,14 +1088,14 @@ export function ApplicationsHome({
                     })
                   }
                 >
-                  重新接入
+                  Reconnect
                 </button>
               </div>
             ) : null}
             <p className="r6-home-checked">
               {!checked
-                ? "上次核对：待核对"
-                : `上次核对：${checked.today ? "今天 " : ""}${checked.clock}`}
+                ? "Last check: pending verification"
+                : `Last check: ${checked.today ? "Today " : ""}${checked.clock}`}
             </p>
           </aside>
         </HomeCardBoundary>
@@ -1099,7 +1103,7 @@ export function ApplicationsHome({
       <section
         className="r6-home-apps"
         ref={panel}
-        aria-label="我的应用"
+        aria-label="My apps"
         onWheel={(event) => {
           if (!expanded && apps.length > 3 && event.deltaY > 10)
             toggleAll(true);
@@ -1130,7 +1134,7 @@ export function ApplicationsHome({
         }}
       >
         <header>
-          <h2>{expanded ? `${apps.length} 个应用` : "我的应用"}</h2>
+          <h2>{expanded ? `${apps.length} apps` : "My apps"}</h2>
           {apps.length > 3 ? (
             <button
               type="button"
@@ -1142,7 +1146,7 @@ export function ApplicationsHome({
               className="r6-home-expand"
               onClick={() => toggleAll(true)}
             >
-              查看全部 {apps.length} 个应用
+              View all {apps.length} apps
             </button>
           ) : null}
         </header>
@@ -1150,7 +1154,7 @@ export function ApplicationsHome({
           className="r6-home-list"
           ref={list}
           id={listId}
-          aria-label="应用列表"
+          aria-label="App list"
           tabIndex={expanded ? 0 : -1}
           onScroll={(event) => {
             if (expanded)
@@ -1172,13 +1176,13 @@ export function ApplicationsHome({
                     <h3>{source.display_name}</h3>
                     <p>
                       {source.sync_enabled
-                        ? "持续同步已开启"
+                        ? "Continuous sync is on"
                         : host?.installed &&
                             host.permission?.state === "approved"
-                          ? "允许请求已授权记忆"
+                          ? "May request authorized memories"
                           : source.authorized
-                            ? "历史读取已授权"
-                            : "连接待完成"}
+                            ? "History reading is authorized"
+                            : "Connection incomplete"}
                     </p>
                   </section>
                   {activity ? (
@@ -1189,7 +1193,7 @@ export function ApplicationsHome({
                     data-home-focus={`source:${source.source_id}`}
                     onClick={() => onManage(source.source_id)}
                   >
-                    查看详情
+                    View details
                   </R6Button>
                 </div>
               </div>
@@ -1197,7 +1201,9 @@ export function ApplicationsHome({
           })}
           {!apps.length ? (
             <p className="r6-home-empty">
-              {stale ? "应用列表暂时不可读取" : "还没有可显示的应用"}
+              {stale
+                ? "The app list is unreadable right now"
+                : "No apps to show yet"}
             </p>
           ) : null}
         </section>

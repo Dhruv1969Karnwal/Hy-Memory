@@ -135,7 +135,7 @@ export function MemoryEvidencePanel({
       className="map-inspector"
       {...(modal ? { role: "dialog", "aria-modal": !suspended } : {})}
       inert={suspended}
-      aria-label="记忆与原文"
+      aria-label="Memories and source text"
       data-tour-id="memory-original-pane"
       tabIndex={-1}
       hidden={!present || (compact && suspended)}

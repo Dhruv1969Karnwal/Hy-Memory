@@ -41,7 +41,7 @@ describe("om_ask MCP tool", () => {
 
   it("forwards question and scope, and injects host workspace_path", async () => {
     const ask = vi.fn(async () => ({
-      answer: "现有记忆不足以回答这个问题。",
+      answer: "Existing memories aren't enough to answer this question.",
       memories: [],
       mode: "empty" as const,
     }));
@@ -61,20 +61,23 @@ describe("om_ask MCP tool", () => {
           method: "tools/call",
           params: {
             name: "om_ask",
-            arguments: { question: "我下周的航班是什么？", scope: "all-apps" },
+            arguments: {
+              question: "What's my flight next week?",
+              scope: "all-apps",
+            },
           },
         }),
       )) ?? "",
     );
 
     expect(ask).toHaveBeenCalledWith("/fixture/discovery.json", {
-      question: "我下周的航班是什么？",
+      question: "What's my flight next week?",
       scope: "all-apps",
       workspace_path: "/Users/example/hy-memory-admin",
     });
     // Refuse must pass through unchanged — the bridge must not invent an answer.
     expect(response.result.structuredContent).toEqual({
-      answer: "现有记忆不足以回答这个问题。",
+      answer: "Existing memories aren't enough to answer this question.",
       memories: [],
       mode: "empty",
     });

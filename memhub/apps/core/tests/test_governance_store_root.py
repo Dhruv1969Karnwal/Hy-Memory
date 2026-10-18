@@ -1,8 +1,11 @@
-"""生产代码里治理 store 只在 Core 启动的组合根建一次。
+"""In production code the governance store is built exactly once, at Core startup in the \
+composition root.
 
-「人工写入口只能领一次」按 store 实例计；同一份库再建一个 store，就又能领一次。
-所以别处要用治理 store，只能由启动时注入。扫描看不见运行时拼出的构造（getattr 之类），
-这是补充，不是唯一防线。
+"The human write door may be claimed only once" counts per store instance; build another store on \
+the same library and you can claim it again.
+So anywhere else that needs the governance store must have it injected at startup. The scan cannot \
+see runtime-assembled constructions (getattr and friends),
+this is a supplement, not the only line of defense.
 """
 
 import ast
@@ -84,7 +87,7 @@ def test_only_the_composition_root_builds_a_governance_store():
         for path in sorted(SOURCE.rglob("*.py"))
         for scope, line in _constructions(path.read_text(encoding="utf-8"))
     ]
-    # 基数非零：组合根那一处扫得到，扫描本身在工作。
+    # Nonzero baseline: the one composition-root build is found, so the scan itself works.
     assert [(file, scope) for file, scope, _ in built].count(ROOT) == 1
     assert [
         f"{file}:{line} in {scope}" for file, scope, line in built if (file, scope) != ROOT
@@ -123,7 +126,7 @@ def test_every_matter_discovery_is_given_a_store():
         for path in files
         if "MatterDiscovery(" in path.read_text(encoding="utf-8")
     ]
-    # 基数非零：组合根和两个基线脚本都在扫描范围里。
+    # Nonzero baseline: the composition root and the two baseline scripts are all in the scan scope.
     assert len(scanned) >= 3
     assert [f"{path.name}:{lines}" for path, lines in scanned if lines] == []
 

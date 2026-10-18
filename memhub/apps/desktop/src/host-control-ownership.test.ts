@@ -168,7 +168,7 @@ vi.mock("./core-supervisor", () => ({
 }));
 vi.mock("./host-permissions", () => ({
   HostPermissions: { open: fake.open },
-  LOCAL_EXPERIENCE_UNAVAILABLE: "体验版暂不支持",
+  LOCAL_EXPERIENCE_UNAVAILABLE: "Trial build not supported",
 }));
 vi.mock("./recall-hosts", () => ({
   recallHosts: async () => [

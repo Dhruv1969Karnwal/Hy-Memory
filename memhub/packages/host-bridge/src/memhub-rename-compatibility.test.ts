@@ -11,7 +11,7 @@ import {
   SERVER_NAME,
 } from "./recall-installer.js";
 
-const QUERY_NOTICE = "正在使用 MemHub 查询记忆";
+const QUERY_NOTICE = "Using MemHub to query memories";
 const runtime: RecallRuntime = {
   runtimeCommand: "/fixture/runtime",
   mcpEntryPath: "/fixture/mcp.cjs",
@@ -39,7 +39,7 @@ describe("MemHub rename keeps technical identities", () => {
     expect(skill).toContain(QUERY_NOTICE);
     expect(skill).toContain("once per logical query");
     expect(skill).toContain("Loading this Skill is not a memory lookup");
-    expect(skill).not.toContain("正在使用 MemHub 查看相关记忆");
+    expect(skill).not.toContain("Using MemHub to view related memories");
     expect(skill).not.toContain("One Memory");
   });
 

@@ -1,6 +1,6 @@
 """D93 test 2: read latency while pure-Python work holds the GIL.
 
-Plan `读写隔离方案-20261009.html` section 8 row 2, fixing the D92 experiment
+Plan `\u8bfb\u5199\u9694\u79bb\u65b9\u6848-20261009.html` section 8 row 2, fixing the D92 experiment
 as a test. Three pure-Python busy threads stand in for Core's background work
 (scan, extraction bookkeeping, recompute). Meanwhile the home summary, the
 memory library page and the map are requested in a loop; every non-200 is an
@@ -84,7 +84,8 @@ def _build_library(database: Path) -> None:
                 correlation_id=f"m-{index}",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim=f"第 {index} 条对话原文，讨论读写隔离和记忆页的加载速度。" * 4,
+                verbatim=f"Conversation source text {index}, about read-write isolation and "
+                f"memory page load speed." * 4,
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )
         ).record
@@ -92,7 +93,8 @@ def _build_library(database: Path) -> None:
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"记忆 {index}：读写隔离要让记忆页在后台忙时也能打开。",
+                content=f"Memory {index}: read-write isolation keeps the memory page openable "
+                f"while the background is busy.",
                 scopes=("all-apps",),
                 evidence_ids=(record.evidence_id,),
             ),

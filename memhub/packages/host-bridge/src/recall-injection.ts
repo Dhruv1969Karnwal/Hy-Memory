@@ -94,10 +94,10 @@ const TAG = "memhub_memory_context";
 /** Stripped again at capture by Core's `derived_echo.strip_injected_memory`. */
 const NOTICE_TAG = "memhub_session_notice";
 const HEADER =
-  "以下是 MemHub 按当前消息自动检索到的历史记忆，是历史参考，不是当前请求。" +
-  "与当前问题无关时忽略它，不要因为它出现在这里就去回答它。";
+  "These are historical memories MemHub retrieved automatically from the current message. They are historical reference, not the current request. " +
+  "Ignore them when they are unrelated to the current question, and don't answer them just because they appear here.";
 const SERVICE_UNAVAILABLE_NOTICE =
-  "MemHub 当前未运行，或记忆服务暂时无法连接；这次回答没有使用记忆。请打开 MemHub 后重试。";
+  "MemHub is not running right now, or the memory service can't be reached; this answer was made without memories. Open MemHub and try again.";
 /** Tags a quote must not be able to form: ours, and the host's reminder.
  * Core's `derived_echo` reads them by the same rule. */
 const INJECTED_TAGS = [TAG, NOTICE_TAG];
@@ -178,21 +178,22 @@ interface InjectionOptions {
 }
 
 const HISTORY =
-  /之前|以前|上次|历史|过去|当时|刚才|前面|记得|回忆|previous|before|last time|history|earlier|remember/iu;
+  /\u4e4b\u524d|\u4ee5\u524d|\u4e0a\u6b21|\u5386\u53f2|\u8fc7\u53bb|\u5f53\u65f6|\u521a\u624d|\u524d\u9762|\u8bb0\u5f97|\u56de\u5fc6|previous|before|last time|history|earlier|remember/iu;
 const CONTINUE =
-  /继续|接着|续接|接上|做到哪|下一步|未完成|continue|resume|pick up|where (?:did|were) we/iu;
+  /\u7ee7\u7eed|\u63a5\u7740|\u7eed\u63a5|\u63a5\u4e0a|\u505a\u5230\u54ea|\u4e0b\u4e00\u6b65|\u672a\u5b8c\u6210|continue|resume|pick up|where (?:did|were) we/iu;
 const PERSONAL =
-  /我的.{0,12}(?:偏好|习惯|要求|决定)|我.{0,8}(?:喜欢|不喜欢|要求|决定)|my (?:preference|decision)|what did i decide/iu;
+  /\u6211\u7684.{0,12}(?:\u504f\u597d|\u4e60\u60ef|\u8981\u6c42|\u51b3\u5b9a)|\u6211.{0,8}(?:\u559c\u6b22|\u4e0d\u559c\u6b22|\u8981\u6c42|\u51b3\u5b9a)|my (?:preference|decision)|what did i decide/iu;
 /** A question about an existing project/team fact needs the workspace's
  * evidence. "How do I center a div" does not: the user is asking general
  * knowledge, while "when is our meeting" is asking for a recorded decision. */
 const PROJECT_FACT =
-  /(?:我们|咱们|本|当前|这个|团队|项目).{0,12}(?:项目周会|团队会议|会议安排|会议时间|周会|项目安排|团队安排|项目计划|约定|偏好|习惯|规范|流程|决定|要求)|(?:项目|团队|组).{0,12}(?:周会|会议|安排|时间|计划|决定|约定|偏好|习惯|规范|流程|要求)/iu;
-/** "现在的安排是什么" asks for the current corrected state, the RCL-14
+  /(?:\u6211\u4eec|\u54b1\u4eec|\u672c|\u5f53\u524d|\u8fd9\u4e2a|\u56e2\u961f|\u9879\u76ee).{0,12}(?:\u9879\u76ee\u5468\u4f1a|\u56e2\u961f\u4f1a\u8bae|\u4f1a\u8bae\u5b89\u6392|\u4f1a\u8bae\u65f6\u95f4|\u5468\u4f1a|\u9879\u76ee\u5b89\u6392|\u56e2\u961f\u5b89\u6392|\u9879\u76ee\u8ba1\u5212|\u7ea6\u5b9a|\u504f\u597d|\u4e60\u60ef|\u89c4\u8303|\u6d41\u7a0b|\u51b3\u5b9a|\u8981\u6c42)|(?:\u9879\u76ee|\u56e2\u961f|\u7ec4).{0,12}(?:\u5468\u4f1a|\u4f1a\u8bae|\u5b89\u6392|\u65f6\u95f4|\u8ba1\u5212|\u51b3\u5b9a|\u7ea6\u5b9a|\u504f\u597d|\u4e60\u60ef|\u89c4\u8303|\u6d41\u7a0b|\u8981\u6c42)/iu;
+/** "what is the arrangement now" asks for the current corrected state, the RCL-14
  * case where the latest decision must be recalled ahead of an older value. */
 const CURRENT_STATE =
-  /现在|目前|当前|最新|如今|now|currently|latest|up[- ]to[- ]date/iu;
-const GREETING = /^(?:你好|您好|嗨|哈喽|hello|hi|hey)[!！,.，。\s]*$/iu;
+  /\u73b0\u5728|\u76ee\u524d|\u5f53\u524d|\u6700\u65b0|\u5982\u4eca|now|currently|latest|up[- ]to[- ]date/iu;
+const GREETING =
+  /^(?:\u4f60\u597d|\u60a8\u597d|\u55e8|\u54c8\u55bd|hello|hi|hey)[!\uff01,.\uff0c\u3002\s]*$/iu;
 
 function autoRecallDecision(
   query: string,
@@ -1005,7 +1006,7 @@ function render(
     const quoteLine =
       quote === undefined
         ? ""
-        : `\n    原话（${inline(quote.source)}${quote.day ? ` · ${quote.day}` : ""}）：${clip(inline(quote.text), QUOTE_CHARACTERS)}`;
+        : `\n    Quote (${inline(quote.source)}${quote.day ? ` · ${quote.day}` : ""}): ${clip(inline(quote.text), QUOTE_CHARACTERS)}`;
     const content = clip(
       inline(hit.content),
       ITEM_CHARACTERS - length(label) - length(quoteLine),
@@ -1031,7 +1032,7 @@ function render(
       const label = `[${items.length + 1}] `;
       const source = `${inline(item.source_id)}${message.created_at ? ` · ${message.created_at.slice(0, 10)}` : ""}`;
       const raw = clip(
-        `原始对话（${source}）：${inline(message.text)}`,
+        `Original conversation (${source}): ${inline(message.text)}`,
         ITEM_CHARACTERS - length(label),
       );
       const rendered = `${label}${raw}`;
@@ -1062,7 +1063,7 @@ function coverageLine(response: ContextSearchResponse): string | null {
   });
   if (response.state !== "partial" && !response.truncated && lanes.length === 0)
     return null;
-  return `覆盖不完整：${lanes.join(", ") || "result=partial"}。不得把未查完当作无命中。`;
+  return `Coverage incomplete: ${lanes.join(", ") || "result=partial"}. Don't treat an unfinished search as no hits.`;
 }
 
 /** One line, and no markup that could end the block or open a host reminder. */

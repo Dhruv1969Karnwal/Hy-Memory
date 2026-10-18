@@ -375,7 +375,7 @@ describe("headless source setup and import", () => {
     expect(textResult.code).toBe(1);
     expect(textResult.stdout).toContain("codex");
     expect(textResult.stdout).toContain("source_read_disabled");
-    expect(textResult.stdout).not.toContain("操作状态：committed");
+    expect(textResult.stdout).not.toContain("Operation state: committed");
   });
 
   it("recovers an unknown source write by request ID without replay", async () => {

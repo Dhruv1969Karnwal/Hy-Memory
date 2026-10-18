@@ -28,7 +28,7 @@ export function SourceCard({
       return;
     }
     const confirmed = window.confirm(
-      `此来源由环境变量指定。是否允许 MemHub 读取该目录中的 AI 对话？\n\n${source.candidate_path}`,
+      `This source is set by an environment variable. Allow MemHub to read the AI conversations in this directory?\n\n${source.candidate_path}`,
     );
     if (confirmed) onAuthorize(source, true);
   };
@@ -46,29 +46,29 @@ export function SourceCard({
       </div>
       <p className="source-capability">
         {source.capabilities.verification === "real_replayed"
-          ? "已通过真实样本回放"
-          : "仅通过模拟样本"}
+          ? "Verified with real sample replay"
+          : "Simulated samples only"}
         {" · "}
         {source.capabilities.live_sync === "implemented"
-          ? "持续增量同步"
-          : "仅手动导入"}
+          ? "Continuous incremental sync"
+          : "Manual import only"}
         {" · "}
         {/* The plan requires every source to say which kind of following it
             offers: a source we can only read forward from will keep serving a
             memory whose original sentence the user has since deleted. Calling
-            that "实时同步" would promise a copy that tracks the source. */}
+            that "live sync" would promise a copy that tracks the source. */}
         {source.sync_completeness === "one_time_snapshot"
-          ? "一次性快照，不跟随原应用变化"
+          ? "One-time snapshot; does not follow changes in the source app"
           : source.sync_completeness === "full_dynamic"
-            ? "完整动态同步"
-            : "仅新增同步，源头删除不跟随"}
+            ? "Full dynamic sync"
+            : "Add-only sync; deletions at the source are not followed"}
         {" · "}
         {/* Whether *this* machine has recall wired into the host is read from
             its install journal and shown in the recall section; here we can
             only honestly say an installer exists for it. */}
         {source.capabilities.recall === "implemented"
-          ? "支持应用内召回"
-          : "暂不支持应用内召回"}
+          ? "In-app recall supported"
+          : "In-app recall not supported yet"}
       </p>
 
       {job ? <ImportCounts job={job} /> : null}
@@ -79,8 +79,8 @@ export function SourceCard({
         {!source.authorized ? (
           <button type="button" disabled={isBusy} onClick={authorize}>
             {source.candidate_kind === "environment_override"
-              ? "确认并授权自定义目录"
-              : "授权此来源"}
+              ? "Confirm and authorize custom directory"
+              : "Authorize this source"}
           </button>
         ) : (
           <>
@@ -90,7 +90,7 @@ export function SourceCard({
                 disabled={isBusy}
                 onClick={() => onDetect(source.source_id)}
               >
-                检测历史记录
+                Detect history
               </button>
             ) : null}
             {source.detected === false ? (
@@ -99,7 +99,7 @@ export function SourceCard({
                 disabled={isBusy}
                 onClick={() => onDetect(source.source_id)}
               >
-                重新检测
+                Re-check
               </button>
             ) : null}
             {source.detected === true && canStart(job) ? (
@@ -110,9 +110,9 @@ export function SourceCard({
               >
                 {job?.status === "completed"
                   ? source.sync_completeness === "one_time_snapshot"
-                    ? "重新读取快照"
-                    : "检查新增内容"
-                  : "开始导入"}
+                    ? "Re-read snapshot"
+                    : "Check for new content"
+                  : "Start import"}
               </button>
             ) : null}
             {job?.status === "running" || job?.status === "pending" ? (
@@ -122,14 +122,14 @@ export function SourceCard({
                   className="secondary"
                   onClick={() => onChangeJob(job.job_id, "pause")}
                 >
-                  暂停
+                  Pause
                 </button>
                 <button
                   type="button"
                   className="secondary"
                   onClick={() => onChangeJob(job.job_id, "cancel")}
                 >
-                  取消
+                  Cancel
                 </button>
               </>
             ) : null}
@@ -139,14 +139,14 @@ export function SourceCard({
                   type="button"
                   onClick={() => onChangeJob(job.job_id, "resume")}
                 >
-                  继续
+                  Continue
                 </button>
                 <button
                   type="button"
                   className="secondary"
                   onClick={() => onChangeJob(job.job_id, "cancel")}
                 >
-                  取消
+                  Cancel
                 </button>
               </>
             ) : null}
@@ -156,7 +156,7 @@ export function SourceCard({
               disabled={isBusy}
               onClick={() => onRevoke(source.source_id)}
             >
-              断开
+              Disconnect
             </button>
           </>
         )}
@@ -169,23 +169,23 @@ function ImportCounts({ job }: { job: ImportJob }) {
   return (
     <dl className="import-counts" aria-live="polite">
       <div>
-        <dt>发现</dt>
+        <dt>Discovered</dt>
         <dd>{job.discovered}</dd>
       </div>
       <div>
-        <dt>新增</dt>
+        <dt>New</dt>
         <dd>{job.stored}</dd>
       </div>
       <div>
-        <dt>已存在</dt>
+        <dt>Already present</dt>
         <dd>{job.merged}</dd>
       </div>
       <div>
-        <dt>跳过</dt>
+        <dt>Skipped</dt>
         <dd>{job.skipped}</dd>
       </div>
       <div>
-        <dt>错误</dt>
+        <dt>Errors</dt>
         <dd>{job.errors}</dd>
       </div>
     </dl>
@@ -202,7 +202,9 @@ function sessionSummary(source: SourceResponse) {
   if (count === null || count === undefined) return null;
   return (
     <p className="session-count">
-      {count > 0 ? `找到 ${count} 个会话` : "已安装，暂未发现会话"}
+      {count > 0
+        ? `Found ${count} conversations`
+        : "Installed, no conversations found yet"}
     </p>
   );
 }
@@ -214,31 +216,31 @@ function canStart(job: ImportJob | undefined): boolean {
 /** What the person is being asked to authorize, in the words they care about.
  *
  * A count the core did not send is not a count of zero, so an absent or null
- * `session_count` yields no line at all rather than "找到 0 个会话".
+ * `session_count` yields no line at all rather than "Found 0 conversations".
  */
 function sessionCountLabel(source: SourceResponse): string | null {
   const count = source.session_count;
   if (count === undefined || count === null) return null;
-  if (count <= 0) return "已安装，暂未发现会话";
-  return `找到 ${count} 个会话`;
+  if (count <= 0) return "Installed, no conversations found yet";
+  return `Found ${count} conversations`;
 }
 
 function statusLabel(
   source: SourceResponse,
   job: ImportJob | undefined,
 ): string {
-  if (!source.authorized) return "未授权";
-  if (source.detected === null) return "等待检测";
-  if (!source.detected) return "未发现记录";
-  if (!job) return "可导入";
+  if (!source.authorized) return "Not authorized";
+  if (source.detected === null) return "Waiting for detection";
+  if (!source.detected) return "No records found";
+  if (!job) return "Ready to import";
   const labels: Record<ImportJob["status"], string> = {
-    pending: "等待开始",
-    running: "正在后台导入",
-    paused: "已暂停",
-    interrupted: "上次退出时中断",
-    completed: "导入完成",
-    failed: "导入失败",
-    cancelled: "已取消",
+    pending: "Waiting to start",
+    running: "Importing in the background",
+    paused: "Paused",
+    interrupted: "Interrupted at last exit",
+    completed: "Import complete",
+    failed: "Import failed",
+    cancelled: "Canceled",
   };
   return labels[job.status];
 }

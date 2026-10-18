@@ -5,8 +5,8 @@ import type { SourceResponse } from "@one-memory/contracts";
  * memory carrying one used to be labelled with the raw internal id.
  */
 const INTERNAL_SOURCE_NAMES: Record<string, string> = {
-  "one-memory-manual": "手动添加",
-  "memory-content-export": "导入的已有记忆",
+  "one-memory-manual": "Manually added",
+  "memory-content-export": "Imported existing memory",
 };
 
 type NamedSource = Pick<SourceResponse, "source_id" | "display_name">;

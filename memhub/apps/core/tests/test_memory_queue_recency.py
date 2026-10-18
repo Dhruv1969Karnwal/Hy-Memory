@@ -184,7 +184,7 @@ def test_dispatch_order_follows_evidence_time(tmp_path) -> None:
             evidence,
             message_id=f"m{index}",
             conversation_id=f"conversation-{index}",
-            content="我" * length + "。",
+            content="x" * length + ".",
             created_at=moment,
         )
         task = _task(tasks, profile, record, suffix=f"s{index}")
@@ -395,7 +395,7 @@ def test_live_synced_evidence_is_next_after_the_task_already_running(tmp_path, m
             evidence,
             message_id=f"fresh{index}",
             conversation_id=f"fresh-conversation-{index}",
-            content="刚刚发生、还在排队的一段对话。",
+            content="A conversation that just happened and is still queued.",
             created_at=now - timedelta(minutes=index),
         )
         fresh_ids.add(_task(tasks, profile, record, suffix=f"fresh{index}").task_id)
@@ -422,7 +422,7 @@ def test_live_synced_evidence_is_next_after_the_task_already_running(tmp_path, m
             evidence,
             message_id="live",
             conversation_id="live-conversation",
-            content="这句是刚刚实时同步进来的。",
+            content="This line just arrived through live sync.",
             created_at=now - timedelta(hours=5),
             workspace="workspace:v1:one-memory",
         )
@@ -436,7 +436,7 @@ def test_live_synced_evidence_is_next_after_the_task_already_running(tmp_path, m
                     message_id="live-reply",
                     role="assistant",
                     written_by=WrittenBy.AGENT,
-                    verbatim="实时同步的回复，闭合这一轮。",
+                    verbatim="The live-sync reply that closes this turn.",
                     created_at=now - timedelta(hours=5) + timedelta(seconds=1),
                     workspace="workspace:v1:one-memory",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
@@ -503,7 +503,7 @@ def test_evidence_arriving_now_is_worked_within_four_tasks(tmp_path) -> None:
             evidence,
             message_id=f"old{index}",
             conversation_id=f"old-conversation-{index}",
-            content="很久以前的一段对话。",
+            content="A conversation from long ago.",
             created_at=NOW - timedelta(days=100) + timedelta(hours=index),
         )
         _task(tasks, profile, record, suffix=f"old{index}")
@@ -526,7 +526,7 @@ def test_evidence_arriving_now_is_worked_within_four_tasks(tmp_path) -> None:
             evidence,
             message_id="fresh",
             conversation_id="fresh-conversation",
-            content="我刚刚决定：以后都用中文记忆。",
+            content="I just decided: from now on, all memories are in Chinese.",
             created_at=datetime.now(UTC),
             workspace="workspace:v1:one-memory",
         )
@@ -559,7 +559,7 @@ def test_backlog_keeps_exactly_one_slot_in_five(tmp_path) -> None:
             evidence,
             message_id=f"old{index}",
             conversation_id=f"old-conversation-{index}",
-            content="历史积压的一段对话。",
+            content="A conversation from long ago.",
             created_at=NOW - timedelta(days=100) + timedelta(hours=index),
         )
         backlog.add(_task(tasks, profile, record, suffix=f"old{index}").task_id)
@@ -568,7 +568,7 @@ def test_backlog_keeps_exactly_one_slot_in_five(tmp_path) -> None:
             evidence,
             message_id=f"new{index}",
             conversation_id=f"new-conversation-{index}",
-            content="刚刚发生的一段对话。",
+            content="A conversation that just happened.",
             created_at=datetime.now(UTC) - timedelta(minutes=index),
         )
         _task(tasks, profile, record, suffix=f"new{index}")
@@ -605,7 +605,7 @@ def test_backlog_drains_while_new_evidence_keeps_arriving(tmp_path) -> None:
             evidence,
             message_id=f"old{index}",
             conversation_id=f"old-conversation-{index}",
-            content="历史积压的一段对话。",
+            content="A conversation from long ago.",
             created_at=NOW - timedelta(days=100) + timedelta(hours=index),
         )
         backlog.add(_task(tasks, profile, record, suffix=f"old{index}").task_id)
@@ -621,7 +621,7 @@ def test_backlog_drains_while_new_evidence_keeps_arriving(tmp_path) -> None:
                     evidence,
                     message_id=f"live{round_index}-{message_index}",
                     conversation_id=f"live-conversation-{round_index}-{message_index}",
-                    content="又说了一句新的话。",
+                    content="Another new line was said.",
                     created_at=datetime.now(UTC),
                 )
                 supervisor.enqueue_conversation(record)
@@ -651,14 +651,14 @@ def test_workspace_evidence_is_not_pushed_behind_older_all_apps(tmp_path) -> Non
         evidence,
         message_id="older-all-apps",
         conversation_id="all-apps-conversation",
-        content="我是一名产品经理。",
+        content="I am a product manager.",
         created_at=NOW - timedelta(days=30),
     )
     newer_workspace = _put(
         evidence,
         message_id="newer-workspace",
         conversation_id="workspace-conversation",
-        content="这个仓库里不要再用 fetch 裸调。",
+        content="Do not use bare fetch calls in this repo anymore.",
         created_at=NOW - timedelta(days=1),
         workspace="workspace:v1:one-memory",
     )
@@ -690,7 +690,7 @@ def test_queue_depths_are_two_numbers_not_one(tmp_path) -> None:
             evidence,
             message_id=f"old{index}",
             conversation_id=f"old-conversation-{index}",
-            content="历史积压的一段对话。",
+            content="A conversation from long ago.",
             created_at=NOW - timedelta(days=100) + timedelta(hours=index),
         )
         _task(tasks, profile, record, suffix=f"old{index}")
@@ -699,7 +699,7 @@ def test_queue_depths_are_two_numbers_not_one(tmp_path) -> None:
             evidence,
             message_id=f"new{index}",
             conversation_id=f"new-conversation-{index}",
-            content="刚刚发生的一段对话。",
+            content="A conversation that just happened.",
             created_at=datetime.now(UTC),
         )
         _task(tasks, profile, record, suffix=f"new{index}")
@@ -775,7 +775,7 @@ async def test_the_app_is_told_both_numbers(tmp_path) -> None:
                 evidence,
                 message_id=f"old{index}",
                 conversation_id=f"old-conversation-{index}",
-                content="历史积压的一段对话。",
+                content="A conversation from long ago.",
                 created_at=NOW - timedelta(days=100) + timedelta(hours=index),
             )
             _task(tasks, profile, record, suffix=f"old{index}")
@@ -783,7 +783,7 @@ async def test_the_app_is_told_both_numbers(tmp_path) -> None:
             evidence,
             message_id="new",
             conversation_id="new-conversation",
-            content="刚刚发生的一段对话。",
+            content="A conversation that just happened.",
             created_at=datetime.now(UTC),
         )
         _task(tasks, profile, record, suffix="new")
@@ -867,7 +867,7 @@ async def test_unknown_retry_api_requires_confirmation_and_requeues_once(tmp_pat
         assert repeated.json() == {"reconciled": 0, "requeued": 0}
 
 
-@pytest.mark.parametrize("cjk", ["我", "你"])
+@pytest.mark.parametrize("cjk", ["I", "you"])
 def test_evidence_without_its_own_timestamp_still_gets_a_time(tmp_path, cjk: str) -> None:
     """Imported evidence often has no `created_at`; it must not fall to last.
 
@@ -883,7 +883,7 @@ def test_evidence_without_its_own_timestamp_still_gets_a_time(tmp_path, cjk: str
         evidence,
         message_id=f"old-{cjk}",
         conversation_id="old-conversation",
-        content="很久以前的一段对话。",
+        content="A conversation from long ago.",
         created_at=NOW - timedelta(days=100),
     )
     undated = evidence.put(
@@ -894,7 +894,7 @@ def test_evidence_without_its_own_timestamp_still_gets_a_time(tmp_path, cjk: str
             correlation_id=f"undated-{cjk}",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim=f"{cjk}没有自己的时间戳。",
+            verbatim=f"{cjk}: no timestamp of its own.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -1026,7 +1026,7 @@ def test_the_supervisor_runs_one_task_per_harness_even_with_spare_workers(tmp_pa
                     role="user",
                     written_by=WrittenBy.PERSON,
                     created_at=now - timedelta(minutes=index),
-                    verbatim=f"{source} 的第 {index} 段对话。",
+                    verbatim=f"Conversation segment {index} from {source}.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
@@ -1238,7 +1238,7 @@ def test_an_open_live_turn_waits_for_its_reply_before_the_live_lane(tmp_path) ->
             evidence,
             message_id="open-live",
             conversation_id="open-live-conversation",
-            content="刚同步进来、还没有回复的一句话。",
+            content="A sentence just synced in with no reply yet.",
             created_at=now,
         )
         token = live_sync_arrival.set(True)
@@ -1258,7 +1258,7 @@ def test_an_open_live_turn_waits_for_its_reply_before_the_live_lane(tmp_path) ->
                 message_id="open-live-reply",
                 role="assistant",
                 written_by=WrittenBy.AGENT,
-                verbatim="这一轮的回复，闭合这个 turn。",
+                verbatim="The reply for this turn, closing this turn.",
                 created_at=now + timedelta(seconds=1),
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )

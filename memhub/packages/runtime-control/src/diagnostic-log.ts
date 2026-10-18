@@ -540,7 +540,7 @@ export function diagnosticZipFilename(build: string, now = new Date()): string {
   const two = (value: number) => String(value).padStart(2, "0");
   const stamp = `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}`;
   const safeBuild = build.trim().replace(/[^0-9A-Za-z._-]+/g, "-") || "unknown";
-  return `MemHub-日志-${safeBuild}-${stamp}.zip`;
+  return `MemHub-logs-${safeBuild}-${stamp}.zip`;
 }
 
 export async function exportDiagnosticZip(options: {
@@ -633,13 +633,13 @@ export async function exportDiagnosticZip(options: {
     [
       "MemHub diagnostics",
       "",
-      "包含：最近 7 天诊断日志、运行日志、最近 24 小时 MemHub 崩溃报告，以及不含正文的状态摘要。",
-      "不包含：对话原文、记忆内容、API Key、token 或宿主凭证。",
-      "本机主目录已替换为 ~。",
+      "Contains: diagnostic logs from the last 7 days, runtime logs, MemHub crash reports from the last 24 hours, and a status summary without message bodies.",
+      "Does not contain: conversation source text, memory content, API keys, tokens or host credentials.",
+      "The local home directory has been replaced with ~.",
       ...(markers.length
         ? [
             "",
-            "问题时间点：",
+            "Reported problem times:",
             ...markers.map(
               (marker) => `${marker.timestamp}  ${marker.description}`,
             ),

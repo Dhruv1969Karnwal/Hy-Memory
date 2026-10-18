@@ -1150,10 +1150,10 @@ async function initialize(isQuitting: () => boolean): Promise<void> {
       });
       void dialog.showMessageBox({
         type: "warning",
-        message: "请先将 MemHub 拖到“应用程序”文件夹",
+        message: 'Drag MemHub into the "Applications" folder first',
         detail:
-          "从“应用程序”重新打开后，MemHub 才会接入其他应用并安装命令行工具。",
-        buttons: ["知道了"],
+          'MemHub only connects to other apps and installs the command-line tool after you reopen it from "Applications".',
+        buttons: ["Got it"],
       });
     } else if (
       trialProfile === null &&
@@ -1448,7 +1448,7 @@ if (desktopVersion !== null) {
         error instanceof Error ? error.name : "UnknownError",
       );
       dialog.showErrorBox(
-        "MemHub 无法启动",
+        "MemHub cannot start",
         error instanceof Error ? error.message : "desktop_unavailable",
       );
     },

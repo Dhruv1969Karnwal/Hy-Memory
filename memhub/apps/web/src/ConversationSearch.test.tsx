@@ -48,7 +48,8 @@ const found: ConversationSearchResponse = {
       workspace: "/Users/k/one-memory",
       project: "one-memory",
       created_at: "2026-09-03T01:17:00Z",
-      excerpt: "昨天晚上重新打了一个包，抽取终于跑通了",
+      excerpt:
+        "Last night I rebuilt the package and the extraction finally ran",
     },
   ],
   empty_reason: null,
@@ -64,14 +65,15 @@ const transcript: ConversationTranscript = {
       role: "user",
       written_by: "person",
       created_at: "2026-09-03T01:17:00Z",
-      verbatim: "昨天晚上重新打了一个包，抽取终于跑通了",
+      verbatim:
+        "Last night I rebuilt the package and the extraction finally ran",
     },
     {
       evidence_id: "evidence-2",
       role: "assistant",
       written_by: "agent",
       created_at: "2026-09-03T01:18:00Z",
-      verbatim: "那就先把包发出去",
+      verbatim: "Then ship the package first",
     },
   ],
 };
@@ -112,7 +114,7 @@ const secondHit = {
   evidence_id: "evidence-b",
   conversation_id: "conversation-b",
   source_id: "workbuddy",
-  excerpt: "第二段命中摘要",
+  excerpt: "Second hit excerpt",
 };
 const secondTranscript: ConversationTranscript = {
   conversation_id: "conversation-b",
@@ -123,7 +125,7 @@ const secondTranscript: ConversationTranscript = {
       role: "user",
       written_by: "person",
       created_at: null,
-      verbatim: "B 的完整原文",
+      verbatim: "B's full original text",
     },
   ],
 };
@@ -137,7 +139,7 @@ function hitArticle(excerpt: string) {
 async function openA(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     within(hitArticle(found.hits[0].excerpt)).getByRole("button", {
-      name: "查看原文",
+      name: "View source text",
     }),
   );
 }
@@ -145,19 +147,19 @@ async function openA(user: ReturnType<typeof userEvent.setup>) {
 async function openB(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     within(hitArticle(secondHit.excerpt)).getByRole("button", {
-      name: "查看原文",
+      name: "View source text",
     }),
   );
 }
 
 async function search(
-  text = "抽取终于",
+  text = "extraction finally",
   props: Parameters<typeof ConversationSearch>[0] = {},
 ) {
   const user = userEvent.setup();
   render(<ConversationSearch {...props} />);
-  await user.type(screen.getByLabelText("搜索历史对话"), text);
-  await user.click(screen.getByRole("button", { name: "搜索" }));
+  await user.type(screen.getByLabelText("Search conversation history"), text);
+  await user.click(screen.getByRole("button", { name: "Search" }));
   return user;
 }
 
@@ -170,7 +172,7 @@ it("lists recent conversations before the user searches", async () => {
         source_id: "workbuddy",
         workspace: null,
         project: "One Memory",
-        title: "最近的一段真实对话",
+        title: "A recent real conversation",
         latest_at: "2026-10-04T08:00:00Z",
         turn_count: 3,
         memory_count: 2,
@@ -183,7 +185,7 @@ it("lists recent conversations before the user searches", async () => {
 
   render(<ConversationSearch />);
 
-  expect(await screen.findByText("最近的一段真实对话")).toBeTruthy();
+  expect(await screen.findByText("A recent real conversation")).toBeTruthy();
   expect(searchConversations).not.toHaveBeenCalled();
 });
 
@@ -196,7 +198,7 @@ it("shows memories associated with the selected conversation", async () => {
         user_id: "local",
         kind: "chat",
         status: "confirmed",
-        content: "发布前需要确认签名和公证。",
+        content: "Signature and notarization must be confirmed before release.",
         scopes: ["all-apps"],
         origin: "hy",
         tags: [],
@@ -208,11 +210,13 @@ it("shows memories associated with the selected conversation", async () => {
       },
     ],
   });
-  const user = await search("抽取终于", { onOpenMemory });
+  const user = await search("extraction finally", { onOpenMemory });
   await openA(user);
 
   await user.click(
-    await screen.findByRole("button", { name: /发布前需要确认签名和公证/ }),
+    await screen.findByRole("button", {
+      name: /Signature and notarization must be confirmed before release/,
+    }),
   );
   expect(onOpenMemory).toHaveBeenCalledWith("memory-1");
 });
@@ -226,7 +230,7 @@ it("filters the conversation list by source", async () => {
         source_id: "cursor",
         workspace: null,
         project: null,
-        title: "Cursor 会话",
+        title: "Cursor session",
         latest_at: "2026-10-04T08:00:00Z",
         turn_count: 2,
         memory_count: 0,
@@ -237,7 +241,7 @@ it("filters the conversation list by source", async () => {
         source_id: "workbuddy",
         workspace: null,
         project: null,
-        title: "WorkBuddy 会话",
+        title: "WorkBuddy session",
         latest_at: "2026-10-04T08:01:00Z",
         turn_count: 3,
         memory_count: 1,
@@ -255,9 +259,9 @@ it("filters the conversation list by source", async () => {
   });
   const user = userEvent.setup();
   render(<ConversationSearch />);
-  await screen.findByText("Cursor 会话");
+  await screen.findByText("Cursor session");
 
-  await user.selectOptions(screen.getByLabelText("应用"), "cursor");
+  await user.selectOptions(screen.getByLabelText("App"), "cursor");
 
   await waitFor(() =>
     expect(getConversationBrowser).toHaveBeenLastCalledWith({
@@ -280,7 +284,7 @@ it("loads older complete turns into the middle column", async () => {
       {
         ...transcript.messages[0],
         evidence_id: "older-user",
-        verbatim: "更早的一轮",
+        verbatim: "An earlier turn",
         turn_index: 1,
       },
     ],
@@ -292,10 +296,10 @@ it("loads older complete turns into the middle column", async () => {
   const user = await search();
   await openA(user);
   await user.click(
-    await screen.findByRole("button", { name: "加载更早的对话" }),
+    await screen.findByRole("button", { name: "Load older conversations" }),
   );
 
-  expect(await screen.findByText("更早的一轮")).toBeTruthy();
+  expect(await screen.findByText("An earlier turn")).toBeTruthy();
   expect(getConversation).toHaveBeenLastCalledWith("evidence-1", {
     offset: 20,
     limit: 20,
@@ -318,36 +322,44 @@ it("opens a search hit on the page containing its matching turn", async () => {
   );
 });
 
-it("以原始对话的名义给出结果，不冒充记忆", async () => {
+it("Presents results as original conversations, never posing as memories", async () => {
   await search();
 
   await waitFor(() => {
     expect(
-      screen.getByText("昨天晚上重新打了一个包，抽取终于跑通了"),
+      screen.getByText(
+        "Last night I rebuilt the package and the extraction finally ran",
+      ),
     ).toBeTruthy();
   });
   // The wording carries the whole distinction: these are the user's own
   // sentences, not anything the product concluded about them.
-  expect(screen.getByRole("region", { name: "历史对话搜索结果" })).toBeTruthy();
-  expect(screen.getByText(/原始对话/)).toBeTruthy();
-  expect(screen.queryByText(/已生成记忆/)).toBeNull();
+  expect(
+    screen.getByRole("region", {
+      name: "Imported conversation search results",
+    }),
+  ).toBeTruthy();
+  expect(screen.getByText(/original conversation/)).toBeTruthy();
+  expect(screen.queryByText(/memories have been generated/)).toBeNull();
 });
 
-it("检索正常但没有匹配时，说没有找到相关对话", async () => {
+it("When search works but nothing matches, it says no matching conversations were found", async () => {
   searchConversations.mockResolvedValue({
     hits: [],
     empty_reason: "no_matches",
     imported_messages: 6740,
   });
 
-  await search("量子纠缠");
+  await search("quantum entanglement");
 
   await waitFor(() => {
-    expect(screen.getByText("没有找到相关对话")).toBeTruthy();
+    expect(
+      screen.getByText("No matching conversations were found"),
+    ).toBeTruthy();
   });
 });
 
-it("还没导入任何历史时，说先导入历史", async () => {
+it("With no history imported yet, it says to import history first", async () => {
   searchConversations.mockResolvedValue({
     hits: [],
     empty_reason: "nothing_imported",
@@ -357,12 +369,14 @@ it("还没导入任何历史时，说先导入历史", async () => {
   await search();
 
   await waitFor(() => {
-    expect(screen.getByText("先导入历史，然后就能搜了")).toBeTruthy();
+    expect(
+      screen.getByText("Import history first, then you can search"),
+    ).toBeTruthy();
   });
-  expect(screen.queryByText("没有找到相关对话")).toBeNull();
+  expect(screen.queryByText("No matching conversations were found")).toBeNull();
 });
 
-it("检索本身坏掉时明确报错，不伪装成没有找到", async () => {
+it("When the search itself is broken it errors clearly, not faking no results", async () => {
   // The shape last night's packaging bug took: a core that could not search
   // at all was indistinguishable, on screen, from a user who had never said
   // the thing they were looking for.
@@ -375,32 +389,40 @@ it("检索本身坏掉时明确报错，不伪装成没有找到", async () => {
   await waitFor(() => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
-  expect(screen.getByRole("alert").textContent).toContain("搜索索引不可用");
-  expect(screen.queryByText("没有找到相关对话")).toBeNull();
+  expect(screen.getByRole("alert").textContent).toContain(
+    "The search index is unavailable",
+  );
+  expect(screen.queryByText("No matching conversations were found")).toBeNull();
 });
 
-it("点开一条结果就地展开它的原文", async () => {
+it("Opening a result expands its source text in place", async () => {
   const user = await search();
 
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: /查看原文/ })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /View source text/ }),
+    ).toBeTruthy();
   });
-  await user.click(screen.getByRole("button", { name: /查看原文/ }));
+  await user.click(screen.getByRole("button", { name: /View source text/ }));
 
   await waitFor(() => {
-    expect(screen.getByText("那就先把包发出去")).toBeTruthy();
+    expect(screen.getByText("Then ship the package first")).toBeTruthy();
   });
   expect(getConversation).toHaveBeenCalledWith("evidence-1");
 });
 
 it("explains model configuration before generating memory", () => {
   render(<ConversationSearch />);
-  expect(screen.getByText(/设置模型后，才会开始生成记忆/)).toBeTruthy();
-  expect(screen.queryByText(/配好生成模型之后/)).toBeNull();
+  expect(
+    screen.getByText(
+      /Memories start being generated once a model is configured/,
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/once the generation model is set up/)).toBeNull();
 });
 
 it("shows every original author and timestamp without inferring person from role=user", async () => {
-  const verbatim = "  保留空格\n第二行 <原文>\n\n最后一行  ";
+  const verbatim = "  Keep spaces\nSecond line <source text>\n\nLast line  ";
   getConversation.mockResolvedValue({
     ...transcript,
     messages: [
@@ -411,38 +433,42 @@ it("shows every original author and timestamp without inferring person from role
         role: "user",
         written_by: "unknown",
         created_at: null,
-        verbatim: "用户角色但作者未知",
+        verbatim: "User role but author unknown",
       },
       {
         evidence_id: "machine",
         role: "user",
         written_by: "agent",
         created_at: "not-a-time",
-        verbatim: "用户角色的机器提醒",
+        verbatim: "A machine reminder with the user role",
       },
       {
         evidence_id: "tool",
         role: "tool",
         written_by: "tool",
         created_at: null,
-        verbatim: "工具原始记录",
+        verbatim: "Raw tool record",
       },
     ],
   });
   const user = await search();
   await openA(user);
-  const region = await screen.findByRole("region", { name: "完整原始对话" });
+  const region = await screen.findByRole("region", {
+    name: "Complete original conversation",
+  });
   const items = within(region).getAllByRole("listitem");
   expect(items).toHaveLength(1);
   expect(items[0].querySelector("p")?.textContent).toBe(verbatim);
-  expect(within(items[0]).getByText("用户原话")).toBeTruthy();
+  expect(within(items[0]).getByText("User's own words")).toBeTruthy();
   expect(items[0].querySelector("time")?.dateTime).toBe(
     transcript.messages[0].created_at,
   );
-  expect(within(items[0]).getAllByText("助手原话")).toHaveLength(2);
-  expect(within(items[0]).getByText("作者未知")).toBeTruthy();
-  expect(within(items[0]).getByText("工具记录")).toBeTruthy();
-  expect(within(region).getAllByText("时间未知")).toHaveLength(2);
+  expect(within(items[0]).getAllByText("Assistant's own words")).toHaveLength(
+    2,
+  );
+  expect(within(items[0]).getByText("Author unknown")).toBeTruthy();
+  expect(within(items[0]).getByText("Tool record")).toBeTruthy();
+  expect(within(region).getAllByText("Time unknown")).toHaveLength(2);
   expect(region.textContent).not.toContain("not-a-time");
 });
 
@@ -455,7 +481,7 @@ it.each([null, "invalid-time"])(
     });
     await search();
     expect(
-      within(hitArticle(found.hits[0].excerpt)).getByText("时间未知"),
+      within(hitArticle(found.hits[0].excerpt)).getByText("Time unknown"),
     ).toBeTruthy();
   },
 );
@@ -474,10 +500,10 @@ it("A resolving after B cannot display A's original text under B", async () => {
   await openA(user);
   await openB(user);
   await act(async () => b.resolve(secondTranscript));
-  expect(screen.getByText("B 的完整原文")).toBeTruthy();
+  expect(screen.getByText("B's full original text")).toBeTruthy();
   await act(async () => a.resolve(transcript));
-  expect(screen.getByText("B 的完整原文")).toBeTruthy();
-  expect(screen.queryByText("那就先把包发出去")).toBeNull();
+  expect(screen.getByText("B's full original text")).toBeTruthy();
+  expect(screen.queryByText("Then ship the package first")).toBeNull();
 });
 
 it("an obsolete A error never replaces B's success", async () => {
@@ -492,10 +518,10 @@ it("an obsolete A error never replaces B's success", async () => {
   const user = await search();
   await openA(user);
   await openB(user);
-  await screen.findByText("B 的完整原文");
+  await screen.findByText("B's full original text");
   await act(async () => a.reject(new Error("source_not_authorized")));
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.getByText("B 的完整原文")).toBeTruthy();
+  expect(screen.getByText("B's full original text")).toBeTruthy();
 });
 
 it("collapse and reopen invalidates a late response for the same hit", async () => {
@@ -506,18 +532,22 @@ it("collapse and reopen invalidates a late response for the same hit", async () 
     .mockReturnValueOnce(second.promise);
   const user = await search();
   await openA(user);
-  await user.click(screen.getByRole("button", { name: "收起原文" }));
+  await user.click(
+    screen.getByRole("button", { name: "Collapse source text" }),
+  );
   await openA(user);
   await act(async () => first.resolve(transcript));
-  expect(screen.queryByText("那就先把包发出去")).toBeNull();
-  expect(screen.getByText("正在读取原文…")).toBeTruthy();
+  expect(screen.queryByText("Then ship the package first")).toBeNull();
+  expect(screen.getByText("Reading the source text...")).toBeTruthy();
   await act(async () =>
     second.resolve({
       ...transcript,
-      messages: [{ ...transcript.messages[0], verbatim: "新读取的原文" }],
+      messages: [
+        { ...transcript.messages[0], verbatim: "Newly read source text" },
+      ],
     }),
   );
-  expect(screen.getByText("新读取的原文")).toBeTruthy();
+  expect(screen.getByText("Newly read source text")).toBeTruthy();
 });
 
 it("collapsing discards a late rejected read without leaving an error or loading state", async () => {
@@ -525,13 +555,15 @@ it("collapsing discards a late rejected read without leaving an error or loading
   getConversation.mockReturnValue(pending.promise);
   const user = await search();
   await openA(user);
-  await user.click(screen.getByRole("button", { name: "收起原文" }));
+  await user.click(
+    screen.getByRole("button", { name: "Collapse source text" }),
+  );
   await act(async () => pending.reject(new Error("offline")));
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByText("正在读取原文…")).toBeNull();
+  expect(screen.queryByText("Reading the source text...")).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: "查看原文" })
+      .getByRole("button", { name: "View source text" })
       .getAttribute("aria-expanded"),
   ).toBe("false");
 });
@@ -543,13 +575,16 @@ it("new search removes old hits immediately and invalidates pending original-tex
   const user = await search();
   await openA(user);
   searchConversations.mockReturnValueOnce(searching.promise);
-  await user.clear(screen.getByLabelText("搜索历史对话"));
-  await user.type(screen.getByLabelText("搜索历史对话"), "第二次");
-  await user.click(screen.getByRole("button", { name: "搜索" }));
+  await user.clear(screen.getByLabelText("Search conversation history"));
+  await user.type(
+    screen.getByLabelText("Search conversation history"),
+    "second attempt",
+  );
+  await user.click(screen.getByRole("button", { name: "Search" }));
   expect(screen.queryByText(found.hits[0].excerpt)).toBeNull();
   await act(async () => reading.resolve(transcript));
   await act(async () => searching.resolve({ ...found, hits: [secondHit] }));
-  expect(screen.queryByText("那就先把包发出去")).toBeNull();
+  expect(screen.queryByText("Then ship the package first")).toBeNull();
   expect(screen.getByText(secondHit.excerpt)).toBeTruthy();
 });
 
@@ -560,7 +595,7 @@ it("a later search wins over an older success or failure while duplicate submits
     .mockReturnValueOnce(a.promise)
     .mockReturnValueOnce(b.promise);
   const view = render(<ConversationSearch />);
-  const input = screen.getByLabelText("搜索历史对话");
+  const input = screen.getByLabelText("Search conversation history");
   const form = view.container.querySelector("form");
   if (!form) throw new Error("missing search form");
   fireEvent.change(input, { target: { value: "first" } });
@@ -575,7 +610,7 @@ it("a later search wins over an older success or failure while duplicate submits
   await act(async () => a.reject(new Error("conversation_search_unavailable")));
   expect(screen.getByText(secondHit.excerpt)).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByRole("button", { name: "搜索中…" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Searching..." })).toBeNull();
 });
 
 it("read errors stop loading and expose an inline retry for the same hit", async () => {
@@ -585,12 +620,16 @@ it("read errors stop loading and expose an inline retry for the same hit", async
   const user = await search();
   await openA(user);
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "原文读取未完成",
+    "The source text read did not complete",
   );
-  expect(screen.queryByText("正在读取原文…")).toBeNull();
-  expect(screen.getByRole("button", { name: "重试读取原文" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "重试读取原文" }));
-  expect(await screen.findByText("那就先把包发出去")).toBeTruthy();
+  expect(screen.queryByText("Reading the source text...")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Retry reading the source text" }),
+  ).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Retry reading the source text" }),
+  );
+  expect(await screen.findByText("Then ship the package first")).toBeTruthy();
   expect(getConversation.mock.calls).toEqual([["evidence-1"], ["evidence-1"]]);
 });
 
@@ -601,15 +640,19 @@ it("a double retry submits one read and new failures remain retryable", async ()
     .mockReturnValueOnce(pending.promise);
   const user = await search();
   await openA(user);
-  const retry = await screen.findByRole("button", { name: "重试读取原文" });
+  const retry = await screen.findByRole("button", {
+    name: "Retry reading the source text",
+  });
   act(() => {
     fireEvent.click(retry);
     fireEvent.click(retry);
   });
   expect(getConversation).toHaveBeenCalledTimes(2);
   await act(async () => pending.reject(new Error("again")));
-  expect(screen.getByRole("button", { name: "重试读取原文" })).toBeTruthy();
-  expect(screen.queryByText("正在读取原文…")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Retry reading the source text" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("Reading the source text...")).toBeNull();
 });
 
 it.each([
@@ -625,15 +668,15 @@ it.each([
     });
     const user = await search();
     await openA(user);
-    await screen.findByText("那就先把包发出去");
+    await screen.findByText("Then ship the package first");
     getConversation.mockRejectedValueOnce(new Error(code));
     await openB(user);
     await screen.findByRole("alert");
     expect(screen.queryByText(found.hits[0].excerpt)).toBeNull();
     expect(screen.queryByText(secondHit.excerpt)).toBeNull();
-    expect(screen.queryByText("那就先把包发出去")).toBeNull();
-    expect(screen.queryByText("正在读取原文…")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "重新搜索" }));
+    expect(screen.queryByText("Then ship the package first")).toBeNull();
+    expect(screen.queryByText("Reading the source text...")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Search again" }));
     expect(searchConversations).toHaveBeenCalledTimes(2);
   },
 );
@@ -641,12 +684,12 @@ it.each([
 it("search permission rejection clears all prior original contents", async () => {
   const user = await search();
   await openA(user);
-  await screen.findByText("那就先把包发出去");
+  await screen.findByText("Then ship the package first");
   searchConversations.mockRejectedValueOnce(new Error("source_not_authorized"));
-  await user.click(screen.getByRole("button", { name: "搜索" }));
+  await user.click(screen.getByRole("button", { name: "Search" }));
   await screen.findByRole("alert");
   expect(screen.queryByText(found.hits[0].excerpt)).toBeNull();
-  expect(screen.queryByText("那就先把包发出去")).toBeNull();
+  expect(screen.queryByText("Then ship the package first")).toBeNull();
 });
 
 it.each([
@@ -663,26 +706,28 @@ it.each([
     const user = await search();
     await openA(user);
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "原文读取未完成",
+      "The source text read did not complete",
     );
-    expect(screen.queryByText("那就先把包发出去")).toBeNull();
-    expect(screen.queryByText("正在读取原文…")).toBeNull();
+    expect(screen.queryByText("Then ship the package first")).toBeNull();
+    expect(screen.queryByText("Reading the source text...")).toBeNull();
   },
 );
 
-it("点开结果后滚动到命中的那条消息并标出命中的词", async () => {
+it("Opening a result scrolls to the matched message and highlights the matched words", async () => {
   const user = await search();
   await openA(user);
 
-  const marked = await screen.findByText("抽取终于", { selector: "mark" });
+  const marked = await screen.findByText("extraction finally", {
+    selector: "mark",
+  });
   const hit = marked.closest("section[data-match]");
   expect(hit?.getAttribute("data-match")).toBe("true");
-  expect(hit?.textContent).toContain("昨天晚上重新打了一个包");
+  expect(hit?.textContent).toContain("Last night I rebuilt the package");
   expect(scrollIntoView).toHaveBeenCalledTimes(1);
   expect(scrollIntoView.mock.instances[0]).toBe(hit);
   // The rest of the transcript is shown as plain text, not as a hit.
   expect(
-    screen.queryByText("那就先把包发出去", { selector: "mark" }),
+    screen.queryByText("Then ship the package first", { selector: "mark" }),
   ).toBeNull();
 });
 
@@ -697,7 +742,7 @@ it("unmount invalidates both search and original requests without another API ca
   const searching = deferred<ConversationSearchResponse>();
   searchConversations.mockReturnValueOnce(searching.promise);
   const view = render(<ConversationSearch />);
-  fireEvent.change(screen.getByLabelText("搜索历史对话"), {
+  fireEvent.change(screen.getByLabelText("Search conversation history"), {
     target: { value: "late" },
   });
   const form = view.container.querySelector("form");
@@ -718,16 +763,20 @@ describe("BUG-06: a turn that is still waiting for its answer", () => {
     const user = await search();
     await openA(user);
     expect(
-      await screen.findByText("这一回合还没等到回答，暂不参与记忆整理。"),
+      await screen.findByText(
+        "This turn has not received an answer yet, so it is left out of memory processing.",
+      ),
     ).toBeTruthy();
   });
 
   it("says nothing when the turn got its answer", async () => {
     const user = await search();
     await openA(user);
-    await screen.findByText("那就先把包发出去");
+    await screen.findByText("Then ship the package first");
     expect(
-      screen.queryByText("这一回合还没等到回答，暂不参与记忆整理。"),
+      screen.queryByText(
+        "This turn has not received an answer yet, so it is left out of memory processing.",
+      ),
     ).toBeNull();
   });
 });

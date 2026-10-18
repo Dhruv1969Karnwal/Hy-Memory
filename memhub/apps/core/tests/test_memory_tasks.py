@@ -227,12 +227,12 @@ def test_task_extraction_checkpoint_is_idempotent_and_recoverable(tmp_path) -> N
 
     first = tasks.save_extraction(
         task.task_id,
-        content="用户偏好简洁文案。",
+        content="The user prefers concise copy.",
         layer="L2_FACT",
     )
     duplicate = tasks.save_extraction(
         task.task_id,
-        content="用户偏好简洁文案。",
+        content="The user prefers concise copy.",
         layer="L2_FACT",
     )
 
@@ -241,7 +241,7 @@ def test_task_extraction_checkpoint_is_idempotent_and_recoverable(tmp_path) -> N
     with pytest.raises(MemoryTaskRequestConflictError):
         tasks.save_extraction(
             task.task_id,
-            content="用户偏好其他文案。",
+            content="The user prefers different copy.",
             layer="L2_FACT",
         )
     _, token = tasks.claim(task.task_id)

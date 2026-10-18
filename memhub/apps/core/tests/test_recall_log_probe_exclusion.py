@@ -1,14 +1,19 @@
-"""A-21：R-10 一旦引入召回日志，「探针不污染」必须自动变红而不是静默失效。
+"""A-21: once R-10 introduces recall logging, "probes do not pollute" must turn red by itself \
+instead of going quietly dead.
 
-现状（假绿）：R-24 验收「探针不进用户可见召回日志」目前靠 core **根本没有
-召回日志表**成立，不是靠过滤。R-10 加上日志表之后，`__om_probe__` 会开始
-进日志，而旧测试不会红。
+Current state (false green): R-24 accepts "probes never enter user-visible recall logs", and \
+that today holds
+because core has **no recall log table at all**, not because of filtering. Once R-10 adds the \
+log table, `__om_probe__` will start
+entering the log while the old test never goes red.
 
-本文件做两件事：
-1. 把这条写进 R-10 验收清单（见 docs/mvp/R-10-acceptance.md）；
-2. 一条结构守卫：仓库里一旦出现召回日志 schema 标记，就必须同时存在
-   探针排除声明。今天没有日志表时守卫检查「标记不存在」；这不是永远绿的
-   占位——人为植入 `CREATE TABLE recall_logs` 且不声明排除时会红。
+This file does two things:
+1. writes this into the R-10 acceptance checklist (see docs/mvp/R-10-acceptance.md);
+2. a structural guard: once a recall log schema marker appears in the repo, a
+   probe-exclusion declaration must exist alongside it. With no log table today the guard checks \
+"the marker is absent"; this is not a forever-green
+   placeholder -- manually planting `CREATE TABLE recall_logs` without declaring the exclusion \
+turns it red.
 """
 
 from __future__ import annotations

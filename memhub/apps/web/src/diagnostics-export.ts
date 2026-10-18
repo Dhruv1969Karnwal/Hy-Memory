@@ -8,15 +8,15 @@ export type DiagnosticsExportResult = {
 
 export async function exportDiagnosticsFile(): Promise<DiagnosticsExportResult> {
   if (!window.oneMemory?.exportDiagnostics) {
-    return { ok: false, message: "请在桌面 App 中导出诊断信息。" };
+    return { ok: false, message: "Export diagnostics from the desktop app." };
   }
   try {
     const receipt = await window.oneMemory.exportDiagnostics();
     return {
       ok: true,
-      message: `日志已导出：${receipt.filename ?? "诊断文件"}`,
+      message: `Log exported: ${receipt.filename ?? "Diagnostics file"}`,
     };
   } catch {
-    return { ok: false, message: "诊断信息未能导出，请重试。" };
+    return { ok: false, message: "Failed to export diagnostics. Try again." };
   }
 }

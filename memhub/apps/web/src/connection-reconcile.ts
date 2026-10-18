@@ -19,7 +19,10 @@ import { latestSource, sourceWriteInFlight } from "./source-state";
 import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal } from "./write-outcome";
 
-export type AssociationStatus = "检测中" | "成功关联" | "未开启关联";
+export type AssociationStatus =
+  | "Checking"
+  | "Association successful"
+  | "Association off";
 
 type SyncWriter = (
   source: SourceResponse,
@@ -91,9 +94,9 @@ export function associationStatus(input: {
   approved: boolean;
   intended?: boolean;
 }): AssociationStatus {
-  if (input.approved) return "成功关联";
-  if (input.probing || input.intended) return "检测中";
-  return "未开启关联";
+  if (input.approved) return "Association successful";
+  if (input.probing || input.intended) return "Checking";
+  return "Association off";
 }
 
 /**

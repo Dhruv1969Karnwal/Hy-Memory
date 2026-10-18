@@ -36,7 +36,7 @@ def assert_coverage(text, chunks, tokenizer, prefix=""):
 
 
 def test_default_384_body_64_overlap_and_exact_source_slices():
-    text = "中" * 1000
+    text = "\u4e2d" * 1000
     chunks = chunk_evidence(text, Characters())
     assert [(c.start_cp, c.end_cp) for c in chunks] == [(0, 384), (320, 704), (640, 1000)]
     assert chunks[0].token_count == 386
@@ -47,19 +47,28 @@ def test_default_384_body_64_overlap_and_exact_source_slices():
 
 def test_all_prefix_and_special_tokens_count_toward_strict_512_budget():
     prefix = "P" * 200
-    text = "中" * 900
+    text = "\u4e2d" * 900
     chunks = chunk_evidence(text, Characters(), prefix=prefix)
     assert chunks[0].end_cp == 310
     assert chunks[0].token_count == 512
     assert_coverage(text, chunks, Characters(), prefix)
     with pytest.raises(ChunkingError, match="budget"):
-        chunk_evidence("中", Characters(), prefix="P" * 510)
+        chunk_evidence("\u4e2d", Characters(), prefix="P" * 510)
 
 
 def test_real_tokenizer_covers_long_chinese_middle_and_tail_object_locations():
     middle = "https://example.test/Middle?Key=Value#Anchor"
-    tail = "/CaseSensitive/路径/final.txt"
-    text = "中文😀e\u0301\n" + "中" * 740 + "\n" + middle + "\n" + "尾" * 800 + "\n" + tail
+    tail = "/CaseSensitive/\u8def\u5f84/final.txt"
+    text = (
+        "\u4e2d\u6587😀e\u0301\n"
+        + "\u4e2d" * 740
+        + "\n"
+        + middle
+        + "\n"
+        + "\u5c3e" * 800
+        + "\n"
+        + tail
+    )
     tokenizer = LocalEmbedder()
     chunks = chunk_evidence(text, tokenizer)
     assert len(chunks) > 3
@@ -67,11 +76,11 @@ def test_real_tokenizer_covers_long_chinese_middle_and_tail_object_locations():
     for value in (middle, tail):
         location = text.index(value)
         assert any(c.start_cp <= location and c.end_cp >= location + len(value) for c in chunks)
-    assert chunks[0].text.startswith("中文😀e\u0301\n")
+    assert chunks[0].text.startswith("\u4e2d\u6587😀e\u0301\n")
 
 
 def test_prefers_paragraph_boundary_near_target_without_losing_text():
-    text = "中" * 300 + "\n\n" + "尾" * 500
+    text = "\u4e2d" * 300 + "\n\n" + "\u5c3e" * 500
     chunks = chunk_evidence(text, Characters())
     assert chunks[0].end_cp == 302
     assert_coverage(text, chunks, Characters())
@@ -83,7 +92,13 @@ def test_empty_or_whitespace_has_no_index_chunks(text):
 
 
 @pytest.mark.parametrize(
-    "text", ["😀" * 300, "e\u0301" * 400, "甲\n乙\t丙", "原样 <user_query>原文</user_query>"]
+    "text",
+    [
+        "😀" * 300,
+        "e\u0301" * 400,
+        "\u7532\n\u4e59\t\u4e19",
+        "\u539f\u6837 <user_query>\u539f\u6587</user_query>",
+    ],
 )
 def test_unicode_and_wrapper_text_identity_is_preserved(text):
     chunks = chunk_evidence(text, Characters())
@@ -143,8 +158,8 @@ def test_retokenizes_actual_prefix_plus_slice_instead_of_assuming_additive_count
             return result
 
     tokenizer = ContextSensitive()
-    chunks = chunk_evidence("中" * 600, tokenizer, prefix="P")
-    assert_coverage("中" * 600, chunks, tokenizer, "P")
+    chunks = chunk_evidence("\u4e2d" * 600, tokenizer, prefix="P")
+    assert_coverage("\u4e2d" * 600, chunks, tokenizer, "P")
 
 
 def test_overlapping_token_offsets_are_not_split_inside_a_character():
@@ -174,7 +189,7 @@ def test_single_indivisible_offset_over_budget_is_not_truncated():
 
 def test_real_long_continuous_ascii_unknown_preserves_all_6000_characters():
     tokenizer = LocalEmbedder()
-    text = " \t" + "x" * 6000 + "\n末尾链接 https://example.test/Case?A=B#C\t"
+    text = " \t" + "x" * 6000 + "\n\u672b\u5c3e\u94fe\u63a5 https://example.test/Case?A=B#C\t"
     chunks = chunk_evidence(text, tokenizer)
     assert len(chunks) == 1
     assert chunks[0].text == text
@@ -183,8 +198,8 @@ def test_real_long_continuous_ascii_unknown_preserves_all_6000_characters():
 
 def test_real_subword_and_whitespace_boundaries_have_no_gaps():
     tokenizer = LocalEmbedder()
-    text = " \t\n" + ("unaffordable embeddings\t中\u0301文  a\u0301b\n\n" * 180) + "\t\n "
-    prefix = "本段用于检索："
+    text = " \t\n" + ("unaffordable embeddings\t\u4e2d\u0301\u6587  a\u0301b\n\n" * 180) + "\t\n "
+    prefix = "\u672c\u6bb5\u7528\u4e8e\u68c0\u7d22\uff1a"
     chunks = chunk_evidence(text, tokenizer, prefix=prefix)
     assert len(chunks) > 3
     assert chunks[0].start_cp == 0 and chunks[-1].end_cp == len(text)
@@ -207,7 +222,7 @@ def test_partially_overlapping_offsets_for_combining_cluster_are_indivisible():
                     i += 1
             return TokenizedText(tuple(range(len(offsets))), tuple(offsets))
 
-    text = "中" * 383 + "e\u0301" + "尾" * 500
+    text = "\u4e2d" * 383 + "e\u0301" + "\u5c3e" * 500
     tokenizer = Combining()
     chunks = chunk_evidence(text, tokenizer)
     assert_coverage(text, chunks, tokenizer)
@@ -216,7 +231,7 @@ def test_partially_overlapping_offsets_for_combining_cluster_are_indivisible():
 
 def test_sparse_whitespace_gaps_are_retained_not_rebuilt_from_tokens():
     tokenizer = LocalEmbedder()
-    text = " \n" + "中" * 380 + "\n \t\n" + "尾" * 380 + " \t\r\n"
+    text = " \n" + "\u4e2d" * 380 + "\n \t\n" + "\u5c3e" * 380 + " \t\r\n"
     chunks = chunk_evidence(text, tokenizer)
     assert_coverage(text, chunks, tokenizer)
     assert chunks[0].text.startswith(" \n")
@@ -225,8 +240,8 @@ def test_sparse_whitespace_gaps_are_retained_not_rebuilt_from_tokens():
 
 def test_real_prefix_retokenization_never_exceeds_encoder_window():
     tokenizer = LocalEmbedder()
-    prefix = "检索前缀" * 50
-    text = ("中文tokenization😀e\u0301\n" * 120) + "https://example.test/Tail"
+    prefix = "\u68c0\u7d22\u524d\u7f00" * 50
+    text = ("\u4e2d\u6587tokenization😀e\u0301\n" * 120) + "https://example.test/Tail"
     chunks = chunk_evidence(text, tokenizer, prefix=prefix)
     assert len(chunks) > 1
     assert_coverage(text, chunks, tokenizer, prefix)
@@ -238,18 +253,21 @@ def test_tokenizer_failure_is_explicit_not_partial_output():
             raise RuntimeError("tokenizer unavailable")
 
     with pytest.raises(ChunkingError, match="tokenization_failed"):
-        chunk_evidence("中", Broken())
+        chunk_evidence("\u4e2d", Broken())
 
 
 @pytest.mark.parametrize(
-    "text", ["e\u0301", "\u0301", "中\u0301文", "\n\r\t中\n尾\n", "👩‍💻", "👩‍👩‍👧‍👦", "✈️"]
+    "text",
+    ["e\u0301", "\u0301", "\u4e2d\u0301\u6587", "\n\r\t\u4e2d\n\u5c3e\n", "👩‍💻", "👩‍👩‍👧‍👦", "✈️"],
 )
 def test_locked_normalizer_supported_unicode_examples_cover_original(text):
     tokenizer = LocalEmbedder()
     assert_coverage(text, chunk_evidence(text, tokenizer), tokenizer)
 
 
-@pytest.mark.parametrize("text", ["中\u200d文", "\u200d", "中\u200b文", "中\x00文", "\x00"])
+@pytest.mark.parametrize(
+    "text", ["\u4e2d\u200d\u6587", "\u200d", "\u4e2d\u200b\u6587", "\u4e2d\x00\u6587", "\x00"]
+)
 def test_locked_normalizer_dropped_nonwhitespace_is_explicitly_unsupported(text):
     tokenizer = LocalEmbedder()
     offsets = tokenizer.tokenize_with_offsets(text).offsets

@@ -28,14 +28,15 @@ import { R6Button, R6Switch } from "./R6Controls";
 import { latestSource, useSource } from "./source-state";
 import "./application-detail.css";
 
-const SYNC_UNCONFIRMED = "此应用的处理开关结果未能确认，其他应用不受影响。";
+const SYNC_UNCONFIRMED =
+  "This app's processing switch result is unconfirmed. Other apps are unaffected.";
 // D97: the single sync switch now governs both taking in new data and
 // generating memories, so the separate read-permission switch is hidden, not
 // removed — flip this back to restore it without digging through history.
 const MEMORY_PERMISSION_SECTION_VISIBLE = false;
 
 function connectFailure(reason: string | null, rereadFailed = false) {
-  return `此应用的一键接入未完成，其他应用不受影响。${hostFailureNote(reason, rereadFailed)}`;
+  return `One-click connection for this app didn't finish. Other apps are unaffected.${hostFailureNote(reason, rereadFailed)}`;
 }
 
 function connectionLabel(input: {
@@ -45,13 +46,14 @@ function connectionLabel(input: {
   failed: boolean;
   probeState: string | null;
 }) {
-  if (input.probeState === "wired") return "已接通";
-  if (input.probeState === "reachable_but_blind") return "已安装，但取不到记忆";
-  if (input.probeState === "unreachable") return "未接通";
-  if (input.failed) return "状态待核对";
-  if (input.pending) return "检测中";
-  if (input.approved || input.insertionOn) return "未接通";
-  return "未开启关联";
+  if (input.probeState === "wired") return "Connected";
+  if (input.probeState === "reachable_but_blind")
+    return "Installed, but it can't reach memories";
+  if (input.probeState === "unreachable") return "Not connected";
+  if (input.failed) return "Status pending verification";
+  if (input.pending) return "Checking";
+  if (input.approved || input.insertionOn) return "Not connected";
+  return "Association off";
 }
 
 function SourceIcon({ source }: { source: SourceResponse }) {
@@ -120,7 +122,7 @@ export function ApplicationDetail({
       (capability) => {
         if (active && capability.reason === "app_not_in_applications")
           setAppLocationNote(
-            "请先把 MemHub 拖到“应用程序”并从那里重新打开，才能接入应用。",
+            "Drag MemHub into Applications and reopen it from there before an app can be connected.",
           );
       },
       () => {},
@@ -318,18 +320,18 @@ export function ApplicationDetail({
       setInstallError(
         `${
           outcome.permission?.receipt?.status === "revoked"
-            ? `已撤销记忆权限，${source.display_name} 已查不到记忆。但`
+            ? `Memory permission revoked, so ${source.display_name} can no longer look up memories. But `
             : ""
-        }无法确认连接已全部移除，需要你手动核对：${outcome.findings
-          .map((finding) => `${finding.path}（${finding.where}）`)
-          .join("；")}。`,
+        }the connection can't be confirmed as fully removed, so you need to check manually: ${outcome.findings
+          .map((finding) => `${finding.path} (${finding.where})`)
+          .join("; ")}.`,
       );
     if (outcome.state === "revoked")
       setInstallError(
-        `已撤销记忆权限，${source.display_name} 已查不到记忆。${
+        `Memory permission revoked, so ${source.display_name} can no longer look up memories. ${
           outcome.configEdited
-            ? "配置文件被改过，MemHub 没有自动删除；请手动移除其中的 MemHub 连接。"
-            : "连接文件没有移除，请重新核对。"
+            ? "The config file was edited, so MemHub didn't delete it automatically. Remove the MemHub connection from it manually."
+            : "The connection files weren't removed. Check again."
         }`,
       );
   }
@@ -358,7 +360,7 @@ export function ApplicationDetail({
           setInstallError(
             wanted
               ? connectFailure(hostWriteReason(error), hostRereadFailed(error))
-              : `连接未能移除，记忆权限也未能撤销，${source.display_name} 仍可使用记忆，请重试。${
+              : `The connection wasn't removed and the memory permission wasn't revoked, so ${source.display_name} can still use memories. Try again. ${
                   (error as { note?: string }).note ?? ""
                 }`,
           );
@@ -414,11 +416,11 @@ export function ApplicationDetail({
   drainSyncRef.current = drainSync;
   const syncStatus = syncing
     ? syncChecked
-      ? "正在开启处理…"
-      : "正在冻结处理…"
+      ? "Turning processing on..."
+      : "Freezing processing..."
     : syncChecked
-      ? "处理中"
-      : "已冻结";
+      ? "Processing"
+      : "Frozen";
   async function changeMemoryPermission(enabled: boolean) {
     if (!window.oneMemory) return;
     if (stale) return;
@@ -442,12 +444,12 @@ export function ApplicationDetail({
           });
           if (wanted && hostId === "cursor") {
             setHostRestartNotice(
-              "Cursor 的连接凭证已更新。请完全退出并重新打开 Cursor，再开始新对话。",
+              "Cursor's connection credential was updated. Quit and reopen Cursor completely, then start a new conversation.",
             );
           } else if (!wanted) setHostRestartNotice("");
         } catch (error) {
           setInstallError(
-            `此应用的记忆使用权限未能确认，请重试。${hostFailureNote(
+            `This app's memory use permission couldn't be confirmed. Try again.${hostFailureNote(
               hostWriteReason(error),
               hostRereadFailed(error),
             )}`,
@@ -465,11 +467,11 @@ export function ApplicationDetail({
   return (
     <section
       className="r6-app-detail"
-      aria-label={`${source.display_name} 应用设置`}
+      aria-label={`${source.display_name} app settings`}
     >
-      <h1 className="r6-app-detail-title">应用详情</h1>
+      <h1 className="r6-app-detail-title">App details</h1>
       <R6Button variant="quiet" onClick={onBack}>
-        返回应用
+        Back to apps
       </R6Button>
       <header>
         <span className="r6-app-detail-icon">
@@ -483,22 +485,27 @@ export function ApplicationDetail({
       <div className="r6-app-settings">
         <section className="r6-app-setting">
           <div>
-            <h2>同步开关</h2>
-            <p>开启后处理历史待办，并持续接收此应用的新会话。</p>
+            <h2>Sync switch</h2>
+            <p>
+              Turns on processing of the history backlog and keeps receiving new
+              conversations from this app.
+            </p>
             {syncing && syncChecked && (
               <p role="status">
-                正在读取已有对话，首次开启可能需要一两分钟，请不要重复点击。
+                Loading existing conversations. The first turn-on can take a
+                minute or two, so don't click it again.
               </p>
             )}
             {backfillNotice && (
               <p role="status">
-                将补充冻结期间的新对话；原有 pending Job 继续处理。
+                New conversations from the frozen period will be backfilled;
+                existing pending jobs keep processing.
               </p>
             )}
             {syncError && <p role="alert">{syncError}</p>}
           </div>
           <R6Switch
-            label="同步开关"
+            label="Sync switch"
             checked={syncChecked}
             pending={syncing}
             disabled={
@@ -510,8 +517,11 @@ export function ApplicationDetail({
         </section>
         <section className="r6-app-setting">
           <div>
-            <h2>一键插入应用</h2>
-            <p>安装记忆连接，并默认允许此应用使用已授权记忆。</p>
+            <h2>One-click insertion</h2>
+            <p>
+              Installs the memory connection and lets this app use authorized
+              memories by default.
+            </p>
             {unsupported && (
               <p>{`${source.display_name} ${UNSUPPORTED_NOTE}`}</p>
             )}
@@ -522,7 +532,7 @@ export function ApplicationDetail({
             ) : null}
           </div>
           <R6Switch
-            label="一键插入应用"
+            label="One-click insertion"
             checked={insertionChecked}
             pending={installing}
             disabled={
@@ -539,11 +549,14 @@ export function ApplicationDetail({
         {MEMORY_PERMISSION_SECTION_VISIBLE && (
           <section className="r6-app-setting">
             <div>
-              <h2>允许使用记忆</h2>
-              <p>让 {source.display_name} 查询已授权范围内的记忆。</p>
+              <h2>Allow memory use</h2>
+              <p>
+                Lets {source.display_name} search memories within the authorized
+                scope.
+              </p>
             </div>
             <R6Switch
-              label="允许使用记忆"
+              label="Allow memory use"
               checked={memoryChecked}
               pending={memoryPending}
               disabled={
@@ -557,30 +570,38 @@ export function ApplicationDetail({
         )}
         <section className="r6-app-setting">
           <div>
-            <h2>连接状态</h2>
+            <h2>Connection status</h2>
             {refreshError && (
               <p role="alert">
-                暂时无法刷新来源状态，请重试；未更改同步或读取权限。
+                The source status can't be refreshed right now. Try again. Sync
+                and read permissions are unchanged.
               </p>
             )}
             {readFailed && (
-              <p role="alert">暂时无法读取连接状态，当前状态待核对；请重试。</p>
+              <p role="alert">
+                Couldn't read the connection status right now, so the status
+                needs verification. Try again.
+              </p>
             )}
             {probeState && probeState !== "wired" && (
               <p>
-                {`记忆工具没有进到 ${source.display_name} 当前对话。完全退出 ${source.display_name} 后重新打开，新对话里才会出现。`}
+                {`The memory tool isn't in ${source.display_name}'s current conversation. Quit ${source.display_name} completely and reopen it, and it appears only in a new conversation.`}
               </p>
             )}
             {probeState === "wired" && (
-              <p>已接通。已经打开的对话不会中途出现这个工具，请新开一轮。</p>
+              <p>
+                Connected. Conversations that are already open won't pick up
+                this tool mid-way, so start a new one.
+              </p>
             )}
             {linkFailed && (
               <p role="alert">
-                本次连接探测失败，当前状态待核对；未把上次读取当作本次成功。
+                This connection probe failed, so the status needs verification.
+                The last read isn't counted as a success for this one.
               </p>
             )}
             {checkedAt && !stale && current?.state === "ready" && (
-              <small>上次读取：{new Date(checkedAt).toLocaleString()}</small>
+              <small>Last read:{new Date(checkedAt).toLocaleString()}</small>
             )}
           </div>
           <div className="r6-app-detail-actions">

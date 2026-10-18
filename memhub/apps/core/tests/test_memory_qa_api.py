@@ -69,7 +69,7 @@ def test_ask_stream_endpoint_emits_recall_deltas_and_final(tmp_path) -> None:
                     correlation_id="message",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="我要求看板只用真实数据。",
+                    verbatim="I require the dashboard to use only real data.",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             ).record
@@ -80,7 +80,7 @@ def test_ask_stream_endpoint_emits_recall_deltas_and_final(tmp_path) -> None:
                     "draft": {
                         "user_id": "local",
                         "kind": "chat",
-                        "content": "用户要求看板只用真实数据。",
+                        "content": "The user requires the dashboard to use only real data.",
                         "scopes": ["all-apps"],
                         "evidence_ids": [evidence.evidence_id],
                     },
@@ -93,11 +93,11 @@ def test_ask_stream_endpoint_emits_recall_deltas_and_final(tmp_path) -> None:
             stub = _StubAnswerer(
                 (
                     {"type": "recall", "memories": (memory,)},
-                    {"type": "delta", "text": "你要求"},
-                    {"type": "delta", "text": "真实数据。"},
+                    {"type": "delta", "text": "You require"},
+                    {"type": "delta", "text": " the dashboard to use only real data."},
                     {
                         "type": "final",
-                        "answer": "你要求真实数据。",
+                        "answer": "You require the dashboard to use only real data.",
                         "memories": (memory,),
                         "mode": "generated",
                         "retrieval": {"semantic_state": "failed"},
@@ -108,7 +108,7 @@ def test_ask_stream_endpoint_emits_recall_deltas_and_final(tmp_path) -> None:
 
             response = await client.post(
                 "/api/v1/memories/ask/stream",
-                json={"question": "我对数据有什么要求？", "scope": "all-apps"},
+                json={"question": "What requirements do I have about data?", "scope": "all-apps"},
             )
 
             assert response.status_code == 200
@@ -126,7 +126,7 @@ def test_ask_stream_endpoint_emits_recall_deltas_and_final(tmp_path) -> None:
                 == events[-1]["answer"]
             )
             assert events[-1]["retrieval"] == {"semantic_state": "failed"}
-            assert stub.calls == [("我对数据有什么要求？", "all-apps")]
+            assert stub.calls == [("What requirements do I have about data?", "all-apps")]
 
     asyncio.run(scenario())
 
@@ -150,7 +150,7 @@ def test_ask_stream_endpoint_requires_the_local_token(tmp_path) -> None:
         ):
             response = await client.post(
                 "/api/v1/memories/ask/stream",
-                json={"question": "我是谁？", "scope": "all-apps"},
+                json={"question": "Who am I?", "scope": "all-apps"},
             )
 
             assert response.status_code == 401

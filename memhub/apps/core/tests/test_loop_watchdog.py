@@ -36,7 +36,7 @@ def test_a_blocked_loop_is_reported_while_it_is_still_blocked(caplog) -> None:
         asyncio.run(block_the_loop_on_purpose())
     watchdog.stop()
 
-    assert watchdog.stalls, "看门狗没有发现阻塞"
+    assert watchdog.stalls, "the watchdog noticed no blockage"
     assert watchdog.stalls[0] >= 0.3
     assert any("i_am_the_culprit" in line for line in watchdog.stall_stacks[0])
     report = "\n".join(record.getMessage() for record in caplog.records)

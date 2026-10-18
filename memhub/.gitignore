@@ -8,8 +8,8 @@ _tmp_*
 __pycache__/
 *.py[cod]
 .pytest_cache/
-# pytest --basetemp 产出的临时库目录。本机沙箱下复用默认 basetemp 会把
-# EEXIST 误报成 PermissionError，因此需要显式传 --basetemp；这些目录不入库。
+# Temporary database directories produced by pytest --basetemp. Reusing the default
+# basetemp in the local sandbox reports EEXIST as PermissionError; these directories are not committed.
 .pytest-*/
 .mypy_cache/
 .ruff_cache/
@@ -32,6 +32,6 @@ apps/core/data/
 # See scripts/fetch_embedding_model.py and OPEN-ITEMS A-32.
 apps/core/src/one_memory/embedding_assets/
 
-# 生成的发行目录（打包产出，不入库
+# Generated distribution directory (packaging output, not committed
 dist-runtime/
 dist-runtime*/

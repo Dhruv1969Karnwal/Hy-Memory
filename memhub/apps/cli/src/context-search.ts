@@ -120,15 +120,18 @@ export function contextExitCode(document: ContextSearchDocument): number {
 }
 
 export function renderContextText(document: ContextSearchDocument): string {
-  if (document.state === "unavailable") return "暂时无法查记忆，请稍后重试。\n";
-  if (document.state === "denied") return "当前应用没有查记忆权限。\n";
-  if (document.state === "invalid") return "查记忆返回了无法识别的结果。\n";
+  if (document.state === "unavailable")
+    return "Memory search is unavailable right now; try again later.\n";
+  if (document.state === "denied")
+    return "This app has no permission to search memories.\n";
+  if (document.state === "invalid")
+    return "Memory search returned an unrecognized result.\n";
   const lines = [
     document.state === "empty"
-      ? "没有查到相关记忆。"
+      ? "No related memories were found."
       : document.state === "partial"
-        ? "查到以下内容，部分内容还在整理中："
-        : "查到以下相关内容：",
+        ? "Found the following, and some of it is still being organized:"
+        : "Found the following related content:",
   ];
   for (const item of document.items) {
     if (item.kind === "memory") {
@@ -139,7 +142,8 @@ export function renderContextText(document: ContextSearchDocument): string {
       }
     }
   }
-  if (document.truncated) lines.push("结果已按请求预算截断。");
+  if (document.truncated)
+    lines.push("The result was truncated to the requested budget.");
   return `${lines.join("\n")}\n`;
 }
 

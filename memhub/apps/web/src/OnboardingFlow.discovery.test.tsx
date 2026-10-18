@@ -19,7 +19,7 @@ vi.mock("./FirstImportReview", () => ({
     <>
       <p>Import accepted</p>
       <button type="button" onClick={() => onContinue("settings")}>
-        进入第三步
+        Go to step 3
       </button>
     </>
   ),
@@ -27,9 +27,9 @@ vi.mock("./FirstImportReview", () => ({
 vi.mock("./OnboardingModelController", () => ({
   OnboardingModelController: ({ onBack }: { onBack(): void }) => (
     <>
-      <h1>第三步模型页面</h1>
+      <h1>Step 3 model page</h1>
       <button type="button" onClick={onBack}>
-        返回第二步
+        Back to step 2
       </button>
     </>
   ),
@@ -108,7 +108,9 @@ function view(imports: ImportSourcesController) {
   );
 }
 const checkbox = (id: string) =>
-  screen.getByRole<HTMLInputElement>("checkbox", { name: `导入 ${id} 历史` });
+  screen.getByRole<HTMLInputElement>("checkbox", {
+    name: `Import ${id} history`,
+  });
 
 it("moves from import to the actual third step without completing onboarding", async () => {
   const finish = vi.fn();
@@ -120,11 +122,13 @@ it("moves from import to the actual third step without completing onboarding", a
       onFinish={finish}
     />,
   );
-  await userEvent.click(screen.getByRole("button", { name: "进入第三步" }));
-  expect(screen.getByRole("heading", { name: "第三步模型页面" })).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Go to step 3" }));
+  expect(
+    screen.getByRole("heading", { name: "Step 3 model page" }),
+  ).toBeTruthy();
   expect(completeOnboarding).not.toHaveBeenCalled();
   expect(finish).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "返回第二步" }));
+  await userEvent.click(screen.getByRole("button", { name: "Back to step 2" }));
   expect(screen.getByText("Import accepted")).toBeTruthy();
   expect(completeOnboarding).not.toHaveBeenCalled();
 });
@@ -144,7 +148,9 @@ it("lets an empty first-time user enter without granting or importing a source",
       onFinish={finish}
     />,
   );
-  const skip = await screen.findByRole("button", { name: "稍后添加，先进入" });
+  const skip = await screen.findByRole("button", {
+    name: "Add later, continue now",
+  });
   await waitFor(() => expect((skip as HTMLButtonElement).disabled).toBe(false));
   await userEvent.click(skip);
   await waitFor(() =>
@@ -165,12 +171,16 @@ it("retains explicit retry or enter when saving the skipped onboarding fails", a
       onFinish={finish}
     />,
   );
-  const skip = await screen.findByRole("button", { name: "稍后添加，先进入" });
+  const skip = await screen.findByRole("button", {
+    name: "Add later, continue now",
+  });
   await waitFor(() => expect((skip as HTMLButtonElement).disabled).toBe(false));
   await userEvent.click(skip);
-  await screen.findByRole("button", { name: "重试保存并进入" });
+  await screen.findByRole("button", { name: "Retry save and continue" });
   expect(finish).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "仍进入应用页" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Go to apps anyway" }),
+  );
   expect(finish).toHaveBeenCalledExactlyOnceWith("sources");
   expect(imports.connectForOnboarding).not.toHaveBeenCalled();
 });
@@ -184,7 +194,7 @@ it("checks metadata automatically once in StrictMode without reading or authoriz
   await waitFor(() => expect(checkbox("workbuddy").checked).toBe(true));
   expect(imports.refresh).toHaveBeenCalledTimes(1);
   expect(
-    screen.queryByRole("checkbox", { name: "导入 cursor 历史" }),
+    screen.queryByRole("checkbox", { name: "Import cursor history" }),
   ).toBeNull();
   expect(imports.detect).not.toHaveBeenCalled();
   expect(imports.connectForOnboarding).not.toHaveBeenCalled();
@@ -205,7 +215,9 @@ it("preserves deselection across refresh and automatically selects a newly found
   const rendered = render(view(imports));
   await waitFor(() => expect(checkbox("workbuddy").checked).toBe(true));
   await userEvent.click(checkbox("workbuddy"));
-  await userEvent.click(screen.getByRole("button", { name: "重新检测位置" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Re-check locations" }),
+  );
   await waitFor(() => expect(imports.refresh).toHaveBeenCalledTimes(2));
   expect(checkbox("workbuddy").checked).toBe(false);
   rendered.rerender(
@@ -233,7 +245,9 @@ it("does not preselect custom paths and refuses to silently reselect changed ide
     }),
   );
   await waitFor(() => expect(checkbox("workbuddy").checked).toBe(false));
-  expect(screen.getByRole("alert").textContent).toContain("身份或状态已变化");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "identity, or status changed",
+  );
   expect(imports.connectForOnboarding).not.toHaveBeenCalled();
 });
 
@@ -252,7 +266,7 @@ it("freezes the explicitly submitted source list when a later source arrives", a
         resolveRefresh = resolve;
       }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "开始导入" }));
+  await userEvent.click(screen.getByRole("button", { name: "Start import" }));
   const lateSources = [source("workbuddy"), source("codex")];
   rendered.rerender(view({ ...imports, sources: lateSources }));
   expect(checkbox("codex").checked).toBe(false);
@@ -269,9 +283,13 @@ it("reports discovery failure and permits retry without pretending nothing is in
   imports.refresh.mockRejectedValueOnce(new Error("offline"));
   render(view(imports));
   await waitFor(() =>
-    expect(screen.getByRole("alert").textContent).toContain("位置检测未完成"),
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Location check did not finish",
+    ),
   );
   expect(checkbox("workbuddy").checked).toBe(false);
-  await userEvent.click(screen.getByRole("button", { name: "重新检测位置" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Re-check locations" }),
+  );
   await waitFor(() => expect(checkbox("workbuddy").checked).toBe(true));
 });

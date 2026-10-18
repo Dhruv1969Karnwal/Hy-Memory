@@ -63,7 +63,7 @@ const staged: FileImportReceipt = {
     {
       role: "user",
       written_by: "person",
-      text: "原话不是结论",
+      text: "The quote is not a conclusion",
       created_at: null,
       truncated: false,
     },
@@ -72,7 +72,7 @@ const staged: FileImportReceipt = {
 const committed = { ...staged, committed: true };
 const candidate: SourceResponse = {
   source_id: staged.source_id,
-  display_name: "ChatGPT 历史包",
+  display_name: "ChatGPT history package",
   available: true,
   authorized: false,
   detected: null,
@@ -112,11 +112,13 @@ it("does not steal initial page focus and restores trigger focus only after clos
       <HistoryImport onRefresh={onRefresh} onConnect={onConnect} />
     </StrictMode>,
   );
-  const trigger = screen.getByRole("button", { name: "导入历史包" });
+  const trigger = screen.getByRole("button", {
+    name: "Import history package",
+  });
   expect(document.activeElement).not.toBe(trigger);
   fireEvent.click(trigger);
-  await screen.findByRole("dialog", { name: "导入历史包" });
-  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  await screen.findByRole("dialog", { name: "Import history package" });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 
@@ -151,13 +153,17 @@ it("reopens an uncertain upload and recovers preview without reupload, commit or
     return staged;
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  expect(screen.getByLabelText("历史数据文件")).toHaveProperty(
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
+  expect(screen.getByLabelText("History data file")).toHaveProperty(
     "disabled",
     true,
   );
-  await userEvent.click(screen.getByRole("button", { name: "核对上传结果" }));
-  await screen.findByText("6 条文本消息");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Check upload result" }),
+  );
+  await screen.findByText("6 text messages");
   expect(api.reconcileHistoryUpload).toHaveBeenCalledOnce();
   expect(api.uploadHistoryFile).not.toHaveBeenCalled();
   expect(api.commitHistoryFile).not.toHaveBeenCalled();
@@ -181,18 +187,24 @@ it("keeps an unknown upload fenced through closing and reopening", async () => {
     throw Error("lost response");
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
   await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
+    screen.getByLabelText("History data file"),
     new File(["[]"], "history.json"),
   );
-  await screen.findByRole("button", { name: "核对上传结果" });
+  await screen.findByRole("button", { name: "Check upload result" });
   const result = emitted.filter((item) => item.phase === "result").at(-1);
   expect(result?.status).toBe("unknown");
   expect(result?.status).not.toBe("failed");
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  expect(screen.getByLabelText("历史数据文件")).toHaveProperty(
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
+  expect(screen.getByLabelText("History data file")).toHaveProperty(
     "disabled",
     true,
   );
@@ -212,9 +224,15 @@ it("discards only the recovered uncommitted stage if recovery finishes after clo
       }),
   );
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  await userEvent.click(screen.getByRole("button", { name: "核对上传结果" }));
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Check upload result" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   await act(async () => {
     clearPendingFileUpload(id);
     resolve(staged);
@@ -228,24 +246,30 @@ it("discards only the recovered uncommitted stage if recovery finishes after clo
   expect(onConnect).not.toHaveBeenCalled();
 });
 async function upload() {
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
   await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
+    screen.getByLabelText("History data file"),
     new File(["[]"], staged.filename, { type: "application/json" }),
   );
-  await screen.findByText("6 条文本消息");
+  await screen.findByText("6 text messages");
 }
 async function publish() {
   await userEvent.click(
-    screen.getByRole("checkbox", { name: /确认保存这份文件到本机/ }),
+    screen.getByRole("checkbox", {
+      name: /Confirm saving this file to this device/,
+    }),
   );
   await userEvent.click(
-    screen.getByRole("button", { name: "保存文件并核对来源" }),
+    screen.getByRole("button", { name: "Save file and check source" }),
   );
 }
-async function authorize(label = "授权并开始导入") {
+async function authorize(label = "Authorize and start import") {
   await userEvent.click(
-    screen.getByRole("checkbox", { name: /允许一次性读取上述来源目录/ }),
+    screen.getByRole("checkbox", {
+      name: /Allow one-time read of history packages in the source directory above/,
+    }),
   );
   await userEvent.click(screen.getByRole("button", { name: label }));
 }
@@ -264,13 +288,13 @@ it("requires preview, publication, actual directory review and independent sourc
   onRefresh.mockResolvedValue({ sources: [mutable] });
   mount();
   await upload();
-  expect(screen.getByText("原话不是结论")).toBeTruthy();
+  expect(screen.getByText("The quote is not a conclusion")).toBeTruthy();
   expect(screen.getByText(staged.filename)).toBeTruthy();
   expect(api.commitHistoryFile).not.toHaveBeenCalled();
   expect(onRefresh).not.toHaveBeenCalled();
   expect(onConnect).not.toHaveBeenCalled();
   expect(
-    screen.getByRole("button", { name: "保存文件并核对来源" }),
+    screen.getByRole("button", { name: "Save file and check source" }),
   ).toHaveProperty("disabled", true);
   await publish();
   expect(api.commitHistoryFile).toHaveBeenCalledWith(
@@ -280,10 +304,18 @@ it("requires preview, publication, actual directory review and independent sourc
   expect(onRefresh).toHaveBeenCalledTimes(1);
   expect(screen.getByText(candidate.candidate_path)).toBeTruthy();
   expect(screen.getByText(candidate.candidate_root_id as string)).toBeTruthy();
-  expect(screen.getByText(/目录中的全部已提交历史包/)).toBeTruthy();
-  expect(screen.getByText(/模型处理、持续同步、外部调用及安装/)).toBeTruthy();
   expect(
-    screen.getByRole("checkbox", { name: /允许一次性读取上述来源目录/ }),
+    screen.getByText(/all committed history packages in the directory above/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      /model processing, continuous sync, external calls or installation/,
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("checkbox", {
+      name: /Allow one-time read of history packages in the source directory above/,
+    }),
   ).toHaveProperty("checked", false);
   expect(onConnect).not.toHaveBeenCalled();
   mutable.candidate_root_id = "root:replaced-after-render";
@@ -310,7 +342,7 @@ it.each([
     await publish();
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(
-      screen.queryByRole("checkbox", { name: /允许一次性读取/ }),
+      screen.queryByRole("checkbox", { name: /Allow one-time read/ }),
     ).toBeNull();
     expect(onConnect).not.toHaveBeenCalled();
     expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
@@ -323,18 +355,18 @@ it("retains a committed file through refresh failure and recovers receipt-first"
   await upload();
   await publish();
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "文件已保存",
+    "The file was saved",
   );
-  expect(screen.getByText("6 条文本消息")).toBeTruthy();
+  expect(screen.getByText("6 text messages")).toBeTruthy();
   expect(onConnect).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "重新核对来源" }));
+  await userEvent.click(screen.getByRole("button", { name: "Recheck source" }));
   expect(api.getHistoryFile).toHaveBeenCalledWith(staged.upload_id);
   expect(api.getHistoryFile.mock.invocationCallOrder[0]).toBeLessThan(
     onRefresh.mock.invocationCallOrder[1],
   );
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
   expect(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   ).toHaveProperty("checked", false);
   await authorize();
   expect(onConnect).toHaveBeenCalledWith([staged.source_id], [candidate], {
@@ -363,7 +395,7 @@ it("reads an uncertain commit receipt before retry without duplicating a committ
   expect(result?.status).not.toBe("failed");
   expect(onRefresh).not.toHaveBeenCalled();
   await userEvent.click(
-    screen.getByRole("button", { name: "核对文件保存结果" }),
+    screen.getByRole("button", { name: "Check file save result" }),
   );
   expect(api.getHistoryFile).toHaveBeenCalledWith(staged.upload_id);
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
@@ -381,17 +413,16 @@ it("never reposts after failed receipt recovery and reconfirms a known uncommitt
   await upload();
   await publish();
   await userEvent.click(
-    screen.getByRole("button", { name: "核对文件保存结果" }),
+    screen.getByRole("button", { name: "Check file save result" }),
   );
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
   expect(onRefresh).not.toHaveBeenCalled();
   await userEvent.click(
-    screen.getByRole("button", { name: "核对文件保存结果" }),
+    screen.getByRole("button", { name: "Check file save result" }),
   );
-  expect(screen.getByRole("checkbox", { name: /确认保存/ })).toHaveProperty(
-    "checked",
-    false,
-  );
+  expect(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  ).toHaveProperty("checked", false);
   await publish();
   expect(api.getHistoryFile).toHaveBeenCalledTimes(2);
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(2);
@@ -406,7 +437,7 @@ it.each(["upload_id", "source_id", "checksum"])(
     await upload();
     await publish();
     await userEvent.click(
-      screen.getByRole("button", { name: "核对文件保存结果" }),
+      screen.getByRole("button", { name: "Check file save result" }),
     );
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
@@ -427,10 +458,10 @@ it("requires explicit failed-source retryFailed consent", async () => {
   await authorize();
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   ).toHaveProperty("checked", false);
   expect(onConnect).toHaveBeenCalledTimes(1);
-  await authorize("重试此来源");
+  await authorize("Retry this source");
   expect(onConnect).toHaveBeenLastCalledWith([staged.source_id], [candidate], {
     importUploadId: staged.upload_id,
     retryFailed: true,
@@ -448,12 +479,12 @@ it("keeps a rejected-source retry explicit after rechecking the same directory",
   await upload();
   await publish();
   await authorize();
-  await userEvent.click(screen.getByRole("button", { name: "重新核对来源" }));
+  await userEvent.click(screen.getByRole("button", { name: "Recheck source" }));
   expect(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   ).toHaveProperty("checked", false);
   expect(onConnect).toHaveBeenCalledTimes(1);
-  await authorize("重试此来源");
+  await authorize("Retry this source");
   expect(onConnect).toHaveBeenLastCalledWith([staged.source_id], [candidate], {
     importUploadId: staged.upload_id,
     retryFailed: true,
@@ -467,7 +498,7 @@ it("uses ordinary receipt recovery after an uncertain connect, never retryFailed
   await publish();
   await authorize();
   await screen.findByRole("alert");
-  await authorize("核对连接结果");
+  await authorize("Check connection result");
   expect(onConnect).toHaveBeenLastCalledWith([staged.source_id], [candidate], {
     importUploadId: staged.upload_id,
   });
@@ -490,10 +521,10 @@ it("shows a replacement root only after rechecking and requires fresh consent", 
   await authorize();
   expect(screen.getByText(candidate.candidate_path)).toBeTruthy();
   expect(onRefresh).toHaveBeenCalledTimes(1);
-  await userEvent.click(screen.getByRole("button", { name: "重新核对来源" }));
+  await userEvent.click(screen.getByRole("button", { name: "Recheck source" }));
   expect(screen.getByText(replacement.candidate_path)).toBeTruthy();
   expect(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   ).toHaveProperty("checked", false);
   expect(onConnect).toHaveBeenCalledTimes(1);
   await authorize();
@@ -513,24 +544,30 @@ it("locks double clicks through commit, refresh and connect", async () => {
   onConnect.mockReturnValue(connect.promise);
   mount();
   await upload();
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
-  const submit = screen.getByRole("button", { name: "保存文件并核对来源" });
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
+  const submit = screen.getByRole("button", {
+    name: "Save file and check source",
+  });
   act(() => {
     fireEvent.click(submit);
     fireEvent.click(submit);
   });
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
   expect(
-    screen.getByRole("radio", { name: "已有记忆" }).matches(":disabled"),
+    screen.getByRole("radio", { name: "Existing memory" }).matches(":disabled"),
   ).toBe(true);
   await act(async () => save.resolve(committed));
   expect(onRefresh).toHaveBeenCalledTimes(1);
   expect(onConnect).not.toHaveBeenCalled();
   await act(async () => refresh.resolve({ sources: [candidate] }));
   await userEvent.click(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   );
-  const confirm = screen.getByRole("button", { name: "授权并开始导入" });
+  const confirm = screen.getByRole("button", {
+    name: "Authorize and start import",
+  });
   act(() => {
     fireEvent.click(confirm);
     fireEvent.click(confirm);
@@ -545,21 +582,25 @@ it.each(["close", "unmount"])(
     const pending = deferred<FileImportReceipt>();
     api.uploadHistoryFile.mockReturnValue(pending.promise);
     const view = mount();
-    await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Import history package" }),
+    );
     await userEvent.upload(
-      screen.getByLabelText("历史数据文件"),
+      screen.getByLabelText("History data file"),
       new File(["[]"], "pending.json"),
     );
     if (action === "unmount") view.unmount();
     else {
       await userEvent.click(
-        screen.getByRole("button", { name: "关闭历史包导入" }),
+        screen.getByRole("button", { name: "Close history import" }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Import history package" }),
+      );
     }
     await act(async () => pending.resolve(staged));
     expect(api.discardHistoryFile).toHaveBeenCalledWith(staged.upload_id);
-    expect(screen.queryByText("6 条文本消息")).toBeNull();
+    expect(screen.queryByText("6 text messages")).toBeNull();
     expect(api.commitHistoryFile).not.toHaveBeenCalled();
     expect(onConnect).not.toHaveBeenCalled();
   },
@@ -576,7 +617,7 @@ it.each(["close", "unmount"])(
     if (action === "unmount") view.unmount();
     else
       await userEvent.click(
-        screen.getByRole("button", { name: "关闭历史包导入" }),
+        screen.getByRole("button", { name: "Close history import" }),
       );
     await act(async () => pending.resolve(committed));
     expect(onRefresh).not.toHaveBeenCalled();
@@ -592,8 +633,12 @@ it("ignores late source metadata after cancellation", async () => {
   mount();
   await upload();
   await publish();
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
   await act(async () => pending.resolve({ sources: [candidate] }));
   expect(screen.queryByText(candidate.candidate_path)).toBeNull();
   expect(onConnect).not.toHaveBeenCalled();
@@ -607,11 +652,15 @@ it("ignores late connection success without closing a reopened dialog", async ()
   await upload();
   await publish();
   await authorize();
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
   await act(async () => pending.resolve(accepted));
   expect(screen.getByRole("dialog")).toBeTruthy();
-  expect(screen.queryByText("6 条文本消息")).toBeNull();
+  expect(screen.queryByText("6 text messages")).toBeNull();
   expect(onConnect).toHaveBeenCalledTimes(1);
 });
 
@@ -619,11 +668,13 @@ it("cancels before final consent without granting or discarding a committed file
   mount();
   await upload();
   await publish();
-  await userEvent.click(screen.getByRole("button", { name: "暂不授权" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Skip authorization" }),
+  );
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(onConnect).not.toHaveBeenCalled();
   expect(api.discardHistoryFile).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "导入历史包" })).toBe(
+  expect(screen.getByRole("button", { name: "Import history package" })).toBe(
     document.activeElement,
   );
 });
@@ -633,9 +684,9 @@ it("clears committed scope and consent on kind changes without deleting the file
   await upload();
   await publish();
   await userEvent.click(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   );
-  await userEvent.click(screen.getByRole("radio", { name: "已有记忆" }));
+  await userEvent.click(screen.getByRole("radio", { name: "Existing memory" }));
   expect(screen.queryByText(candidate.candidate_path)).toBeNull();
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(api.discardHistoryFile).not.toHaveBeenCalled();
@@ -657,30 +708,45 @@ it("previews memory without inventing authors and invalidates consent on editing
       {
         role: "memory",
         written_by: "unknown",
-        text: "可能适合当前项目",
+        text: "Might fit the current project",
         created_at: null,
         truncated: false,
       },
     ],
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  await userEvent.click(screen.getByRole("radio", { name: "已有记忆" }));
-  await userEvent.click(screen.getByRole("button", { name: "粘贴内容" }));
-  await userEvent.type(
-    screen.getByLabelText("已有记忆原文"),
-    "可能适合当前项目",
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "预览内容" }));
-  expect(await screen.findByText("1 条已有记忆记录")).toBeTruthy();
-  expect(screen.getByText("作者未知")).toBeTruthy();
-  expect(screen.getByText(/原始对话未提供/)).toBeTruthy();
+  await userEvent.click(screen.getByRole("radio", { name: "Existing memory" }));
+  await userEvent.click(screen.getByRole("button", { name: "Paste content" }));
+  await userEvent.type(
+    screen.getByLabelText("Existing memory source text"),
+    "Might fit the current project",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Preview content" }),
+  );
+  expect(await screen.findByText("1 existing memory records")).toBeTruthy();
+  expect(screen.getByText("Author unknown")).toBeTruthy();
+  expect(
+    screen.getByText(/The original conversation is not provided/),
+  ).toBeTruthy();
   expect(api.uploadHistoryFile.mock.calls[0][1]).toBe("memory_content");
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
-  await userEvent.click(screen.getByRole("button", { name: "编辑原文" }));
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Edit source text" }),
+  );
   expect(screen.queryByRole("checkbox")).toBeNull();
-  await userEvent.type(screen.getByLabelText("已有记忆原文"), "变更");
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.type(
+    screen.getByLabelText("Existing memory source text"),
+    "change",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   expect(api.discardHistoryFile).toHaveBeenCalledWith(staged.upload_id);
 });
 
@@ -692,31 +758,37 @@ it("shows structured manual parsing errors without private exception text", asyn
   api.historyImportIssue.mockReturnValue({
     code: "unknown_role",
     location: "line:2",
-    excerpt: "Tool: 原文片段",
+    excerpt: "Tool: source fragment",
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
-    new File(["User: 内容\nTool: 原文片段"], "chat.txt"),
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
   );
-  expect(await screen.findByText("第 2 行：无法确认说话人")).toBeTruthy();
-  expect(screen.getByText("Tool: 原文片段")).toBeTruthy();
+  await userEvent.upload(
+    screen.getByLabelText("History data file"),
+    new File(["User: content\nTool: source fragment"], "chat.txt"),
+  );
+  expect(
+    await screen.findByText("Line 2: Cannot identify the speaker"),
+  ).toBeTruthy();
+  expect(screen.getByText("Tool: source fragment")).toBeTruthy();
   expect(screen.queryByText("unrelated private exception")).toBeNull();
 });
 
 it("invalidates the old preview when a replacement is oversized", async () => {
   mount();
   await upload();
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
   const oversized = new File(["[]"], "too-large.json");
   Object.defineProperty(oversized, "size", { value: 129 * 1024 * 1024 });
-  await userEvent.upload(screen.getByLabelText("历史数据文件"), oversized);
+  await userEvent.upload(screen.getByLabelText("History data file"), oversized);
   expect(await screen.findByRole("alert")).toBeTruthy();
-  expect(screen.queryByText("6 条文本消息")).toBeNull();
+  expect(screen.queryByText("6 text messages")).toBeNull();
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(
-    screen.getByRole("button", { name: "保存文件并核对来源" }),
+    screen.getByRole("button", { name: "Save file and check source" }),
   ).toHaveProperty("disabled", true);
   expect(api.discardHistoryFile).toHaveBeenCalledWith(staged.upload_id);
   expect(onConnect).not.toHaveBeenCalled();
@@ -725,11 +797,11 @@ it("invalidates the old preview when a replacement is oversized", async () => {
 it.each([
   [
     "duplicate_export_identity",
-    "文件里有重复的会话或消息身份，未导入任何内容。",
+    "The file has duplicate conversation or message identities; nothing was imported.",
   ],
   [
     "export_record_invalid",
-    "文件中有超长或无法读取的对话记录，未导入任何内容。",
+    "The file contains overlong or unreadable conversation records; nothing was imported.",
   ],
 ])("explains %s without exposing parser input", async (code, label) => {
   api.apiErrorCode.mockReturnValue(code);
@@ -737,9 +809,11 @@ it.each([
     new Error("private source must not appear"),
   );
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
   await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
+    screen.getByLabelText("History data file"),
     new File(["[]"], "export.json"),
   );
   expect((await screen.findByRole("alert")).textContent).toBe(label);
@@ -752,11 +826,11 @@ it("hides the previous preview when replacement cleanup fails", async () => {
   mount();
   await upload();
   await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
+    screen.getByLabelText("History data file"),
     new File(["[]"], "second.json"),
   );
   expect(await screen.findByRole("alert")).toBeTruthy();
-  expect(screen.queryByText("6 条文本消息")).toBeNull();
+  expect(screen.queryByText("6 text messages")).toBeNull();
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(api.uploadHistoryFile).toHaveBeenCalledTimes(1);
   expect(onConnect).not.toHaveBeenCalled();
@@ -773,24 +847,41 @@ it("previews pasted turns and invalidates consent immediately after editing", as
     agent_messages: 1,
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  await userEvent.click(screen.getByRole("button", { name: "粘贴对话" }));
-  await userEvent.type(
-    screen.getByLabelText("对话原文"),
-    "User: 原话不是结论\nAssistant: 这是一项建议",
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "预览内容" }));
-  expect(await screen.findByText("手工提供的对话")).toBeTruthy();
-  expect(screen.getByText("原话不是结论")).toBeTruthy();
-  expect(screen.getByText("时间未知")).toBeTruthy();
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
-  await userEvent.click(screen.getByRole("button", { name: "编辑原文" }));
-  await userEvent.type(screen.getByLabelText("对话原文"), "变更");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Paste conversation" }),
+  );
+  await userEvent.type(
+    screen.getByLabelText("Conversation source text"),
+    "User: The quote is not a conclusion\nAssistant: This is a suggestion",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Preview content" }),
+  );
+  expect(
+    await screen.findByText("Manually provided conversation"),
+  ).toBeTruthy();
+  expect(screen.getByText("The quote is not a conclusion")).toBeTruthy();
+  expect(screen.getByText("Time unknown")).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Edit source text" }),
+  );
+  await userEvent.type(
+    screen.getByLabelText("Conversation source text"),
+    "change",
+  );
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(
-    screen.getByRole("button", { name: "保存文件并核对来源" }),
+    screen.getByRole("button", { name: "Save file and check source" }),
   ).toHaveProperty("disabled", true);
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   expect(api.discardHistoryFile).toHaveBeenCalledWith(staged.upload_id);
 });
 
@@ -802,18 +893,24 @@ it("discards an uncommitted memory preview when switching to historical conversa
     content_kind: "memory_content",
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
-  await userEvent.click(screen.getByRole("radio", { name: "已有记忆" }));
-  await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
-    new File(["内容"], "memory.txt"),
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
   );
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
-  await userEvent.click(screen.getByRole("radio", { name: "历史对话" }));
+  await userEvent.click(screen.getByRole("radio", { name: "Existing memory" }));
+  await userEvent.upload(
+    screen.getByLabelText("History data file"),
+    new File(["content"], "memory.txt"),
+  );
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
+  await userEvent.click(
+    screen.getByRole("radio", { name: "Historical conversations" }),
+  );
   expect(api.discardHistoryFile).toHaveBeenCalledWith(staged.upload_id);
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(
-    screen.getByRole("button", { name: "保存文件并核对来源" }),
+    screen.getByRole("button", { name: "Save file and check source" }),
   ).toHaveProperty("disabled", true);
   expect(onConnect).not.toHaveBeenCalled();
 });
@@ -875,7 +972,7 @@ it("uses the real controller with a newly visible root and explicit failed-only 
   expect(first.sourceRoots).toEqual({
     [staged.source_id]: candidate.candidate_root_id,
   });
-  await authorize("重试此来源");
+  await authorize("Retry this source");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(api.getSourceConnection).toHaveBeenCalledWith(first.requestId);
   expect(api.connectSources).toHaveBeenCalledTimes(2);
@@ -919,7 +1016,7 @@ it("creates a separately bound intent for a second committed file in the same so
   await publish();
   expect(api.connectSources).toHaveBeenCalledTimes(1);
   expect(
-    screen.getByRole("checkbox", { name: /允许一次性读取/ }),
+    screen.getByRole("checkbox", { name: /Allow one-time read/ }),
   ).toHaveProperty("checked", false);
   await authorize();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -953,10 +1050,12 @@ it("never starts a replacement upload or second cleanup when closed during old-f
   mount();
   await upload();
   await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
+    screen.getByLabelText("History data file"),
     new File(["[]"], "replacement.json"),
   );
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   expect(api.discardHistoryFile).toHaveBeenCalledTimes(1);
   await act(async () => pending.resolve());
   expect(api.uploadHistoryFile).toHaveBeenCalledTimes(1);
@@ -968,24 +1067,23 @@ it("locks file and kind replacement until an uncertain save has been checked", a
   mount();
   await upload();
   await publish();
-  expect(screen.getByLabelText("历史数据文件")).toHaveProperty(
+  expect(screen.getByLabelText("History data file")).toHaveProperty(
     "disabled",
     true,
   );
   expect(
-    screen.getByRole("radio", { name: "已有记忆" }).matches(":disabled"),
+    screen.getByRole("radio", { name: "Existing memory" }).matches(":disabled"),
   ).toBe(true);
-  expect(screen.getByRole("button", { name: "粘贴对话" })).toHaveProperty(
-    "disabled",
-    true,
-  );
   expect(
-    screen.getByRole("button", { name: "核对文件保存结果" }),
+    screen.getByRole("button", { name: "Paste conversation" }),
+  ).toHaveProperty("disabled", true);
+  expect(
+    screen.getByRole("button", { name: "Check file save result" }),
   ).toHaveProperty("disabled", false);
   await userEvent.click(
-    screen.getByRole("button", { name: "核对文件保存结果" }),
+    screen.getByRole("button", { name: "Check file save result" }),
   );
-  expect(screen.getByLabelText("历史数据文件")).toHaveProperty(
+  expect(screen.getByLabelText("History data file")).toHaveProperty(
     "disabled",
     false,
   );
@@ -998,12 +1096,14 @@ it("does not downgrade a known committed receipt or discard it after a regressed
   mount();
   await upload();
   await publish();
-  await userEvent.click(screen.getByRole("button", { name: "重新核对来源" }));
+  await userEvent.click(screen.getByRole("button", { name: "Recheck source" }));
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(
-    screen.queryByRole("button", { name: "保存文件并核对来源" }),
+    screen.queryByRole("button", { name: "Save file and check source" }),
   ).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   expect(api.discardHistoryFile).not.toHaveBeenCalled();
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
 });
@@ -1012,11 +1112,17 @@ it("keeps a rejected cleanup retryable without restoring stale consent", async (
   api.discardHistoryFile.mockRejectedValueOnce(new Error("busy"));
   mount();
   await upload();
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.queryByRole("checkbox")).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "关闭历史包导入" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close history import" }),
+  );
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(api.discardHistoryFile).toHaveBeenCalledTimes(2);
   expect(api.commitHistoryFile).not.toHaveBeenCalled();
@@ -1025,12 +1131,16 @@ it("keeps a rejected cleanup retryable without restoring stale consent", async (
 it("wraps keyboard focus inside the dialog and Escape cancels staged content", async () => {
   mount();
   await upload();
-  await userEvent.click(screen.getByRole("checkbox", { name: /确认保存/ }));
-  const submit = screen.getByRole("button", { name: "保存文件并核对来源" });
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Confirm saving/ }),
+  );
+  const submit = screen.getByRole("button", {
+    name: "Save file and check source",
+  });
   submit.focus();
   await userEvent.tab();
   expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "关闭历史包导入" }),
+    screen.getByRole("button", { name: "Close history import" }),
   );
   await userEvent.tab({ shift: true });
   expect(document.activeElement).toBe(submit);
@@ -1056,7 +1166,7 @@ it("keeps a successful file commit and source receipt when the controller's stat
   await authorize();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("status").textContent).toContain(
-    "已取得来源连接回执",
+    "Source connection receipt obtained",
   );
   expect(api.commitHistoryFile).toHaveBeenCalledTimes(1);
   expect(api.connectSources).toHaveBeenCalledTimes(1);
@@ -1079,7 +1189,7 @@ it("retains a committed Claude ZIP through connection failure and retries its ex
   const source = {
     ...candidate,
     source_id: preview.source_id,
-    display_name: "Claude 历史包",
+    display_name: "Claude history package",
     candidate_path: "/isolated/import-files/ready/claude-export",
     candidate_root_id: "root:v2:claude-directory",
   };
@@ -1091,16 +1201,18 @@ it("retains a committed Claude ZIP through connection failure and retries its ex
     accepted_source_ids: [preview.source_id],
   });
   mount();
-  await userEvent.click(screen.getByRole("button", { name: "导入历史包" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Import history package" }),
+  );
   await userEvent.upload(
-    screen.getByLabelText("历史数据文件"),
+    screen.getByLabelText("History data file"),
     new File(["zip"], "export.zip"),
   );
-  expect(await screen.findByText("2 条文本消息")).toBeTruthy();
+  expect(await screen.findByText("2 text messages")).toBeTruthy();
   await publish();
   await authorize();
   expect(await screen.findByRole("alert")).toBeTruthy();
-  await authorize("核对连接结果");
+  await authorize("Check connection result");
   expect(onConnect).toHaveBeenCalledTimes(2);
   expect(onConnect).toHaveBeenLastCalledWith([preview.source_id], [source], {
     importUploadId: preview.upload_id,

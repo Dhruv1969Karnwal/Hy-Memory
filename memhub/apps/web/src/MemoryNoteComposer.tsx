@@ -14,13 +14,13 @@ import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal } from "./write-outcome";
 
 const states: Record<MemoryNoteReceipt["state"], string> = {
-  waiting_for_model: "原话已保存，等待可用模型",
-  waiting_for_permission: "原话已保存，等待整理",
-  pending: "原话已保存，等待整理",
-  running: "正在整理",
-  failed: "原话已保存，整理未完成",
-  ready: "整理已完成",
-  no_memories: "原话已保存，未提取出可用记忆",
+  waiting_for_model: "Source text saved, waiting for an available model",
+  waiting_for_permission: "Source text saved, waiting to be organized",
+  pending: "Source text saved, waiting to be organized",
+  running: "Organizing",
+  failed: "Source text saved, organizing did not finish",
+  ready: "Organizing finished",
+  no_memories: "Source text saved, no usable memory was extracted",
 };
 
 export interface PendingMemoryNote {
@@ -48,7 +48,7 @@ export function MemoryNoteComposer({
   const [model, setModel] = useState<ModelProfile | null>(null);
   // Before the read settles, `model` is null for the same reason it is null
   // when nothing is configured. Showing the configured-model copy anyway made
-  // the line flicker from 尚未配置 to the model name on every open.
+  // the line flicker from not configured to the model name on every open.
   const [modelRead, setModelRead] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -120,7 +120,7 @@ export function MemoryNoteComposer({
     let cancelled = false;
     const before = document.activeElement;
     panel.current?.querySelector("textarea")?.focus();
-    void refreshNotes("最近添加的内容读取失败。");
+    void refreshNotes("Failed to read the recently added entries.");
     setModelRead(false);
     getModelProfiles()
       .then((value) => {
@@ -161,7 +161,11 @@ export function MemoryNoteComposer({
       // key would make one tick read the wrong endpoint for the other caller.
       key: "note-processing",
       intervalMs: 1_500,
-      run: () => refreshNotes("整理状态暂时不可用，原话已保存。", true),
+      run: () =>
+        refreshNotes(
+          "The organizing status is temporarily unavailable; the source text is saved.",
+          true,
+        ),
     });
     return stop;
   }, [open, working, refreshNotes, suspended]);
@@ -204,7 +208,7 @@ export function MemoryNoteComposer({
       setText("");
       intent.current = null;
       setNotice("");
-      setSavedToast("已保存，正在后台沉淀记忆");
+      setSavedToast("Saved; memories are settling in the background");
       isOpen.current = false;
       notesRequest.current += 1;
       setOpen(false);
@@ -228,7 +232,9 @@ export function MemoryNoteComposer({
         // so the interaction succeeded even though this attempt did not.
         trace.done("succeeded", { reason: "recovered_from_operation" });
       } catch {
-        setError("未能确认保存结果，输入已保留。重试不会重复添加。");
+        setError(
+          "The save result could not be confirmed; your input is kept. Retrying will not add a duplicate.",
+        );
         // The copy already says the result is *unconfirmed*: neither the POST
         // nor the receipt re-read came back. Only a definite refusal is a
         // failure, and here there is none, so the log must not claim one.
@@ -258,8 +264,8 @@ export function MemoryNoteComposer({
       // the UI cannot support.
       setError(
         refused
-          ? "整理未能开始，原话仍已保存。"
-          : "整理结果尚未确认，原话仍已保存。请刷新后核对。",
+          ? "Organizing did not start; the source text is still saved."
+          : "The organizing result is not confirmed yet; the source text is still saved. Refresh and check.",
       );
     } finally {
       setBusy(false);
@@ -274,7 +280,7 @@ export function MemoryNoteComposer({
         data-tour-id="memory-note-trigger"
         onClick={() => setOpen(true)}
       >
-        <FilePlus2 size={16} aria-hidden="true" /> 添加记忆
+        <FilePlus2 size={16} aria-hidden="true" /> Add memory
       </button>
       {savedToast && (
         <p className="memory-note-toast" role="status">
@@ -313,12 +319,12 @@ export function MemoryNoteComposer({
             }}
           >
             <header className="memory-note-heading">
-              <h2 id="memory-note-title">添加记忆</h2>
+              <h2 id="memory-note-title">Add memory</h2>
               <button
                 className="quiet"
                 type="button"
-                aria-label="关闭新增记忆"
-                title="关闭"
+                aria-label="Close add memory"
+                title="Close"
                 disabled={busy}
                 onClick={close}
               >
@@ -332,7 +338,7 @@ export function MemoryNoteComposer({
               }}
             >
               <label className="memory-note-label" htmlFor="memory-note-text">
-                记下这件事
+                Note this down
               </label>
               <textarea
                 id="memory-note-text"
@@ -340,13 +346,15 @@ export function MemoryNoteComposer({
                 maxLength={12000}
                 value={text}
                 disabled={busy}
-                placeholder="例如：项目周会不排在周五。"
+                placeholder="For example: do not schedule the weekly project meeting on Fridays."
                 onChange={(event) => setText(event.target.value)}
               />
               <p className="memory-note-model">
-                整理模型：
+                Organizing model:
                 {model?.name ??
-                  (modelRead ? "尚未配置，原话仍可保存" : "正在读取")}
+                  (modelRead
+                    ? "Not configured, the source text can still be saved"
+                    : "Reading")}
               </p>
               {error && (
                 <p className="error-banner" role="alert">
@@ -365,17 +373,20 @@ export function MemoryNoteComposer({
                       onConfigureModel();
                     }}
                   >
-                    配置模型
+                    Configure model
                   </button>
                 )}
                 <button type="submit" disabled={busy || !text.trim()}>
-                  {busy ? "保存中…" : "保存原话"}
+                  {busy ? "Saving..." : "Save source text"}
                 </button>
               </div>
             </form>
             {notes.length > 0 && (
-              <section className="memory-note-recent" aria-label="最近添加">
-                <h3>最近添加</h3>
+              <section
+                className="memory-note-recent"
+                aria-label="Recently added"
+              >
+                <h3>Recently added</h3>
                 <ul>
                   {notes.map((note) => (
                     <li key={note.evidence_id}>
@@ -388,7 +399,8 @@ export function MemoryNoteComposer({
                       )}
                       {note.error === "hy_memory_model_payment_required" && (
                         <p className="error-banner">
-                          模型服务要求检查余额或付款状态，原话仍已保存。
+                          The model service requires checking the balance or
+                          payment status; the source text is still saved.
                         </p>
                       )}
                       <div className="memory-note-actions">
@@ -402,7 +414,7 @@ export function MemoryNoteComposer({
                               onOpenMemory(id);
                             }}
                           >
-                            查看记忆
+                            View memory
                             {note.memory_ids.length > 1 ? ` ${index + 1}` : ""}
                           </button>
                         ))}
@@ -416,7 +428,7 @@ export function MemoryNoteComposer({
                             onClick={() => void retry(note)}
                           >
                             <RefreshCw size={14} aria-hidden="true" />
-                            重新整理
+                            Organize again
                           </button>
                         )}
                       </div>

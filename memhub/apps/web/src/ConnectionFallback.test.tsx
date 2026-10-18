@@ -23,16 +23,17 @@ describe("ConnectionFallback", () => {
     } as unknown as Window["oneMemory"];
     render(<ConnectionFallback />);
     expect(getConnectionMaterial).not.toHaveBeenCalled();
-    await user.click(screen.getByText("连接其他工具"));
-    expect(await screen.findByLabelText("本机连接材料")).toHaveProperty(
-      "value",
-      "connect local only",
-    );
-    await user.click(screen.getByRole("button", { name: "复制提示词" }));
+    await user.click(screen.getByText("Connect other tools"));
+    expect(
+      await screen.findByLabelText("Local connection material"),
+    ).toHaveProperty("value", "connect local only");
+    await user.click(screen.getByRole("button", { name: "Copy prompt" }));
     expect(copyText).toHaveBeenCalledWith("connect local only");
-    expect(screen.getByRole("status").textContent).toContain("尚未建立连接");
-    await user.click(screen.getByRole("tab", { name: "MCP 配置" }));
-    expect(screen.getByLabelText("本机连接材料")).toHaveProperty(
+    expect(screen.getByRole("status").textContent).toContain(
+      "no connection has been established",
+    );
+    await user.click(screen.getByRole("tab", { name: "MCP config" }));
+    expect(screen.getByLabelText("Local connection material")).toHaveProperty(
       "value",
       '{"mcpServers":{}}',
     );
@@ -48,21 +49,25 @@ describe("ConnectionFallback", () => {
       copyText: vi.fn().mockRejectedValue(new Error()),
     } as unknown as Window["oneMemory"];
     render(<ConnectionFallback />);
-    await user.click(screen.getByText("连接其他工具"));
-    await user.click(await screen.findByRole("button", { name: "重试" }));
-    await screen.findByLabelText("本机连接材料");
-    expect(screen.getByRole("tab", { name: "命令" })).toHaveProperty(
+    await user.click(screen.getByText("Connect other tools"));
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+    await screen.findByLabelText("Local connection material");
+    expect(screen.getByRole("tab", { name: "Command" })).toHaveProperty(
       "disabled",
       true,
     );
-    await user.click(screen.getByRole("button", { name: "复制提示词" }));
+    await user.click(screen.getByRole("button", { name: "Copy prompt" }));
     await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toContain("复制失败"),
+      expect(screen.getByRole("status").textContent).toContain("Copy failed"),
     );
   });
   it("does not invent runtime paths in the browser", () => {
     render(<ConnectionFallback />);
-    expect(screen.queryByLabelText("本机连接材料")).toBeNull();
-    expect(screen.getByText("本机连接材料仅在桌面 App 中可用。")).toBeTruthy();
+    expect(screen.queryByLabelText("Local connection material")).toBeNull();
+    expect(
+      screen.getByText(
+        "Local connection material is only available in the desktop app.",
+      ),
+    ).toBeTruthy();
   });
 });

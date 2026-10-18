@@ -1,6 +1,6 @@
 """Rule 8: a lease must outlive the work it covers, and be renewed while it runs.
 
-hy memory app's failure (§三 反模式 6) was a lock TTL *shorter* than the outer
+hy memory app's failure (§3 anti-pattern 6) was a lock TTL *shorter* than the outer
 timeout (330 < 360): the lock lapsed while the work was still going, so a
 second drain picked the same job up and wrote it twice. Their fix has two
 halves, and both are about us too:

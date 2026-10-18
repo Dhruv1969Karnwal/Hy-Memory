@@ -460,8 +460,8 @@ describe("interactive model setup", () => {
       installed_hosts: ["codex"],
     });
     const summary = prompt.written.join("\n");
-    expect(summary).toContain("请在 App 里接入：OpenClaw");
-    expect(summary).not.toContain("接入失败：OpenClaw");
+    expect(summary).toContain("Connect in the app: OpenClaw");
+    expect(summary).not.toContain("Connect failed: OpenClaw");
     expect(read).toHaveBeenCalledTimes(3);
   });
 
@@ -496,7 +496,7 @@ describe("interactive model setup", () => {
       installed_hosts: [],
     });
     const summary = prompt.written.join("\n");
-    expect(summary).toContain("请在 App 里接入：OpenClaw");
-    expect(summary).not.toContain("接入失败：OpenClaw");
+    expect(summary).toContain("Connect in the app: OpenClaw");
+    expect(summary).not.toContain("Connect failed: OpenClaw");
   });
 });

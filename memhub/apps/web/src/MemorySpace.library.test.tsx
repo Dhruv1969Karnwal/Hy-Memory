@@ -63,7 +63,7 @@ vi.mock("./MemoryMap", () => ({
 }));
 vi.mock("./MemoryRecallScope", () => ({
   MemoryRecallScope: () => null,
-  memoryProvenanceLabel: () => "原话",
+  memoryProvenanceLabel: () => "Source quote",
 }));
 const memory = (
   id: string,
@@ -84,7 +84,7 @@ const memory = (
   deleted_at: null,
 });
 const page = (
-  items = [memory("全库条目")],
+  items = [memory("Library entry")],
   total = 201,
   offset = 0,
 ): MemoryLibraryPage => ({ items, total, offset, limit: 100 });
@@ -100,7 +100,7 @@ beforeEach(() => {
   api.memories.mockResolvedValue([memory("map-only")]);
   api.mapLibrary.mockResolvedValue(page([memory("map-only")], 1));
   api.library.mockImplementation(async (q) =>
-    page([memory(`全库${q.offset}`)], 201, q.offset),
+    page([memory(`Library ${q.offset}`)], 201, q.offset),
   );
   api.detail.mockImplementation(async (id) => ({
     memory: memory(id),
@@ -129,7 +129,7 @@ async function manage(props = {}) {
     expect.any(AbortSignal),
   );
   fireEvent(window, new Event("one-memory:manage"));
-  await screen.findByText("共 201 条");
+  await screen.findByText("201 total");
   return view;
 }
 it("queries server totals and pages without replacing the map collection; submitted search and clear reset offset", async () => {
@@ -138,22 +138,22 @@ it("queries server totals and pages without replacing the map collection; submit
     { status: "confirmed", query: "", offset: 0, limit: 100 },
     expect.any(AbortSignal),
   );
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：全库0" }));
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  await screen.findByRole("checkbox", { name: "选择：全库100" });
-  expect(screen.queryByRole("group", { name: "批量操作" })).toBeNull();
-  const input = screen.getByLabelText("搜索记忆库");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: Library 0" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByRole("checkbox", { name: "Select: Library 100" });
+  expect(screen.queryByRole("group", { name: "Bulk actions" })).toBeNull();
+  const input = screen.getByLabelText("Search the memory library");
   const calls = api.library.mock.calls.length;
   fireEvent.change(input, { target: { value: " exact % " } });
   expect(api.library).toHaveBeenCalledTimes(calls);
-  fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   await waitFor(() =>
     expect(api.library).toHaveBeenLastCalledWith(
       { status: "confirmed", query: " exact % ", offset: 0, limit: 100 },
       expect.any(AbortSignal),
     ),
   );
-  fireEvent.click(screen.getByRole("button", { name: "已被取代" }));
+  fireEvent.click(screen.getByRole("button", { name: "Superseded" }));
   await waitFor(() =>
     expect(api.library.mock.lastCall?.[0]).toMatchObject({
       status: "superseded",
@@ -161,7 +161,7 @@ it("queries server totals and pages without replacing the map collection; submit
       offset: 0,
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
   await waitFor(() =>
     expect(api.library.mock.lastCall?.[0]).toMatchObject({
       status: "superseded",
@@ -189,38 +189,43 @@ it("keeps off-page detail and draft through page changes and legacy map refresh"
   await act(async () => {});
   fireEvent(window, new Event("one-memory:manage"));
   await act(async () => {});
-  fireEvent.click(screen.getByRole("button", { name: /全库0/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Library 0/ }));
   await act(async () => {});
-  fireEvent.change(screen.getByRole("textbox", { name: "记忆内容" }), {
-    target: { value: "未保存草稿" },
+  fireEvent.change(screen.getByRole("textbox", { name: "Memory content" }), {
+    target: { value: "Unsaved draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await act(async () => {
     vi.advanceTimersByTime(10000);
   });
   expect(
-    (screen.getByRole("textbox", { name: "记忆内容" }) as HTMLTextAreaElement)
-      .value,
-  ).toBe("未保存草稿");
+    (
+      screen.getByRole("textbox", {
+        name: "Memory content",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Unsaved draft");
   view.unmount();
 });
 it("aborts superseded/left-page reads, ignores late success, and distinguishes failure from empty", async () => {
   await manage();
   const late = deferred<MemoryLibraryPage>();
   api.library.mockReturnValueOnce(late.promise);
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   const signal = api.library.mock.lastCall?.[1];
   api.library.mockRejectedValueOnce(new Error("offline"));
-  fireEvent.click(screen.getByRole("button", { name: "已被取代" }));
-  await screen.findByText("记忆库读取失败，请重试。");
+  fireEvent.click(screen.getByRole("button", { name: "Superseded" }));
+  await screen.findByText("Failed to load the memory library. Try again.");
   expect(signal.aborted).toBe(true);
-  await act(async () => late.resolve(page([memory("迟到私有数据")])));
-  expect(screen.queryByText("迟到私有数据")).toBeNull();
-  expect(screen.queryByText("共 0 条")).toBeNull();
+  await act(async () => late.resolve(page([memory("Late private data")])));
+  expect(screen.queryByText("Late private data")).toBeNull();
+  expect(screen.queryByText("0 total")).toBeNull();
   expect(screen.queryByRole("checkbox")).toBeNull();
   const leave = deferred<MemoryLibraryPage>();
   api.library.mockReturnValueOnce(leave.promise);
-  fireEvent.click(screen.getByRole("button", { name: "重新读取记忆库" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reload the memory library" }),
+  );
   const leaveSignal = api.library.mock.lastCall?.[1];
   fireEvent(window, new Event("one-memory:manage"));
   expect(leaveSignal.aborted).toBe(true);
@@ -232,8 +237,8 @@ it("clears invalid source pages and pending delete confirmation cannot write aft
     grant_revision: 1,
   } as SourceResponse;
   const view = await manage({ sources: [source] });
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：全库0" }));
-  fireEvent.click(screen.getByRole("button", { name: "删除所选 1 条" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: Library 0" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete 1 selected" }));
   view.rerender(
     <MemorySpace
       simplified
@@ -244,27 +249,29 @@ it("clears invalid source pages and pending delete confirmation cannot write aft
   expect(screen.queryByRole("checkbox")).toBeNull();
   const dialog = screen.queryByRole("dialog");
   if (dialog)
-    fireEvent.click(within(dialog).getByRole("button", { name: /删除/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /Delete/ }));
   await act(async () => {});
   expect(api.mutate).not.toHaveBeenCalled();
 });
 it("refreshes mutation at the same query/page and recovers when the last page becomes empty", async () => {
   await manage();
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  await screen.findByRole("checkbox", { name: "选择：全库100" });
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  await screen.findByRole("checkbox", { name: "选择：全库200" });
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：全库200" }));
-  api.library.mockImplementation(async (q) =>
-    page(q.offset >= 200 ? [] : [memory("剩余记忆")], 200, q.offset),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "删除所选 1 条" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByRole("checkbox", { name: "Select: Library 100" });
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByRole("checkbox", { name: "Select: Library 200" });
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: /删除/ }),
+    screen.getByRole("checkbox", { name: "Select: Library 200" }),
   );
-  await screen.findByRole("checkbox", { name: "选择：剩余记忆" });
+  api.library.mockImplementation(async (q) =>
+    page(q.offset >= 200 ? [] : [memory("Remaining memory")], 200, q.offset),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Delete 1 selected" }));
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: /Delete/ }),
+  );
+  await screen.findByRole("checkbox", { name: "Select: Remaining memory" });
   expect(api.mutate).toHaveBeenCalledWith(
-    "全库200",
+    "Library 200",
     "delete",
     3,
     expect.any(String),
@@ -273,36 +280,40 @@ it("refreshes mutation at the same query/page and recovers when the last page be
   expect(api.library.mock.calls.slice(-2).map((c) => c[0].offset)).toEqual([
     200, 100,
   ]);
-  expect(screen.getByText("共 200 条")).toBeTruthy();
+  expect(screen.getByText("200 total")).toBeTruthy();
 });
 
 it("failed mutation refresh is not empty or writable, and retries preserve unknown-operation request IDs", async () => {
   await manage();
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：全库0" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: Library 0" }));
   api.mutate.mockRejectedValueOnce(new Error("response lost"));
   api.library.mockRejectedValueOnce(new Error("offline"));
-  fireEvent.click(screen.getByRole("button", { name: "删除所选 1 条" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete 1 selected" }));
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: /删除/ }),
+    within(screen.getByRole("dialog")).getByRole("button", { name: /Delete/ }),
   );
-  await screen.findByText("记忆库读取失败，请重试。");
+  await screen.findByText("Failed to load the memory library. Try again.");
   const request = api.mutate.mock.calls[0];
   expect(request).toEqual([
-    "全库0",
+    "Library 0",
     "delete",
     3,
     expect.any(String),
     expect.any(String),
   ]);
   expect(screen.queryByRole("checkbox")).toBeNull();
-  expect(screen.queryByRole("button", { name: "删除所选 1 条" })).toBeNull();
-  expect(screen.queryByText("共 0 条")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "重新读取记忆库" }));
-  await screen.findByRole("button", { name: "重试失败的 1 条" });
-  fireEvent.click(screen.getByRole("button", { name: "重试失败的 1 条" }));
+  expect(
+    screen.queryByRole("button", { name: "Delete 1 selected" }),
+  ).toBeNull();
+  expect(screen.queryByText("0 total")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reload the memory library" }),
+  );
+  await screen.findByRole("button", { name: "Retry 1 failed" });
+  fireEvent.click(screen.getByRole("button", { name: "Retry 1 failed" }));
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: /删除/,
+      name: /Delete/,
     }),
   );
   await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(2));
@@ -320,39 +331,41 @@ it("source revision changes invalidate page/detail immediately and abort stale r
     grant_revision: 1,
   } as SourceResponse;
   const view = await manage({ sources: [source] });
-  fireEvent.click(screen.getByRole("button", { name: /全库0/ }));
-  await screen.findByRole("textbox", { name: "记忆内容" });
+  fireEvent.click(screen.getByRole("button", { name: /Library 0/ }));
+  await screen.findByRole("textbox", { name: "Memory content" });
   const late = deferred<MemoryLibraryPage>();
   api.library.mockReturnValueOnce(late.promise);
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   const signal = api.library.mock.lastCall?.[1];
-  api.library.mockResolvedValueOnce(page([memory("授权变化后")], 1));
+  api.library.mockResolvedValueOnce(page([memory("After grant change")], 1));
   view.rerender(
     <MemorySpace simplified sources={[{ ...source, grant_revision: 2 }]} />,
   );
   expect(signal.aborted).toBe(true);
-  expect(screen.queryByRole("textbox", { name: "记忆内容" })).toBeNull();
-  await screen.findByRole("checkbox", { name: "选择：授权变化后" });
-  await act(async () => late.resolve(page([memory("旧来源回包")], 201, 100)));
-  expect(screen.queryByText("旧来源回包")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Memory content" })).toBeNull();
+  await screen.findByRole("checkbox", { name: "Select: After grant change" });
+  await act(async () =>
+    late.resolve(page([memory("Stale source response")], 201, 100)),
+  );
+  expect(screen.queryByText("Stale source response")).toBeNull();
   expect(api.library.mock.lastCall?.[0].offset).toBe(0);
 });
 
 it("stops remaining batch writes when source authority changes during the first request", async () => {
-  api.library.mockResolvedValue(page([memory("一"), memory("二")], 201));
+  api.library.mockResolvedValue(page([memory("One"), memory("Two")], 201));
   const view = await manage();
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：一" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：二" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: One" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: Two" }));
   const write = deferred<GovernedMemory>();
   api.mutate.mockReturnValueOnce(write.promise);
-  fireEvent.click(screen.getByRole("button", { name: "删除所选 2 条" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete 2 selected" }));
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: /删除/ }),
+    within(screen.getByRole("dialog")).getByRole("button", { name: /Delete/ }),
   );
   await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(1));
   view.rerender(<MemorySpace simplified sourceSnapshotStale />);
   await act(async () =>
-    write.resolve({ ...memory("一"), status: "deleted", revision: 4 }),
+    write.resolve({ ...memory("One"), status: "deleted", revision: 4 }),
   );
   expect(api.mutate).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("checkbox")).toBeNull();
@@ -362,7 +375,7 @@ it("unmount aborts a live query and a late response has no continuation", async 
   const view = await manage();
   const late = deferred<MemoryLibraryPage>();
   api.library.mockReturnValueOnce(late.promise);
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   const signal = api.library.mock.lastCall?.[1];
   const calls = api.library.mock.calls.length;
   view.unmount();
@@ -372,15 +385,15 @@ it("unmount aborts a live query and a late response has no continuation", async 
 });
 
 it("unmount during a batch stops remaining writes and post-mutation reads", async () => {
-  api.library.mockResolvedValue(page([memory("一"), memory("二")], 201));
+  api.library.mockResolvedValue(page([memory("One"), memory("Two")], 201));
   const view = await manage();
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：一" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "选择：二" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: One" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select: Two" }));
   const write = deferred<GovernedMemory>();
   api.mutate.mockReturnValueOnce(write.promise);
-  fireEvent.click(screen.getByRole("button", { name: "删除所选 2 条" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete 2 selected" }));
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: /删除/ }),
+    within(screen.getByRole("dialog")).getByRole("button", { name: /Delete/ }),
   );
   await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(1));
   const reads =
@@ -389,7 +402,7 @@ it("unmount during a batch stops remaining writes and post-mutation reads", asyn
     api.mapLibrary.mock.calls.length;
   view.unmount();
   await act(async () =>
-    write.resolve({ ...memory("一"), status: "deleted", revision: 4 }),
+    write.resolve({ ...memory("One"), status: "deleted", revision: 4 }),
   );
   expect(api.mutate).toHaveBeenCalledTimes(1);
   expect(
@@ -401,38 +414,37 @@ it("unmount during a batch stops remaining writes and post-mutation reads", asyn
 
 it("correction keeps submitted filter and page, passes CAS, and refreshes the exact page", async () => {
   await manage();
-  fireEvent.change(screen.getByLabelText("搜索记忆库"), {
-    target: { value: "原词" },
+  fireEvent.change(screen.getByLabelText("Search the memory library"), {
+    target: { value: "Old wording" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   await waitFor(() =>
-    expect(api.library.mock.lastCall?.[0].query).toBe("原词"),
+    expect(api.library.mock.lastCall?.[0].query).toBe("Old wording"),
   );
-  await screen.findByRole("checkbox", { name: "选择：全库0" });
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  await screen.findByRole("checkbox", { name: "选择：全库100" });
-  fireEvent.click(screen.getByRole("button", { name: /全库100/ }));
-  await screen.findByRole("textbox", { name: "记忆内容" });
-  fireEvent.change(screen.getByRole("textbox", { name: "记忆内容" }), {
-    target: { value: "新词" },
+  await screen.findByRole("checkbox", { name: "Select: Library 0" });
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByRole("checkbox", { name: "Select: Library 100" });
+  fireEvent.click(screen.getByRole("button", { name: /Library 100/ }));
+  await screen.findByRole("textbox", { name: "Memory content" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Memory content" }), {
+    target: { value: "New wording" },
   });
   api.correct.mockResolvedValueOnce({
-    ...memory("全库100"),
-    content: "新词",
+    ...memory("Library 100"),
+    content: "New wording",
     revision: 4,
   });
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "保存纠正" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
+    expect(
+      screen.getByRole("button", { name: "Save correction" }),
+    ).toHaveProperty("disabled", false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "保存纠正" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
   await waitFor(() =>
     expect(api.correct).toHaveBeenCalledWith(
-      "全库100",
+      "Library 100",
       3,
-      "新词",
+      "New wording",
       ["all-apps"],
       expect.any(String),
       expect.any(String),
@@ -440,7 +452,7 @@ it("correction keeps submitted filter and page, passes CAS, and refreshes the ex
   );
   await waitFor(() =>
     expect(api.library.mock.lastCall?.[0]).toEqual({
-      query: "原词",
+      query: "Old wording",
       status: "confirmed",
       offset: 100,
       limit: 100,
@@ -461,17 +473,17 @@ it("correction keeps submitted filter and page, passes CAS, and refreshes the ex
 it("only successful empty pages show zero and disabled pagination", async () => {
   await manage();
   api.library.mockResolvedValueOnce(page([], 0));
-  fireEvent.change(screen.getByLabelText("搜索记忆库"), {
-    target: { value: "无匹配" },
+  fireEvent.change(screen.getByLabelText("Search the memory library"), {
+    target: { value: "No match" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "搜索" }));
-  await screen.findByText("共 0 条");
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  await screen.findByText("0 total");
   expect(
-    (screen.getByRole("button", { name: "上一页" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Previous page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(
-    (screen.getByRole("button", { name: "下一页" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(screen.queryByRole("checkbox")).toBeNull();
@@ -481,15 +493,15 @@ it("active=false aborts management reads and return reloads rather than acceptin
   const view = await manage();
   const late = deferred<MemoryLibraryPage>();
   api.library.mockReturnValueOnce(late.promise);
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   const signal = api.library.mock.lastCall?.[1];
   view.rerender(<MemorySpace simplified active={false} />);
   expect(signal.aborted).toBe(true);
-  await act(async () => late.resolve(page([memory("迟到页")], 201, 100)));
-  api.library.mockResolvedValueOnce(page([memory("重新读取页")], 201, 100));
+  await act(async () => late.resolve(page([memory("Late page")], 201, 100)));
+  api.library.mockResolvedValueOnce(page([memory("Reloaded page")], 201, 100));
   view.rerender(<MemorySpace simplified />);
-  await screen.findByRole("checkbox", { name: "选择：重新读取页" });
-  expect(screen.queryByText("迟到页")).toBeNull();
+  await screen.findByRole("checkbox", { name: "Select: Reloaded page" });
+  expect(screen.queryByText("Late page")).toBeNull();
 });
 
 async function selectedOffPage() {
@@ -498,12 +510,12 @@ async function selectedOffPage() {
   await act(async () => {});
   fireEvent(window, new Event("one-memory:manage"));
   await act(async () => {});
-  fireEvent.click(screen.getByRole("button", { name: /全库0/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Library 0/ }));
   await act(async () => {});
-  fireEvent.change(screen.getByRole("textbox", { name: "记忆内容" }), {
-    target: { value: "本地未保存草稿" },
+  fireEvent.change(screen.getByRole("textbox", { name: "Memory content" }), {
+    target: { value: "Local unsaved draft" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await act(async () => {});
   return view;
 }
@@ -521,7 +533,7 @@ it.each(["deleted", "403", "404"])(
     if (kind === "deleted")
       api.detail.mockResolvedValue({
         memory: {
-          ...memory("全库0", "deleted"),
+          ...memory("Library 0", "deleted"),
           deleted_at: "2026-09-19T01:00:00Z",
         },
         evidence: [],
@@ -539,54 +551,67 @@ it.each(["deleted", "403", "404"])(
       });
     await advanceDetailCheck();
     expect(api.detail.mock.calls.length).toBeGreaterThan(reads);
-    expect(api.detail.mock.lastCall?.[0]).toBe("全库0");
-    expect(screen.queryByRole("textbox", { name: "记忆内容" })).toBeNull();
-    expect(screen.getByRole("alert").textContent).toContain("已不可读取");
+    expect(api.detail.mock.lastCall?.[0]).toBe("Library 0");
+    expect(
+      screen.queryByRole("textbox", { name: "Memory content" }),
+    ).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "can no longer be read",
+    );
   },
 );
 
 it("external revision preserves draft and original CAS with a visible conflict, without keystroke reads", async () => {
   await selectedOffPage();
   const reads = api.detail.mock.calls.length;
-  fireEvent.change(screen.getByRole("textbox", { name: "记忆内容" }), {
-    target: { value: "继续写草稿" },
+  fireEvent.change(screen.getByRole("textbox", { name: "Memory content" }), {
+    target: { value: "Keep writing the draft" },
   });
   expect(api.detail).toHaveBeenCalledTimes(reads);
   api.detail.mockResolvedValue({
-    memory: { ...memory("全库0"), content: "其他客户端新版本", revision: 4 },
+    memory: {
+      ...memory("Library 0"),
+      content: "Newer version from another client",
+      revision: 4,
+    },
     evidence: [],
     history: [],
   });
   await advanceDetailCheck();
   expect(
-    (screen.getByRole("textbox", { name: "记忆内容" }) as HTMLTextAreaElement)
-      .value,
-  ).toBe("继续写草稿");
-  expect(screen.queryByRole("status", { name: "详情新鲜度" })).toBeNull();
-  expect(screen.queryByText(/第 4 版/)).toBeNull();
+    (
+      screen.getByRole("textbox", {
+        name: "Memory content",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Keep writing the draft");
+  expect(screen.queryByRole("status", { name: "Detail freshness" })).toBeNull();
+  expect(screen.queryByText(/revision 4/)).toBeNull();
   api.correct.mockRejectedValueOnce({
     response: { status: 409, data: { detail: "memory_revision_conflict" } },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存纠正" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
   await act(async () => {});
   expect(api.correct).toHaveBeenCalledWith(
-    "全库0",
+    "Library 0",
     3,
-    "继续写草稿",
+    "Keep writing the draft",
     ["all-apps"],
     expect.any(String),
     expect.any(String),
   );
-  expect(screen.getByRole("alert").textContent).toContain("记忆已被更新");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "The memory was updated",
+  );
 });
 
 it("does not show the in-flight verification line on the memory page", async () => {
   await selectedOffPage();
   api.detail.mockReturnValue(new Promise(() => {}));
   await advanceDetailCheck();
-  expect(screen.queryByText("正在核验所选记忆…")).toBeNull();
-  expect(screen.queryByText(/核验失败/)).toBeNull();
-  expect(screen.queryByRole("status", { name: "详情新鲜度" })).toBeNull();
+  expect(screen.queryByText("Verifying the selected memory...")).toBeNull();
+  expect(screen.queryByText(/verification failed/)).toBeNull();
+  expect(screen.queryByRole("status", { name: "Detail freshness" })).toBeNull();
 });
 
 it("failed authoritative read is not deletion or freshness and disables writes until verified", async () => {
@@ -594,30 +619,39 @@ it("failed authoritative read is not deletion or freshness and disables writes u
   api.detail.mockRejectedValue(new Error("offline"));
   await advanceDetailCheck();
   expect(
-    (screen.getByRole("textbox", { name: "记忆内容" }) as HTMLTextAreaElement)
-      .value,
-  ).toBe("本地未保存草稿");
-  expect(screen.queryByText(/核验失败/)).toBeNull();
-  expect(screen.queryByRole("status", { name: "详情新鲜度" })).toBeNull();
+    (
+      screen.getByRole("textbox", {
+        name: "Memory content",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Local unsaved draft");
+  expect(screen.queryByText(/verification failed/)).toBeNull();
+  expect(screen.queryByRole("status", { name: "Detail freshness" })).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "保存纠正" }) as HTMLButtonElement)
-      .disabled,
+    (
+      screen.getByRole("button", {
+        name: "Save correction",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(true);
   const form = screen
-    .getByRole("textbox", { name: "记忆内容" })
+    .getByRole("textbox", { name: "Memory content" })
     .closest("form");
   expect(form).not.toBeNull();
   if (form) fireEvent.submit(form);
   expect(api.correct).not.toHaveBeenCalled();
   api.detail.mockResolvedValue({
-    memory: memory("全库0"),
+    memory: memory("Library 0"),
     evidence: [],
     history: [],
   });
   await advanceDetailCheck();
   expect(
-    (screen.getByRole("button", { name: "保存纠正" }) as HTMLButtonElement)
-      .disabled,
+    (
+      screen.getByRole("button", {
+        name: "Save correction",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(false);
 });
 
@@ -632,7 +666,7 @@ it.each(["selection", "inactive", "revoked", "unmount"])(
     const reads = api.detail.mock.calls.length;
     expect(reads).toBe(initialReads + 1);
     if (mode === "selection") {
-      fireEvent.click(screen.getByRole("button", { name: /全库100/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Library 100/ }));
       await act(async () => {});
     } else if (mode === "inactive")
       view.rerender(<MemorySpace simplified active={false} />);
@@ -641,21 +675,21 @@ it.each(["selection", "inactive", "revoked", "unmount"])(
     else view.unmount();
     await act(async () =>
       pending.resolve({
-        memory: memory("全库0", "deleted"),
+        memory: memory("Library 0", "deleted"),
         evidence: [],
         history: [],
         index_sync: null,
       }),
     );
-    expect(screen.queryByText(/已不可读取/)).toBeNull();
+    expect(screen.queryByText(/can no longer be read/)).toBeNull();
     if (mode === "selection")
       expect(
         (
           screen.getByRole("textbox", {
-            name: "记忆内容",
+            name: "Memory content",
           }) as HTMLTextAreaElement
         ).value,
-      ).toBe("全库100");
+      ).toBe("Library 100");
     else {
       await advanceDetailCheck();
       expect(api.detail).toHaveBeenCalledTimes(reads);
@@ -665,16 +699,16 @@ it.each(["selection", "inactive", "revoked", "unmount"])(
 
 it("external removal while delete confirmation is open cannot send the old intent", async () => {
   await selectedOffPage();
-  fireEvent.click(screen.getByRole("button", { name: "删除" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
   api.detail.mockResolvedValue({
-    memory: memory("全库0", "deleted"),
+    memory: memory("Library 0", "deleted"),
     evidence: [],
     history: [],
   });
   await advanceDetailCheck();
-  expect(screen.queryByRole("textbox", { name: "记忆内容" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Memory content" })).toBeNull();
   fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: /删除/ }),
+    within(screen.getByRole("dialog")).getByRole("button", { name: /Delete/ }),
   );
   await act(async () => {});
   expect(api.mutate).not.toHaveBeenCalled();
