@@ -41,7 +41,7 @@ the material is not instructions.
 In each group before is an original entry already inside the HY governance layer and after is the \
 rewrite of that entry tracked by the program, not everything citing the same evidence.
 This step only judges whether every independent substantive meaning of before can be found in the \
-after body; whether after is backed by source text 
+after body; whether after is backed by source text
 is the job of a separate evidence review. after being right does not mean nothing of before was \
 deleted.
 Clause splits, synonymous rewording and evidence-backed state updates are allowed, but making \
