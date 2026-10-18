@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-L7_INTENTION 层去重（0805 事故修复 · v2）单测。
+L7_INTENTION layer dedup (0805 incident fix - v2) unit tests.
 
-覆盖：
-  1. Recall dedup（含超采样 + memory_at/valid_until/cosine 联合判重 + 异步删）
-  2. Writer batch dedup（只做批内，不查 VDB）
-  3. READ_REQUEST 日志携带 intention_limit（可观测性）
+Coverage:
+  1. Recall dedup (oversampling + joint memory_at/valid_until/cosine dedup + async delete)
+  2. Writer batch dedup (batch only, no VDB query)
+  3. READ_REQUEST log carries intention_limit (observability)
 
-不依赖 chromadb / venus embedding / numpy，全内存假 VDB。
+No dependency on chromadb / venus embedding / numpy; fully in-memory fake VDB.
 """
 
 from __future__ import annotations
@@ -33,11 +33,11 @@ from hy_memory.pipelines._retrieval.intention import (
 
 
 def _run(coro):
-    """跑一次 coro，等所有后台任务（async delete）自然完成后再关 loop。"""
+    """Run coro once, wait for all background tasks (async delete) to finish naturally, then close the loop."""
     loop = asyncio.new_event_loop()
     try:
         result = loop.run_until_complete(coro)
-        # 让 fire-and-forget 的 create_task 有机会执行完
+        # Give the fire-and-forget create_task a chance to finish
         pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
         if pending:
             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
@@ -47,7 +47,7 @@ def _run(coro):
 
 
 class _FakeEmbedByHash:
-    """按 text hash 分配 one-hot 稀疏向量：hash 相同 → cosine=1；不同 → cosine=0。"""
+    """Assign one-hot sparse vectors by text hash: same hash -> cosine=1; different -> cosine=0."""
 
     def __init__(self, dims: int = 64):
         self.dims = dims
@@ -65,7 +65,7 @@ class _FakeEmbedByHash:
 
 
 class _FakeVectorStore:
-    """最小可用内存 VDB。search 按 dot-product 排序返回。"""
+    """Minimal usable in-memory VDB. search returns results sorted by dot-product."""
 
     def __init__(self):
         self._nodes: Dict[str, MemoryNode] = {}
@@ -157,12 +157,12 @@ def _make_intention_node(
 
 
 # ============================================================================
-# 1. Recall dedup 相关（含新的 memory_at + valid_until 判重规则）
+# 1. Recall dedup (including the new memory_at + valid_until dedup rules)
 # ============================================================================
 
 
 def test_cosine_identical_and_orthogonal():
-    """cosine 基础健壮性：同向量=1，正交=0，空/零向量=-inf。"""
+    """cosine basic robustness: same vector=1, orthogonal=0, empty/zero vector=-inf."""
     v = [1.0, 0.0, 0.0]
     assert _cosine(v, v) == 1.0
     assert _cosine([1.0, 0.0], [0.0, 1.0]) == 0.0
@@ -171,7 +171,7 @@ def test_cosine_identical_and_orthogonal():
 
 
 def test_memory_at_day_and_valid_until_key():
-    """memory_at / valid_until 归一化到 date 键。"""
+    """Normalize memory_at / valid_until to a date key."""
     dt = datetime(2025, 8, 6, 15, 30)
     node = _make_intention_node("x", memory_at=dt, valid_until=dt)
     assert _memory_at_day(node) == date(2025, 8, 6)
@@ -183,41 +183,41 @@ def test_memory_at_day_and_valid_until_key():
 
 
 def test_partition_duplicates_same_day_same_valid_until_high_cosine_dedup():
-    """同天 memory_at + 同 valid_until + cosine≈1 → 判重。保留 gmt 最早。"""
+    """Same-day memory_at + same valid_until + cosine≈1 -> dedup. Keep the earliest gmt."""
     same_ma = datetime(2025, 8, 6, 10, 0)
     same_vu = datetime(2025, 8, 8, 23, 59, 59)
     n1 = _make_intention_node(
-        "用户月底要发布新品", memory_at=same_ma, valid_until=same_vu,
+        "User is launching a new product at the end of the month", memory_at=same_ma, valid_until=same_vu,
         gmt_created=datetime(2025, 8, 6, 10, 0),
     )
     n2 = _make_intention_node(
-        "用户月底要发布新品", memory_at=same_ma, valid_until=same_vu,
-        gmt_created=datetime(2025, 8, 6, 10, 5),  # 更晚
+        "User is launching a new product at the end of the month", memory_at=same_ma, valid_until=same_vu,
+        gmt_created=datetime(2025, 8, 6, 10, 5),  # later
     )
     n3 = _make_intention_node(
-        "用户月底要发布新品", memory_at=same_ma, valid_until=same_vu,
-        gmt_created=datetime(2025, 8, 6, 10, 10),  # 最晚
+        "User is launching a new product at the end of the month", memory_at=same_ma, valid_until=same_vu,
+        gmt_created=datetime(2025, 8, 6, 10, 10),  # latest
     )
     hits = [
         {"node_id": n.node_id, "node": n, "score": 0.68}
-        for n in (n2, n1, n3)  # 故意打乱顺序，测试保 gmt 最早不是保第一条
+        for n in (n2, n1, n3)  # deliberately shuffled, to test keeping the earliest gmt rather than the first
     ]
     kept, delete_ids = _partition_duplicates(hits, threshold=0.95)
     assert len(kept) == 1
-    assert kept[0]["node_id"] == n1.node_id  # gmt 最早
+    assert kept[0]["node_id"] == n1.node_id  # earliest gmt
     assert set(delete_ids) == {n2.node_id, n3.node_id}
 
 
 def test_partition_duplicates_different_memory_at_day_keeps_both():
-    """content + valid_until 都一样，但 memory_at 不同天 → 不判重。"""
+    """Same content + valid_until, but memory_at on a different day -> no dedup."""
     n_this_week = _make_intention_node(
-        "用户周五要开会",
-        memory_at=datetime(2025, 8, 4, 9, 0),   # 周一
+        "User has a meeting on Friday",
+        memory_at=datetime(2025, 8, 4, 9, 0),   # Monday
         valid_until=datetime(2025, 8, 8, 23, 59),
     )
     n_next_week = _make_intention_node(
-        "用户周五要开会",
-        memory_at=datetime(2025, 8, 11, 9, 0),  # 下周一
+        "User has a meeting on Friday",
+        memory_at=datetime(2025, 8, 11, 9, 0),  # next Monday
         valid_until=datetime(2025, 8, 15, 23, 59),
     )
     hits = [
@@ -230,19 +230,19 @@ def test_partition_duplicates_different_memory_at_day_keeps_both():
 
 
 def test_partition_duplicates_different_valid_until_keeps_both():
-    """核心 case：同天说的两个"周五开会"，指向不同会议（valid_until 不同）→ 保留两条。
+    """Core case: two "meeting on Friday" said the same day, pointing at different meetings (different valid_until) -> keep both.
 
-    "用户今天上午说 8/8 开会" vs "今天下午说 8/15 开会"，content 一样、memory_at
-    同天，但 valid_until 不同。不能合并。
+    "User said this morning the meeting is on 8/8" vs "User said this afternoon the meeting is on 8/15", same content, memory_at
+    on the same day, but a different valid_until. Must not be merged.
     """
     same_ma = datetime(2025, 8, 6, 10, 0)
     n_this_fri = _make_intention_node(
-        "用户周五要开会", memory_at=same_ma,
-        valid_until=datetime(2025, 8, 8, 23, 59),   # 本周五
+        "User has a meeting on Friday", memory_at=same_ma,
+        valid_until=datetime(2025, 8, 8, 23, 59),   # this Friday
     )
     n_next_fri = _make_intention_node(
-        "用户周五要开会", memory_at=same_ma,
-        valid_until=datetime(2025, 8, 15, 23, 59),  # 下周五
+        "User has a meeting on Friday", memory_at=same_ma,
+        valid_until=datetime(2025, 8, 15, 23, 59),  # next Friday
     )
     hits = [
         {"node_id": n_this_fri.node_id, "node": n_this_fri, "score": 0.7},
@@ -254,15 +254,15 @@ def test_partition_duplicates_different_valid_until_keeps_both():
 
 
 def test_partition_duplicates_low_cosine_keeps_both():
-    """content 不同（cosine 低）→ 不判重，即使 memory_at / valid_until 同。"""
+    """Different content (low cosine) -> no dedup, even with the same memory_at / valid_until."""
     same_ma = datetime(2025, 8, 6)
     same_vu = datetime(2025, 8, 8)
     n1 = _make_intention_node(
-        "用户周五要开会", memory_at=same_ma, valid_until=same_vu,
+        "User has a meeting on Friday", memory_at=same_ma, valid_until=same_vu,
         embedding=[1.0, 0.0],
     )
     n2 = _make_intention_node(
-        "用户周五要看牙医", memory_at=same_ma, valid_until=same_vu,
+        "User is seeing the dentist on Friday", memory_at=same_ma, valid_until=same_vu,
         embedding=[0.0, 1.0],
     )
     hits = [
@@ -275,33 +275,33 @@ def test_partition_duplicates_low_cosine_keeps_both():
 
 
 def test_partition_duplicates_mixed_scenarios():
-    """混合场景：4 条月底新品（同 memory_at + 同 valid_until）
-                + 2 条家长会（同 memory_at + 不同 valid_until）
-                + 1 条千岛湖（其他）→ 期望 kept=4 (1 新品 + 2 家长会 + 1 千岛湖)。"""
+    """Mixed scenario: 4 end-of-month product launches (same memory_at + same valid_until)
+                + 2 parent-teacher meetings (same memory_at + different valid_until)
+                + 1 Qiandao Lake (other) -> expected kept=4 (1 product + 2 parent-teacher + 1 Qiandao Lake)."""
     ma = datetime(2025, 8, 6)
     vu_end_month = datetime(2025, 8, 31)
     vu_this_fri = datetime(2025, 8, 8)
     vu_next_fri = datetime(2025, 8, 15)
 
     p1 = _make_intention_node(
-        "月底发新品", memory_at=ma, valid_until=vu_end_month,
+        "Launch new product at end of month", memory_at=ma, valid_until=vu_end_month,
         gmt_created=datetime(2025, 8, 1),
     )
     p2 = _make_intention_node(
-        "月底发新品", memory_at=ma, valid_until=vu_end_month,
+        "Launch new product at end of month", memory_at=ma, valid_until=vu_end_month,
         gmt_created=datetime(2025, 8, 2),
     )
     p3 = _make_intention_node(
-        "月底发新品", memory_at=ma, valid_until=vu_end_month,
+        "Launch new product at end of month", memory_at=ma, valid_until=vu_end_month,
         gmt_created=datetime(2025, 8, 3),
     )
     p4 = _make_intention_node(
-        "月底发新品", memory_at=ma, valid_until=vu_end_month,
+        "Launch new product at end of month", memory_at=ma, valid_until=vu_end_month,
         gmt_created=datetime(2025, 8, 4),
     )
-    m1 = _make_intention_node("家长会", memory_at=ma, valid_until=vu_this_fri)
-    m2 = _make_intention_node("家长会", memory_at=ma, valid_until=vu_next_fri)
-    q1 = _make_intention_node("千岛湖", memory_at=ma, valid_until=None)
+    m1 = _make_intention_node("Parent-teacher meeting", memory_at=ma, valid_until=vu_this_fri)
+    m2 = _make_intention_node("Parent-teacher meeting", memory_at=ma, valid_until=vu_next_fri)
+    q1 = _make_intention_node("Qiandao Lake", memory_at=ma, valid_until=None)
 
     hits = [
         {"node_id": n.node_id, "node": n, "score": 0.6}
@@ -310,7 +310,7 @@ def test_partition_duplicates_mixed_scenarios():
     kept, delete_ids = _partition_duplicates(hits, threshold=0.95)
 
     kept_ids = {h["node_id"] for h in kept}
-    # 4 条新品压成 1（gmt 最早的 p1）；2 条家长会不同 valid_until 全留；千岛湖留
+    # 4 product launches collapse to 1 (p1 with the earliest gmt); both parent-teacher meetings differ in valid_until and are kept; Qiandao Lake kept
     assert p1.node_id in kept_ids
     assert m1.node_id in kept_ids
     assert m2.node_id in kept_ids
@@ -320,13 +320,13 @@ def test_partition_duplicates_mixed_scenarios():
 
 
 # ============================================================================
-# recall_intentions 端到端
+# recall_intentions end-to-end
 # ============================================================================
 
 
 def test_recall_intentions_dedup_and_async_delete_end_to_end():
-    """端到端：VDB 里 3 条完全一样的月底新品 + 1 条家长会；limit=3 时 kept=2，
-    另 2 条月底新品异步从 VDB 被删。"""
+    """End-to-end: 3 identical end-of-month product launches + 1 parent-teacher meeting in the VDB; with limit=3 kept=2,
+    and the other 2 product launches are asynchronously deleted from the VDB."""
     vs = _FakeVectorStore()
     emb = _FakeEmbedByHash(dims=32)
     fixed_now = datetime(2025, 8, 6, 12, 0)
@@ -336,90 +336,90 @@ def test_recall_intentions_dedup_and_async_delete_end_to_end():
     p_ids = []
     for i in range(3):
         n = _make_intention_node(
-            "用户月底要发布新品", dims=32,
+            "User is launching a new product at the end of the month", dims=32,
             memory_at=ma, valid_until=vu,
             gmt_created=datetime(2025, 8, 1 + i),
-            embedding=emb.vec_for("用户月底要发布新品"),
+            embedding=emb.vec_for("User is launching a new product at the end of the month"),
         )
         _run(vs.upsert(n))
         p_ids.append(n.node_id)
 
     m = _make_intention_node(
-        "用户下周五要开家长会", dims=32,
+        "User has a parent-teacher meeting next Friday", dims=32,
         memory_at=ma, valid_until=datetime(2025, 8, 15),
-        embedding=emb.vec_for("用户下周五要开家长会"),
+        embedding=emb.vec_for("User has a parent-teacher meeting next Friday"),
     )
     _run(vs.upsert(m))
 
-    # query 用"月底新品"，dot=1.0 排前 3；家长会 dot=0
-    q = emb.vec_for("用户月底要发布新品")
+    # query uses "end-of-month product launch", dot=1.0 ranks the first 3; parent-teacher meeting dot=0
+    q = emb.vec_for("User is launching a new product at the end of the month")
     result = _run(recall_intentions(
         vs, q, user_ids=["u1"], agent_ids=["a1"], limit=3, now=fixed_now,
     ))
 
-    # 4 条 hit，dedup 后 kept=2（1 新品 + 1 家长会），限 3 返回 2
+    # 4 hits, after dedup kept=2 (1 product + 1 parent-teacher meeting), limited to 3 returns 2
     contents = [h["node"].content for h in result]
-    assert contents.count("用户月底要发布新品") == 1
-    # p1（gmt 最早）应该留下，其余 2 条被异步删
+    assert contents.count("User is launching a new product at the end of the month") == 1
+    # p1 (earliest gmt) should be kept, the other 2 are asynchronously deleted
     assert p_ids[0] in {h["node_id"] for h in result}
     assert set(vs.delete_calls) == {p_ids[1], p_ids[2]}
 
 
 def test_recall_intentions_different_valid_until_all_returned():
-    """两个 memory_at 相同、valid_until 不同的意图 → 都召回，都不删。"""
+    """Two intentions with the same memory_at but different valid_until -> both recalled, neither deleted."""
     vs = _FakeVectorStore()
     emb = _FakeEmbedByHash(dims=32)
     fixed_now = datetime(2025, 8, 6, 12, 0)
     ma = datetime(2025, 8, 6)
 
     n_this = _make_intention_node(
-        "用户周五要开会", dims=32, memory_at=ma,
+        "User has a meeting on Friday", dims=32, memory_at=ma,
         valid_until=datetime(2025, 8, 8, 23, 59),
-        embedding=emb.vec_for("用户周五要开会"),
+        embedding=emb.vec_for("User has a meeting on Friday"),
     )
     n_next = _make_intention_node(
-        "用户周五要开会", dims=32, memory_at=ma,
+        "User has a meeting on Friday", dims=32, memory_at=ma,
         valid_until=datetime(2025, 8, 15, 23, 59),
-        embedding=emb.vec_for("用户周五要开会"),
+        embedding=emb.vec_for("User has a meeting on Friday"),
     )
     _run(vs.upsert(n_this))
     _run(vs.upsert(n_next))
 
-    q = emb.vec_for("用户周五要开会")
+    q = emb.vec_for("User has a meeting on Friday")
     result = _run(recall_intentions(vs, q, user_ids=["u1"], limit=10, now=fixed_now))
     assert len(result) == 2
     assert vs.delete_calls == []
 
 
 def test_recall_intentions_expired_converted_to_l2():
-    """valid_until 已过 → 惰性 update_payload 转 L2_FACT，不进返回结果。"""
+    """valid_until already passed -> lazily update_payload to L2_FACT, not in the results."""
     vs = _FakeVectorStore()
     emb = _FakeEmbedByHash(dims=32)
     yesterday = datetime.now() - timedelta(days=1)
 
     n = _make_intention_node(
-        "老的过期意图", dims=32,
+        "Old expired intention", dims=32,
         memory_at=datetime(2025, 1, 1),
         valid_until=yesterday,
-        embedding=emb.vec_for("老的过期意图"),
+        embedding=emb.vec_for("Old expired intention"),
     )
     _run(vs.upsert(n))
-    q = emb.vec_for("老的过期意图")
+    q = emb.vec_for("Old expired intention")
     result = _run(recall_intentions(vs, q, user_ids=["u1"], limit=10))
     assert result == []
     assert vs.update_payload_calls == [(n.node_id, {"layer": MemoryLayer.L2_FACT.value})]
 
 
 def test_recall_intentions_limit_zero_short_circuit():
-    """limit=0 → 立即返回 []，不查 VDB。"""
+    """limit=0 -> return [] immediately, no VDB query."""
     vs = _FakeVectorStore()
     result = _run(recall_intentions(vs, [1.0] * 32, user_ids=["u1"], limit=0))
     assert result == []
 
 
 def test_recall_intentions_oversample_larger_than_limit():
-    """fetch_limit 应比 limit 大很多；VDB 里 10 条完全正交的意图 + limit=3
-    → 应能拿到 3 条不重复；由于 embedding 完全正交，dedup 一条都不该删。"""
+    """fetch_limit should be much larger than limit; 10 fully orthogonal intentions in the VDB + limit=3
+    -> should return 3 distinct ones; since the embeddings are fully orthogonal, dedup should delete none."""
     vs = _FakeVectorStore()
     fixed_now = datetime(2025, 8, 6, 12, 0)
     ma = datetime(2025, 8, 6)
@@ -430,26 +430,26 @@ def test_recall_intentions_oversample_larger_than_limit():
         v[idx] = 1.0
         return v
 
-    # 用明确的 one-hot 索引，保证 10 条向量完全正交（cosine=0）
+    # Use explicit one-hot indices to guarantee the 10 vectors are fully orthogonal (cosine=0)
     for i in range(10):
         n = _make_intention_node(
-            f"意图 #{i}", dims=dims, memory_at=ma,
+            f"Intention #{i}", dims=dims, memory_at=ma,
             embedding=_one_hot(i),
         )
         _run(vs.upsert(n))
 
-    # query 命中意图 #3（cosine=1），其他 cosine=0
+    # query hits intention #3 (cosine=1), the others cosine=0
     q = _one_hot(3)
     result = _run(recall_intentions(
         vs, q, user_ids=["u1"], limit=3, now=fixed_now,
     ))
-    # limit=3 返回不超过 3 条；且没有任何 delete（向量全正交）
+    # limit=3 returns at most 3; and no deletes at all (vectors fully orthogonal)
     assert len(result) <= 3
     assert vs.delete_calls == []
 
 
 # ============================================================================
-# 2. Writer batch dedup（只做批内、不查 VDB）
+# 2. Writer batch dedup (batch only, no VDB query)
 # ============================================================================
 
 
@@ -476,14 +476,14 @@ def _make_req(user_id="u1", agent_id="a1"):
 
 
 def test_writer_batch_dedup_pure_function_same_valid_until():
-    """纯函数：3 条同 content + 同 valid_until → drop 2 条。"""
+    """Pure function: 3 entries with the same content + same valid_until -> drop 2."""
     from hy_memory.pipelines.writer import MemoryWriter
     emb = _FakeEmbedByHash(dims=16)
     vu = datetime(2025, 8, 8)
     intentions = [
-        {"content": "月底发新品", "valid_until": vu, "tags": ["work"]},
-        {"content": "月底发新品", "valid_until": vu, "tags": ["deadline"]},
-        {"content": "月底发新品", "valid_until": vu, "tags": ["product"]},
+        {"content": "Launch new product at end of month", "valid_until": vu, "tags": ["work"]},
+        {"content": "Launch new product at end of month", "valid_until": vu, "tags": ["deadline"]},
+        {"content": "Launch new product at end of month", "valid_until": vu, "tags": ["product"]},
     ]
     embeddings = [emb.vec_for(it["content"]) for it in intentions]
     drop_idx = MemoryWriter._intention_batch_dedup(intentions, embeddings)
@@ -491,12 +491,12 @@ def test_writer_batch_dedup_pure_function_same_valid_until():
 
 
 def test_writer_batch_dedup_different_valid_until_keeps_all():
-    """核心 case：同 content，valid_until 不同 → 都保留，不判重。"""
+    """Core case: same content, different valid_until -> all kept, no dedup."""
     from hy_memory.pipelines.writer import MemoryWriter
     emb = _FakeEmbedByHash(dims=16)
     intentions = [
-        {"content": "周五要开会", "valid_until": datetime(2025, 8, 8)},   # 本周五
-        {"content": "周五要开会", "valid_until": datetime(2025, 8, 15)},  # 下周五
+        {"content": "Meeting on Friday", "valid_until": datetime(2025, 8, 8)},   # this Friday
+        {"content": "Meeting on Friday", "valid_until": datetime(2025, 8, 15)},  # next Friday
     ]
     embeddings = [emb.vec_for(it["content"]) for it in intentions]
     drop_idx = MemoryWriter._intention_batch_dedup(intentions, embeddings)
@@ -504,12 +504,12 @@ def test_writer_batch_dedup_different_valid_until_keeps_all():
 
 
 def test_writer_batch_dedup_none_valid_until_all_none_treated_same():
-    """valid_until 全为 None 且同 content → 依然判重（None 视作同一 key）。"""
+    """valid_until all None and same content -> still dedup (None treated as the same key)."""
     from hy_memory.pipelines.writer import MemoryWriter
     emb = _FakeEmbedByHash(dims=16)
     intentions = [
-        {"content": "老板画的饼", "valid_until": None},
-        {"content": "老板画的饼", "valid_until": None},
+        {"content": "Boss's empty promises", "valid_until": None},
+        {"content": "Boss's empty promises", "valid_until": None},
     ]
     embeddings = [emb.vec_for(it["content"]) for it in intentions]
     drop_idx = MemoryWriter._intention_batch_dedup(intentions, embeddings)
@@ -517,12 +517,12 @@ def test_writer_batch_dedup_none_valid_until_all_none_treated_same():
 
 
 def test_writer_batch_dedup_none_vs_some_not_deduped():
-    """一条 valid_until=None，一条有 → 分属不同桶，不判重。"""
+    """One valid_until=None and one set -> different buckets, no dedup."""
     from hy_memory.pipelines.writer import MemoryWriter
     emb = _FakeEmbedByHash(dims=16)
     intentions = [
-        {"content": "写小说", "valid_until": None},
-        {"content": "写小说", "valid_until": datetime(2025, 12, 31)},
+        {"content": "Write a novel", "valid_until": None},
+        {"content": "Write a novel", "valid_until": datetime(2025, 12, 31)},
     ]
     embeddings = [emb.vec_for(it["content"]) for it in intentions]
     drop_idx = MemoryWriter._intention_batch_dedup(intentions, embeddings)
@@ -530,17 +530,17 @@ def test_writer_batch_dedup_none_vs_some_not_deduped():
 
 
 def test_writer_batch_dedup_different_content_keeps_all():
-    """content 不同 → cosine 低，不判重。"""
+    """Different content -> low cosine, no dedup."""
     from hy_memory.pipelines.writer import MemoryWriter
-    # 用明确的 one-hot 索引保证 3 个 embedding 完全正交（cosine=0）
+    # Use explicit one-hot indices to guarantee the 3 embeddings are fully orthogonal (cosine=0)
     def _one_hot(idx: int, dims: int = 64) -> List[float]:
         v = [0.0] * dims
         v[idx] = 1.0
         return v
     intentions = [
-        {"content": "月底发新品", "valid_until": None},
-        {"content": "周五开家长会", "valid_until": None},
-        {"content": "国庆去千岛湖", "valid_until": None},
+        {"content": "Launch new product at end of month", "valid_until": None},
+        {"content": "Parent-teacher meeting on Friday", "valid_until": None},
+        {"content": "Trip to Qiandao Lake for National Day", "valid_until": None},
     ]
     embeddings = [_one_hot(0), _one_hot(1), _one_hot(2)]
     drop_idx = MemoryWriter._intention_batch_dedup(intentions, embeddings)
@@ -548,7 +548,7 @@ def test_writer_batch_dedup_different_content_keeps_all():
 
 
 def test_writer_store_intentions_e2e_batch_dedup():
-    """_store_intentions 端到端：3 条复读 + 1 条新意图 → VDB 里只落 2 个。"""
+    """_store_intentions end-to-end: 3 duplicates + 1 new intention -> only 2 persisted in the VDB."""
     vs = _FakeVectorStore()
     from hy_memory.config import MemoryConfig
     from hy_memory.pipelines.writer import MemoryWriter
@@ -558,18 +558,18 @@ def test_writer_store_intentions_e2e_batch_dedup():
     req = _make_req()
     vu = datetime(2025, 8, 8)
     intentions = [
-        {"content": "月底发新品", "valid_until": vu, "tags": ["a"]},
-        {"content": "月底发新品", "valid_until": vu, "tags": ["b"]},
-        {"content": "月底发新品", "valid_until": vu, "tags": ["c"]},
-        {"content": "周五要开会", "valid_until": vu, "tags": []},
+        {"content": "Launch new product at end of month", "valid_until": vu, "tags": ["a"]},
+        {"content": "Launch new product at end of month", "valid_until": vu, "tags": ["b"]},
+        {"content": "Launch new product at end of month", "valid_until": vu, "tags": ["c"]},
+        {"content": "Meeting on Friday", "valid_until": vu, "tags": []},
     ]
     ids = _run(writer._store_intentions(intentions, req, vs, req.request_id))
-    assert len(ids) == 2  # 3 条月底新品压成 1 + 周五开会 1
+    assert len(ids) == 2  # 3 product launches collapse to 1 + 1 Friday meeting
     assert len(vs._nodes) == 2
 
 
 # ============================================================================
-# 3. READ_REQUEST 日志携带 intention_limit
+# 3. READ_REQUEST log carries intention_limit
 # ============================================================================
 
 

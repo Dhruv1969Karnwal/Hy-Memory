@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""analyze_queries（合并判类 + 改写 + 时间跨度）单元测试。
+"""Unit tests for analyze_queries (merged classification + rewrite + time span).
 
-用 fake LLM provider 精确控制返回文本，验证解析、时间换算、fail-safe。
+A fake LLM provider returns exact text so parsing, time conversion and fail-safe can be verified.
 """
 
 import asyncio
@@ -42,7 +42,7 @@ class TestClassifyPlusRewritePlusSince:
     def test_full_output_parsed(self):
         llm = _FakeLLM("1\nhow did we configure the qdrant client\nSINCE: 2026-06-24")
         r = run(analyze_queries(
-            ["上周那个向量库的配置", "对，就是我刚才说的那个"],
+            ["the vector database config from last week", "right, that is the one I just mentioned"],
             llm, want_classify=True, want_rewrite=True, current_time=CT))
         assert r["ok"] is True
         assert r["is_coding"] is True
@@ -50,25 +50,25 @@ class TestClassifyPlusRewritePlusSince:
         assert r["created_after"] == datetime(2026, 6, 24).timestamp()
 
     def test_chat_class_since_none(self):
-        llm = _FakeLLM("0\n用户昨天提到的那个重要的事情是什么\nSINCE: NONE")
+        llm = _FakeLLM("0\nwhat was the important thing the user mentioned yesterday\nSINCE: NONE")
         r = run(analyze_queries(
-            ["我昨天跟你说的那个事你还记得吧"],
+            ["you still remember the thing I told you yesterday, right"],
             llm, want_classify=True, want_rewrite=True, current_time=CT))
         assert r["ok"] is True
         assert r["is_coding"] is False
         assert r["created_after"] is None
-        assert "重要的事情" in r["rewrite_query"]
+        assert "important thing" in r["rewrite_query"]
 
 
 class TestRewriteOnly:
     def test_no_classify_line(self):
-        # want_classify=False → 输出无 0/1 头，第一行就是 rewrite
+        # want_classify=False -> no 0/1 header in the output, the first line already is the rewrite
         llm = _FakeLLM("what important thing did the user mention last week\nSINCE: 2026-06-24")
         r = run(analyze_queries(
-            ["我上周跟你说了什么重要的事情"],
+            ["what important thing did I tell you last week"],
             llm, want_classify=False, want_rewrite=True, current_time=CT))
         assert r["ok"] is True
-        assert r["is_coding"] is False  # 不判类恒 False
+        assert r["is_coding"] is False  # always False when classification is off
         assert r["rewrite_query"].startswith("what important thing")
         assert r["created_after"] == datetime(2026, 6, 24).timestamp()
 
@@ -76,7 +76,7 @@ class TestRewriteOnly:
         llm = _FakeLLM("rewritten\nSINCE: NONE")
         run(analyze_queries(["q"], llm, want_classify=False,
                            want_rewrite=True, current_time=CT))
-        # 关闭判类时 prompt 不应含 "Classify"
+        # with classification disabled the prompt must not contain "Classify"
         assert "Classify the target" not in llm.last_prompt
 
 
@@ -106,7 +106,7 @@ class TestFailSafe:
         r = run(analyze_queries(["a"], llm, want_classify=True,
                                want_rewrite=False, current_time=CT))
         assert r["ok"] is False
-        assert llm.last_prompt is None  # 没调 LLM
+        assert llm.last_prompt is None  # the LLM was never called
 
 
 class TestSinceParse:

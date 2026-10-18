@@ -1,8 +1,8 @@
-"""L0 基础画像层的 client_meta 透传。
+"""client_meta pass-through for the L0 basic profile layer.
 
-线上实测发现：一次写入产出的多条记忆里，l2_fact 能带回 meta，
-l0_basic_info 拿不到——画像走独立的 upsert 路径，透传时漏了。
-这组测试锁住修复后的行为。
+Observed in production: among the memories one write produces, l2_fact returns its meta
+while l0_basic_info does not -- the profile uses its own upsert path and dropped it during pass-through.
+This suite locks in the behaviour after the fix.
 """
 import asyncio
 
@@ -56,7 +56,7 @@ class TestBasicProfileClientMeta:
         store = FakeVectorStore()
         meta = {"source": "codebuddy", "trace_id": "t-1"}
 
-        r = upsert(store, {"name": "张伟"}, meta=meta)
+        r = upsert(store, {"name": "Zhang Wei"}, meta=meta)
 
         assert r.success and r.changed
         assert len(store.upserted) == 1
@@ -65,52 +65,52 @@ class TestBasicProfileClientMeta:
         assert node.custom["meta"] == [meta]
 
     def test_basic_info_kv_still_stored_alongside_meta(self):
-        """meta 不能挤掉原有的 basic_info_kv——后者是画像装配的依据。"""
+        """meta must not displace the existing basic_info_kv, which is what the profile is assembled from."""
         store = FakeVectorStore()
 
-        upsert(store, {"name": "张伟", "age": 35}, meta={"k": "v"})
+        upsert(store, {"name": "Zhang Wei", "age": 35}, meta={"k": "v"})
 
         custom = store.upserted[0].custom
-        assert custom["basic_info_kv"] == {"name": "张伟", "age": 35}
+        assert custom["basic_info_kv"] == {"name": "Zhang Wei", "age": 35}
         assert custom["meta"] == [{"k": "v"}]
 
     def test_no_meta_key_when_not_provided(self):
-        """不传 meta 时不应凭空造出该键，否则旧数据形态被改。"""
+        """When meta is not passed no such key should be invented, otherwise the shape of old data changes."""
         store = FakeVectorStore()
 
-        upsert(store, {"name": "张伟"})
+        upsert(store, {"name": "Zhang Wei"})
 
         assert "meta" not in store.upserted[0].custom
 
     def test_empty_meta_treated_as_absent(self):
         store = FakeVectorStore()
 
-        upsert(store, {"name": "张伟"}, meta={})
+        upsert(store, {"name": "Zhang Wei"}, meta={})
 
         assert "meta" not in store.upserted[0].custom
 
     def test_meta_is_copied_not_referenced(self):
-        """存进去后调用方再改自己的 dict，不应影响已落库的内容。"""
+        """Mutating the caller's own dict after the write must not affect what was already persisted."""
         store = FakeVectorStore()
         meta = {"source": "a"}
 
-        upsert(store, {"name": "张伟"}, meta=meta)
+        upsert(store, {"name": "Zhang Wei"}, meta=meta)
         meta["source"] = "mutated"
 
         assert store.upserted[0].custom["meta"] == [{"source": "a"}]
 
     def test_new_version_carries_only_current_meta(self):
-        """L0 每次变更新建节点、旧节点转 SUPERSEDED，与 SUPERSEDE 同构：
-        新节点只带本次 meta，不继承旧链，避免长链上无限累积。"""
+        """Every L0 change creates a node and turns the old one into SUPERSEDED, mirroring SUPERSEDE:
+        a new node carries only this call's meta and does not inherit the old chain, avoiding unbounded accumulation on long chains."""
         store = FakeVectorStore()
 
-        upsert(store, {"name": "张伟"}, meta={"round": 1})
-        upsert(store, {"name": "张伟", "age": 35}, meta={"round": 2})
+        upsert(store, {"name": "Zhang Wei"}, meta={"round": 1})
+        upsert(store, {"name": "Zhang Wei", "age": 35}, meta={"round": 2})
 
         assert len(store.upserted) == 2
         assert store.upserted[1].custom["meta"] == [{"round": 2}]
 
-        # 旧节点被标记取代，其 meta 原样留在链上
+        # The old node is marked superseded and its meta stays on the chain unchanged
         assert store.payload_updates
         old_id, updates = store.payload_updates[-1]
         assert old_id == store.upserted[0].node_id
@@ -118,11 +118,11 @@ class TestBasicProfileClientMeta:
         assert store.upserted[0].custom["meta"] == [{"round": 1}]
 
     def test_no_diff_writes_nothing_even_with_meta(self):
-        """内容无变化时本就不落新版本，带了 meta 也不应因此凭空建节点。"""
+        """With no content change no new version is persisted, so meta alone must not create a node out of thin air."""
         store = FakeVectorStore()
 
-        upsert(store, {"name": "张伟"}, meta={"round": 1})
-        r = upsert(store, {"name": "张伟"}, meta={"round": 2})
+        upsert(store, {"name": "Zhang Wei"}, meta={"round": 1})
+        r = upsert(store, {"name": "Zhang Wei"}, meta={"round": 2})
 
         assert r.success and not r.changed
         assert len(store.upserted) == 1

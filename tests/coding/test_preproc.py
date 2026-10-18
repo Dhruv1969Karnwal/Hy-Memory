@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""preproc 工具测试"""
+"""Tests for the preproc utilities."""
 
 import pytest
 
@@ -58,7 +58,7 @@ class TestStripToolMessages:
                         tool_calls=[ToolCall(id="x", name="Read", arguments={})]),
         ]
         out = strip_tool_messages(msgs)
-        # 第 1 条保留，第 2 条保留（content 非空，但 tool_calls drop），第 3 条整条丢
+        # message 1 kept, message 2 kept (content non-empty but tool_calls dropped), message 3 dropped whole
         assert len(out) == 2
         assert all(not m.has_tool_calls() for m in out)
         assert out[0].content == "text only"
@@ -102,7 +102,7 @@ class TestTruncate:
         assert out.endswith("x" * 100)
 
     def test_utf8_limit_is_real_bytes(self):
-        text = "中" * 1000  # 3000 UTF-8 bytes
+        text = "€" * 1000  # 3000 UTF-8 bytes
         out = truncate_tool_result_text(
             text, max_bytes=1200, head_bytes=600, tail_bytes=300,
         )
@@ -119,7 +119,7 @@ class TestTruncate:
         big = ChatMessage(role="tool", content="x" * 5000)
         out = truncate_tool_message(big)
         assert len(out.content) < 5000
-        # 原对象不变
+        # the original object is untouched
         assert len(big.content) == 5000
 
     def test_non_tool_message_unchanged(self):
@@ -147,7 +147,7 @@ class TestExtractFiles:
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Read", arguments={"path": "src/a.py"}),
                 ToolCall(id="2", name="Edit", arguments={"file_path": "src/b.py"}),
-                ToolCall(id="3", name="Bash", arguments={"command": "ls"}),  # 无 path 键
+                ToolCall(id="3", name="Bash", arguments={"command": "ls"}),  # no path key
             ]),
         ]
         files = extract_files(msgs)
@@ -171,7 +171,7 @@ class TestExtractFiles:
 class TestExtractToolSummary:
     def test_per_turn_grouping(self):
         msgs = [
-            ChatMessage(role="user", content="重构 auth"),
+            ChatMessage(role="user", content="Refactor auth"),
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Read", arguments={"path": "a"}),
             ]),
@@ -180,20 +180,20 @@ class TestExtractToolSummary:
                 ToolCall(id="2", name="Edit", arguments={"path": "a"}),
             ]),
             ChatMessage(role="tool", content="ok", tool_call_id="2", tool_name="Edit"),
-            ChatMessage(role="user", content="问个闲话"),
+            ChatMessage(role="user", content="Just making small talk"),
             ChatMessage(role="assistant", content="OK"),
         ]
         summary = extract_tool_summary(msgs)
         assert len(summary) == 2
-        assert summary[0]["user"] == "重构 auth"
+        assert summary[0]["user"] == "Refactor auth"
         assert sorted(summary[0]["tools"]) == ["Edit", "Read"]
         assert summary[0]["has_tool_result"] is True
-        assert summary[1]["user"] == "问个闲话"
+        assert summary[1]["user"] == "Just making small talk"
         assert summary[1]["tools"] == []
         assert summary[1]["has_tool_result"] is False
 
     def test_no_user_anchor_first(self):
-        # tool 消息出现在 user 之前
+        # a tool message appears before any user message
         msgs = [
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Read", arguments={}),

@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-list 返回演化链（R4 需求：结构化事实的更新过程可查、可展示）。
+list returns evolution chains (R4: the update history of a structured fact must be queryable and displayable).
 
-search 侧早有 evolution_chain，list 侧缺失。本次复用同一套 expand_evolution_chains，
-保证两侧结构一致（前端可统一渲染）。
+search already returned evolution_chain while list did not. This reuses the same expand_evolution_chains
+so both sides share one structure (the frontend can render them identically).
 
-本文件锁死三件事：
-1. 默认关闭——展开要按链逐条回查，不能拖慢默认列表。
-2. 开启后只附加字段，绝不增删条目。expand_evolution_chains 为 search 设计，
-   自带同链去重；list 若照单全收，同链多条时会少返回记录、与 total 对不上。
-3. 只展开当前页，不是整表。
+This file pins down three things:
+1. Off by default -- expansion re-reads chain by chain and must not slow down the default list.
+2. When enabled it only attaches fields and never adds or drops items. expand_evolution_chains
+   is built for search and dedups within a chain; list taking it as-is would lose rows vs total.
+3. Only the current page is expanded, not the whole table.
 """
 
 import asyncio
@@ -78,17 +78,17 @@ def _client_with(store):
 
 
 def _seed_chain(store):
-    """一条两节点的演化链 + 一条无链的独立记忆。
+    """One two-node evolution chain plus one memory that has no chain.
 
-    head（ACTIVE/latest）supersedes old（SUPERSEDED），对应写入侧
-    「矛盾取代」判定产生的结构。
+    The head (ACTIVE/latest) supersedes old (SUPERSEDED), matching the structure the
+    writer produces for a contradiction-supersede decision.
     """
     old_id, head_id = str(uuid.uuid4()), str(uuid.uuid4())
     run(store.upsert_batch([
-        _node("v1 用 Vue", node_id=old_id, is_latest=False,
+        _node("v1 used Vue", node_id=old_id, is_latest=False,
               status=MemoryStatus.SUPERSEDED, superseded_by=[head_id]),
-        _node("v2 改用 React", node_id=head_id, supersedes=[old_id]),
-        _node("独立记忆"),
+        _node("v2 switched to React", node_id=head_id, supersedes=[old_id]),
+        _node("Standalone memory"),
     ]))
     return old_id, head_id
 
@@ -100,7 +100,7 @@ class TestDefaultOff:
             user_id="u1", agent_id=None, limit=100, offset=0, order="desc",
         ))
         assert all("evolution_chain" not in m for m in got["memories"]), (
-            "默认不得返回演化链——展开有回查成本，会拖慢默认列表"
+            "the default must not return evolution chains: expansion costs re-reads and slows the default list"
         )
 
 
@@ -114,9 +114,9 @@ class TestWithEvolution:
 
         by_id = {m["memory_id"]: m for m in got["memories"]}
         chain = by_id[head_id].get("evolution_chain")
-        assert chain, "链头必须带上演化链"
-        assert [c["content"] for c in chain] == ["v2 改用 React", "v1 用 Vue"], (
-            "顺序须为 latest → oldest，与 search 侧一致"
+        assert chain, "the chain head must carry its evolution chain"
+        assert [c["content"] for c in chain] == ["v2 switched to React", "v1 used Vue"], (
+            "the order must be latest -> oldest, same as on the search side"
         )
         assert {"node_id", "content", "memory_at", "layer"} <= set(chain[0].keys())
 
@@ -126,11 +126,11 @@ class TestWithEvolution:
             user_id="u1", agent_id=None, limit=100, offset=0, order="desc",
             with_evolution=True,
         ))
-        solo = next(m for m in got["memories"] if m["content"] == "独立记忆")
-        assert "evolution_chain" not in solo, "无链的记忆不应出现空字段"
+        solo = next(m for m in got["memories"] if m["content"] == "Standalone memory")
+        assert "evolution_chain" not in solo, "a memory without a chain must not get an empty field"
 
     def test_item_count_and_total_unchanged(self, faiss_store):
-        """开关不得影响条目数：历史版本是 SUPERSEDED，本就不在 list 里。"""
+        """The switch must not change item counts: history versions are SUPERSEDED and never listed."""
         _seed_chain(faiss_store)
         c = _client_with(faiss_store)
         base = run(c._list_vdb_bucket(
@@ -146,7 +146,7 @@ class TestWithEvolution:
                 == {m["memory_id"] for m in base["memories"]})
 
     def test_only_current_page_expanded(self, faiss_store):
-        """分页后才展开：第二页的链不该在取第一页时被回溯。"""
+        """Expansion happens after paging: page 2 chains must not be traced while page 1 is fetched."""
         _seed_chain(faiss_store)
         calls = []
         orig = faiss_store.get_by_ids
@@ -161,11 +161,11 @@ class TestWithEvolution:
             with_evolution=True,
         ))
         assert len(got["memories"]) == 1
-        # 首页若不含链头则一次回查都不该发生；含链头则最多回查该条链
+        # Without a chain head on page 1 no re-read should happen at all; with one, at most that chain
         assert len(calls) <= 1
 
     def test_expand_failure_does_not_break_list(self, faiss_store):
-        """演化链是附加信息，取不到也必须正常返回列表。"""
+        """Evolution chains are extra info: the list must still come back normally without them."""
         _seed_chain(faiss_store)
 
         async def _boom(ids):

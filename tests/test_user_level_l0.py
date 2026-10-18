@@ -222,5 +222,5 @@ def test_require_user_scope_returns_first_non_empty():
 
 
 def test_require_user_scope_refuses_unscoped_l0_query():
-    """L0 已无 agent/session 隔离，缺少 user 范围时必须拒绝查询而非全库扫描。"""
+    """L0 has no agent/session isolation, so a query without a user scope must be refused instead of scanning the whole store."""
     assert require_user_scope(None, None, []) is None

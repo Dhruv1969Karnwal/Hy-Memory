@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-reverse_lookup_l6 单元测试（纯逻辑，mock graph_store）。
+Unit tests for reverse_lookup_l6 (pure logic, graph_store mocked).
 
-反路：从一批 VDB node_id 反查支撑它们的 L6 schema，按支撑度（distinct
-evidence_vdb_id 数）降序。验证：聚合支撑度、过滤非 l6 层、排序、空/异常兜底。
+Reverse path: from a batch of VDB node_ids, look back up the L6 schemas supporting them, ordered by support
+degree (number of distinct evidence_vdb_id) descending. Checks aggregated support, filtering of non-l6 layers, ordering, and empty/exception fallbacks.
 """
 
 import asyncio
@@ -25,7 +25,7 @@ def run(coro):
 
 
 class _FakeGraph:
-    """find_referencing_memories 返回预设的 (Memory, VdbRef) 边列表。"""
+    """find_referencing_memories returns a preset list of (Memory, VdbRef) edges."""
     def __init__(self, rows, raise_exc=False):
         self._rows = rows
         self._raise = raise_exc
@@ -47,7 +47,7 @@ def _edge(node_id, ev_id, layer="l6_schema", content="schema-content"):
 
 class TestReverseLookupL6:
     def test_support_degree_aggregation_and_order(self):
-        # s1 被 v1/v2/v3 支撑（3），s2 被 v1（1）。s1 应排前。
+        # s1 is supported by v1/v2/v3 (3), s2 by v1 (1), so s1 must rank first.
         rows = [
             _edge("s1", "v1"), _edge("s1", "v2"), _edge("s1", "v3"),
             _edge("s2", "v1"),
@@ -57,19 +57,19 @@ class TestReverseLookupL6:
         assert [h["node_id"] for h in out] == ["s1", "s2"]
         assert out[0]["_support_count"] == 3
         assert out[1]["_support_count"] == 1
-        # score 归一化：最高支撑度 = 1.0
+        # score normalization: highest support = 1.0
         assert out[0]["score"] == 1.0
         assert abs(out[1]["score"] - 1 / 3) < 1e-6
-        # 输出层兼容字段
+        # output-layer compatibility fields
         assert out[0]["layer"] == "l6_schema"
         assert out[0]["retrieval_source"] == "schema_reverse"
         assert out[0]["node"] is None
         assert out[0]["content"] == "schema-content"
-        # 透传 vdb_node_ids
+        # vdb_node_ids pass straight through
         assert g.called_with == (["v1", "v2", "v3"], 50)
 
     def test_distinct_evidence_not_double_counted(self):
-        # 同一 (s1, v1) 边重复出现 → 支撑度仍按 distinct evidence 算 = 1
+        # the same (s1, v1) edge appearing twice -> support still counts distinct evidence = 1
         rows = [_edge("s1", "v1"), _edge("s1", "v1")]
         out = run(reverse_lookup_l6(_FakeGraph(rows), ["v1"]))
         assert len(out) == 1

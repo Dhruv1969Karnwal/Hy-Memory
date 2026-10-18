@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""共享 pytest fixtures"""
+"""Shared pytest fixtures."""
 
 import os
 import shutil
@@ -20,7 +20,7 @@ def tmp_data_dir():
 
 @pytest.fixture
 def coding_config(tmp_data_dir):
-    """临时 chroma + sqlite，每次给独立 collection_name 避免进程内单例串味。"""
+    """Temporary chroma + sqlite; each fixture gets its own collection_name so in-process singletons do not cross-contaminate."""
     from hy_memory.config import MemoryConfig
 
     cfg = MemoryConfig.from_env()
@@ -28,7 +28,7 @@ def coding_config(tmp_data_dir):
     cfg.coding.db_path = os.path.join(tmp_data_dir, "coding_memory.db")
     cfg.vector_store.provider = "chroma"
     cfg.vector_store.persist_directory = os.path.join(tmp_data_dir, "chroma")
-    # 使用 uuid 后缀确保每个测试用独立 collection（chroma 客户端可能缓存单例）
+    # The uuid suffix gives every test its own collection (the chroma client may cache a singleton)
     cfg.vector_store.collection_name = f"test_coding_{uuid.uuid4().hex[:8]}"
     cfg.vector_store.embedding_dims = 1536
     return cfg
@@ -41,7 +41,7 @@ def mock_embed():
 
 @pytest.fixture
 async def coding_store(coding_config, mock_embed):
-    """已经 initialize 的 CodingMemoryStore"""
+    """A CodingMemoryStore that has already been initialized"""
     from hy_memory.coding.store import CodingMemoryStore
     store = CodingMemoryStore(coding_config, embed_service=mock_embed)
     await store.initialize()

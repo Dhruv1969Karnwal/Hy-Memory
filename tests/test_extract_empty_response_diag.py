@@ -28,7 +28,7 @@ async def test_empty_response_keeps_llm_diagnostics():
     extractor = Extractor(EmptyLLMProvider(), LLMConfig())
 
     result = await extractor.extract(
-        content="用户喜欢喝咖啡。",
+        content="The user likes drinking coffee.",
         current_time="2026-08-12T00:00:00",
     )
 

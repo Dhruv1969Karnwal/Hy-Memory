@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# scripts/publish_npmjs.sh — 发布无 scope 包 openclaw-hy-memory 到 registry.npmjs.org
+# scripts/publish_npmjs.sh -- publish the unscoped package openclaw-hy-memory to registry.npmjs.org
 #
-# 源码与发布包都在 plugins/openclaw/。
+# Sources and the published package both live in plugins/openclaw/.
 #
 # Usage:
 #   bash scripts/publish_npmjs.sh 1.1.8
 #
-# 鉴权（任选其一）:
-#   ~/.npmrc 中 //registry.npmjs.org/:_authToken=...
+# Authentication (either one works):
+#   //registry.npmjs.org/:_authToken=... in ~/.npmrc
 #   export NPM_TOKEN=npm_...
 
 set -euo pipefail
@@ -37,7 +37,7 @@ fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
 echo "→ publish openclaw-hy-memory@${VERSION} to registry.npmjs.org"
 NPM_TOKEN_NPMJS="${NPM_TOKEN:-$(grep '//registry.npmjs.org/:_authToken=' "${HOME}/.npmrc" 2>/dev/null | cut -d= -f2- || true)}"
 if [[ -z "${NPM_TOKEN_NPMJS}" ]]; then
-  echo "ERROR: 需要 NPM_TOKEN 或 ~/.npmrc 中的 //registry.npmjs.org/:_authToken"
+  echo "ERROR: NPM_TOKEN or //registry.npmjs.org/:_authToken in ~/.npmrc is required"
   exit 1
 fi
 

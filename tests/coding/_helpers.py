@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""测试辅助类（不被 pytest 收集为 test）"""
+"""Test helper classes (not collected as tests by pytest)."""
 
 import hashlib
 import json
@@ -8,12 +8,12 @@ from typing import Any, Dict, List, Optional, Union
 
 class MockLLMProvider:
     """
-    用预先准备好的回复序列响应 complete() / complete_messages()。每次 pop 一个；用完后重复最后一个。
+    Answers complete() / complete_messages() from a prepared list of replies, popping one per call and repeating the last one once exhausted.
 
-    response 项支持两种形式（向后兼容）:
-      - str               : 纯文本回复（老用法）
-      - Dict[str, Any]    : 结构化回复，可含 tool_calls，用于测试 tool calling agent
-                            形如 {"content": "...", "tool_calls": [{"id": ..., "function": {...}}]}
+    Reply entries support two forms (backward compatible):
+      - str               : plain text reply (legacy usage)
+      - Dict[str, Any]    : structured reply, may carry tool_calls, for tool calling agent tests
+                            shaped like {"content": "...", "tool_calls": [{"id": ..., "function": {...}}]}
     """
 
     def __init__(self, responses):
@@ -22,7 +22,7 @@ class MockLLMProvider:
         self._responses: List[Union[str, Dict[str, Any]]] = list(responses)
         self.calls: List[Dict[str, Any]] = []
         self._idx = 0
-        # 兼容 coding 模块对 _llm_config.temperature 的 fallback 探测
+        # Compatibility with the coding module's fallback probe of _llm_config.temperature
         self._llm_config = type("_FakeCfg", (), {"temperature": 0.1, "model": "mock"})()
 
     def _next(self) -> Union[str, Dict[str, Any]]:
@@ -40,7 +40,7 @@ class MockLLMProvider:
         # Dict
         content = raw.get("content", "") or ""
         tool_calls = raw.get("tool_calls")
-        # tool_calls 内的 function.arguments 既允许 dict 也允许 JSON string；统一成 OpenAI 风格 string
+        # function.arguments inside tool_calls may be a dict or a JSON string; normalise to an OpenAI-style string
         if tool_calls:
             normalized = []
             for tc in tool_calls:
@@ -84,7 +84,7 @@ class MockLLMProvider:
 
 
 class FailingLLMProvider:
-    """每次 complete / complete_messages 都 raise，用于 fail-safe 路径测试"""
+    """Raises on every complete / complete_messages call, for fail-safe path tests."""
 
     def __init__(self):
         self.calls = 0
@@ -122,6 +122,6 @@ class MockEmbedService:
 
     @staticmethod
     def _hash_to_vec(t: str, dims: int = 1536):
-        h = hashlib.md5(t.encode()).digest()  # 16 字节
+        h = hashlib.md5(t.encode()).digest()  # 16 bytes
         v = [b / 255.0 for b in h] * (dims // 16)
         return v[:dims]

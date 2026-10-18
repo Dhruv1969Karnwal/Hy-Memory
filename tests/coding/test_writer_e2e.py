@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-端到端写入路径测试。
+End-to-end write-path tests.
 
-把 judge / preproc / extractor / reconciler / store 串起来，
-验证 CodingWriter 协调正确。
+Chains judge / preproc / extractor / reconciler / store together to
+verify CodingWriter coordinates them correctly.
 """
 
 import json
@@ -27,7 +27,7 @@ def _extract_resp(experiences, fact=None):
         if len(fact) <= 1:
             fact = fact[0] if fact else None
         else:
-            # 仅供兼容性回归：旧模型可能仍返回多元素 facts 数组。
+            # Compatibility regression only: old models may still return a multi-element facts array.
             return json.dumps({"experiences": experiences, "facts": fact})
     return json.dumps({"experiences": experiences, "fact": fact})
 
@@ -38,7 +38,7 @@ def _reconcile_resp(ops):
 
 def _coding_messages():
     return [
-        ChatMessage(role="user", content="帮我打包发布到私有包索引"),
+        ChatMessage(role="user", content="Help me package and publish to the private package index"),
         ChatMessage(role="assistant", content="", tool_calls=[
             ToolCall(id="1", name="Read", arguments={"path": "scripts/publish_package.sh"}),
         ]),
@@ -55,11 +55,11 @@ class TestIsCodingSegment:
     async def test_no_tool_short_circuit(self):
         msgs = [ChatMessage(role="user", content="hi"),
                 ChatMessage(role="assistant", content="hello")]
-        # 即使 LLM 返回 true，has_any_tool_message False 应短路 False
+        # even if the LLM returns true, has_any_tool_message False must short-circuit to False
         llm = MockLLMProvider('{"is_coding": true}')
         result = await is_coding_segment(msgs, llm)
         assert result is False
-        # LLM 不应被调用
+        # the LLM must not be called
         assert len(llm.calls) == 0
 
     async def test_with_tool_classify_coding(self):
@@ -90,14 +90,14 @@ class TestCodingWriterE2E:
         await coding.initialize()
         try:
             await working.append_trace(
-                [ChatMessage(role="user", content="先整理财务报表")],
+                [ChatMessage(role="user", content="Sort out the financial reports first")],
                 request_id="shared-trace", user_id="u1", agent_id="a1",
             )
             recent = await coding.get_recent_trace_messages(
                 user_id="u1", agent_id="a1", max_user_turns=5,
             )
             assert [m.content for m in recent if m.role == "user"] == [
-                "先整理财务报表"
+                "Sort out the financial reports first"
             ]
             assert working._db_path != coding._db_path
             assert working._trace_db_path == coding._trace_db_path
@@ -139,13 +139,13 @@ class TestCodingWriterE2E:
         assert count == 100
 
     async def test_full_path_add(self, coding_store, mock_embed):
-        """完整 e2e：含 tool 消息 → judge=True → extract → reconcile=ADD → 持久化"""
-        # 用同一个 LLM mock 序列响应 extract + reconcile（注意：我们这里直接调
-        # writer.write，不经 judge；所以 LLM 序列只需覆盖 extract + reconcile）
+        """Full e2e: tool messages present -> judge=True -> extract -> reconcile=ADD -> persisted"""
+        # One LLM mock sequence answers extract + reconcile (note: we call
+        # writer.write directly here, skipping the judge, so the sequence only covers extract + reconcile)
         ext_resp = _extract_resp([{
-            "task": "打包发布到私有包索引",
-            "search_keys": ["凭证位置", "上传命令"],
-            "solution": "运行 scripts/publish_package.sh X.Y.Z；凭证通过环境变量提供",
+            "task": "Package and publish to the private package index",
+            "search_keys": ["credential location", "upload command"],
+            "solution": "Run scripts/publish_package.sh X.Y.Z; credentials are provided via environment variables",
             "boundary_envs": "twine>=6\\nurl: packages.example.com",
             "confidence": 0.9,
         }])
@@ -170,18 +170,18 @@ class TestCodingWriterE2E:
         assert resp["ops"][0]["action"] == "ADD"
         assert len(resp["experience_ids"]) == 1
 
-        # 验证持久化
+        # verify persistence
         experience_id = resp["experience_ids"][0]
         got = await coding_store.get_by_id(experience_id, user_id="u1")
         assert got is not None
-        assert got.task == "打包发布到私有包索引"
-        assert got.search_keys == ["凭证位置", "上传命令"]
+        assert got.task == "Package and publish to the private package index"
+        assert got.search_keys == ["credential location", "upload command"]
         assert got.boundary_envs.startswith("twine>=6")
         assert got.workspace_id == "github.com/x/y"
         assert got.files == ["scripts/publish_package.sh"]
 
     async def test_value_bar_returns_empty(self, coding_store, mock_embed):
-        """extractor 返回 0 条 memory（价值门槛未达）"""
+        """Extractor returns 0 memories (value bar not met)"""
         llm = MockLLMProvider(_extract_resp([]))
         ext = CodingMemoryExtractor(llm)
         rec = CodingMemoryReconciler(coding_store, mock_embed, llm)
@@ -197,7 +197,7 @@ class TestCodingWriterE2E:
         assert resp["experience_ids"] == []
 
     async def test_no_workspace_still_writes(self, coding_store, mock_embed):
-        """缺 workspace_id 不再拦稿，两条 draft 都应落库"""
+        """A missing workspace_id no longer blocks drafts; both drafts must persist"""
         ext_resp = _extract_resp([
             {"task": "T1", "solution": "S", "confidence": 0.9},
             {"task": "T2", "solution": "S", "confidence": 0.9},
@@ -220,7 +220,7 @@ class TestCodingWriterE2E:
         assert sorted(await coding_store.list_user_tasks("u1")) == ["T1", "T2"]
 
     async def test_extractor_failure(self, coding_store, mock_embed):
-        """extractor LLM 失败 → 空 drafts → 空 ops"""
+        """Extractor LLM fails -> empty drafts -> empty ops"""
         ext = CodingMemoryExtractor(FailingLLMProvider())
         rec = CodingMemoryReconciler(coding_store, mock_embed, MockLLMProvider("{}"))
         writer = CodingWriter(
@@ -232,10 +232,10 @@ class TestCodingWriterE2E:
         assert resp["ops"] == []
 
     async def test_existing_tasks_not_shown_to_extractor(self, coding_store, mock_embed):
-        """库里已有的 task 不得进抽取 prompt——抽取只读这一段，去重是 reconcile 的事"""
+        """Tasks already in the store must not enter the extraction prompt -- extraction only reads this segment; dedup is reconcile's job"""
         from hy_memory.coding.types import CodingMemory
         await coding_store.insert(CodingMemory(
-            experience_id="e_old", user_id="u1", task="老 task", solution="S",
+            experience_id="e_old", user_id="u1", task="old task", solution="S",
         ))
 
         llm = MockLLMProvider([_extract_resp([]), _reconcile_resp([])])
@@ -246,12 +246,12 @@ class TestCodingWriterE2E:
             llm_provider=llm, embed_service=mock_embed,
         )
         await writer.write(_coding_messages(), user_id="u1", workspace_id="ws/a")
-        assert "老 task" not in llm.calls[0]["prompt"]
+        assert "old task" not in llm.calls[0]["prompt"]
 
 
 @pytest.mark.asyncio
 class TestDualLayerWrite:
-    """双层写入 + 同批全互链（§4）"""
+    """Dual-layer write + full crosslinking within one batch (section 4)"""
 
     def _writer(self, store, embed, llm, *, verbatim_fallback_enabled=False):
         return CodingWriter(
@@ -267,8 +267,8 @@ class TestDualLayerWrite:
     async def test_both_layers_written_and_crosslinked(self, coding_store, mock_embed):
         llm = MockLLMProvider([
             _extract_resp(
-                [{"task": "打包发布到私有包索引", "solution": "S", "confidence": 0.9}],
-                [{"statement": "发布脚本在 scripts/publish_package.sh", "files": ["scripts/publish_package.sh"]}],
+                [{"task": "Package and publish to the private package index", "solution": "S", "confidence": 0.9}],
+                [{"statement": "The publish script is at scripts/publish_package.sh", "files": ["scripts/publish_package.sh"]}],
             ),
             _reconcile_resp([{"draft_idx": 0, "action": "ADD"}]),
         ])
@@ -287,14 +287,14 @@ class TestDualLayerWrite:
         fact = await coding_store.get_fact(fid, user_id="u1")
         assert exp.source_fact_ids == [fid]
         assert fact.derived_experience_ids == [eid]
-        assert fact.statement == "发布脚本在 scripts/publish_package.sh"
+        assert fact.statement == "The publish script is at scripts/publish_package.sh"
 
     async def test_all_experiences_linked_to_unique_fact(self, coding_store, mock_embed):
-        """一个 trace 的多条经验都与唯一会话 fact 双向关联。"""
+        """Every experience from one trace is bidirectionally linked to the single session fact."""
         llm = MockLLMProvider([
             _extract_resp(
                 [{"task": "T1", "solution": "S"}, {"task": "T2", "solution": "S"}],
-                [{"statement": "事实 A"}, {"statement": "事实 B"}],
+                [{"statement": "Fact A"}, {"statement": "Fact B"}],
             ),
             _reconcile_resp([
                 {"draft_idx": 0, "action": "ADD"},
@@ -314,11 +314,11 @@ class TestDualLayerWrite:
         assert sorted(fact.derived_experience_ids) == sorted(eids)
 
     async def test_skip_not_linked(self, coding_store, mock_embed):
-        """SKIP 的经验没真入库，不该被连上这批事实。"""
+        """A SKIPped experience was never really persisted, so it must not be linked to this batch of facts."""
         llm = MockLLMProvider([
             _extract_resp(
                 [{"task": "T1", "solution": "S"}],
-                [{"statement": "事实 A"}],
+                [{"statement": "Fact A"}],
             ),
             _reconcile_resp([{"draft_idx": 0, "action": "SKIP", "reason": "dup"}]),
         ])
@@ -331,16 +331,16 @@ class TestDualLayerWrite:
         assert fact.derived_experience_ids == []
 
     async def test_update_keeps_old_fact_link(self, coding_store, mock_embed):
-        """UPDATE 覆盖正文不留痕，但事实链取并集，旧链要保住。"""
+        """UPDATE overwrites the body without keeping a trace, but fact links take the union; old links survive."""
         from hy_memory.coding.types import CodingMemory
         await coding_store.insert(CodingMemory(
-            experience_id="e1", user_id="u1", task="老 task", solution="旧 solution",
+            experience_id="e1", user_id="u1", task="old task", solution="old solution",
             source_fact_ids=["f_before"],
         ))
         llm = MockLLMProvider([
             _extract_resp(
-                [{"task": "老 task", "solution": "新 solution"}],
-                [{"statement": "本轮新事实"}],
+                [{"task": "old task", "solution": "new solution"}],
+                [{"statement": "New fact from this round"}],
             ),
             _reconcile_resp([
                 {"draft_idx": 0, "action": "UPDATE", "target_experience_id": "e1"},
@@ -350,18 +350,18 @@ class TestDualLayerWrite:
 
         resp = await writer.write(_coding_messages(), user_id="u1")
         exp = await coding_store.get_by_id("e1", user_id="u1")
-        assert exp.solution == "新 solution"
+        assert exp.solution == "new solution"
         assert exp.source_fact_ids == ["f_before", resp["fact_ids"][0]]
 
     async def test_facts_only_no_experience(self, coding_store, mock_embed):
-        """经验层空、事实层非空：事实照样落库，不触发经验层 reconcile。"""
-        llm = MockLLMProvider(_extract_resp([], [{"statement": "只有事实"}]))
+        """Experience layer empty, fact layer non-empty: facts still persist, experience-layer reconcile never runs."""
+        llm = MockLLMProvider(_extract_resp([], [{"statement": "Facts only"}]))
         writer = self._writer(coding_store, mock_embed, llm)
 
         resp = await writer.write(_coding_messages(), user_id="u1")
         assert resp["experience_ids"] == []
         assert len(resp["fact_ids"]) == 1
-        # extract 一次；事实层库里没候选所以不调 LLM；经验层 reconcile 完全没跑
+        # extract once; no candidates in the fact-layer store so no LLM call; experience-layer reconcile never ran
         assert len(llm.calls) == 1
 
     async def test_empty_experiences_do_not_persist_verbatim_fact_by_default(
@@ -378,9 +378,9 @@ class TestDualLayerWrite:
     async def test_empty_experiences_can_persist_verbatim_fact_when_enabled(
         self, coding_store, mock_embed,
     ):
-        """显式开启时，两层都抽空仍可落一条原文事实。
+        """With the switch explicitly on, an empty extraction on both layers still persists one verbatim fact.
 
-        端到端确认开关开启后，fallback 能穿过 reconcile 真正落库。
+        End-to-end confirmation that with the switch on, the fallback gets through reconcile and really persists.
         """
         llm = MockLLMProvider(_extract_resp([], []))
         writer = self._writer(
@@ -391,10 +391,10 @@ class TestDualLayerWrite:
         )
 
         resp = await writer.write(_coding_messages(), user_id="u1")
-        assert resp["ops"] == []            # 经验层不兜底
+        assert resp["ops"] == []            # the experience layer gets no fallback
         assert len(resp["fact_ids"]) == 1
         assert [op["action"] for op in resp["fact_ops"]] == ["INSERT"]
 
         fact = await coding_store.get_fact(resp["fact_ids"][0], user_id="u1")
-        assert fact.statement == "帮我打包发布到私有包索引"
-        assert "twine upload" in fact.details      # 轨迹原文进了 details
+        assert fact.statement == "Help me package and publish to the private package index"
+        assert "twine upload" in fact.details      # the raw trace text went into details

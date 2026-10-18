@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""reconcile 候选召回：additive + tag/entity boost。"""
+"""reconcile candidate recall: additive scoring plus tag/entity boost."""
 
 import asyncio
 from typing import Any, Dict, List, Optional
@@ -78,7 +78,7 @@ class _FakeGraph:
 
 class _Embed:
     async def embed_batch(self, texts):
-        # 正交单位向量，保证同文 cos=1
+        # Orthonormal vectors, so identical text always gives cos=1
         out = []
         for i, _t in enumerate(texts):
             v = [0.0] * 8
@@ -99,7 +99,7 @@ def _node(nid, content, tags=None):
 
 @pytest.mark.asyncio
 async def test_reconcile_additive_keeps_full_sem_without_bm25():
-    """无 BM25 时 sem 不再被 ×0.6。"""
+    """Without BM25 the sem score is no longer multiplied by 0.6."""
     hi = _node("hi", "generic note about hobbies")
     vs = _FakeVS([hi], {"hi": 0.55})
     ret = ReconcileHybridRetriever(
@@ -121,7 +121,7 @@ async def test_reconcile_additive_keeps_full_sem_without_bm25():
 
 @pytest.mark.asyncio
 async def test_reconcile_entity_boost_lifts_low_sem(monkeypatch):
-    """sem 偏低但 Graph Entity 命中 → 可过 min_score。"""
+    """Low sem but a Graph Entity hit -> still clears min_score."""
     from hy_memory.pipelines._retrieval import reconcile_retrieval
 
     monkeypatch.setattr(
@@ -130,7 +130,7 @@ async def test_reconcile_entity_boost_lifts_low_sem(monkeypatch):
         lambda *_args, **_kwargs: [("Tokyo", "GPE")],
     )
     tokyo = _node("t1", "I visited Tokyo last summer.", tags=["travel"])
-    # sem 仅 0.25，旧 convex 0.6*0.25=0.15；additive + entity 0.3 → 0.55
+    # sem is only 0.25; the old convex form gave 0.6*0.25=0.15; additive + entity 0.3 -> 0.55
     vs = _FakeVS([tokyo], {"t1": 0.25})
     gs = _FakeGraph([{"node_id": "t1", "match_score": 1.0, "entity_name": "Tokyo"}])
     ret = ReconcileHybridRetriever(

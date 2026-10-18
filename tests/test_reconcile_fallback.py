@@ -1,9 +1,9 @@
-"""reconcile 失败时必须兜底为「全部 ADD」，不能丢弃抽取结果。
+"""When reconcile fails it must fall back to "all ADD" and never drop the extraction results.
 
-一个暂存环境回归场景中，抽取已成功，但 reconcile 的 LLM 在重试后失败，
-导致整批完好事实被丢弃，`memory_ops` 返回 0 条。
-reconcile 只负责决定「新事实和旧记忆怎么合」，它不可用不代表抽取结果没价值。
-宁可留重复（后续 dedup / reconcile 还能收拾）也不要丢内容。
+In one staging regression scenario extraction had already succeeded, but the reconcile LLM failed after retries,
+so a whole batch of good facts was dropped and `memory_ops` returned 0 ops.
+reconcile only decides how new facts merge with old memories; it being unavailable does not mean the extraction results are worthless.
+Better to keep duplicates (later dedup / reconcile can still clean them up) than to lose content.
 """
 
 from hy_memory.agent.reconciler import MemoryReconciler, ReconcileResult
@@ -29,7 +29,7 @@ class TestFallbackAddOps:
         assert [o.content for o in ops] == NEW
 
     def test_preserves_layer_tags_owner(self):
-        """兜底不能把 meta 丢了，否则 owner/tags 全部退化。"""
+        """The fallback must not drop meta, or owner/tags all degrade."""
         ops = MemoryReconciler._fallback_add_ops(NEW, META)
         assert [o.layer for o in ops] == ["L2_FACT"] * 3
         assert ops[0].tags == ["travel", "skiing"]
@@ -40,7 +40,7 @@ class TestFallbackAddOps:
         assert "degraded" in ops[0].reason
 
     def test_works_without_meta(self):
-        """meta 缺失时也要能兜底（只是没有 tags/owner）。"""
+        """The fallback must also work when meta is missing (just without tags/owner)."""
         ops = MemoryReconciler._fallback_add_ops(NEW, None)
         assert len(ops) == 3 and all(o.op == "ADD" for o in ops)
 
@@ -58,10 +58,10 @@ class TestReconcileResultDegradedFlag:
         assert r.degraded is False and r.degraded_reason is None
 
     def test_degraded_result_still_succeeds(self):
-        """关键语义：兜底后 success 必须为 True，否则 writer 仍会丢弃全部内容。
+        """Key semantics: after the fallback, success must be True, or the writer would still discard everything.
 
-        writer 里是 `if not recon_result.success: return [], ...` —— 只要 success=False，
-        ops 里有什么都不会落库。
+        In the writer this is `if not recon_result.success: return [], ...` -- whenever success=False,
+        whatever is in ops never gets persisted.
         """
         r = ReconcileResult(
             ops=MemoryReconciler._fallback_add_ops(NEW, META),
@@ -73,19 +73,19 @@ class TestReconcileResultDegradedFlag:
 
 class TestWriterHonorsDegradedResult:
     def test_writer_stores_ops_when_success_true(self):
-        """从 writer 源码上钉住：success=True 时不会走提前 return 的丢弃分支。"""
+        """Pinned from the writer source: with success=True the early-return discard branch is not taken."""
         import inspect
 
         from hy_memory.pipelines.writer import MemoryWriter
 
         src = inspect.getsource(MemoryWriter._reconcile_and_store_locked)
         assert "if not recon_result.success:" in src
-        # 兜底路径必须可观测
+        # The fallback path must be observable
         assert "degraded" in src
 
 
 class TestLLMFailureIsNotPropagated:
-    """LLM 异常不能冒泡 —— 冒泡会让整批抽取结果连带丢弃。"""
+    """LLM exceptions must not bubble up -- bubbling would discard the whole batch of extraction results."""
 
     def test_llm_call_is_wrapped(self):
         import inspect
@@ -93,20 +93,20 @@ class TestLLMFailureIsNotPropagated:
         from hy_memory.agent.reconciler import MemoryReconciler as R
 
         src = inspect.getsource(R.reconcile)
-        # llm.complete 必须在 try 内，且失败后走 ADD-all
+        # llm.complete must be inside try, and on failure it must fall back to ADD-all
         assert "_llm_error" in src
         assert "_fallback_add_ops" in src
         assert "LLM_UNAVAILABLE" in src
 
     def test_failure_log_tolerates_none_response(self):
-        """LLM 挂掉时 response 是 None；失败分支里若直接取 response.prompt_tokens
-        会抛 AttributeError，把兜底本身也废掉。"""
+        """When the LLM is down, response is None; if the failure branch reads response.prompt_tokens directly
+        it raises AttributeError and disables the fallback itself too."""
         import inspect
 
         from hy_memory.agent.reconciler import MemoryReconciler as R
 
         src = inspect.getsource(R.reconcile)
-        # 只看失败分支（成功路径里 response 必然非 None，直接取属性是对的）
+        # Only inspect the failure branch (on the success path response is necessarily non-None; reading attributes directly is fine)
         start = src.index("if not _parse_ok:")
         end = src.index("_fallback_add_ops", start)
         fail_branch = src[start:end]
@@ -115,7 +115,7 @@ class TestLLMFailureIsNotPropagated:
 
 
 class TestExtractorPromptRules:
-    """新增的两条 extractor 规则（线上 badcase 直接对应）。"""
+    """The two new extractor rules (each mapped directly to a production badcase)."""
 
     def _prompts(self):
         from hy_memory.agent.extractor import EXTRACT_SYSTEM_PROMPT
@@ -123,24 +123,24 @@ class TestExtractorPromptRules:
 
         zh = next(
             v for k, v in vars(prompts_zh).items()
-            if isinstance(v, str) and "时间规则" in v and "质量要求" in v
+            if isinstance(v, str) and "Time rules" in v and "Quality requirements" in v
         )
         return EXTRACT_SYSTEM_PROMPT, zh
 
     def test_just_happened_events_rule_present_both_languages(self):
-        """"我刚旅行回来" 的返回日期就是 LoCoMo 时序题的答案，此前被丢掉。"""
+        """"I just got back from a trip": the return date is the answer to a LoCoMo temporal question, and it used to be dropped."""
         en, zh = self._prompts()
         assert "just got back" in en
-        assert "刚回来" in zh or "刚刚发生" in zh
+        assert "just got back" in zh or "just happened" in zh
 
     def test_no_generalisation_rule_present_both_languages(self):
-        """Banff 被泛化成 "the Rocky Mountains"，具体地名丢失。"""
+        """Banff was generalised into "the Rocky Mountains", losing the specific place name."""
         en, zh = self._prompts()
         assert "Banff" in en and "Banff" in zh
         assert "Rocky Mountains" in en
 
     def test_cross_speaker_detail_rule_present(self):
-        """细节由对方话轮给出、用户确认 —— 主体规则不该导致丢细节。"""
+        """The detail is given in the other speaker's turn and confirmed by the user -- the subject rules must not cause detail loss."""
         en, zh = self._prompts()
         assert "other speaker" in en
-        assert "对方话轮" in zh
+        assert "other speaker's turn" in zh

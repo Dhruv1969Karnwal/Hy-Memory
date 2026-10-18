@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""EmbedService INFO 日志：含 request_id / provider / model / api / 入参 / 出参(dims)。"""
+"""EmbedService INFO logging: request_id / provider / model / api / inputs / outputs (dims)."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ class TestEmbedInfoLog:
             assert payload["request"]["dimensions"] == 8
             assert payload["response"]["vector_dims"] == [8]
             assert payload["response"]["vector_count"] == 1
-            # 不得把向量数值打进日志（用哨兵值检测，避免与耗时等数字误撞）
+            # never log vector values (probed with a sentinel value so timings and other numbers cannot collide with it)
             blob = json.dumps(payload)
             assert "0.123456789" not in blob
             assert "embedding" not in payload["response"]

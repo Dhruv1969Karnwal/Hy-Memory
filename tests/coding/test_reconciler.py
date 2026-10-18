@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Reconciler 测试 — ADD / UPDATE / DELETE / SKIP / fallback"""
+"""Reconciler tests -- ADD / UPDATE / DELETE / SKIP / fallback"""
 
 import json
 
@@ -33,7 +33,7 @@ class TestReconcilerActions:
         assert sorted(tasks) == ["T1", "T2"]
 
     async def test_update(self, coding_store, mock_embed):
-        # 种入 m1
+        # Seed m1
         await coding_store.insert(CodingMemory(
             experience_id="m1", user_id="u1", task="T1",
             search_keys=["old"], solution="old",
@@ -63,12 +63,12 @@ class TestReconcilerActions:
                               user_id="u1")
         ops = await rec.reconcile([d])
         assert len(ops) == 1 and ops[0].action == "SKIP"
-        # store 不变
+        # The store is unchanged
         tasks = await coding_store.list_user_tasks("u1", 10)
         assert tasks == ["X"]
 
     async def test_add_with_delete_multi_op(self, coding_store, mock_embed):
-        # 旧记忆要被 DELETE
+        # The old memory is to be DELETEd
         await coding_store.insert(CodingMemory(
             experience_id="m_dep", user_id="u1", task="use old.sh",
             solution="old script",
@@ -83,9 +83,9 @@ class TestReconcilerActions:
                               user_id="u1")
         ops = await rec.reconcile([d])
         assert sorted(op.action for op in ops) == ["ADD", "DELETE"]
-        # 旧的没了
+        # The old one is gone
         assert await coding_store.get_by_id("m_dep", "u1") is None
-        # 新的进了
+        # The new one is in
         tasks = await coding_store.list_user_tasks("u1", 10)
         assert "use new CLI" in tasks
         assert "use old.sh" not in tasks
@@ -101,20 +101,20 @@ class TestReconcilerFallback:
         assert len(ops) == 2 and all(op.action == "ADD" for op in ops)
 
     async def test_missing_draft_idx_fallback_add(self, coding_store, mock_embed):
-        # LLM 只处理了 draft 0，draft 1 漏掉
+        # The LLM only handled draft 0 and missed draft 1
         llm = MockLLMProvider(_llm_resp([{"draft_idx": 0, "action": "ADD"}]))
         rec = CodingMemoryReconciler(coding_store, mock_embed, llm)
         d1 = CodingMemoryDraft(task="T1", solution="S", user_id="u1")
         d2 = CodingMemoryDraft(task="T2", solution="S", user_id="u1")
         ops = await rec.reconcile([d1, d2])
-        # T1 来自 LLM ADD；T2 来自 fallback ADD
+        # T1 comes from the LLM ADD; T2 from the fallback ADD
         actions = [op.action for op in ops]
         assert actions.count("ADD") == 2
 
     async def test_invalid_op_filtered(self, coding_store, mock_embed):
-        # UPDATE 缺 target_experience_id 应被丢弃，draft_idx=0 再走 fallback ADD
+        # An UPDATE without target_experience_id is dropped and draft_idx=0 falls back to ADD
         llm = MockLLMProvider(_llm_resp([
-            {"draft_idx": 0, "action": "UPDATE"},  # 缺 target → 丢弃
+            {"draft_idx": 0, "action": "UPDATE"},  # Missing target -> dropped
         ]))
         rec = CodingMemoryReconciler(coding_store, mock_embed, llm)
         d = CodingMemoryDraft(task="T", solution="S", user_id="u1")
@@ -131,5 +131,5 @@ class TestReconcilerFallback:
         rec = CodingMemoryReconciler(coding_store, mock_embed, MockLLMProvider("not json"))
         d = CodingMemoryDraft(task="T", solution="S", user_id="u1")
         ops = await rec.reconcile([d])
-        # 解析失败 → fallback ADD
+        # Parse failure -> fallback ADD
         assert any(op.action == "ADD" for op in ops)

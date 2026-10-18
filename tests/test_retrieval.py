@@ -1,10 +1,10 @@
 """
-_retrieval 模块的单元测试，覆盖：
+Unit tests for the _retrieval module, covering:
   - intent.classify_intent / extract_keywords
   - bm25.compute_bm25_scores
   - rrf.rrf_fuse / compute_confidence
 
-evolution / tag_index 依赖异步 vector_store，集成测试在 dev_test 下手动跑。
+evolution / tag_index depend on the async vector_store; their integration tests run manually under dev_test.
 """
 
 import pytest
@@ -36,29 +36,29 @@ class TestIntentClassify:
         assert intent.classify_intent("use v0.3.45") == "NAVIGATIONAL"
 
     def test_conceptual_how(self):
-        # "how does X work" 命中 conceptual trigger 但也命中 NAV（backtick 没有）；
-        # 此处纯英文无 NAV 信号 → CONCEPTUAL
+        # "how does X work" hits a conceptual trigger but also NAV (backticks do not here);
+        # pure English input with no NAV signal here -> CONCEPTUAL
         assert intent.classify_intent("how do I approach career decisions") == "CONCEPTUAL"
 
     def test_conceptual_chinese(self):
-        assert intent.classify_intent("我对远程工作的倾向是什么") == "CONCEPTUAL"
+        assert intent.classify_intent("\u6211\u5bf9\u8fdc\u7a0b\u5de5\u4f5c\u7684\u503e\u5411\u662f\u4ec0\u4e48") == "CONCEPTUAL"
 
     def test_factual_default(self):
-        # 纯事实问法，无 NAV 无 CONCEPTUAL trigger
+        # Purely factual question, no NAV and no CONCEPTUAL trigger
         assert intent.classify_intent("what is my favorite food") == "FACTUAL"
 
     def test_factual_simple(self):
         assert intent.classify_intent("am I 28 years old") == "FACTUAL"
 
     def test_nav_wins_over_conceptual(self):
-        # 同时命中 NAV 和 CONCEPTUAL，NAV 优先
+        # Hits both NAV and CONCEPTUAL; NAV takes priority
         assert intent.classify_intent("how does `foo` work") == "NAVIGATIONAL"
 
 
 class TestExtractKeywords:
     def test_basic_english(self):
         kws = intent.extract_keywords("my favorite food is beef noodle")
-        # "my", "is" 停用，"favorite", "food", "beef", "noodle" 保留
+        # "my" and "is" are dropped; "favorite", "food", "beef", "noodle" are kept
         assert "favorite" in kws
         assert "food" in kws
         assert "beef" in kws
@@ -70,23 +70,23 @@ class TestExtractKeywords:
         assert intent.extract_keywords("what is the weather") == ["weather"]
 
     def test_min_length_filter(self):
-        # "ok" 长度 2，被过滤
+        # "ok" has length 2 and is filtered out
         kws = intent.extract_keywords("ok python great")
         assert "ok" not in kws
         assert "python" in kws
         assert "great" in kws
 
     def test_chinese(self):
-        kws = intent.extract_keywords("上次吃的牛肉面怎么样")
-        # 中文段作为整体 token（单字 "的" 不会单独出现，因为中文 token 是连续汉字段）
-        assert any("牛肉面" in k or "上次吃的牛肉面怎么样" in k for k in kws)
+        kws = intent.extract_keywords("\u4e0a\u6b21\u5403\u7684\u725b\u8089\u9762\u600e\u4e48\u6837")
+        # A CJK run becomes one whole token (a single character never appears alone, because a CJK token is a contiguous run of ideographs)
+        assert any("\u725b\u8089\u9762" in k or "\u4e0a\u6b21\u5403\u7684\u725b\u8089\u9762\u600e\u4e48\u6837" in k for k in kws)
 
     def test_dedup_preserve_order(self):
         kws = intent.extract_keywords("python is great python rocks great")
-        # 去重
+        # Deduplicated
         assert kws.count("python") == 1
         assert kws.count("great") == 1
-        # 顺序保留
+        # Order preserved
         assert kws.index("python") < kws.index("great")
 
     def test_empty(self):
@@ -109,18 +109,18 @@ class TestBM25:
 
     def test_exact_match_scores_highest(self):
         docs = [
-            "user says beef noodle is great",        # 含两个关键词
-            "user says pizza is amazing",             # 含 1 个 is
-            "unrelated content about music",          # 0 命中
+            "user says beef noodle is great",        # Contains two keywords
+            "user says pizza is amazing",             # Contains one "is"
+            "unrelated content about music",          # No hits
         ]
         scores = bm25.compute_bm25_scores(["beef", "noodle"], docs)
         assert scores[0] > scores[1]
         assert scores[0] > scores[2]
-        # 未命中 beef/noodle 的文档分数应为 0
+        # Documents without beef/noodle should score 0
         assert scores[2] == 0.0
 
     def test_rare_term_higher_idf(self):
-        # "rare" 只在 1 个文档中出现，"common" 在所有文档中出现
+        # "rare" appears in only 1 document, "common" appears in every document
         docs = [
             "rare word here",
             "common word everywhere common",
@@ -128,20 +128,20 @@ class TestBM25:
         ]
         rare_scores = bm25.compute_bm25_scores(["rare"], docs)
         common_scores = bm25.compute_bm25_scores(["common"], docs)
-        # rare 的命中文档分数应该大于 common 的命中文档分数（同 tf 下更高 IDF）
-        # 注意 common 在 doc[1]/doc[2] 出现 2 次，tf 更高但 idf 低
+        # rare's matching document should outscore common's matching document (higher IDF at the same tf)
+        # Note common appears twice in doc[1]/doc[2]: higher tf but lower idf
         assert rare_scores[0] > 0
-        # common 的所有文档都命中但分数应比 rare 命中分更"均匀且偏低"
+        # common hits every document but its scores should stay flatter and lower than rare's hit score
         assert common_scores[1] > 0
 
     def test_score_and_rank_normalized(self):
         docs = [("id1", "foo bar"), ("id2", "bar baz"), ("id3", "nothing")]
         ranked = bm25.score_and_rank(["foo"], docs)
-        # 应按分数降序
+        # Sorted by score descending
         assert [r[0] for r in ranked] == sorted([r[0] for r in ranked],
                                                  key=lambda x: dict(ranked)[x],
                                                  reverse=True)
-        # 最高分归一化到 1.0
+        # The top score normalises to 1.0
         assert abs(ranked[0][1] - 1.0) < 1e-9
 
 
@@ -156,12 +156,12 @@ class TestRRF:
         assert [h["node_id"] for h in fused] == ["a", "b"]
 
     def test_multi_channel_intersection_wins(self):
-        # 两路都排第 1 的 doc 应该胜出
+        # The doc ranked first by both channels should win
         vec = [{"node_id": "a"}, {"node_id": "b"}, {"node_id": "c"}]
         bm25 = [{"node_id": "b"}, {"node_id": "a"}, {"node_id": "c"}]
         fused = rrf.rrf_fuse({"vec": vec, "bm25": bm25})
         # a: (1/(60+1)) + (1/(60+2)) ≈ 0.0164 + 0.0161 = 0.0325
-        # b: (1/(60+2)) + (1/(60+1)) ≈ 0.0161 + 0.0164 = 0.0325 — 和 a 几乎相同
+        # b: (1/(60+2)) + (1/(60+1)) ~= 0.0161 + 0.0164 = 0.0325 -- almost the same as a
         # c: (1/(60+3)) + (1/(60+3)) ≈ 0.0317
         # a ≈ b > c
         node_ids = [h["node_id"] for h in fused]
@@ -172,7 +172,7 @@ class TestRRF:
     def test_weights_affect_ranking(self):
         vec = [{"node_id": "a"}, {"node_id": "b"}]
         bm25 = [{"node_id": "b"}, {"node_id": "a"}]
-        # 高 bm25 权重 → b 应靠前
+        # Heavy bm25 weight -> b should rank first
         fused = rrf.rrf_fuse(
             {"vec": vec, "bm25": bm25},
             weights={"vec": 0.3, "bm25": 1.5},

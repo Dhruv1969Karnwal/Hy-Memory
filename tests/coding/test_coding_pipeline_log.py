@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-coding 写入链路 pipeline log 打点测试。
+Pipeline log instrumentation for the coding write pipeline.
 
-验证 judge / extractor / reconciler 分阶段实时落 CODING_JUDGE / CODING_EXTRACT /
-CODING_RECONCILE 三个 step（对标 chat 链路），且：
-  - prompt / response 完整写入（不截断）
-  - crash 不丢：store 入库崩溃时，前面已完成阶段的 log 仍在库
+Verifies that judge / extractor / reconciler write CODING_JUDGE / CODING_EXTRACT /
+CODING_RECONCILE as three steps in real time (matching the chat pipeline), and that:
+  - prompt / response are written in full (no truncation)
+  - a crash loses nothing: when the store insert crashes, the logs of the earlier completed stages are still there
 
-用真实 SqliteCache（含 observability 包装）+ mock LLM/embed，避免外部依赖。
+Uses a real SqliteCache (with the observability wrapper) plus mock LLM/embed to avoid external dependencies.
 
-注意：全部资源在单个 test 协程内构建（一个 event loop），避免 pytest-asyncio
-auto 模式下 async fixture 与 test 分处不同 loop 导致 owner_loop 跨 loop 派发。
+Note: all resources are built inside a single test coroutine (one event loop), so that pytest-asyncio
+auto mode does not put the async fixture and the test on different loops and dispatch owner_loop across loops.
 """
 
 import asyncio
@@ -46,7 +46,7 @@ def _reconcile_resp(ops):
 
 def _coding_messages():
     return [
-        ChatMessage(role="user", content="帮我打包发布到私有包索引"),
+        ChatMessage(role="user", content="Package this and publish it to the private package index"),
         ChatMessage(role="assistant", content="", tool_calls=[
             ToolCall(id="1", name="Read", arguments={"path": "scripts/publish_package.sh"}),
         ]),
@@ -59,9 +59,9 @@ def _coding_messages():
 
 
 _DRAFT = {
-    "task": "打包发布到私有包索引",
-    "search_keys": ["twine 上传", "私有索引发布"],
-    "solution": "运行 scripts/publish_package.sh，用 twine upload 上传到私有索引",
+    "task": "Package and publish to the private package index",
+    "search_keys": ["twine upload", "private index publish"],
+    "solution": "Run scripts/publish_package.sh and upload to the private index with twine upload",
     "boundary_envs": "twine>=4.0",
     "boundary_scope": "project",
     "confidence": 0.9,
@@ -69,7 +69,7 @@ _DRAFT = {
 
 
 async def _make_cache_and_store(d):
-    """在当前（test）event loop 上建 cache + store，保证 owner_loop 一致。"""
+    """Builds cache + store on the current (test) event loop so the owner_loop stays consistent."""
     os.environ["MEMORY_PIPELINE_TRACE_ENABLED"] = "true"
     os.environ["MEMORY_LOG_LLM_CONTENT"] = "true"
     os.environ["MEMORY_LOG_DIR"] = os.path.join(d, "logs")
@@ -135,7 +135,7 @@ class TestCodingPipelineLog:
             shutil.rmtree(d, ignore_errors=True)
 
     async def test_judge_logs_even_when_chat(self):
-        """判为 chat 也留一条 CODING_JUDGE（记录判过、结论 chat）。"""
+        """A chat verdict still leaves one CODING_JUDGE row (it was judged, conclusion chat)."""
         d = tempfile.mkdtemp(prefix="coding_plog_")
         try:
             cache, store = await _make_cache_and_store(d)
@@ -155,7 +155,7 @@ class TestCodingPipelineLog:
             shutil.rmtree(d, ignore_errors=True)
 
     async def test_extract_and_reconcile_steps(self):
-        """writer 端到端：CODING_EXTRACT + CODING_RECONCILE 落库，prompt/response 完整。"""
+        """Writer end to end: CODING_EXTRACT + CODING_RECONCILE are persisted with complete prompt/response."""
         d = tempfile.mkdtemp(prefix="coding_plog_")
         try:
             cache, store = await _make_cache_and_store(d)
@@ -179,8 +179,8 @@ class TestCodingPipelineLog:
             assert "CODING_RECONCILE" in steps
             ext = next(l for l in logs if l["step"] == "CODING_EXTRACT")
             rec = next(l for l in logs if l["step"] == "CODING_RECONCILE")
-            assert "可长期保留的 WORKING 记忆" in ext["prompt"]
-            # response 是 LLM 原始输出（json.dumps 默认 ensure_ascii → task 以转义形式完整保留）
+            assert "long-lived WORKING memory" in ext["prompt"]
+            # response is the raw LLM output (json.dumps defaults to ensure_ascii, so task is kept in full as escapes)
             assert "task" in ext["response"] and "twine" in ext["response"]
             assert rec["prompt"] and rec["response"]
             await cache.close(); await store.close()
@@ -188,8 +188,8 @@ class TestCodingPipelineLog:
             shutil.rmtree(d, ignore_errors=True)
 
     async def test_reconcile_log_survives_store_crash(self):
-        """crash 不丢：store.insert 抛异常时，CODING_EXTRACT + CODING_RECONCILE
-        （在 execute 入库之前打点）仍已落库。"""
+        """A crash loses nothing: when store.insert raises, CODING_EXTRACT + CODING_RECONCILE
+        (instrumented before execute persists) are already in the store."""
         d = tempfile.mkdtemp(prefix="coding_plog_")
         try:
             cache, store = await _make_cache_and_store(d)
@@ -203,7 +203,7 @@ class TestCodingPipelineLog:
                 raise RuntimeError("mock store crash")
             store.insert = _boom
             writer = _build_writer(cache, store, llm)
-            # write 不应抛（reconciler execute 内部 try/except 吞掉 ADD 失败）
+            # write must not raise (the try/except inside reconciler execute swallows the ADD failure)
             await writer.write(
                 _coding_messages(), user_id="u1", agent_id="codebuddy",
                 workspace_id="github.com/example/project", request_id=rid,

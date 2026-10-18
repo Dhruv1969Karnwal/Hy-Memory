@@ -60,15 +60,15 @@ def _mk(node_id, content, layer, vec, uid="u1", aid="a1"):
 
 
 class _FakeGraph:
-    """最小 graph_store：正路 vector_search 返回预设 L6；反路 find_referencing_memories
-    按 vdb_node_id → 支撑的 L6 映射返回边。"""
+    """Minimal graph_store: the forward path vector_search returns preset L6 rows; the reverse path find_referencing_memories
+    returns edges via the vdb_node_id -> supporting L6 mapping."""
     def __init__(
         self, l6_forward, support_map, evidence_counts=None,
         catalog_node=None, internal_nodes=None,
     ):
-        # l6_forward: [{node_id, content, score}]，正路命中
+        # l6_forward: [{node_id, content, score}], forward-path hits
         self._fwd = l6_forward
-        # support_map: {vdb_node_id: [l6_node_id, ...]} 反查
+        # support_map: {vdb_node_id: [l6_node_id, ...]} reverse lookup
         self._support = support_map
         self._ev = evidence_counts or {}
         self._catalog_node = catalog_node
@@ -121,13 +121,13 @@ def _seed_and_reader(store, config, graph_store):
     from hy_memory.pipelines.reader_hybrid import HybridReadPipeline
 
     qvec = _emb()
-    # L0 basic_info（profile 置顶候选），与 query 较相近
+    # L0 basic_info (pinned profile candidate), fairly close to the query
     l0vec = [0.9 * a for a in qvec]
     n0 = l0vec[0]  # not normalized but fine for chroma cosine ordering
-    run(store.upsert(_mk("L0", "用户叫张三", MemoryLayer.L0_BASIC_INFO, _norm(l0vec))))
-    # 两条 L2 fact（normal），其中 F1 与 query 相近会被命中
-    run(store.upsert(_mk("F1", "用户喜欢爬山", MemoryLayer.L2_FACT, _norm([0.8*a for a in qvec]))))
-    run(store.upsert(_mk("F2", "用户养了猫", MemoryLayer.L2_FACT, _emb())))
+    run(store.upsert(_mk("L0", "The user is named Zhang San", MemoryLayer.L0_BASIC_INFO, _norm(l0vec))))
+    # two L2 facts (normal); F1 is close to the query and gets hit
+    run(store.upsert(_mk("F1", "The user likes hiking", MemoryLayer.L2_FACT, _norm([0.8*a for a in qvec]))))
+    run(store.upsert(_mk("F2", "The user has a cat", MemoryLayer.L2_FACT, _emb())))
 
     reader = HybridReadPipeline(config, vector_store=store, graph_store=graph_store)
     run(reader.initialize())
@@ -151,7 +151,7 @@ def _norm(v):
 
 
 def _buckets(resp):
-    """把 reader 输出按 layer 分桶（模拟 client 分桶）。"""
+    """Bucket reader output by layer (mirroring the client's bucketing)."""
     schema, normal = [], []
     for m in resp.memories:
         if m["layer"] == "l6_schema":
@@ -164,7 +164,7 @@ def _buckets(resp):
 class TestHybridProfileRefactor:
     def test_pro_no_graph_search_excludes_l0(self, store, config):
         reader, _ = _seed_and_reader(store, config, graph_store=None)
-        req = ReadRequest(query="爱好", user_ids=["u1"], agent_ids=["a1"],
+        req = ReadRequest(query="hobbies", user_ids=["u1"], agent_ids=["a1"],
                           limit=10, min_score=0.0, schema_min_score=0.2)
         resp = run(reader.read(req))
         schema, normal = _buckets(resp)
@@ -173,14 +173,14 @@ class TestHybridProfileRefactor:
         assert any(m["layer"] == "l2_fact" for m in normal)
 
     def test_ultra_search_returns_fused_l6_without_l0(self, store, config):
-        # 正路命中 S_fwd（高分）；反路：F1 支撑 S_rev（反查），S_rev 不在正路
+        # forward path hits S_fwd (high score); reverse path: F1 supports S_rev (reverse lookup), absent from the forward path
         graph = _FakeGraph(
             l6_forward=[{"node_id": "S_fwd", "content": "schema-forward", "score": 0.7}],
-            support_map={"F1": ["S_rev"]},   # F1 被 normal 命中后反查出 S_rev
+            support_map={"F1": ["S_rev"]},   # after F1 is hit in normal, the reverse lookup yields S_rev
             evidence_counts={"S_fwd": 3},
         )
         reader, _ = _seed_and_reader(store, config, graph_store=graph)
-        req = ReadRequest(query="爱好", user_ids=["u1"], agent_ids=["a1"],
+        req = ReadRequest(query="hobbies", user_ids=["u1"], agent_ids=["a1"],
                           limit=10, min_score=0.0, schema_min_score=0.2)
         resp = run(reader.read(req))
         schema, _ = _buckets(resp)
@@ -199,7 +199,7 @@ class TestHybridProfileRefactor:
         )
         reader, _ = _seed_and_reader(store, config, graph_store=graph)
         req = ReadRequest(
-            query="爱好", user_ids=["u1"], agent_ids=["a1"],
+            query="hobbies", user_ids=["u1"], agent_ids=["a1"],
             limit=10, min_score=0.0, schema_min_score=0.2, schema_limit=1,
         )
         resp = run(reader.read(req))
@@ -215,7 +215,7 @@ class TestHybridProfileRefactor:
             store, config, graph_store=_FakeGraph([], {}),
         )
         req = ReadRequest(
-            query="爱好", user_ids=["u1"], agent_ids=["a1"],
+            query="hobbies", user_ids=["u1"], agent_ids=["a1"],
             limit=10, min_score=0.0, schema_min_score=1.1,
         )
         resp = run(reader.read(req))
@@ -229,7 +229,7 @@ class TestHybridProfileRefactor:
         )
         reader, _ = _seed_and_reader(store, config, graph_store=graph)
         req = ReadRequest(
-            query="爱好", user_ids=["u1"], agent_ids=["a1"],
+            query="hobbies", user_ids=["u1"], agent_ids=["a1"],
             limit=10, min_score=0.0, schema_limit=0,
         )
         resp = run(reader.read(req))
@@ -287,7 +287,7 @@ class TestHybridProfileRefactor:
         )
         reader, _ = _seed_and_reader(store, config, graph_store=graph)
         req = ReadRequest(
-            query="爱好", user_ids=["u1"], agent_ids=["a1"],
+            query="hobbies", user_ids=["u1"], agent_ids=["a1"],
             limit=10, min_score=0.0, schema_min_score=0.2, schema_limit=6,
         )
         resp = run(reader.read(req))
@@ -368,7 +368,7 @@ class TestHybridProfileRefactor:
         )
         reader, _ = _seed_and_reader(store, config, graph_store=graph)
         req = ReadRequest(
-            query="爱好", user_ids=["u1"], agent_ids=["a1"],
+            query="hobbies", user_ids=["u1"], agent_ids=["a1"],
             limit=10, min_score=0.0, schema_min_score=0.2, schema_limit=6,
         )
         resp = run(reader.read(req))

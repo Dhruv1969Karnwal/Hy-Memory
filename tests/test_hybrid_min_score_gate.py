@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-hybrid 出口阈值 + 按条加成打分回归。
+Regression tests for the hybrid output threshold and the per-item additive scoring.
 
-新公式：final = sem + 𝟙[bm25>0]·w_bm25·bm25 + 𝟙[tag]·w_tag·tag_cos
-无 BM25 的记忆不再被全局 has_bm25 乘 0.6。
+New formula: final = 𝟙[bm25>0]*w_bm25*bm25 + 𝟙[tag]*w_tag*tag_cos
+Memories without BM25 are no longer multiplied by the global has_bm25 factor 0.6.
 """
 
 import asyncio
@@ -66,7 +66,7 @@ def _mk(node_id, content, vec, tags=None):
 
 class TestHybridAdditiveScore:
     def test_no_bm25_keeps_full_sem_above_min_score(self, config, monkeypatch):
-        """B 无 BM25：旧逻辑 final=sem*0.6 跌破 0.2；新逻辑 final=sem 应保留。"""
+        """B has no BM25: the old logic final=sem*0.6 dropped below 0.2; with final=sem it must be kept."""
         from hy_memory.data.vector_store_chroma import ChromaVectorStore
         from hy_memory.pipelines.reader_hybrid import HybridReadPipeline
 
@@ -76,8 +76,8 @@ class TestHybridAdditiveScore:
         store = ChromaVectorStore(config)
         run(store.initialize())
         try:
-            run(store.upsert(_mk("A", "用户最喜欢南山水库", _vec_a())))
-            run(store.upsert(_mk("B", "用户计划从瑜伽开始培养运动习惯", _vec_b())))
+            run(store.upsert(_mk("A", "The user's favorite spot is Nanshan Reservoir", _vec_a())))
+            run(store.upsert(_mk("B", "The user plans to build an exercise habit starting with yoga", _vec_b())))
 
             reader = HybridReadPipeline(config, vector_store=store)
             run(reader.initialize())
@@ -89,7 +89,7 @@ class TestHybridAdditiveScore:
             store.keyword_search = _fake_kw
 
             req = ReadRequest(
-                query="我最喜欢的郊游目的地是哪个",
+                query="Which is my favorite outing destination",
                 query_embedding=_q(),
                 user_ids=["u1"], agent_ids=["a1"],
                 limit=10, min_score=0.2, schema_min_score=0.2,
@@ -97,9 +97,9 @@ class TestHybridAdditiveScore:
             resp = run(reader.read(req))
 
             ids = {m["memory_id"]: m["score"] for m in resp.memories}
-            assert "A" in ids, f"A 应保留: {ids}"
+            assert "A" in ids, f"A should be kept: {ids}"
             assert "B" in ids, (
-                f"B 无 BM25 但 sem≈0.25 应保留（不再×0.6），实际 {ids}"
+                f"B has no BM25 but sem≈0.25 must still be kept (no more x0.6), actual scores {ids}"
             )
             assert ids["B"] >= 0.2
             for m in resp.memories:
@@ -109,7 +109,7 @@ class TestHybridAdditiveScore:
             run(store.close())
 
     def test_below_min_score_still_filtered(self, config, monkeypatch):
-        """sem 本身低于 min_score 的仍应被滤掉。"""
+        """Items whose sem alone is below min_score must still be filtered out."""
         from hy_memory.data.vector_store_chroma import ChromaVectorStore
         from hy_memory.pipelines.reader_hybrid import HybridReadPipeline
 
@@ -118,7 +118,7 @@ class TestHybridAdditiveScore:
         try:
             # cos≈0.1 < min_score 0.2
             low = _unit([0.1, math.sqrt(1 - 0.1 * 0.1)] + [0.0] * 30)
-            run(store.upsert(_mk("L", "完全无关的内容xyz", low)))
+            run(store.upsert(_mk("L", "completely unrelated content xyz", low)))
 
             reader = HybridReadPipeline(config, vector_store=store)
             run(reader.initialize())
@@ -129,7 +129,7 @@ class TestHybridAdditiveScore:
             store.keyword_search = _fake_kw
 
             req = ReadRequest(
-                query="我最喜欢的郊游目的地是哪个",
+                query="Which is my favorite outing destination",
                 query_embedding=_q(),
                 user_ids=["u1"], agent_ids=["a1"],
                 limit=10, min_score=0.2, schema_min_score=0.2,

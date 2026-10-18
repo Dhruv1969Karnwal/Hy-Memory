@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""正文 NER → Graph Entity MENTIONS → 检索 boost。"""
+"""Content NER -> Graph Entity MENTIONS -> retrieval boost."""
 
 import pytest
 
@@ -73,13 +73,13 @@ class _FakeEntityGraph:
 @pytest.mark.asyncio
 @requires_spacy_model
 async def test_projector_content_tokyo_not_in_tags():
-    """正文含 Tokyo、tags 无 Tokyo → 仍建 Entity MENTIONS；PERSON 不进。"""
+    """Content mentions Tokyo with no Tokyo tag -> Entity MENTIONS still built; PERSON excluded."""
     gs = _FakeEntityGraph()
     node = MemoryNode(
         node_id="m1", user_id="u1", agent_id="a1", session_id="s1",
         layer=MemoryLayer.L2_FACT,
         content="I visited Tokyo last summer and loved the food.",
-        tags=["travel", "food"],  # 无 Tokyo
+        tags=["travel", "food"],  # no Tokyo tag
     )
     stats = await project_memories_to_graph(
         graph_store=gs, embed_service=None, nodes=[node],
@@ -87,7 +87,7 @@ async def test_projector_content_tokyo_not_in_tags():
     assert stats["nodes"] == 1
     assert gs.cleared == ["m1"]
     names = {(n, lab) for _mid, n, lab, _ik in gs.mentions}
-    # spaCy 应抽出 Tokyo/GPE；Evan 类 PERSON 不应出现
+    # spaCy should extract Tokyo/GPE; Evan-style PERSON entities must not appear
     assert any(n.casefold() == "tokyo" for n, _ in names), names
     assert all(lab != "PERSON" for _n, lab in names)
     assert "Tokyo" not in [t for _nid, t in gs.tags]
@@ -105,7 +105,7 @@ async def test_projector_skips_person_only_content():
     await project_memories_to_graph(
         graph_store=gs, embed_service=None, nodes=[node],
     )
-    # PERSON 不在 BOOST → mentions 应为空（或仅有非 PERSON）
+    # PERSON is not in BOOST -> mentions stay empty (or hold only non-PERSON labels)
     assert all(lab != "PERSON" for _m, _n, lab, _ik in gs.mentions)
 
 
@@ -145,7 +145,7 @@ async def test_kuzu_entity_roundtrip(tmp_path):
     )
     assert "mem_tokyo" in {h["node_id"] for h in hits}
 
-    # clear MENTIONS 后反查应空（UPDATE 重建依赖此能力）
+    # after clearing MENTIONS the reverse lookup must be empty (UPDATE rebuild depends on this)
     n = await gs.clear_entity_mentions("mem_tokyo")
     assert n >= 1
     hits2 = await gs.find_memories_by_entities(

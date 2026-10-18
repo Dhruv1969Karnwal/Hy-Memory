@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-覆盖 `HyMemoryClient._normalize_message` 对 `tool_calls` 字段的兼容处理。
+Covers `HyMemoryClient._normalize_message`'s compatibility handling of the `tool_calls` field.
 
-背景：部分客户端（如 codebuddy）会把 `tool_calls` 编码成 JSON 字符串而非
-list[dict]，直接对字符串做 for 循环会按字符迭代，随后 `tc.get(...)` 抛出
+Background: some clients (e.g. codebuddy) encode `tool_calls` as a JSON string rather than
+list[dict]; iterating the string directly loops by character, after which `tc.get(...)` raises
 `AttributeError: 'str' object has no attribute 'get'`。
 
-运行方式：
+How to run:
     pytest tests/test_normalize_message_tool_calls.py -v
 """
 
@@ -65,7 +65,7 @@ def test_tool_calls_list_with_non_dict_items():
 
 
 def test_real_world_codebuddy_case():
-    """回归验收现场：assistant 消息 tool_calls 为字符串，read_file 调用需被正确抽出。"""
+    """Regression acceptance case: an assistant message with tool_calls as a string; the read_file call must be extracted correctly."""
     msg = {
         "role": "assistant",
         "content": "",

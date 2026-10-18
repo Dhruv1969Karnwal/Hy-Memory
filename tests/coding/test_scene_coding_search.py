@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-scene="coding" 的**检索侧**端到端 —— 真走 _search_coding / async_search，
-不是手搓替身。
+Retrieval-side end to end for scene="coding" -- really exercising _search_coding / async_search,
+not a hand-rolled stand-in.
 
-与 test_scene_coding_variant.py 的分工：
-  那边测「组件」—— 路由解析、prompt 选择、链层自己的 observe/decorate。
-  这边测「串起来」—— 真的 embed + 真的 store + 真的 _search_coding 返回段，
-                     确认 chain_block 能从库里一路跑到返回值。
+Division of labor with test_scene_coding_variant.py:
+  that file covers the components -- route resolution, prompt selection, the chain layer's own observe/decorate.
+  this file covers the wiring -- real embed + real store + the real _search_coding return path,
+                     confirming chain_block travels from the store all the way into the response.
 
-复用 tests/coding/ 现成的 fixture（tmp_data_dir / mock_embed / search_ctx），
-所以这里的 store 是真的 sqlite + 真的向量检索，只有 embed 是 mock。
+Reuses the existing tests/coding/ fixtures (tmp_data_dir / mock_embed / search_ctx),
+so the store here is real sqlite with real vector retrieval; only embed is mocked.
 """
 import asyncio
 import os
@@ -22,7 +22,7 @@ from hy_memory.client import HyMemoryClient
 from hy_memory.coding.chain_store import HyCodeMem
 from hy_memory.coding.types import WorkingFact
 
-# search_ctx / tmp_data_dir / mock_embed 三个 fixture 从这两处来
+# the search_ctx / tmp_data_dir / mock_embed fixtures come from these two places
 from tests.coding.test_search_e2e import search_ctx  # noqa: F401
 from tests.coding.conftest import *  # noqa: F401,F403
 
@@ -42,7 +42,7 @@ class _Msg:
 
 
 def _seed_chain(tmpdir, branch="feat/q4", path=_PATH):
-    """灌两版进链层。第2版带 "scratch that" —— 撤销标记要被认出来。"""
+    """Load two versions into the chain layer. Version 2 carries "scratch that" -- the revocation marker must be recognized."""
     H = HyCodeMem(os.path.join(tmpdir, "chain"))
     for said, old, new in [
         ("On branch %s, first pass: 255.0 everywhere." % branch,
@@ -63,10 +63,10 @@ def _seed_chain(tmpdir, branch="feat/q4", path=_PATH):
 
 
 def _bind_chain(ctx, store):
-    """把链层挂到 search_ctx 这个 SimpleNamespace 上。
+    """Attach the chain layer to the search_ctx SimpleNamespace.
 
-    search_ctx 是裸 namespace，不是真 client，所以 _decorate_with_chain 这个
-    bound method 得手动绑（它内部会调 self._get_chain_store）。
+    search_ctx is a bare namespace, not a real client, so the _decorate_with_chain
+    bound method must be attached by hand (it calls self._get_chain_store internally).
     """
     ctx._chain_store = store
     ctx._chain_store_failed = False
@@ -84,7 +84,7 @@ def chain_dir():
 
 @pytest.mark.asyncio
 class TestSearchCodingVariantEndToEnd:
-    """真调 HyMemoryClient._search_coding，变体走两条路各验一次。"""
+    """Call HyMemoryClient._search_coding for real, verifying each variant path once."""
 
     async def _search(self, ctx, query, *, variant, workspace_id=None):
         return await HyMemoryClient._search_coding(
@@ -101,10 +101,10 @@ class TestSearchCodingVariantEndToEnd:
         ))
 
     async def test_working_variant_has_no_chain_fields(self, search_ctx, chain_dir):
-        """★ 回归闸门: variant=working 的返回结构必须与改动前逐字一致。
+        """Regression gate: the variant=working response must match the pre-change shape exactly.
 
-        即使链层库里**有数据**也不能出现 chain_block —— 否则 working 的调用方会
-        突然多收到一个字段。
+        Even with data in the chain store, chain_block must not appear -- otherwise working callers
+        would suddenly receive one extra field.
         """
         await self._seed_fact(search_ctx)
         _bind_chain(search_ctx, _seed_chain(chain_dir))
@@ -112,10 +112,10 @@ class TestSearchCodingVariantEndToEnd:
         resp = await self._search(search_ctx, _STATEMENT, variant="working")
         assert "chain_block" not in resp
         assert "chain_used" not in resp
-        assert len(resp["facts"]) == 1      # 向量双层照常工作
+        assert len(resp["facts"]) == 1      # the vector dual-layer still works normally
 
     async def test_coding_variant_returns_chain_block(self, search_ctx, chain_dir):
-        """variant=coding: 召回的 fact 被挂上链，块里带分支和全部版本。"""
+        """variant=coding: the recalled fact gets the chain attached, with the branch and all versions in the block."""
         await self._seed_fact(search_ctx)
         _bind_chain(search_ctx, _seed_chain(chain_dir))
 
@@ -123,27 +123,27 @@ class TestSearchCodingVariantEndToEnd:
         assert len(resp["facts"]) == 1
         assert resp["chain_used"] == [0]
         blk = resp["chain_block"]
-        # 分支名 —— 在错分支上改的代码会被静默丢掉，这一个 token 优先级最高
+        # branch name -- code edited on the wrong branch is silently dropped, so this one token has top priority
         assert "feat/q4" in blk
-        # 两版都在，不只留最后一版：遇到被弃那版的代码要认得出来
-        assert "第1版" in blk and "第2版" in blk
+        # both versions stay, not just the last: abandoned-version code must stay recognizable
+        assert "v1" in blk and "v2" in blk
         assert "255.0" in blk and "360.0" in blk
 
     async def test_facts_not_deduped(self, search_ctx, chain_dir):
-        """★ 挂上链的 fact 仍留在 facts 里 —— 刻意不去重。
+        """A chain-attached fact stays in facts -- deliberately not deduplicated.
 
-        SDK 不悄悄少给数据；要"块 + 剩余 fact"的拼法由调用方按 chain_used 过滤。
+        The SDK never quietly withholds data; a "block + remaining facts" layout is the caller's job via chain_used.
         """
         await self._seed_fact(search_ctx)
         _bind_chain(search_ctx, _seed_chain(chain_dir))
 
         resp = await self._search(search_ctx, _STATEMENT, variant="coding")
         assert resp["chain_used"] == [0]
-        assert len(resp["facts"]) == 1, "fact 被链层吃掉了"
+        assert len(resp["facts"]) == 1, "the fact was swallowed by the chain layer"
         assert resp["facts"][0]["fact_id"] == "f1"
 
     async def test_empty_chain_store_gives_empty_block(self, search_ctx, chain_dir):
-        """链层库是空的 → block 为 ""，不报错，向量双层照常返回。"""
+        """Empty chain store -> the block is "", no error, and the vector dual-layer still returns."""
         await self._seed_fact(search_ctx)
         _bind_chain(search_ctx, HyCodeMem(os.path.join(chain_dir, "empty")))
 
@@ -153,7 +153,7 @@ class TestSearchCodingVariantEndToEnd:
         assert len(resp["facts"]) == 1
 
     async def test_chain_unavailable_degrades_to_vector_only(self, search_ctx):
-        """链层初始化失败 → 退回纯向量双层，不把整次 search 拖失败。"""
+        """Chain init failure -> degrade to the pure vector dual-layer without failing the whole search."""
         await self._seed_fact(search_ctx)
         _bind_chain(search_ctx, None)
 
@@ -162,21 +162,21 @@ class TestSearchCodingVariantEndToEnd:
         assert len(resp["facts"]) == 1
 
     async def test_no_fact_hit_gives_no_block(self, search_ctx, chain_dir):
-        """向量层一条都没召回 → 没有挂载点，块必空（链层不自己做检索）。"""
+        """The vector layer recalls nothing -> no mount point, so the block must be empty (the chain layer does no retrieval itself)."""
         _bind_chain(search_ctx, _seed_chain(chain_dir))
 
-        resp = await self._search(search_ctx, "完全无关的查询", variant="coding")
+        resp = await self._search(search_ctx, "a completely unrelated query", variant="coding")
         assert resp["chain_used"] == []
         assert resp["chain_block"] == ""
 
 
 @pytest.mark.asyncio
 class TestEmptyPathKeysConsistent:
-    """fail-safe 的空返回，键集合要与成功路径一致。"""
+    """The fail-safe empty response must carry the same key set as the success path."""
 
     async def test_empty_carries_chain_keys_for_coding(self, search_ctx, chain_dir):
-        # store 初始化失败 → 走 _empty()。coding 变体下仍应带 chain_* 两个键，
-        # 否则调用方对 fail-safe 要写第二套取值逻辑。
+        # store init failure -> _empty() runs. The coding variant must still carry both chain_* keys,
+        # otherwise callers need a second accessor path just for the fail-safe shape.
         async def _boom():
             raise RuntimeError("store down")
         search_ctx._get_coding_writer = _boom
@@ -205,19 +205,19 @@ class TestEmptyPathKeysConsistent:
 
 @pytest.mark.asyncio
 class TestAsyncSearchPassesVariant:
-    """async_search(scene=...) → _search_coding(variant=...) 这一跳。
+    """The async_search(scene=...) -> _search_coding(variant=...) hop itself.
 
-    上面那批直接调 _search_coding，绕过了入参映射；这里补的是映射本身。
+    The batch above calls _search_coding directly and bypasses argument mapping; this covers the mapping itself.
     """
 
     _async_search = staticmethod(HyMemoryClient.async_search.__wrapped__)
 
     async def _capture(self, scene, coding_config):
-        """拿 async_search 真的传下去的 variant。
+        """Capture the variant async_search actually passes down.
 
-        config 用真的 MemoryConfig（coding_config fixture）而不是手搓 namespace：
-        _async_search_impl 会读 _config.llm / _config.search 等好几层，手搓的漏一个
-        就报 AttributeError，而那是测试脚手架的缺口、不是被测代码的问题。
+        Uses a real MemoryConfig (the coding_config fixture) rather than a hand-made namespace:
+        _async_search_impl reads _config.llm / _config.search and several more layers, and a hand-made
+        one missing any layer would raise AttributeError -- a test scaffold gap, not a bug in the code under test.
         """
         from types import SimpleNamespace
         seen = {}
@@ -248,5 +248,5 @@ class TestAsyncSearchPassesVariant:
         assert await self._capture("working", coding_config) == "working"
 
     async def test_legacy_productivity_alias_stays_working(self, coding_config):
-        # 旧别名必须保持旧行为 —— 老调用方不该因为新增变体而拿到链块。
+        # the legacy alias must keep the old behavior -- old callers must not get chain blocks from a new variant.
         assert await self._capture("productivity", coding_config) == "working"

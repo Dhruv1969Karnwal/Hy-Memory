@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-多节点 SUPERSEDE 折叠（memory_ids）端到端测试（chroma 后端）。
+End-to-end tests for multi-node SUPERSEDE folding (memory_ids) on the chroma backend.
 
-覆盖：
-- parser：memory_ids（多节点）与 memory_id（单节点）解析；
-- parser：Pass-2 去重对链上所有 id 生效；
-- writer：把两条原本未成链的旧记忆 + 新记忆折叠成一条 3 节点链
-  （a1 ← a2 ← new head）：旧节点全部 shadow、建立 supersedes/superseded_by，
-  仅新 head 保持 is_latest=True，且 head content 不含旧记忆内容。
+Coverage:
+- parser: parsing of memory_ids (multi-node) and memory_id (single node);
+- parser: Pass-2 dedup applies to every id on the chain;
+- writer: folds two previously unlinked old memories plus the new one into a single 3 node chain
+  (a1 <- a2 <- new head): every old node becomes shadow with supersedes/superseded_by links set,
+  only the new head keeps is_latest=True, and the head content contains none of the old content.
 """
 
 import asyncio
@@ -97,13 +97,13 @@ class TestWriterChainFold:
     def _seed(self, store):
         a1 = MemoryNode(
             node_id=str(uuid.uuid4()), user_id="u1", agent_id="default_agent",
-            session_id="s1", content="用户在学吉他。", layer=MemoryLayer.L2_FACT,
+            session_id="s1", content="The user is learning guitar.", layer=MemoryLayer.L2_FACT,
             status=MemoryStatus.ACTIVE, is_latest=True, owner="user",
         )
         a1.embedding = _emb()
         a2 = MemoryNode(
             node_id=str(uuid.uuid4()), user_id="u1", agent_id="default_agent",
-            session_id="s1", content="用户能完整弹几首吉他曲了。", layer=MemoryLayer.L2_FACT,
+            session_id="s1", content="The user can now play several complete guitar pieces.", layer=MemoryLayer.L2_FACT,
             status=MemoryStatus.ACTIVE, is_latest=True, owner="user",
         )
         a2.embedding = _emb()
@@ -114,14 +114,14 @@ class TestWriterChainFold:
     def test_fold_two_into_three_node_chain(self, store, config):
         a1, a2 = self._seed(store)
 
-        # 构造 writer，注入外部 store，stub reconciler 返回多节点 SUPERSEDE
+        # Build the writer with an externally injected store and a stub reconciler returning a multi-node SUPERSEDE
         from hy_memory.pipelines.writer import MemoryWriter
         from hy_memory.pipelines.base import WriteRequest
 
         writer = MemoryWriter(config, vector_store=store)
         run(writer.initialize())
 
-        # stub embed_service：返回定长随机向量
+        # stub embed_service: returns fixed-length random vectors
         class _FakeEmbed:
             async def embed_batch(self, texts):
                 return [_emb() for _ in texts]
@@ -129,8 +129,8 @@ class TestWriterChainFold:
                 return _emb()
         writer._embed_service = _FakeEmbed()
 
-        # stub reconciler.reconcile → 返回一个多节点 SUPERSEDE op
-        head_content = "用户在本地的开放麦之夜表演吉他。"
+        # stub reconciler.reconcile -> returns one multi-node SUPERSEDE op
+        head_content = "The user performed guitar at a local open mic night."
         async def _fake_reconcile(*args, **kwargs):
             return ReconcileResult(ops=[
                 ReconcileOp(
@@ -140,10 +140,10 @@ class TestWriterChainFold:
                     content=head_content,
                     owner="user",
                     tags=["music", "hobby"],
-                    supersede_reason="演进：学习→弹曲→表演",
+                    supersede_reason="Progression: learning -> playing pieces -> performing",
                 )
             ], success=True)
-        # 直接覆盖 op 的 memory_id 与真实链尾一致
+        # The op memory_id is overridden to match the real chain tail
         writer._reconciler.reconcile = _fake_reconcile
 
         req = WriteRequest(content="x", user_id="u1", agent_id="default_agent", session_id="s1")
@@ -161,23 +161,23 @@ class TestWriterChainFold:
         assert ops["total"] == ops["add"] + ops["supersede"] + ops["update"]
         head_id = stored_ids[0]
 
-        # 1. 新 head：is_latest=True，supersedes=[a2]，content 不含旧内容
+        # 1. New head: is_latest=True, supersedes=[a2], content excludes the old content
         head = run(store.get_by_id(head_id))
         assert head is not None
         assert head.is_latest is True
         assert head.supersedes == [a2.node_id]
         assert head.content == head_content
-        assert "学" not in head.content and "几首" not in head.content
+        assert "learning" not in head.content and "several" not in head.content
 
-        # 2. a2：进演化链（SUPERSEDED，仍可召回+展开），superseded_by 含 head，
-        #    supersedes 含 a1（链中段）
+        # 2. a2: joined the evolution chain (SUPERSEDED, still recallable and expandable), superseded_by
+        #    contains head, and supersedes contains a1 (chain middle)
         r_a2 = run(store.get_by_id(a2.node_id))
         assert r_a2.is_latest is False
         assert r_a2.status == MemoryStatus.SUPERSEDED
         assert head_id in (r_a2.superseded_by or [])
         assert a1.node_id in (r_a2.supersedes or [])
 
-        # 3. a1：进演化链（SUPERSEDED），superseded_by 含 a2（链尾）
+        # 3. a1: joined the evolution chain (SUPERSEDED), superseded_by contains a2 (chain tail)
         r_a1 = run(store.get_by_id(a1.node_id))
         assert r_a1.is_latest is False
         assert r_a1.status == MemoryStatus.SUPERSEDED

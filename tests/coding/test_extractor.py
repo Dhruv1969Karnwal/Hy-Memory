@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Extractor 测试（双层抽取）"""
+"""Extractor tests (two-layer extraction)."""
 
 import json
 
@@ -21,7 +21,7 @@ def _legacy_llm_resp(experiences, facts=None):
 
 def _msgs():
     return [
-        ChatMessage(role="user", content="重构 auth 改成 JWT"),
+        ChatMessage(role="user", content="Refactor auth to JWT"),
         ChatMessage(role="assistant", content="", tool_calls=[
             ToolCall(id="1", name="Read", arguments={"path": "auth/middleware.ts"}),
         ]),
@@ -30,20 +30,20 @@ def _msgs():
 
 
 def _assert_verbatim_fallback(facts):
-    """断言显式开启后，事实层走了原文兜底。
+    """Assert that, once explicitly enabled, the fact layer used the source-text fallback.
 
-    判据取 statement 落在用户原话、details 保住完整轨迹这两条。
+    The criteria are the statement landing on the user's own words and details keeping the full trace.
     """
     assert len(facts) == 1, f"expected exactly one verbatim fact, got {facts!r}"
     f = facts[0]
-    assert f.statement == "重构 auth 改成 JWT"
-    assert f.subject == ""          # 兜底没有主体可判，留空 → 覆盖判定退回纯语义
-    assert "[0] user: 重构 auth 改成 JWT" in f.details
+    assert f.statement == "Refactor auth to JWT"
+    assert f.subject == ""          # the fallback has no subject to judge, so it stays empty and coverage falls back to pure semantics
+    assert "[0] user: Refactor auth to JWT" in f.details
     assert "[2] tool(Read): 42 lines" in f.details
 
 
 class TestFactPromptContract:
-    """静态保护证据忠实度契约；不声称能保证任意 LLM 一定遵守。"""
+    """Static protection for the evidence-fidelity contract; it does not claim any LLM always complies."""
 
     def test_only_executed_commands_without_invented_flags(self):
         assert "only actions actually executed" in EXTRACT_PROMPT
@@ -76,7 +76,7 @@ class TestFactPromptContract:
         assert "still awaiting verification" in EXTRACT_PROMPT
 
     def test_command_evidence_window_keeps_material_late_flags(self):
-        """保护 prompt 输入证据窗口，不声称模型一定会把参数写进 fact。"""
+        """Protects the command evidence window in the prompt input; it does not claim the model always writes flags into the fact."""
         command = (
             'Get-ChildItem -Path "C:\\\\" -Directory -Filter "new_file_search" '
             "-Recurse -Depth 3 -ErrorAction SilentlyContinue "
@@ -91,37 +91,37 @@ class TestFactPromptContract:
         assert "-ErrorAction SilentlyContinue" in rendered
 
     def test_asking_the_user_is_not_a_reusable_experience(self):
-        """澄清停滞场景的回归保护。
+        """Regression protection for the clarification stall scenario.
 
-        如果 Agent 没出计划、只反问缺失字段，
-        extractor 把它蒸馏成 "how to ask for departure city and travel dates"
-        / "eliciting required fields for travel planning" 等经验，后续检索会继续
-        放大反问而不产出可解析计划。停滞被写成技能后会自我复制，所以澄清行为
-        必须留在 fact、不进 experiences。
+        If the Agent produces no plan and only asks back for the missing fields, and the extractor
+        distills that into experiences such as "how to ask for departure city and travel dates"
+        / "eliciting required fields for travel planning", later retrieval keeps amplifying the
+        counter-question instead of producing a parseable plan. A stall written down as a skill
+        replicates itself, so clarification behavior must stay in the fact and never enter experiences.
         """
         assert "The act of ASKING THE USER for missing information" in EXTRACT_PROMPT
         assert "conversational" in EXTRACT_PROMPT
         assert '"how to ask for X"' in EXTRACT_PROMPT
         assert "eliciting required fields" in EXTRACT_PROMPT
-        # 停滞轮只写 fact，不写经验
+        # A stalled turn writes only the fact, never an experience
         assert 'emit "experiences": [] and write the FACT alone' in EXTRACT_PROMPT
-        # 判据取自 extractor 自己对会话状态的判断，不依赖任何评测集字段
+        # The criteria come from the extractor's own read of the conversation state, not from any eval dataset field
         assert "stalled waiting on the" in EXTRACT_PROMPT
         assert "Judge substance by what the tools actually did" in EXTRACT_PROMPT
 
     def test_mandatory_extraction_exempts_the_stall_case(self):
-        """结尾那条 MANDATORY 曾是逼出假经验的直接原因。
+        """The trailing MANDATORY line used to be the direct cause of fabricated experiences.
 
-        原文是「You MUST output at least ONE experience. Do NOT return an empty
-        list.」——末位、无例外。反问轮没有方法可蒸馏，却被禁止返回空，模型只能
-        编一条。上面的禁令写在中段，会被这条结尾指令压过去，所以它必须显式让出
-        停滞这一种情况。默认仍是抽取：豁免只对停滞开口，不能变成偷懒的借口。
+        The original read "You MUST output at least ONE experience. Do NOT return an empty
+        list." -- last position, no exceptions. A counter-question turn has no method to distill yet
+        was barred from returning an empty list, so the model had to invent one. The prohibition above
+        sits in the middle of the prompt and gets overridden by that trailing line, so it must explicitly yield for the stall case; extraction stays the default, and the exemption only covers stalls so it cannot become an excuse to slack off.
         """
         assert "DEFAULT TO EXTRACTING" in EXTRACT_PROMPT
         assert "The ONE exception is the stall case above" in EXTRACT_PROMPT
         assert "Do not manufacture an experience" in EXTRACT_PROMPT
         assert "never as a shortcut when work was actually done" in EXTRACT_PROMPT
-        # 旧的无条件禁令不能复活
+        # The old unconditional prohibition must not come back
         assert "Do NOT return an empty list." not in EXTRACT_PROMPT
 
 
@@ -164,9 +164,9 @@ class TestExtractor:
     async def test_normal_extract(self):
         llm = MockLLMProvider(_llm_resp([
             {
-                "task": "Auth 重构",
-                "search_keys": ["JWT 实现", "为什么不用 session"],
-                "solution": "切到 JWT，文件 auth/middleware.ts",
+                "task": "Auth refactor",
+                "search_keys": ["JWT implementation", "why not use sessions"],
+                "solution": "Switched to JWT, file auth/middleware.ts",
                 "boundary_envs": "node>=18",
                 "confidence": 0.9,
             },
@@ -178,20 +178,20 @@ class TestExtractor:
         )
         assert len(drafts) == 1
         d = drafts[0]
-        assert d.task == "Auth 重构"
-        assert d.search_keys == ["JWT 实现", "为什么不用 session"]
-        assert d.solution.startswith("切到 JWT")
+        assert d.task == "Auth refactor"
+        assert d.search_keys == ["JWT implementation", "why not use sessions"]
+        assert d.solution.startswith("Switched to JWT")
         assert d.boundary_envs == "node>=18"
         assert d.confidence == 0.9
         assert d.workspace_id == "github.com/x/y"
         assert d.files == ["auth/middleware.ts"]
-        # LLM 只给了经验、没给 fact，事实层走原文兜底
+        # The LLM returned experiences but no fact, so the fact layer uses the source-text fallback
         _assert_verbatim_fallback(facts)
 
     async def test_kept_without_workspace_or_branch(self):
-        """缺 workspace_id / branch 不再拒稿。
+        """A missing workspace_id / branch no longer rejects the draft.
 
-        边界已不参与召回过滤，再按边界拒稿只会平白丢经验。
+        Boundaries no longer participate in recall filtering, so rejecting on them only loses experiences for nothing.
         """
         llm = MockLLMProvider(_llm_resp([
             {"task": "T1", "solution": "S", "confidence": 0.9},
@@ -215,7 +215,7 @@ class TestExtractor:
         }]))
         ext = CodingMemoryExtractor(llm)
         drafts, _ = await ext.extract(_msgs(), user_id="u1")
-        # T 与 task 同名去掉；A 重复去掉；保留前 5
+        # T matches the task name and is dropped; the duplicate A is dropped; the first 5 are kept
         assert drafts[0].search_keys == ["A", "B", "C", "D", "E"]
 
     async def test_confidence_clamp(self):
@@ -296,11 +296,11 @@ class TestExtractor:
         ext = CodingMemoryExtractor(llm)
         drafts, facts = await ext.extract([], user_id="u1")
         assert drafts == []
-        # 轨迹本身是空的：兜底判据是"有没有内容"，无内容就该真的什么都不存。
+        # The trace itself is empty: the fallback criterion is "is there any content", so with none nothing at all is stored.
         assert facts == []
 
     async def test_legacy_memories_key_still_parsed(self):
-        """双层化之前 prompt 用的是 "memories"，老模型可能还这么回。"""
+        """Before the two-layer split the prompt used "memories"; older models may still answer that way."""
         llm = MockLLMProvider(json.dumps({
             "memories": [{"task": "T", "solution": "S"}],
         }))
@@ -317,8 +317,8 @@ class TestFactExtraction:
             [{"task": "T", "solution": "S"}],
             {
                 "statement": (
-                    "用户要定位 new_file_search；检查 src/search.py 后确认实现位于该文件，"
-                    "并在 C: 和 D: 搜索 foo_config 但未找到。"
+                    "The user wanted to locate new_file_search; after checking src/search.py the implementation was confirmed there, "
+                    "and foo_config was searched for on C: and D: but not found."
                 ),
                 "files": ["src/search.py"],
             },
@@ -327,28 +327,28 @@ class TestFactExtraction:
         drafts, facts = await ext.extract(_msgs(), user_id="u1")
         assert len(drafts) == 1
         assert [f.statement for f in facts] == [
-            "用户要定位 new_file_search；检查 src/search.py 后确认实现位于该文件，"
-            "并在 C: 和 D: 搜索 foo_config 但未找到。",
+            "The user wanted to locate new_file_search; after checking src/search.py the implementation was confirmed there, "
+            "and foo_config was searched for on C: and D: but not found.",
         ]
         assert facts[0].files == ["src/search.py"]
 
     async def test_facts_only_without_experiences(self):
-        """事实全抽不设门槛，所以经验空、事实非空是合法状态。"""
-        llm = MockLLMProvider(_llm_resp([], {"statement": "构建产物在 dist/"}))
+        """Facts are extracted without a threshold, so empty experiences alongside a non-empty fact is a legal state."""
+        llm = MockLLMProvider(_llm_resp([], {"statement": "Build artifacts land in dist/"}))
         ext = CodingMemoryExtractor(llm)
         drafts, facts = await ext.extract(_msgs(), user_id="u1")
         assert drafts == []
-        assert [f.statement for f in facts] == ["构建产物在 dist/"]
+        assert [f.statement for f in facts] == ["Build artifacts land in dist/"]
 
     async def test_fact_null_falls_back_to_verbatim(self):
-        """显式开启时，fact:null 触发原文兜底。"""
+        """When explicitly enabled, fact:null triggers the source-text fallback."""
         llm = MockLLMProvider(_llm_resp([], None))
         ext = CodingMemoryExtractor(llm, verbatim_fallback_enabled=True)
         _, facts = await ext.extract(_msgs(), user_id="u1")
         _assert_verbatim_fallback(facts)
 
     async def test_fact_missing_statement_falls_back_to_verbatim(self):
-        """显式开启时，statement 缺失的 fact 触发原文兜底。"""
+        """When explicitly enabled, a fact without a statement triggers the source-text fallback."""
         llm = MockLLMProvider(_llm_resp([], {"files": ["b.py"]}))
         ext = CodingMemoryExtractor(llm, verbatim_fallback_enabled=True)
         _, facts = await ext.extract(_msgs(), user_id="u1")
@@ -391,14 +391,14 @@ class TestFactExtraction:
 
     async def test_legacy_three_facts_keeps_first_and_warns(self, caplog):
         llm = MockLLMProvider(_legacy_llm_resp([], [
-            {"statement": "第一条会话摘要", "files": ["a.py"]},
-            {"statement": "第二条原子事实"},
-            {"statement": "第三条原子事实"},
+            {"statement": "first conversation summary", "files": ["a.py"]},
+            {"statement": "second atomic fact"},
+            {"statement": "third atomic fact"},
         ]))
         ext = CodingMemoryExtractor(llm)
         with caplog.at_level("WARNING"):
             _, facts = await ext.extract(_msgs(), user_id="u1")
-        assert [f.statement for f in facts] == ["第一条会话摘要"]
+        assert [f.statement for f in facts] == ["first conversation summary"]
         assert "legacy 'facts' array with 3 entries" in caplog.text
         assert "keeping the first, dropping 2" in caplog.text
 

@@ -157,7 +157,7 @@ export function buildServerEnv(cfg: HyMemoryConfig): Record<string, string> {
     env.MEMORY_GRAPH_PROVIDER = "kuzu";
   }
 
-  // Reconcile: 不用 LLM 扩写 search query；每条新 memory 直接 hybrid 检索（向量池 limit×3 + BM25）
+  // Reconcile: no LLM query expansion; each new memory goes straight to hybrid retrieval (vector pool limit x 3 + BM25)
   env.MEMORY_ENABLE_SEARCH_QUERY = "false";
 
   // Use SQLite cache (no Redis dependency)
@@ -188,7 +188,7 @@ export function buildServerEnv(cfg: HyMemoryConfig): Record<string, string> {
   }
 
   // Force float embeddings by default. Some OpenAI-compatible gateways (e.g. the
-  // internal LLM gateway / 蒸馏平台) cannot parse the openai SDK's default base64
+  // internal LLM gateway / distillation platform) cannot parse the openai SDK's default base64
   // embedding response and return HTTP 502. Requesting float is harmless for
   // OpenAI itself. Any user-provided embedder.extraBody keys take precedence.
   env.MEMORY_EMBEDDER_EXTRA_BODY = JSON.stringify({

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Extractor 自定义 system prompt 覆盖（client 级 zh/en）单元测试。
+"""Unit tests for custom extractor system prompt overrides (client-level zh/en).
 
-覆盖：
-  - 中文输入用 extract_system_prompt_zh；英文输入用 extract_system_prompt_en
-  - None（默认）时用内置 EXTRACT_SYSTEM_PROMPT[_ZH]
-  - 自定义 prompt 生效时不追加内置 few-shot（即便 few_shot_enabled=True）
-  - user 模板（数据注入段）不受影响
+Coverage:
+  - Chinese input uses extract_system_prompt_zh; English input uses extract_system_prompt_en
+  - None (the default) falls back to the built-in EXTRACT_SYSTEM_PROMPT[_ZH]
+  - a custom prompt suppresses the built-in few-shot, even with few_shot_enabled=True
+  - the user template (data injection section) is unaffected
 """
 
 import asyncio
@@ -29,7 +29,7 @@ def run(coro):
 
 
 class _CapturingLLM:
-    """记录最近一次 complete_messages 的 messages，返回一个合法空提取。"""
+    """Records the messages of the last complete_messages call and returns a valid empty extraction."""
 
     def __init__(self):
         self.last_messages = None
@@ -49,7 +49,7 @@ class _CapturingLLM:
         return next(m["content"] for m in self.last_messages if m["role"] == "user")
 
 
-ZH_INPUT = "我叫小明，住在北京，喜欢喝美式咖啡。"
+ZH_INPUT = "\u6211\u53eb\u5c0f\u660e\uff0c\u4f4f\u5728\u5317\u4eac\uff0c\u559c\u6b22\u559d\u7f8e\u5f0f\u5496\u5561\u3002"
 EN_INPUT = "My name is Bob, I live in Seattle and I love hiking."
 
 
@@ -72,14 +72,14 @@ def test_code_heavy_chinese_instruction_uses_chinese_prompt():
     _extract(
         llm,
         LLMConfig(),
-        "请修复 search_client.py 里的 timeout bug: TypeError in parse_response(request_id)",
+        "\u8bf7\u4fee\u590d search_client.py \u91cc\u7684 timeout bug: TypeError in parse_response(request_id)",
     )
     assert llm._system() == EXTRACT_SYSTEM_PROMPT_ZH
 
 
 def test_english_instruction_with_later_chinese_term_uses_english_prompt():
     llm = _CapturingLLM()
-    _extract(llm, LLMConfig(), "Please update the 中文 README file.")
+    _extract(llm, LLMConfig(), "Please update the \u4e2d\u6587 README file.")
     assert llm._system() == EXTRACT_SYSTEM_PROMPT
 
 
@@ -88,28 +88,28 @@ def test_custom_en_prompt_used_for_english():
     llm = _CapturingLLM()
     _extract(llm, LLMConfig(extract_system_prompt_en=custom), EN_INPUT)
     assert llm._system() == custom
-    # user 模板仍注入了原始 content
+    # The user template still injects the original content
     assert EN_INPUT in llm._user()
 
 
 def test_custom_zh_prompt_used_for_chinese():
-    custom = "你是一个自定义中文提取器，只输出 JSON。"
+    custom = "You are a custom Chinese extractor. Output JSON only."
     llm = _CapturingLLM()
     _extract(llm, LLMConfig(extract_system_prompt_zh=custom), ZH_INPUT)
     assert llm._system() == custom
-    assert "小明" in llm._user()
+    assert "\u5c0f\u660e" in llm._user()
 
 
 def test_language_selects_correct_override():
-    """只配 zh 覆盖：中文用自定义，英文仍用内置。"""
-    cfg = LLMConfig(extract_system_prompt_zh="仅中文自定义")
+    """Only a zh override: Chinese uses the custom prompt, English stays built-in."""
+    cfg = LLMConfig(extract_system_prompt_zh="Chinese-only custom prompt")
     llm_zh = _CapturingLLM()
     _extract(llm_zh, cfg, ZH_INPUT)
-    assert llm_zh._system() == "仅中文自定义"
+    assert llm_zh._system() == "Chinese-only custom prompt"
 
     llm_en = _CapturingLLM()
     _extract(llm_en, cfg, EN_INPUT)
-    assert llm_en._system() == EXTRACT_SYSTEM_PROMPT  # 英文没配 → 内置
+    assert llm_en._system() == EXTRACT_SYSTEM_PROMPT  # No English override -> built-in
 
 
 def test_custom_prompt_suppresses_few_shot():
@@ -117,7 +117,7 @@ def test_custom_prompt_suppresses_few_shot():
     cfg = LLMConfig(extract_system_prompt_en=custom, few_shot_enabled=True)
     llm = _CapturingLLM()
     _extract(llm, cfg, EN_INPUT)
-    # 自定义生效时不追加内置 few-shot
+    # A custom prompt does not append the built-in few-shot
     assert llm._system() == custom
     assert EXTRACT_FEW_SHOT_EN not in llm._system()
 

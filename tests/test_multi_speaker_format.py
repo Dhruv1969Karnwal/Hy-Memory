@@ -1,16 +1,16 @@
-"""多真人对话（named multi-party）渲染与 name 透传测试。
+"""Named multi-party dialogue rendering and name pass-through tests.
 
-覆盖 docs/multi_speaker_design.md 的定稿格式：
-    用户名叫Tim
+Covers the final format from docs/multi_speaker_design.md:
+        \u7528\u6237\u540d\u53ebTim  (“The user's name is Tim”, zh rendering)
     [user]: ...
     [John]: ...
 
-要点：
-- role=user 恒渲染成 [user]（即使带 name），视角信息留在标签里
-- role=assistant + name → 对方**真人**，渲染成 [<name>]
-- role=assistant 无 name → AI assistant，渲染成 [assistant]
-- 名字行只在 role=user 带 name 时出现，整段一次，语言随内容
-- 不传 name 时渲染与历史行为逐字一致
+Key points:
+- role=user always renders as [user] (even with a name); the point of view stays in the label
+- role=assistant + name -> the other real person, rendered as [<name>]
+- role=assistant without name -> the AI assistant, rendered as [assistant]
+- the name line appears only when role=user carries a name, once per block, language follows content
+- without a name the rendering is byte-identical to the historical behaviour
 """
 
 import pytest
@@ -42,21 +42,21 @@ class TestSpeakerLabel:
 
 
 class TestFlatContentUnchangedWithoutName:
-    """不传 name 时必须与历史行为逐字一致（单方 chat 是主场景）"""
+    """without a name the output must match the historical behaviour exactly (single-party chat is the main case)"""
 
     def test_plain_chat_rendering(self):
         req = WriteRequest(messages=[
-            ChatMessage(role="user", content="我喜欢咖啡"),
-            ChatMessage(role="assistant", content="好的，我记下了"),
+            ChatMessage(role="user", content="\u6211\u559c\u6b22\u5496\u5561"),  # "I like coffee"
+            ChatMessage(role="assistant", content="\u597d\u7684\uff0c\u6211\u8bb0\u4e0b\u4e86"),  # "ok, noted"
         ])
-        assert req.get_flat_content() == "[user]: 我喜欢咖啡\n[assistant]: 好的，我记下了"
+        assert req.get_flat_content() == "[user]: \u6211\u559c\u6b22\u5496\u5561\n[assistant]: \u597d\u7684\uff0c\u6211\u8bb0\u4e0b\u4e86"
 
     def test_no_name_line_when_user_has_no_name(self):
         req = WriteRequest(messages=[
             ChatMessage(role="user", content="hi"),
             ChatMessage(role="assistant", content="John here", name="John"),
         ])
-        # 对方带 name 但 user 没有 → 不插名字行
+        # the peer has a name but the user does not -> no name line is inserted
         assert req.get_flat_content() == "[user]: hi\n[John]: John here"
 
     def test_content_only_input_untouched(self):
@@ -66,13 +66,13 @@ class TestFlatContentUnchangedWithoutName:
 class TestFlatContentWithNames:
     def test_zh_rendering(self):
         req = WriteRequest(messages=[
-            ChatMessage(role="user", content="我喜欢咖啡", name="Tim"),
-            ChatMessage(role="assistant", content="我也喜欢茶", name="John"),
+            ChatMessage(role="user", content="\u6211\u559c\u6b22\u5496\u5561", name="Tim"),
+            ChatMessage(role="assistant", content="\u6211\u4e5f\u559c\u6b22\u8336", name="John"),  # "I like tea too"
         ])
         assert req.get_flat_content() == (
-            "用户名叫Tim\n"
-            "[user]: 我喜欢咖啡\n"
-            "[John]: 我也喜欢茶"
+            "\u7528\u6237\u540d\u53ebTim\n"
+            "[user]: \u6211\u559c\u6b22\u5496\u5561\n"
+            "[John]: \u6211\u4e5f\u559c\u6b22\u8336"
         )
 
     def test_en_rendering(self):
@@ -117,15 +117,15 @@ class TestFlatContentWithNames:
 
 
 class TestNameLineRoundTrip:
-    """L1_RAW 回读要能把名字行识别出来（否则会被当成裸消息）"""
+    """reading L1_RAW back must recognise the name line (otherwise it looks like a bare message)"""
 
     @pytest.mark.parametrize("line,expected", [
-        ("用户名叫Tim", "Tim"),
+        ("\u7528\u6237\u540d\u53ebTim", "Tim"),
         ("The user's name is Tim", "Tim"),
-        ("用户名叫 Mary Jane ", "Mary Jane"),
+        ("\u7528\u6237\u540d\u53eb Mary Jane ", "Mary Jane"),
         ("[user]: hi", None),
         ("[John]: hi", None),
-        ("我喜欢咖啡", None),
+        ("\u6211\u559c\u6b22\u5496\u5561", None),
         ("", None),
     ])
     def test_parse(self, line, expected):
@@ -142,7 +142,7 @@ class TestNameLineRoundTrip:
 
     def test_flat_content_first_line_is_parseable(self):
         req = WriteRequest(messages=[
-            ChatMessage(role="user", content="我喜欢咖啡", name="Tim"),
+            ChatMessage(role="user", content="\u6211\u559c\u6b22\u5496\u5561", name="Tim"),
         ])
         first = req.get_flat_content().splitlines()[0]
         assert parse_user_name_line(first) == "Tim"
@@ -157,7 +157,7 @@ class TestNormalizeMessageReadsName:
         assert ctype == "messages"
         assert msgs[0].name == "Tim"
         assert msgs[1].name == "John"
-        # 说话人名字不该被塞进 tool_name
+        # the speaker name must not end up in tool_name
         assert msgs[0].tool_name is None and msgs[1].tool_name is None
 
     def test_tool_message_name_is_still_the_tool_name(self):

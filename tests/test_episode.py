@@ -1,10 +1,10 @@
-"""Episode（内部会话）测试。
+"""Episode (internal session) tests.
 
-Episode 是 SDK 内部按写入时间间隔切出的"一次讨论"（可跨多次 write）。它有两个用途：
+Episode is one "discussion" the SDK carves out by write-time gaps (it may span several writes). It has two uses:
 
-1. 读侧：用 `episode_id` **框出同一次讨论**的候选做加权 —— 覆盖"公园/骑车/吃饭同时写入，
-   但 query 只命中吃饭"这类向量检索找不到的关联。
-2. 写侧：episode 关闭时总结一次，替代 rolling summary 的"每 N 轮重写 + 把旧摘要喂回 LLM"。
+1. Read side: use `episode_id` to **scope the candidates of one discussion** and weight them -- this covers relations like
+   "the park, the bike ride and lunch were written together, but the query only matches lunch" that vector search misses.
+2. Write side: summarize once when the episode closes, replacing rolling summary's "rewrite every N turns and feed the old summary back to the LLM".
 """
 
 import asyncio
@@ -19,11 +19,11 @@ from hy_memory.models.memory import MemoryLayer, MemoryNode
 
 
 # ======================================================================
-# Episode 状态存储
+# Episode state storage
 # ======================================================================
 
 class TestEpisodeState:
-    """cache 里的 episode 状态：只存 (episode_id, 上次写入时间, 已积累条数)。"""
+    """Episode state in the cache: keeps only (episode_id, last write time, count accumulated so far)."""
 
     @pytest.mark.asyncio
     async def test_roundtrip_and_absent(self):
@@ -45,7 +45,7 @@ class TestEpisodeState:
             assert got["last_write_ts"] == 100.0
             assert got["memory_count"] == 3
 
-            # 同 key 再写是更新而不是插新行
+            # Writing the same key again updates the row instead of inserting a new one
             await cache.upsert_episode_state(
                 "u::a::s", user_id="u", agent_id="a", session_id="s",
                 episode_id="ep1", last_write_ts=200.0, memory_count=7,
@@ -57,11 +57,11 @@ class TestEpisodeState:
 
 
 # ======================================================================
-# Episode 划分规则（写侧，无 LLM）
+# Episode partition rules (write side, no LLM)
 # ======================================================================
 
 class _FakeCache:
-    """只实现 episode 状态两个方法的假 cache。"""
+    """Fake cache implementing just the two episode state methods."""
 
     def __init__(self):
         self.store = {}
@@ -79,7 +79,7 @@ class _FakeCache:
 
 
 def _writer(cache, *, gap=1800.0, cap=50):
-    """造一个只够跑 _resolve_episode_id / _schedule_episode_summary 的 writer。"""
+    """Build a writer minimal enough to run _resolve_episode_id / _schedule_episode_summary."""
     from hy_memory.pipelines.writer import MemoryWriter
 
     w = MemoryWriter.__new__(MemoryWriter)
@@ -101,11 +101,11 @@ def _req(ts, *, user="u", session="s"):
 
 
 class TestEpisodePartition:
-    """间隔内算同一次讨论，超了开新的 —— 纯确定性，不用 LLM。"""
+    """Writes inside the gap count as one discussion, past it a new one starts -- purely deterministic, no LLM."""
 
     @pytest.mark.asyncio
     async def test_writes_within_gap_share_episode(self):
-        """一件事跨几次 write：间隔短 → 同一个 episode_id。"""
+        """One topic spanning several writes: short gaps -> the same episode_id."""
         w = _writer(_FakeCache(), gap=1800.0)
         t0 = datetime(2026, 9, 13, 10, 0, 0)
 
@@ -113,7 +113,7 @@ class TestEpisodePartition:
         ep2 = await w._resolve_episode_id(_req(t0 + timedelta(minutes=5)), 2)
         ep3 = await w._resolve_episode_id(_req(t0 + timedelta(minutes=20)), 2)
 
-        assert ep1 and ep1 == ep2 == ep3, "间隔内的连续写入应归到同一 episode"
+        assert ep1 and ep1 == ep2 == ep3, "consecutive writes within the gap belong to one episode"
 
     @pytest.mark.asyncio
     async def test_gap_exceeded_starts_new_episode(self):
@@ -123,20 +123,20 @@ class TestEpisodePartition:
         ep1 = await w._resolve_episode_id(_req(t0), 3)
         ep2 = await w._resolve_episode_id(_req(t0 + timedelta(hours=3)), 3)
 
-        assert ep1 != ep2, "超过间隔应开新 episode"
+        assert ep1 != ep2, "exceeding the gap opens a new episode"
 
     @pytest.mark.asyncio
     async def test_cap_forces_rollover(self):
-        """一直开着的会话不能变成一个巨型 episode。"""
+        """A session that never closes must not turn into one giant episode."""
         w = _writer(_FakeCache(), gap=1800.0, cap=5)
         t0 = datetime(2026, 9, 13, 10, 0, 0)
 
         ep1 = await w._resolve_episode_id(_req(t0), 4)
-        ep2 = await w._resolve_episode_id(_req(t0 + timedelta(minutes=1)), 4)  # →8 超 cap
+        ep2 = await w._resolve_episode_id(_req(t0 + timedelta(minutes=1)), 4)  # ->8 exceeds cap
         ep3 = await w._resolve_episode_id(_req(t0 + timedelta(minutes=2)), 1)
 
-        assert ep1 == ep2, "第二次写入时累计仍未超 cap"
-        assert ep3 != ep2, "累计超过 cap 后应强制滚动"
+        assert ep1 == ep2, "the running total is still under cap at the second write"
+        assert ep3 != ep2, "the running total past cap must force a rollover"
 
     @pytest.mark.asyncio
     async def test_different_users_and_sessions_isolated(self):
@@ -147,17 +147,17 @@ class TestEpisodePartition:
         b = await w._resolve_episode_id(_req(t0, user="u2"), 1)
         c = await w._resolve_episode_id(_req(t0, user="u1", session="other"), 1)
 
-        assert a != b and a != c, "不同 user / session 不共享 episode"
+        assert a != b and a != c, "different user / session do not share an episode"
 
     @pytest.mark.asyncio
     async def test_no_cache_degrades_gracefully(self):
-        """cache 不可用时返回空串，写入照常，episode 功能自然降级。"""
+        """With the cache unavailable it returns an empty string; writes go through and episode degrades gracefully."""
         w = _writer(None)
         assert await w._resolve_episode_id(_req(datetime.now()), 3) == ""
 
 
 class TestEpisodeCloseTriggersSummary:
-    """episode 关闭（滚动）是总结它的时机 —— 只在这一刻触发，且只触发一次。"""
+    """Closing (rolling over) an episode is the moment to summarize it -- triggered only then, and only once."""
 
     @pytest.mark.asyncio
     async def test_summary_scheduled_only_on_rollover(self):
@@ -168,18 +168,18 @@ class TestEpisodeCloseTriggersSummary:
 
         ep1 = await w._resolve_episode_id(_req(t0), 3)
         await w._resolve_episode_id(_req(t0 + timedelta(minutes=5)), 3)
-        assert scheduled == [], "同一 episode 内继续写入不应触发总结"
+        assert scheduled == [], "continued writes inside the same episode must not trigger a summary"
 
         await w._resolve_episode_id(_req(t0 + timedelta(hours=3)), 3)
-        assert scheduled == [ep1], "只在关闭时对刚关闭的那个 episode 触发一次"
+        assert scheduled == [ep1], "fires exactly once, on the episode that has just closed"
 
 
 # ======================================================================
-# Episode 摘要（写侧，省 token）
+# Episode summary (write side, token saving)
 # ======================================================================
 
 class _FakeLLM:
-    def __init__(self, text="用户这次讨论了周末去公园的安排。"):
+    def __init__(self, text="The user discussed the plan to go to the park this weekend."):
         self.text = text
         self.calls = []
 
@@ -218,15 +218,15 @@ def _mem(content, ep, *, tags=None, at=None):
 class TestEpisodeSummary:
     @pytest.mark.asyncio
     async def test_summarizes_episode_once_without_prev_summary(self):
-        """关键差异：输入里**没有**上一条摘要 —— 不需要 merge/重写，所以省 token。"""
+        """Key difference: the input holds **no** previous summary -- nothing to merge or rewrite, hence fewer tokens."""
         from hy_memory.agent.episode_summary import (
             SUMMARY_KIND_EPISODE, summarize_closed_episode,
         )
 
         nodes = [
-            _mem("用户周六去了公园", "ep1", tags=["outing"]),
-            _mem("用户是骑车去公园的", "ep1", tags=["outing"]),
-            _mem("用户在公园附近吃了午饭", "ep1", tags=["food"]),
+            _mem("The user went to the park on Saturday", "ep1", tags=["outing"]),
+            _mem("The user biked to the park", "ep1", tags=["outing"]),
+            _mem("The user had lunch near the park", "ep1", tags=["food"]),
         ]
         vdb, llm = _FakeVDB(nodes), _FakeLLM()
 
@@ -235,9 +235,9 @@ class TestEpisodeSummary:
             episode_id="ep1", user_id="u", agent_id="a",
         )
 
-        assert nid and len(llm.calls) == 1, "一个 episode 只调一次 LLM"
+        assert nid and len(llm.calls) == 1, "one episode costs one LLM call"
         assert "prev" not in llm.calls[0].lower()
-        assert "公园" in llm.calls[0] and "骑车" in llm.calls[0]
+        assert "park" in llm.calls[0] and "bike" in llm.calls[0]
 
         node = vdb.upserted[0]
         assert node.layer == MemoryLayer.L3_SUMMARY
@@ -245,24 +245,24 @@ class TestEpisodeSummary:
         assert node.custom["episode_id"] == "ep1"
         assert node.custom["covered_count"] == 3
         assert node.episode_id == "ep1"
-        # tag 继承，主题词也能召回到摘要
+        # tags carry over, so topical words also retrieve the summary
         assert "outing" in node.tags and "food" in node.tags
 
     @pytest.mark.asyncio
     async def test_tiny_episode_skipped(self):
-        """一两条记忆的 episode 不值得单独摘要 —— 原记忆本身就够检索。"""
+        """An episode of one or two memories is not worth a separate summary -- the originals are already retrievable."""
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
-        vdb, llm = _FakeVDB([_mem("用户喜欢猫", "ep1")]), _FakeLLM()
+        vdb, llm = _FakeVDB([_mem("The user likes cats", "ep1")]), _FakeLLM()
         nid = await summarize_closed_episode(
             vector_store=vdb, embed_service=_FakeEmbed(), llm_provider=llm,
             episode_id="ep1", user_id="u", min_memories=3,
         )
-        assert nid is None and llm.calls == [], "应跳过，不调 LLM"
+        assert nid is None and llm.calls == [], "should be skipped without calling the LLM"
 
     @pytest.mark.asyncio
     async def test_memory_at_follows_episode_not_now(self):
-        """摘要的事件时间取 episode 内最后一条，让时间过滤归到讨论发生的时点。"""
+        """The summary's event time is the last memory in the episode, so time filters land on when it happened."""
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
         last = datetime(2026, 9, 10, 15, 0, 0)
@@ -283,38 +283,38 @@ class TestEpisodeSummary:
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
         nodes = [
-            _mem("公园的事 1", "ep1"), _mem("公园的事 2", "ep1"),
-            _mem("公园的事 3", "ep1"), _mem("完全无关的工作", "ep2"),
+            _mem("park matter 1", "ep1"), _mem("park matter 2", "ep1"),
+            _mem("park matter 3", "ep1"), _mem("completely unrelated work", "ep2"),
         ]
         vdb, llm = _FakeVDB(nodes), _FakeLLM()
         await summarize_closed_episode(
             vector_store=vdb, embed_service=_FakeEmbed(), llm_provider=llm,
             episode_id="ep1", user_id="u",
         )
-        assert "完全无关的工作" not in llm.calls[0]
+        assert "completely unrelated work" not in llm.calls[0]
 
     @pytest.mark.asyncio
     async def test_token_cost_vs_rolling(self):
-        """对一次跨 3 段的长讨论：rolling 要调 3 次且喂回旧摘要，episode 只调 1 次。"""
+        """For one long discussion across 3 segments: rolling pays 3 calls and feeds back the old summary, episode pays 1."""
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
-        nodes = [_mem(f"记忆 {i}", "ep1") for i in range(12)]
+        nodes = [_mem(f"memory {i}", "ep1") for i in range(12)]
         llm = _FakeLLM()
         await summarize_closed_episode(
             vector_store=_FakeVDB(nodes), embed_service=_FakeEmbed(),
             llm_provider=llm, episode_id="ep1", user_id="u",
         )
         assert len(llm.calls) == 1, (
-            "12 条记忆的 episode 只应付一次 LLM；rolling summary 的窗口式触发会付多次"
+            "an episode of 12 memories should pay for one LLM call; rolling summary's window-based triggering pays several"
         )
 
 
 # ======================================================================
-# 读侧：用 episode 框出候选
+# Read side: use episodes to scope candidates
 # ======================================================================
 
 class TestEpisodeSupport:
-    """episode 共属折算成结构支持度，形状与 reachable_within 一致，进同一漏斗。"""
+    """Episode co-membership becomes structural support, shaped like reachable_within so it enters the same funnel."""
 
     def _hit(self, nid, score, ep):
         return {
@@ -326,26 +326,26 @@ class TestEpisodeSupport:
         }
 
     def test_members_of_hit_episode_become_candidates(self):
-        """用户例子：query 命中"吃饭"，同批写入的"公园"应被框进来。"""
+        """The user example: the query hits "lunch", so "the park" written in the same batch should be scoped in."""
         from hy_memory.pipelines._graph.rerank import episode_support
 
         hits = [self._hit("eat", 0.8, "ep1")]
         out = episode_support(
             hits, {"ep1": ["eat", "park", "bike"]}, seed_floor=0.6,
         )
-        assert set(out) == {"park", "bike"}, "命中自身不重复入池"
+        assert set(out) == {"park", "bike"}, "a hit is not re-added to the pool alongside itself"
         sup, via, etype, hops = out["park"]
         assert sup > 0 and via == "eat" and etype == "episode" and hops == 1
 
     def test_weak_hits_do_not_seed(self):
-        """低分命中不能当 seed，否则会从噪声里框出一堆候选。"""
+        """A low-score hit must not seed, otherwise a pile of candidates gets scoped out of noise."""
         from hy_memory.pipelines._graph.rerank import episode_support
 
         hits = [self._hit("eat", 0.3, "ep1")]
         assert episode_support(hits, {"ep1": ["eat", "park"]}, seed_floor=0.6) == {}
 
     def test_large_episode_yields_weaker_support(self):
-        """episode 越大，单条共属越不具区分度（同 tag hub 的道理）。"""
+        """The larger the episode, the less a single co-membership distinguishes anything (same as tag hubs)."""
         from hy_memory.pipelines._graph.rerank import episode_support
 
         hits = [self._hit("eat", 0.8, "ep1")]
@@ -356,7 +356,7 @@ class TestEpisodeSupport:
         assert small["park"][0] > big["m0"][0]
 
     def test_multi_seed_corroboration(self):
-        """两个高分命中同属一个 episode → 该 episode 成员更可信。"""
+        """Two high-score hits in one episode -> that episode's members are more credible."""
         from hy_memory.pipelines._graph.rerank import episode_support
 
         one = episode_support(
@@ -382,20 +382,20 @@ class TestEpisodeSupport:
         assert episode_support([self._hit("a", 0.9, "ep1")], {}) == {}
 
     def test_episode_is_relational_not_temporal(self):
-        """episode 是"跨批次延长的 co_occurs"（情节关系），不是时间边。"""
+        """An episode is "co_occurs stretched across batches" (a narrative relation), not a temporal edge."""
         from hy_memory.pipelines._graph.rerank import TYPE_PRIOR, edge_group
 
         assert edge_group("episode") == "relational"
-        # 与 co_occurs 对齐，且高于 semantic_neighbor。
+        # Aligned with co_occurs, and above semantic_neighbor.
         assert TYPE_PRIOR["episode"] == TYPE_PRIOR["co_occurs"]
         assert TYPE_PRIOR["episode"] > TYPE_PRIOR["semantic_neighbor"]
 
 
 class TestEpisodeIdPlumbing:
-    """episode_id 要能穿过 payload 往返，否则读侧框不出东西。"""
+    """episode_id has to survive the payload roundtrip, otherwise the read side cannot scope anything out."""
 
     def test_node_dict_roundtrip(self):
-        node = _mem("用户去了公园", "ep_abc")
+        node = _mem("The user went to the park", "ep_abc")
         assert MemoryNode.from_dict(node.to_dict()).episode_id == "ep_abc"
 
     def test_payload_roundtrip(self):
@@ -406,14 +406,14 @@ class TestEpisodeIdPlumbing:
         assert VectorStoreBase._payload_to_node(payload).episode_id == "ep_xyz"
 
     def test_episode_id_is_not_isolation_key(self):
-        """episode_id 不参与隔离 —— 它是内部粒度，不是业务隔离键。"""
+        """episode_id is not part of isolation -- it is an internal granularity, not a business isolation key."""
         a = _mem("x", "ep1")
         b = _mem("x", "ep2")
         assert a.get_isolation_key() == b.get_isolation_key()
 
 
 class TestEpisodeRecallWithoutGraph:
-    """Episode 框选只要 episode_id 字段 + 一次 VDB 过滤 —— graph 关掉也必须能用。"""
+    """Episode scoping needs only the episode_id field plus one VDB filter -- it must work with the graph turned off."""
 
     def _reader(self, *, graph_store, episode_on, graph_rerank_on):
         from hy_memory.pipelines.reader_hybrid import HybridReadPipeline
@@ -430,15 +430,15 @@ class TestEpisodeRecallWithoutGraph:
         r = self._reader(graph_store=None, episode_on=True, graph_rerank_on=False)
         assert r._episode_recall_on() is True
         assert r._graph_rerank_on() is False
-        assert r._expansion_on() is True, "graph 关闭时 episode 框选仍应跑"
+        assert r._expansion_on() is True, "episode scoping must still run when the graph is off"
 
     def test_expansion_off_when_both_off(self):
         r = self._reader(graph_store=None, episode_on=False, graph_rerank_on=False)
         assert r._expansion_on() is False
 
     def test_apply_graph_rerank_accepts_request(self):
-        """回归：_apply_graph_rerank 少了 request 参数会 NameError，被外层 except 吞掉
-        → 整个扩展静默失效。这里从签名上钉住。"""
+        """Regression: without the request parameter _apply_graph_rerank raises NameError, swallowed by the outer except
+        -> the whole expansion fails silently. Pinned here at the signature level."""
         import inspect
 
         from hy_memory.pipelines.reader_hybrid import HybridReadPipeline
@@ -447,10 +447,10 @@ class TestEpisodeRecallWithoutGraph:
         assert "request" in sig.parameters
 
     def test_episode_candidates_gated_by_config(self):
-        """开关关闭时不应发起 VDB 查询。"""
+        """With the switch off, no VDB query should be issued."""
         class _Boom:
             async def list_by_episode(self, *a, **kw):
-                raise AssertionError("开关关闭时不应查 VDB")
+                raise AssertionError("the VDB must not be queried while the switch is off")
 
         r = self._reader(graph_store=None, episode_on=False, graph_rerank_on=False)
         from hy_memory.pipelines.base import ReadRequest
@@ -464,9 +464,9 @@ class TestEpisodeRecallWithoutGraph:
 
 
 class TestEpisodeCountsUserSideOnly:
-    """episode 的计数与摘要输入都只看 user 侧 —— agent 侧记忆参与进来纯是烧 token。
+    """Episode counting and summary input both look at the user side only -- agent-side memories only burn tokens.
 
-    口径与 rolling summary 只数 pending_user_count 一致。
+    Same convention as rolling summary counting only pending_user_count.
     """
 
     def test_count_helper_ignores_agent_and_defaults_to_user(self):
@@ -475,7 +475,7 @@ class TestEpisodeCountsUserSideOnly:
         metas = [
             {"content": "a", "owner": "user"},
             {"content": "b", "owner": "agent"},
-            {"content": "c"},              # owner 缺省 → 视为 user
+            {"content": "c"},              # owner absent -> treated as user
             {"content": "d", "owner": None},
         ]
         assert _count_user_owned(metas) == 3
@@ -483,14 +483,14 @@ class TestEpisodeCountsUserSideOnly:
 
     @pytest.mark.asyncio
     async def test_agent_memories_do_not_burn_episode_cap(self):
-        """agent 侧记忆若参与计数会把 episode 提前撑到上限、切得过碎。"""
+        """Counting agent-side memories would push the episode to its cap early and split it too finely."""
         w = _writer(_FakeCache(), gap=1800.0, cap=4)
         t0 = datetime(2026, 9, 13, 10, 0, 0)
 
-        # 每次写入 3 条 user + 5 条 agent；只数 user 的话两次才 6 > 4
+        # Each write adds 3 user + 5 agent memories; counting only user, two writes reach 6 > 4
         ep1 = await w._resolve_episode_id(_req(t0), 3)
         ep2 = await w._resolve_episode_id(_req(t0 + timedelta(minutes=1)), 3)
-        assert ep1 == ep2, "两次 user 侧共 6 条，第二次写入时累计 3 仍未超 cap"
+        assert ep1 == ep2, "6 user-side memories in total over two writes; the running total of 3 is still under cap"
 
     @pytest.mark.asyncio
     async def test_summary_input_excludes_agent_memories(self):
@@ -502,11 +502,11 @@ class TestEpisodeCountsUserSideOnly:
             return n
 
         nodes = [
-            _owned("用户周六去了公园", "user"),
-            _owned("助手推荐了三家餐厅", "agent"),
-            _owned("用户骑车去的", "user"),
-            _owned("助手解释了骑行路线", "agent"),
-            _owned("用户在附近吃了午饭", "user"),
+            _owned("The user went to the park on Saturday", "user"),
+            _owned("The assistant recommended three restaurants", "agent"),
+            _owned("The user biked there", "user"),
+            _owned("The assistant explained the cycling route", "agent"),
+            _owned("The user had lunch nearby", "user"),
         ]
         vdb, llm = _FakeVDB(nodes), _FakeLLM()
 
@@ -516,21 +516,21 @@ class TestEpisodeCountsUserSideOnly:
         )
 
         prompt = llm.calls[0]
-        assert "用户周六去了公园" in prompt and "用户骑车去的" in prompt
-        assert "助手推荐了三家餐厅" not in prompt, "agent 侧记忆不应进摘要输入"
-        assert "助手解释了骑行路线" not in prompt
-        # covered_count / source_memory_ids 也只统计 user 侧
+        assert "The user went to the park on Saturday" in prompt and "The user biked there" in prompt
+        assert "The assistant recommended three restaurants" not in prompt, "agent-side memories must not enter the summary input"
+        assert "The assistant explained the cycling route" not in prompt
+        # covered_count / source_memory_ids also count the user side only
         assert vdb.upserted[0].custom["covered_count"] == 3
         assert len(vdb.upserted[0].custom["source_memory_ids"]) == 3
 
     @pytest.mark.asyncio
     async def test_agent_only_episode_is_skipped_entirely(self):
-        """整段都是 agent 侧 → 一次 LLM 都不该调。"""
+        """The whole episode is agent-side -> not one LLM call should happen."""
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
         nodes = []
         for i in range(5):
-            n = _mem(f"助手说了第 {i} 句", "ep1")
+            n = _mem(f"The assistant said sentence {i}", "ep1")
             n.owner = "agent"
             nodes.append(n)
 
@@ -543,10 +543,10 @@ class TestEpisodeCountsUserSideOnly:
 
     @pytest.mark.asyncio
     async def test_missing_owner_treated_as_user(self):
-        """owner 缺省要按 user 处理，否则老数据会被整段跳过。"""
+        """A missing owner must be treated as user, otherwise legacy data gets skipped wholesale."""
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
-        nodes = [_mem(f"用户的事 {i}", "ep1") for i in range(3)]
+        nodes = [_mem(f"user matter {i}", "ep1") for i in range(3)]
         for n in nodes:
             n.owner = None
 
@@ -559,18 +559,18 @@ class TestEpisodeCountsUserSideOnly:
 
 
 # ======================================================================
-# 埋点（pipeline log）
+# Instrumentation (pipeline log)
 # ======================================================================
 
 class TestInstrumentation:
-    """新增环节必须有埋点：LLM 调用要能追到 prompt/产出，异步建图要能确认建没建。
+    """New stages must ship instrumentation: LLM calls have to be traceable to prompt and output, and async graph projection has to confirm whether it built anything.
 
-    这些环节都是 fire-and-forget + 失败只告警的，没有埋点就等于线上不可观测 ——
-    读侧"图没起作用"最常见的原因就是写侧压根没投影成功。
+    These stages are all fire-and-forget and only warn on failure, so without instrumentation production is unobservable --
+    the usual reason the read side "shows no graph effect" is that the write side never projected successfully at all.
     """
 
     def test_episode_summary_reports_prompt_and_tokens(self):
-        """_generate 要把实际 prompt 和 token 用量交出来，否则埋点只有结果没有输入。"""
+        """_generate must hand back the actual prompt and token usage, otherwise instrumentation records only results, never inputs."""
         import inspect
 
         from hy_memory.agent import episode_summary
@@ -582,7 +582,7 @@ class TestInstrumentation:
         ).parameters
 
     def test_topic_summary_accepts_trace(self):
-        """topic summary 从 dev4 起就在调 LLM，但一直没埋点。"""
+        """topic summary has been calling the LLM since dev4, but never had instrumentation."""
         import inspect
 
         from hy_memory.pipelines._graph import topic_summary
@@ -600,17 +600,17 @@ class TestInstrumentation:
         async def _trace(**kw):
             seen.append(kw)
 
-        nodes = [_mem(f"用户的事 {i}", "ep1") for i in range(3)]
+        nodes = [_mem(f"user matter {i}", "ep1") for i in range(3)]
         await summarize_closed_episode(
             vector_store=_FakeVDB(nodes), embed_service=_FakeEmbed(),
-            llm_provider=_FakeLLM("用户这次讨论了三件事。"),
+            llm_provider=_FakeLLM("The user discussed three things this time."),
             episode_id="ep1", user_id="u", trace=_trace,
         )
 
         assert len(seen) == 1
         rec = seen[0]
-        assert "用户的事 0" in rec["prompt"], "prompt 必须完整落下来，badcase 才能复盘"
-        assert rec["response"] == "用户这次讨论了三件事。"
+        assert "user matter 0" in rec["prompt"], "the prompt must be recorded in full, otherwise badcases cannot be reviewed"
+        assert rec["response"] == "The user discussed three things this time."
         assert rec["parsed"]["episode_id"] == "ep1"
         assert rec["parsed"]["covered_count"] == 3
         assert len(rec["memory_ids"]) == 3
@@ -618,10 +618,10 @@ class TestInstrumentation:
 
     @pytest.mark.asyncio
     async def test_no_trace_sink_is_harmless(self):
-        """trace=None（trace 关闭）不能影响主流程。"""
+        """trace=None (tracing off) must not affect the main flow."""
         from hy_memory.agent.episode_summary import summarize_closed_episode
 
-        nodes = [_mem(f"用户的事 {i}", "ep1") for i in range(3)]
+        nodes = [_mem(f"user matter {i}", "ep1") for i in range(3)]
         nid = await summarize_closed_episode(
             vector_store=_FakeVDB(nodes), embed_service=_FakeEmbed(),
             llm_provider=_FakeLLM(), episode_id="ep1", user_id="u", trace=None,
@@ -629,7 +629,7 @@ class TestInstrumentation:
         assert nid is not None
 
     def test_read_side_step_exists_and_funnel_is_observable(self):
-        """READ_GRAPH_RERANK 的 stats 必须能区分"图起作用"和"池子变大"。"""
+        """The stats of READ_GRAPH_RERANK must separate "the graph helped" from "the pool just grew"."""
         import inspect
 
         from hy_memory.pipelines._retrieval.trace import (
@@ -638,7 +638,7 @@ class TestInstrumentation:
 
         assert STEP_READ_GRAPH_RERANK == "READ_GRAPH_RERANK"
         params = inspect.signature(ReadTraceLogger.log_graph_rerank).parameters
-        # pool_size 是归因的关键：没有它无法判断变化是不是单纯池子变大
+        # pool_size is the key to attribution: without it you cannot tell whether a change is just a bigger pool
         for k in ("stats", "pool_size", "admitted_ids", "elapsed_ms"):
             assert k in params
 
@@ -652,11 +652,11 @@ class TestInstrumentation:
 
         src = inspect.getsource(MemoryWriter)
         for step in ("EPISODE", "EPISODE_SUMMARY", "TOPIC_SUMMARY", "GRAPH_PROJECT"):
-            assert f'"{step}"' in src, f"缺少 step={step} 的埋点"
+            assert f'"{step}"' in src, f"missing instrumentation for step={step}"
 
     @pytest.mark.asyncio
     async def test_episode_partition_decision_is_logged(self):
-        """划分决策（沿用/新开、距上次多久、累计几条）要能复盘。"""
+        """The partition decision (reused or new, idle time since the last write, running count) must be reviewable."""
         w = _writer(_FakeCache(), gap=1800.0)
         logged = []
 
@@ -672,6 +672,6 @@ class TestInstrumentation:
 
         assert [r["reused"] for r in logged] == [False, True, False]
         assert logged[1]["idle_s"] == 300.0
-        assert logged[1]["count"] == 5, "累计条数要落下来"
+        assert logged[1]["count"] == 5, "the running count has to be recorded"
         assert logged[2]["reused"] is False
         assert all(r["gap"] == 1800.0 for r in logged)

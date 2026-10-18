@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-日志质量诊断脚本（非 assert 测试）
+Log quality diagnostic script (not an assert-based test)
 
-真实调用 LLM，执行 lite+agent 和 full+agent 两种 add，
-打印分隔线 + 用 request_id 过滤的日志，供人工阅读判断质量。
+Calls the real LLM, running a lite+agent add and a full+agent add,
+printing separators plus request_id-filtered logs for manual quality review.
 
-用法:
+Usage:
     python3 tests/test_log_quality.py
 """
 
@@ -13,13 +13,13 @@ import logging
 import os
 import sys
 
-# 确保项目根目录在 sys.path
+# make sure the project root is on sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 def main():
-    """运行日志质量诊断"""
-    # ── 从环境读取 API 配置；诊断脚本绝不携带或回显凭据。 ──
+    """Run the log quality diagnostics."""
+    # -- read API config from the environment; the diagnostic script never carries or echoes credentials. --
     llm_api_key = os.environ.get("MEMORY_LLM_API_KEY")
     embedding_api_key = os.environ.get("MEMORY_EMBEDDER_API_KEY")
     if not llm_api_key or not embedding_api_key:
@@ -42,23 +42,23 @@ def main():
     )
     embedding_dims = int(os.environ.get("MEMORY_EMBEDDING_DIMS", "1024"))
 
-    # ── 配置日志 ──
+    # -- configure logging --
     from hy_memory.utils.log_setup import setup_logging, RequestIdFilter
     setup_logging(level=logging.DEBUG)
 
     hy_logger = logging.getLogger("hy_memory")
 
-    # 移除 stderr StreamHandler（保留 FileHandler），避免重复输出
+    # drop the stderr StreamHandler (keep the FileHandler) to avoid duplicate output
     for h in list(hy_logger.handlers):
         if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
             hy_logger.removeHandler(h)
 
-    # 用和 hy_memory.log 完全一样的 formatter 来格式化
+    # format with exactly the same formatter as hy_memory.log
     _LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(request_id)s] %(name)s: %(message)s"
     _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
     log_formatter = logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
 
-    # 捕获所有 hy_memory 日志到列表
+    # capture all hy_memory logs into a list
     captured_logs: list = []
 
     class LogCapture(logging.Handler):
@@ -70,7 +70,7 @@ def main():
     capture_handler.addFilter(RequestIdFilter())
     hy_logger.addHandler(capture_handler)
 
-    # ── 辅助函数 ──
+    # -- helper functions --
 
     def pr(msg=""):
         print(msg, flush=True)
@@ -82,7 +82,7 @@ def main():
         pr("=" * 80)
 
     def print_filtered_logs(request_id: str, level_filter: str = "ALL"):
-        """打印特定 request_id 的日志，使用和 hy_memory.log 完全一样的格式"""
+        """Print the logs of one request_id in exactly the hy_memory.log format"""
         filtered = [
             r for r in captured_logs
             if getattr(r, 'request_id', '-') == request_id
@@ -102,11 +102,11 @@ def main():
         return len(info_plus), len(debug_only)
 
     def wait_s2_tasks(client_obj, request_id: str, timeout: int = 120):
-        """S2 现为同步处理（add 返回即完成），无后台任务可等。"""
+        """S2 is synchronous now (done when add returns), so there are no background tasks to await."""
         return {"status": "completed", "tasks": []}
 
     # ================================================================
-    # 初始化客户端
+    # initialize the client
     # ================================================================
     print_separator("Initializing HyMemoryClient")
 
@@ -131,7 +131,7 @@ def main():
         "enable_agent": True,
     })
 
-    # 打印初始化阶段的日志
+    # print the initialization-phase logs
     init_info = [r for r in captured_logs
                  if getattr(r, 'request_id', '-') == '-' and r.levelno >= logging.INFO]
     init_debug = [r for r in captured_logs
@@ -142,20 +142,20 @@ def main():
         pr(log_formatter.format(record))
     pr(f"--- End ({len(init_info)} lines) ---")
 
-    # ── 清除旧数据 ──
+    # -- clear old data --
     pr("\nCleaning up old test data...")
     client.delete_all(user_id="test_log_user")
 
     # ================================================================
-    # 测试 1: Lite + Agent add
+    # Test 1: Lite + Agent add
     # ================================================================
     print_separator("Test 1: Lite + Agent add")
 
     test_content = (
-        "我叫张三，今年28岁，在北京字节跳动做后端工程师。"
-        "我特别喜欢手冲埃塞俄比亚耶加雪菲咖啡，"
-        "周末经常去五道口的独立咖啡馆。"
-        "最近在学 Rust 语言，打算用它重写一个内部工具。"
+        "My name is Zhang San, I am 28 years old, and I work as a backend engineer at ByteDance in Beijing."
+        "I especially love pour-over Ethiopian Yirgacheffe coffee,"
+        "and I often visit independent cafes in Wudaokou on weekends."
+        "Lately I have been learning Rust, planning to rewrite an internal tool with it."
     )
 
     captured_logs.clear()
@@ -180,13 +180,13 @@ def main():
     pr(f"\n[Summary] INFO+ lines: {info_n}, DEBUG lines: {debug_n}")
 
     # ================================================================
-    # 测试 2: Lite search
+    # Test 2: Lite search
     # ================================================================
     print_separator("Test 2: Lite search")
 
     captured_logs.clear()
     search_result = client.search(
-        "张三喜欢什么咖啡？他的职业是什么？",
+        "What coffee does Zhang San like? What is his job?",
         user_id="test_log_user",
         agent_ids=["test_agent"],
     )
@@ -201,15 +201,15 @@ def main():
     pr(f"\n[Summary] INFO+ lines: {info_n}, DEBUG lines: {debug_n}")
 
     # ================================================================
-    # 测试 3: Full + Agent add (等 S2 任务完成)
+    # Test 3: Full + Agent add (wait for S2 tasks to finish)
     # ================================================================
     print_separator("Test 3: Full + Agent add")
 
     test_content_2 = (
-        "今天和女朋友小红去了三里屯的一家新开的意大利餐厅，"
-        "她对花生过敏所以我们特意问了厨师。"
-        "饭后我们决定下个月去日本旅游，"
-        "她想去京都看红叶，我想去东京看演唱会。"
+        "Today my girlfriend Xiaohong and I went to a newly opened Italian restaurant in Sanlitun,"
+        "she is allergic to peanuts so we made a point of asking the chef."
+        "After the meal we decided to take a trip to Japan next month,"
+        "she wants to see the autumn leaves in Kyoto, and I want to catch a concert in Tokyo."
     )
 
     captured_logs.clear()
@@ -228,7 +228,7 @@ def main():
         if result2.get("error_message"):
             pr(f"Error: {result2['error_message'][:120]}")
 
-        # 等待 S2 后台任务完成
+        # wait for the S2 background tasks to finish
         pr("\nWaiting for S2 tasks to complete...")
         s2_status = wait_s2_tasks(client, rid2, timeout=120)
         pr(f"S2 status: {s2_status.get('status', 'unknown')}")
@@ -247,7 +247,7 @@ def main():
         traceback.print_exc()
 
     # ================================================================
-    # 清理
+    # cleanup
     # ================================================================
     print_separator("Cleanup")
     captured_logs.clear()

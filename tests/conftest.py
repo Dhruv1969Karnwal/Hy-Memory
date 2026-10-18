@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-HY Memory SDK - pytest 配置
+HY Memory SDK - pytest configuration
 
-共享的 fixtures 和配置。
+Shared fixtures and configuration.
 """
 
 import os
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 
-# 加载 .env 文件（如果存在，向上逐级查找）
+# Load the .env file (if present), searching parent directories
 def _load_env():
     cur = Path(__file__).resolve().parent
     for _ in range(5):
@@ -34,7 +34,7 @@ _load_env()
 
 
 def pytest_configure(config):
-    """pytest 配置钩子"""
+    """pytest configuration hook"""
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
@@ -45,38 +45,38 @@ def pytest_configure(config):
 
 @pytest.fixture(scope="session")
 def test_uid():
-    """测试用 uid"""
+    """uid used by tests"""
     return "test_user"
 
 
 @pytest.fixture(scope="session")
 def test_agent_id():
-    """测试用 agent_id"""
+    """agent_id used by tests"""
     return "test_scene"
 
 
 @pytest.fixture
 def sample_text_content():
-    """示例文本内容"""
-    return "用户喜欢在周末去爬山，特别喜欢北京香山"
+    """Sample text content"""
+    return "The user likes hiking on weekends, especially the Fragrant Hills in Beijing"
 
 
 @pytest.fixture
 def sample_qa_pair():
-    """示例 QA 对"""
+    """Sample QA pair"""
     from hy_memory.models import QAPair
     return QAPair(
-        question="你最喜欢的食物是什么？",
-        answer="我最喜欢吃火锅，尤其是四川麻辣火锅"
+        question="What is your favorite food?",
+        answer="I love hot pot, especially Sichuan spicy hot pot"
     )
 
 
 @pytest.fixture
 def sample_dialogue():
-    """示例对话"""
+    """Sample dialogue"""
     return [
-        {"role": "user", "content": "你好！"},
-        {"role": "assistant", "content": "你好！有什么可以帮助你的吗？"},
-        {"role": "user", "content": "我想了解一下天气"},
-        {"role": "assistant", "content": "今天北京天气晴朗，气温 15-25 度"}
+        {"role": "user", "content": "Hello!"},
+        {"role": "assistant", "content": "Hello! How can I help you?"},
+        {"role": "user", "content": "I would like to know about the weather"},
+        {"role": "assistant", "content": "Beijing is sunny today, 15-25 degrees"}
     ]

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-list 链路的 layers 服务端筛选（R3 需求：CTX 需按 layer / category 只列某几类）。
+list path server-side layers filtering (R3 requirement: CTX needs to list only certain kinds by layer / category).
 
-底层 list_by_user 早已支持 layers，缺的是 client 层未透传。本文件覆盖透传后的语义：
+The underlying list_by_user has long supported layers; what was missing was the client not passing it through. This file covers the semantics after pass-through:
 
-- 不传 layers 时必须与改动前逐字一致（返回 L1_RAW 以外的全部层级），
-  这是现网 list 的既有口径，不得因新增参数而改变。
-- 传了 layers 则完全以调用方为准，包括「只要 L1_RAW」这种显式请求。
-- 指定层级全不在图库（L6/L7）时跳过图库查询——连接本身有开销，pro 模式下更是白连。
+- When layers is not passed, the result must be byte-identical to before the change (all layers except L1_RAW),
+  the established list semantics in production, which must not change because of a new parameter.
+- When layers is passed, the caller fully decides, including an explicit "only L1_RAW" request.
+- When none of the specified layers live in the graph DB (L6/L7), skip the graph query -- connecting itself has overhead, and in pro mode it is a wasted connection.
 """
 
 import asyncio
@@ -73,7 +73,7 @@ def _client_with(store):
 
 
 class TestNormalizeLayers:
-    """入参规范化：接受字符串是为了与 search 侧（List[str]）对齐。"""
+    """Input normalization: accepting strings aligns with the search side (List[str])."""
 
     def test_none_and_empty_return_none(self):
         assert HyMemoryClient._normalize_layers(None) is None
@@ -88,7 +88,7 @@ class TestNormalizeLayers:
         assert got == [MemoryLayer.L2_FACT, MemoryLayer.L3_SUMMARY]
 
     def test_legacy_alias_mapped(self):
-        """需求文档里写的是旧编号 l5_schema，实际应落到 l6_schema。"""
+        """The requirement doc writes the old number l5_schema, but it should actually land on l6_schema."""
         assert HyMemoryClient._normalize_layers(["l5_schema"]) == [MemoryLayer.L6_SCHEMA]
 
     def test_dedup_preserves_order(self):
@@ -96,9 +96,9 @@ class TestNormalizeLayers:
         assert got == [MemoryLayer.L2_FACT, MemoryLayer.L1_RAW]
 
     def test_invalid_raises_not_silently_ignored(self):
-        """静默忽略非法值会让调用方以为筛选生效，实际拿到全量——必须报错。
+        """Silently ignoring invalid values would make the caller think the filter took effect while it actually got everything -- it must raise.
 
-        l3_identity 是需求文档里的笔误（L3 实为 summary），正好作为用例。
+        l3_identity is a typo in the requirement doc (L3 is actually summary), making it a fitting case.
         """
         with pytest.raises(ValueError):
             HyMemoryClient._normalize_layers(["l3_identity"])
@@ -114,7 +114,7 @@ class TestVdbBucketLayerFilter:
         ]))
 
     def test_no_layers_excludes_raw_as_before(self, faiss_store):
-        """不传时口径不变：L1_RAW 不出现在 list 中。"""
+        """When not passed, semantics are unchanged: L1_RAW does not appear in list."""
         self._seed(faiss_store)
         got = run(_client_with(faiss_store)._list_vdb_bucket(
             user_id="u1", agent_id=None, limit=100, offset=0, order="desc",
@@ -139,12 +139,12 @@ class TestVdbBucketLayerFilter:
         assert {m["content"] for m in got["memories"]} == {"fact", "summary"}
 
     def test_explicit_raw_is_blocked(self, faiss_store):
-        """显式只要 L1_RAW 也拿不到：raw 对外读路径一律不可见（契约变更）。
+        """Even explicitly asking only for L1_RAW gets nothing: raw is uniformly invisible to external read paths (a contract change).
 
-        改动前：默认排除只是缺省策略，调用方点名 L1_RAW 即以调用方为准。
-        改动后：向量库侧 allow_raw_layer 默认 False，排除条件随请求下发，
-        raw 不出库；调用方无论传什么 layers 都拿不到原始对话。
-        仅内部管线（writer 拼对话历史、clone 全量复制）显式放行。
+        Before: the default exclusion was just a policy, so a caller naming L1_RAW got the caller's way.
+        After: the vector store's allow_raw_layer defaults to False and the exclusion is sent down with the request,
+        so raw never leaves the database; whatever layers the caller passes, it cannot get raw dialogue.
+        Only internal pipelines (writer assembling dialogue history, clone full copy) opt in explicitly.
         """
         self._seed(faiss_store)
         got = run(_client_with(faiss_store)._list_vdb_bucket(
@@ -155,7 +155,7 @@ class TestVdbBucketLayerFilter:
         assert got["total"] == 0
 
     def test_raw_mixed_with_other_layers_only_drops_raw(self, faiss_store):
-        """raw 与其他层混传时只剔除 raw，其余层照常返回。"""
+        """When raw is mixed with other layers, only raw is dropped; the other layers return as usual."""
         self._seed(faiss_store)
         got = run(_client_with(faiss_store)._list_vdb_bucket(
             user_id="u1", agent_id=None, limit=100, offset=0, order="desc",
@@ -164,7 +164,7 @@ class TestVdbBucketLayerFilter:
         assert [m["content"] for m in got["memories"]] == ["fact"]
 
     def test_layer_filter_composes_with_multi_user(self, faiss_store):
-        """R3 与 R1 叠加：多用户 + 层级筛选同时生效。"""
+        """R3 combined with R1: multi-user + layer filtering both take effect."""
         run(faiss_store.upsert_batch([
             _node("u1", content="u1 fact", layer=MemoryLayer.L2_FACT),
             _node("u1", content="u1 summary", layer=MemoryLayer.L3_SUMMARY),
@@ -179,7 +179,7 @@ class TestVdbBucketLayerFilter:
 
 
 class TestGraphBucketLayerSkip:
-    """图库连接有开销，指定的层级都不在图库时不该连。"""
+    """Connecting to the graph DB has overhead; when none of the specified layers live in it, don't connect."""
 
     def _client_recording_graph_access(self):
         c = HyMemoryClient.__new__(HyMemoryClient)
@@ -199,7 +199,7 @@ class TestGraphBucketLayerSkip:
             layers=[MemoryLayer.L2_FACT],
         ))
         assert got is None
-        assert calls == [], "指定层级全在 VDB 侧时不应连图库"
+        assert calls == [], "when all specified layers are on the VDB side, don't connect to the graph DB"
 
     def test_graph_layer_still_queries(self):
         c, calls = self._client_recording_graph_access()
@@ -207,11 +207,11 @@ class TestGraphBucketLayerSkip:
             user_id="u1", agent_id=None, limit=10, offset=0, order="desc",
             layers=[MemoryLayer.L7_INTENTION],
         ))
-        assert calls == [1], "指定了图层就必须查图库"
+        assert calls == [1], "when a graph layer is specified, the graph DB must be queried"
 
     def test_no_layers_still_queries(self):
         c, calls = self._client_recording_graph_access()
         run(c._list_graph_bucket(
             user_id="u1", agent_id=None, limit=10, offset=0, order="desc",
         ))
-        assert calls == [1], "不传 layers 时行为与改动前一致"
+        assert calls == [1], "when layers is not passed, behavior matches the pre-change behavior"

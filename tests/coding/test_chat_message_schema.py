@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-ChatMessage / ToolCall / WriteRequest schema 扩展 + _parse_input 双风格规范化测试
+ChatMessage / ToolCall / WriteRequest schema extensions + normalization of both input styles in _parse_input
 
-覆盖：
-- ChatMessage / ToolCall 基础字段与 to_dict / from_dict round-trip
-- WriteRequest 新增 workspace_id / branch 字段
-- _parse_input：纯字符串、旧式 plain messages、OpenAI 风格、Anthropic 风格、
-                嵌套 tool_result 内容、多 tool_use+tool_result 配对、非法 JSON args、
-                空 content 防御
-- _parse_input 不变量：所有 ChatMessage.content 永远是 string
+Coverage:
+- ChatMessage / ToolCall base fields and to_dict / from_dict round-trip
+- New WriteRequest fields workspace_id / branch
+- _parse_input: plain string, legacy plain messages, OpenAI style, Anthropic style,
+                nested tool_result content, several tool_use+tool_result pairs, invalid JSON args,
+                defense against empty content
+- _parse_input invariant: ChatMessage.content is always a string
 """
 
 from typing import List
@@ -20,7 +20,7 @@ from hy_memory.pipelines.base import ChatMessage, ToolCall, WriteRequest
 
 
 # ================================================================
-# ToolCall / ChatMessage 基础
+# ToolCall / ChatMessage basics
 # ================================================================
 
 class TestToolCall:
@@ -46,7 +46,7 @@ class TestToolCall:
 
 
 class TestChatMessageBackwardCompat:
-    """已有 chat 路径用法不能改变行为"""
+    """Existing chat-path usage must not change behaviour"""
 
     def test_old_construction_still_works(self):
         m = ChatMessage(role="user", content="hi")
@@ -56,7 +56,7 @@ class TestChatMessageBackwardCompat:
         assert m.tool_name is None
 
     def test_old_to_dict_format_unchanged(self):
-        # 不带 tool 信息时 to_dict 输出格式与历史完全一致
+        # Without tool info the to_dict output stays exactly as before
         m = ChatMessage(role="user", content="hi")
         assert m.to_dict() == {"role": "user", "content": "hi"}
 
@@ -73,7 +73,7 @@ class TestChatMessageNewFields:
         d = m.to_dict()
         assert d["role"] == "assistant" and d["content"] == ""
         assert d["tool_calls"] == [tc.to_dict()]
-        assert "tool_call_id" not in d  # 默认 None 不输出
+        assert "tool_call_id" not in d  # None defaults are not emitted
         assert "tool_name" not in d
 
     def test_to_dict_includes_tool_result_fields(self):
@@ -81,7 +81,7 @@ class TestChatMessageNewFields:
         d = m.to_dict()
         assert d["tool_call_id"] == "t1"
         assert d["tool_name"] == "Read"
-        assert "tool_calls" not in d  # 空列表不输出
+        assert "tool_calls" not in d  # Empty lists are not emitted
 
     def test_helpers(self):
         # has_tool_calls
@@ -104,7 +104,7 @@ class TestChatMessageNewFields:
 
 
 # ================================================================
-# WriteRequest 扩展
+# WriteRequest extension
 # ================================================================
 
 class TestWriteRequestExtension:
@@ -126,7 +126,7 @@ class TestWriteRequestExtension:
 
 
 # ================================================================
-# _parse_input — 主路径
+# _parse_input -- main paths
 # ================================================================
 
 class TestParseInputBackwardCompat:
@@ -140,22 +140,22 @@ class TestParseInputBackwardCompat:
 
     def test_plain_messages(self):
         data = [
-            {"role": "user", "content": "你好"},
-            {"role": "assistant", "content": "我帮你"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "I'll help you"},
         ]
         _, msgs, ctype = HyMemoryClient._parse_input(data)
         assert ctype == "messages"
         assert len(msgs) == 2
-        assert msgs[0].role == "user" and msgs[0].content == "你好"
-        assert msgs[1].role == "assistant" and msgs[1].content == "我帮你"
-        # 不会因为新字段引入额外消息
+        assert msgs[0].role == "user" and msgs[0].content == "Hello"
+        assert msgs[1].role == "assistant" and msgs[1].content == "I'll help you"
+        # The new fields must not introduce extra messages
         assert all(not m.tool_calls for m in msgs)
 
 
 class TestParseInputOpenAIStyle:
     def test_assistant_with_tool_calls_and_tool_message(self):
         data = [
-            {"role": "user", "content": "读 a.py"},
+            {"role": "user", "content": "Read a.py"},
             {"role": "assistant", "content": None,
              "tool_calls": [{"id": "t1", "type": "function",
                              "function": {"name": "Read",
@@ -171,7 +171,7 @@ class TestParseInputOpenAIStyle:
         assert len(msgs[1].tool_calls) == 1
         tc = msgs[1].tool_calls[0]
         assert tc.id == "t1" and tc.name == "Read"
-        # arguments 已被 json.loads 成 dict
+        # arguments were already json.loads'ed into a dict
         assert tc.arguments == {"path": "a.py"}
         # tool message
         assert msgs[2].role == "tool"
@@ -209,9 +209,9 @@ class TestParseInputOpenAIStyle:
 class TestParseInputAnthropicStyle:
     def test_text_plus_tool_use_block(self):
         data = [
-            {"role": "user", "content": "读 a.py"},
+            {"role": "user", "content": "Read a.py"},
             {"role": "assistant", "content": [
-                {"type": "text", "text": "让我读一下"},
+                {"type": "text", "text": "Let me read it"},
                 {"type": "tool_use", "id": "t2", "name": "Read",
                  "input": {"path": "a.py"}},
             ]},
@@ -221,15 +221,15 @@ class TestParseInputAnthropicStyle:
             ]},
         ]
         _, msgs, _ = HyMemoryClient._parse_input(data)
-        # user1 + assistant(text+tool_call) + tool(从 user 拆出来的)
+        # user1 + assistant(text+tool_call) + tool (split out of the user message)
         assert len(msgs) == 3
-        assert msgs[0].role == "user" and msgs[0].content == "读 a.py"
+        assert msgs[0].role == "user" and msgs[0].content == "Read a.py"
         assert msgs[1].role == "assistant"
-        assert msgs[1].content == "让我读一下"
+        assert msgs[1].content == "Let me read it"
         assert len(msgs[1].tool_calls) == 1
         assert msgs[1].tool_calls[0].id == "t2"
         assert msgs[1].tool_calls[0].arguments == {"path": "a.py"}
-        # tool_result 拆为独立 role=tool 消息
+        # tool_result becomes a standalone role=tool message
         assert msgs[2].role == "tool"
         assert msgs[2].tool_call_id == "t2"
         assert msgs[2].content == "42 lines"
@@ -263,7 +263,7 @@ class TestParseInputAnthropicStyle:
             ]},
         ]
         _, msgs, _ = HyMemoryClient._parse_input(data)
-        # assistant(空 text + 2 tool_calls) + 2 个独立 tool 消息
+        # assistant(empty text + 2 tool_calls) + 2 standalone tool messages
         assert len(msgs) == 3
         assert msgs[0].role == "assistant"
         assert msgs[0].content == ""
@@ -274,20 +274,20 @@ class TestParseInputAnthropicStyle:
         assert msgs[2].content == "Y"
 
     def test_assistant_only_text_block(self):
-        # 只有 text block 时不应产生空 tool_calls 列表
+        # A text-only block must not produce an empty tool_calls list
         data = [
             {"role": "assistant", "content": [
-                {"type": "text", "text": "纯文本回复"},
+                {"type": "text", "text": "Plain text reply"},
             ]},
         ]
         _, msgs, _ = HyMemoryClient._parse_input(data)
         assert len(msgs) == 1
         assert msgs[0].role == "assistant"
-        assert msgs[0].content == "纯文本回复"
+        assert msgs[0].content == "Plain text reply"
         assert msgs[0].tool_calls == []
 
     def test_empty_content_block_list_drops_message(self):
-        # content=[] 且无任何 tool_calls 不应保留这条消息
+        # content=[] without any tool_calls must not keep this message
         data = [{"role": "assistant", "content": []}]
         _, msgs, _ = HyMemoryClient._parse_input(data)
         assert len(msgs) == 0
@@ -295,17 +295,17 @@ class TestParseInputAnthropicStyle:
     def test_unknown_block_type_silently_ignored(self):
         data = [
             {"role": "assistant", "content": [
-                {"type": "image", "source": {"data": "..."}},  # 未知 block
-                {"type": "text", "text": "看图"},
+                {"type": "image", "source": {"data": "..."}},  # Unknown block
+                {"type": "text", "text": "Looking at the image"},
             ]},
         ]
         _, msgs, _ = HyMemoryClient._parse_input(data)
         assert len(msgs) == 1
-        assert msgs[0].content == "看图"
+        assert msgs[0].content == "Looking at the image"
 
 
 class TestParseInputInvariants:
-    """所有路径下 ChatMessage.content 必须是 string"""
+    """ChatMessage.content must be a string on every path"""
 
     @pytest.mark.parametrize("data", [
         [{"role": "user", "content": "plain"}],

@@ -1,15 +1,15 @@
-"""图写入的幂等性，以及重建前的清理。
+"""Idempotency of graph writes, plus the cleanup that has to happen before a rebuild.
 
-`add_edge` 此前用 `CREATE`，而同一对节点之间会**反复**建同类型边：
+`add_edge` used `CREATE`, so the same pair of nodes could get edges of the same type created **repeatedly**:
 
-- `UPDATE` 是原地更新（`node_id` 不变），一条记忆被合并多次就多次参与投影；
-  两条老节点若再次同批出现，`co_occurs` 就重复建。线上实测一条记忆被 UPDATE 了 7 次。
-- System 2 的 agent 循环可能对同一对反复调用 `add_edge`。
+- `UPDATE` is an in-place update (`node_id` unchanged), so a memory merged several times takes part in projection several times;
+  if two old nodes show up in the same batch again, `co_occurs` gets created again. Production measured one memory being UPDATEd 7 times.
+- The System 2 agent loop may call `add_edge` repeatedly for the same pair.
 
-线上实测（eval 库）：**20.4 万对重复、最严重一对 32 份**，其中 99% 是 System 2 写的
-无类型 `related`。重复边不放大打分（`build_adjacency` 折叠成最强的一条），但会吃掉
-`get_related_edges` 的 `max_edges` 预算 —— Cypher 的 `LIMIT` 先截断、去重在 Python 侧，
-于是重复边挤掉了本该返回的真实边。
+Measured in production (eval database): **204k duplicate pairs, the worst pair holding 32 copies**, 99% of which are
+untyped `related` written by System 2. Duplicate edges do not amplify scoring (`build_adjacency` folds them into the
+strongest one), but they do eat the `max_edges` budget of `get_related_edges` -- Cypher's `LIMIT` truncates first and
+deduplication happens on the Python side, so duplicates crowd out the real edges that should have been returned.
 """
 
 import asyncio
@@ -59,14 +59,14 @@ class TestAddEdgeIdempotent:
             rows = await gs._run(
                 "MATCH (x:Memory)-[r:RELATED_TO]->(y:Memory) RETURN count(*);"
             )
-            # 双向各一条 = 2；用 CREATE 时会是 6
+            # one per direction = 2; with CREATE it would be 6
             assert int(rows[0][0]) == 2
         finally:
             await gs.close()
 
     @pytest.mark.asyncio
     async def test_on_match_keeps_max_weight(self):
-        """ON MATCH 取较大权重 —— 与读侧 build_adjacency"折叠成最强"的语义一致。"""
+        """ON MATCH keeps the larger weight, matching the read-side build_adjacency semantics of folding to the strongest."""
         gs = await _store()
         try:
             a, b = _node("m0"), _node("m1")
@@ -86,7 +86,7 @@ class TestAddEdgeIdempotent:
 
     @pytest.mark.asyncio
     async def test_different_relation_types_coexist(self):
-        """同一对节点之间**可以**有多种关系 —— 去重不能把它们合并掉。"""
+        """The same pair of nodes **may** carry several relations -- deduplication must not merge them away."""
         gs = await _store()
         try:
             a, b = _node("m0"), _node("m1")
@@ -106,7 +106,7 @@ class TestAddEdgeIdempotent:
 
     @pytest.mark.asyncio
     async def test_reprojecting_same_batch_is_stable(self):
-        """回归线上现场：同一批节点被投影两次（UPDATE 让老节点再次入批）。"""
+        """Regression on a production case: the same batch of nodes projected twice (UPDATE puts old nodes back into a batch)."""
         from hy_memory.pipelines._graph.projector import project_memories_to_graph
 
         gs = await _store()
@@ -119,7 +119,7 @@ class TestAddEdgeIdempotent:
             rows = await gs._run(
                 "MATCH (x:Memory)-[r:RELATED_TO]->(y:Memory) RETURN count(*);"
             )
-            # 3 个节点两两相连 = 3 对，双向 = 6 条。投影两次仍应是 6。
+            # 3 nodes fully connected = 3 pairs, both directions = 6 edges. Projecting twice must still yield 6.
             assert int(rows[0][0]) == 6
         finally:
             await gs.close()
@@ -133,7 +133,7 @@ class TestClearProjection:
             for i in range(3):
                 n = _node(f"m{i}", session=f"s{i}", tags=["health"])
                 await gs.upsert_memory_node(n)
-                # 故意用旧的（带 session 的）键建 Topic，模拟碎片化历史数据
+                # deliberately building Topics with the old (session-scoped) key to mimic fragmented legacy data
                 await gs.add_topic_tag(n.node_id, "health", n.get_isolation_key())
             res = await gs.clear_projection("u", "a", layer="l2_fact")
             assert res["memories"] == 3
@@ -145,8 +145,8 @@ class TestClearProjection:
 
     @pytest.mark.asyncio
     async def test_does_not_touch_l6_schema(self):
-        """关键护栏：一个用户的 Memory 里还有 System 2 写的 l6_schema，
-        无条件删会毁掉 ultra 的数据。"""
+        """Key guardrail: one user's Memory nodes still include l6_schema written by System 2, so
+        an unconditional delete would destroy ultra data."""
         gs = await _store()
         try:
             await gs.upsert_memory_node(_node("fact"))
@@ -157,7 +157,7 @@ class TestClearProjection:
             )
             assert int(rows[0][0]) == 1
             rows = await gs._run("MATCH (m:Memory) RETURN count(*);")
-            assert int(rows[0][0]) == 1, "只该剩 l6_schema 那一个"
+            assert int(rows[0][0]) == 1, "only the single l6_schema node should remain"
         finally:
             await gs.close()
 
@@ -180,7 +180,7 @@ class TestClearProjection:
             await gs.close()
 
     def test_base_default_is_noop(self):
-        """未实现该能力的后端不做任何事，不能抛。"""
+        """A backend that does not implement this capability does nothing and must not raise."""
         import inspect
 
         from hy_memory.data.graph_store_base import GraphStoreBase
@@ -195,12 +195,12 @@ class TestClearProjection:
 
         for cls in (KuzuGraphStore, Neo4jGraphStore):
             assert cls.clear_projection is not GraphStoreBase.clear_projection, (
-                f"{cls.__name__} 未自己实现 clear_projection，会静默不清理"
+                f"{cls.__name__} does not implement clear_projection itself and would silently skip the cleanup"
             )
 
 
 class TestNoCreateLeftInAddEdge:
-    """静态守卫：退回 CREATE 就会重新引入重复边。"""
+    """Static guard: going back to CREATE would reintroduce duplicate edges."""
 
     @pytest.mark.parametrize("module_path", [
         "hy_memory.data.graph_store_kuzu",
@@ -217,11 +217,11 @@ class TestNoCreateLeftInAddEdge:
             and v.__module__ == module_path
         )
         src = inspect.getsource(cls.add_edge)
-        assert "MERGE" in src, f"{module_path}.add_edge 没用 MERGE"
+        assert "MERGE" in src, f"{module_path}.add_edge does not use MERGE"
         assert "CREATE (a)-[:RELATED_TO" not in src, (
-            f"{module_path}.add_edge 仍在用 CREATE 建边"
+            f"{module_path}.add_edge still creates edges with CREATE"
         )
-        assert "ON MATCH" in src, "缺 ON MATCH，重复调用不会更新权重"
+        assert "ON MATCH" in src, "ON MATCH is missing, so repeated calls would not update the weight"
 
 
 class TestBuildMemoryGraphClearFirst:
@@ -232,8 +232,8 @@ class TestBuildMemoryGraphClearFirst:
 
         for fn in ("build_memory_graph", "async_build_memory_graph"):
             params = inspect.signature(getattr(HyMemoryClient, fn)).parameters
-            assert "clear_first" in params, f"{fn} 缺 clear_first"
-            assert params["clear_first"].default is False, "默认必须为 False"
+            assert "clear_first" in params, f"{fn} is missing clear_first"
+            assert params["clear_first"].default is False, "the default must be False"
 
     def test_clear_scoped_to_l2_fact(self):
         import inspect
@@ -242,4 +242,4 @@ class TestBuildMemoryGraphClearFirst:
 
         src = inspect.getsource(HyMemoryClient.async_build_memory_graph)
         assert "clear_projection(" in src
-        assert "L2_FACT" in src, "清理必须按 layer 收窄，否则会删掉 l6_schema"
+        assert "L2_FACT" in src, "the cleanup must be narrowed by layer, otherwise it would delete l6_schema"

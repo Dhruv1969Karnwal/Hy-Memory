@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Embed pipeline log：provider_meta（非 vector payload）应写入 parsed。"""
+"""Embed pipeline log: provider_meta (not the vector payload) should be written into parsed."""
 
 from __future__ import annotations
 

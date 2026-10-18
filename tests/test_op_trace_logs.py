@@ -1,9 +1,9 @@
-"""delete/get/list 操作的 pipeline trace（DELETE/GET/LIST step）落库验证。
+"""Verifying that the pipeline trace of delete/get/list (DELETE/GET/LIST steps) is persisted.
 
-不构造完整 VDB/client，直接驱动 HyMemoryClient._maybe_store_op_log + _backend_identity
-两个 helper（绑定一个真实 SqliteCache），验证：
-  - trace 开启时落 pipeline_logs_v2，step / parsed / memory_ids 正确
-  - trace 关闭时（MEMORY_PIPELINE_TRACE_ENABLED=false）不落库
+Without building a full VDB/client, this drives HyMemoryClient._maybe_store_op_log + _backend_identity
+directly (bound to a real SqliteCache) and verifies:
+  - with tracing on the trace lands in pipeline_logs_v2 with the right step / parsed / memory_ids
+  - with tracing off (MEMORY_PIPELINE_TRACE_ENABLED=false) nothing is persisted
 """
 
 import asyncio
@@ -26,7 +26,7 @@ def run(coro):
 
 
 def _fake_client(cache, provider="qdrant", db_name="", coll="agent_memories_1024"):
-    """造一个最小壳：只挂 _cache / _config / _vector_store，够两个 helper 用。"""
+    """Build a minimal shell exposing only _cache / _config / _vector_store, enough for the two helpers."""
     c = HyMemoryClient.__new__(HyMemoryClient)
     c._cache = cache
     c._config = MemoryConfig.from_dict({"vector_store": {"provider": provider}})

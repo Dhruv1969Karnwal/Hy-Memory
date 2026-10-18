@@ -1,4 +1,4 @@
-"""Pipeline log（始终）与 trace（可关）分离。"""
+"""Pipeline log (always on) separated from trace (can be turned off)."""
 
 import asyncio
 import json
@@ -93,7 +93,7 @@ class TestObservabilityHookBehavior:
         run(_test())
 
     def test_store_returns_before_slow_persist(self, env_setup, monkeypatch):
-        """慢 DB / 慢磁盘不得堵住 await store_pipeline_log。"""
+        """A slow DB / slow disk must not block await store_pipeline_log."""
         monkeypatch.setenv("MEMORY_PIPELINE_TRACE_ENABLED", "true")
 
         async def _test():
@@ -129,10 +129,10 @@ class TestObservabilityHookBehavior:
             )
             elapsed_ms = (_time.perf_counter() - t0) * 1000
             assert ok is True
-            # 主路径应在慢 persist 完成前返回（给一点调度余量）
+            # The main path must return before the slow persist finishes (with some scheduling slack)
             assert elapsed_ms < 50.0
 
-            # 给事件循环一次调度机会，确认后台任务已启动并卡在 release 上
+            # Give the event loop a scheduling turn and confirm the background task started and is parked on release
             for _ in range(20):
                 if started.is_set():
                     break
@@ -145,7 +145,7 @@ class TestObservabilityHookBehavior:
         run(_test())
 
     def test_step_to_step_elapsed_ignores_persist_latency(self, env_setup, monkeypatch):
-        """step-to-step 在入队瞬间打点，不被后台 IO 拉长。"""
+        """step-to-step is stamped at the moment of enqueueing and is not stretched by background IO."""
         monkeypatch.setenv("MEMORY_PIPELINE_TRACE_ENABLED", "false")
 
         async def _test():
@@ -175,13 +175,13 @@ class TestObservabilityHookBehavior:
             await drain_pipeline_log_tasks()
 
             assert len(recorded) == 2
-            # 第二步 elapsed ≈ 50ms 量级（业务间隔），不应被 JSONL 写放大到秒级
+            # The second step's elapsed is on the order of 50ms (the business gap), not blown up to seconds by the JSONL write
             assert 30.0 <= recorded[1]["elapsed_ms"] <= 200.0
 
         run(_test())
 
     def test_caller_event_at_ms_is_reused(self, env_setup, monkeypatch):
-        """调用方显式传入非 0 event_at_ms → 直接复用，不被本地 time.time() 覆盖。"""
+        """A caller-supplied non-zero event_at_ms is reused as-is, never overwritten by the local time.time()."""
         monkeypatch.setenv("MEMORY_PIPELINE_TRACE_ENABLED", "true")
 
         async def _test():
@@ -207,7 +207,7 @@ class TestObservabilityHookBehavior:
                 trace_enabled=True,
             )
 
-            # 模拟 App 在真正事件发生时刻同步打点，比这次 SDK 调用早很多
+            # Simulate the App stamping synchronously at the real event time, well before this SDK call
             caller_event_at_ms = 1700000000123
 
             ok = await wrapped(
@@ -226,7 +226,7 @@ class TestObservabilityHookBehavior:
         run(_test())
 
     def test_missing_event_at_ms_falls_back_to_now(self, env_setup, monkeypatch):
-        """调用方不传 / 传 0 → 回落本地 time.time()（毫秒级，且非 0）。"""
+        """The caller passes nothing or 0 -> fall back to the local time.time() (millisecond precision, non-zero)."""
         monkeypatch.setenv("MEMORY_PIPELINE_TRACE_ENABLED", "false")
 
         async def _test():
@@ -268,7 +268,7 @@ class TestObservabilityHookBehavior:
 
 
 class TestPipelineLogSubdirSplit:
-    """pipeline JSONL 按 user_id 的 "__" namespace 前缀分子目录。"""
+    """pipeline JSONL is split into subdirectories by the "__" namespace prefix of user_id."""
 
     def test_subdir_from_user_id_prefix(self, tmp_path):
         from hy_memory.utils.pipeline_log_writer import PipelineLogWriter
@@ -281,14 +281,14 @@ class TestPipelineLogSubdirSplit:
         dirs = sorted(p.name for p in tmp_path.iterdir() if p.is_dir())
         assert "project_alpha" in dirs
         assert "acme" in dirs
-        # 无前缀 → 回落构造时 default_subdir（这里 default）
+        # No prefix -> fall back to the constructor default_subdir (default here)
         assert "default" in dirs
 
     def test_first_double_underscore_is_split_point(self, tmp_path):
         from hy_memory.utils.pipeline_log_writer import PipelineLogWriter
 
         w = PipelineLogWriter(str(tmp_path), "fallback")
-        # 只按第一个 __ 切分；user 部分自带 __ 不影响 subdir
+        # Split only on the first __; extra __ inside the user part does not affect the subdir
         w.write_step(user_id="app1__user__with__underscores", step="X", response="r")
         assert (tmp_path / "app1").is_dir()
 
@@ -303,9 +303,9 @@ class TestPipelineLogContentPrivacy:
         monkeypatch.delenv("MEMORY_LOG_LLM_CONTENT", raising=False)
         w = PipelineLogWriter(str(tmp_path), "default")
         recon_prompt = (
-            "现有记忆 existing_memories:\n"
-            '[{"memory_id":"m_old","content":"用户住在涩谷的公寓，月租18万日元"}]\n'
-            "新记忆:\n用户现在住横滨"
+            "existing memories existing_memories:\n"
+            '[{"memory_id":"m_old","content":"The user lives in an apartment in Shibuya, monthly rent 180,000 JPY"}]\n'
+            "new memory:\nThe user now lives in Yokohama"
         )
         w.write_step(
             user_id="u1", agent_id="a1", step="RECONCILE",
@@ -318,7 +318,7 @@ class TestPipelineLogContentPrivacy:
         assert row["prompt"].startswith("<redacted len=")
         assert row["content"].startswith("<redacted len=")
         assert "existing_memories" not in row["prompt"]
-        assert "涩谷" not in row["prompt"]
+        assert "Shibuya" not in row["prompt"]
 
     def test_prompt_and_response_persisted_only_when_enabled(self, tmp_path, monkeypatch):
         from datetime import date
