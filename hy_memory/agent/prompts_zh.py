@@ -351,11 +351,11 @@ Format:
 
 Rules:
 
-* memory: 
+* memory:
   Everything worth remembering long term -- preferences, opinions, attitudes, traits, events, plans, experiences, habits, decisions.
   It may be about `[user]` or about other named real people (`[John]`); for the subject to use see "# Subject rules" above
 
-* intentions: 
+* intentions:
   Forward-looking items the user (or another named real person) intends or plans to do later, with `valid_until` (deadline / target date,
   resolved against Memory Date); set it to `null` when the deadline cannot be determined
 
@@ -429,7 +429,7 @@ Format:
 
 Rules:
 
-* memory: 
+* memory:
   Everything worth remembering long term -- preferences, opinions, attitudes, traits, events, experiences, habits, decisions,
   **plus future plans and upcoming arrangements** (do not open a separate intentions bucket).
   It may be about `[user]` or about other named real people (`[John]`); for the subject to use see "# Subject rules" above
