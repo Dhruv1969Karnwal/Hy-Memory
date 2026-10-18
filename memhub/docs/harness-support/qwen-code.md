@@ -1,45 +1,45 @@
-# Qwen Code 一键插入支持
+# Qwen Code one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-Qwen Code 已开放一键插入。它安装 **JSON MCP 配置 + Skill + Credential Grant**，不安装 Capture Hook。
+Qwen Code ships with one-click insert. It installs **JSON MCP config + Skill + Credential Grant** and no Capture Hook.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | Qwen Code 当前实现 |
+| Item | Qwen Code current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| Qwen Code 查询 MemHub | MCP Server |
-| 告诉模型何时查询 | Skill |
-| Prompt 前自动 Prefetch | 没有 |
-| Qwen Code 新会话实时送入 MemHub | 无 Hook；依赖 Core 扫描 |
-| Plugin | 没有 |
+| One-click insert status | Available |
+| How Qwen Code queries MemHub | MCP Server |
+| How the model knows when to query | Skill |
+| Automatic Prefetch before prompts | None |
+| New Qwen Code sessions into MemHub in real time | No Hook; relies on Core scanning |
+| Plugin | None |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-向 `settings.json` 安装 MCP、写 Skill、创建 Credential 并授权。模型在需要时主动调用 MCP；不会自动 Prefetch。
+It installs the MCP into `settings.json`, writes the Skill, creates the Credential and grants it. The model calls MCP on its own when it needs to; nothing is Prefetched automatically.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤权，再恢复或删除 MCP、Skill 和 Journal；不影响 Core 同步。
+Revoke first, then restore or delete the MCP, the Skill and the Journal; Core sync is unaffected.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 扫描 `$QWEN_HOME/projects`（默认 `~/.qwen/projects`）中尚未处理的会话，恢复冻结 Job，并持续轮询新内容。
+Core scans `$QWEN_HOME/projects` (default `~/.qwen/projects`) for sessions it has not processed yet, resumes frozen Jobs and keeps polling for new content.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core Freeze：停止扫描和 pending Job claim，running Job可结束，已有 Memory 保留。Qwen Code MCP 若仍安装，可以继续查询已有 Memory。
+Core freezes: scanning and pending Job claims stop, running Jobs may finish and existing Memory is kept. If Qwen Code's MCP is still installed, it can keep querying existing Memory.
 
-### 组合效果
+### Combined effect
 
-一键插入控制 Qwen Code 能不能 Recall；同步控制 MemHub 是否继续学习 Qwen Code。两者都开才是双向接通，但仍是模型主动调用而非自动 Prefetch。
+One-click insert controls whether Qwen Code can Recall; sync controls whether MemHub keeps learning from Qwen Code. Only both on connects both directions, and it is still the model calling on its own, not automatic Prefetch.
 
-## 实际安装
+## What gets installed
 
 ```text
 ~/.qwen/settings.json
@@ -50,30 +50,30 @@ Core Freeze：停止扫描和 pending Job claim，running Job可结束，已有 
 ~/.qwen/.one-memory/recall-install.json
 ```
 
-安装器会保留 `$version`、模型设置和其他 MCP Server，但 JSON 可能被重新格式化。已有非 MemHub 管理的 `mcpServers.one-memory` 时默认拒绝覆盖。
+The installer preserves `$version`, model settings and other MCP Servers, though the JSON may be reformatted. An existing `mcpServers.one-memory` not managed by MemHub is refused by default.
 
-## 权限、重复打开与关闭
+## Permissions, re-opening and closing
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:qwen-code`。
-- 已安装且 `approved`：只修复命令并 Probe。
-- 权限不完整：重新安装、签发新 Credential 并授权。
-- 关闭：先撤权，再恢复或删除 MCP、Skill 和 Journal。
-- 用户修改过配置或 Skill 时不强删。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:qwen-code`.
+- Already installed and `approved`: only repair the command and Probe.
+- Incomplete permissions: reinstall, issue a fresh Credential and grant.
+- Closing: revoke first, then restore or delete the MCP, the Skill and the Journal.
+- Config or Skill modified by the user is not force-deleted.
 
-## 已知路径问题
+## Known path issue
 
-Core 导入支持 Qwen 自己的 `QWEN_HOME`，但 Desktop Host Layout 默认固定使用 `~/.qwen`，只识别 MemHub 的 `ONE_MEMORY_HOST_HOME` 隔离变量。
+Core import honors Qwen's own `QWEN_HOME`, but the Desktop Host Layout defaults to a fixed `~/.qwen` and only recognizes MemHub's `ONE_MEMORY_HOST_HOME` isolation variable.
 
-自定义 `QWEN_HOME` 时可能出现：
+A custom `QWEN_HOME` can produce:
 
 ```text
-Core 导入：$QWEN_HOME
-Recall 安装：~/.qwen
+Core import: $QWEN_HOME
+Recall install: ~/.qwen
 ```
 
-即同步和一键插入指向不同 Qwen Home。
+In other words, sync and one-click insert point at different Qwen Homes.
 
-## 生效与重启
+## Taking effect and restart
 
-当前代码不保证运行中的 Qwen Code 热加载 `settings.json` 和 Skill。建议完全退出重开并开始新会话。
+Current code does not guarantee a running Qwen Code hot-loads `settings.json` and the Skill. Quit fully, re-open and start a new session.

@@ -1,47 +1,47 @@
-# Cursor 一键插入支持
+# Cursor one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-Cursor 已开放一键插入。它不是 Cursor Extension，而是 **MCP 配置 + Skill + Capture Hooks + Credential Grant**。
+Cursor ships with one-click insert. It is not a Cursor Extension; it is **MCP config + Skill + Capture Hooks + Credential Grant**.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | Cursor 当前实现 |
+| Item | Cursor current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| Cursor 查询 MemHub | MCP Server |
-| 告诉模型何时查询 | Skill |
-| Prompt 前自动 Prefetch | 没有 |
-| Cursor 新会话实时送入 MemHub | `hooks.json` Capture Hooks |
-| 传统 Cursor Extension | 没有 |
+| One-click insert status | Available |
+| How Cursor queries MemHub | MCP Server |
+| How the model knows when to query | Skill |
+| Automatic Prefetch before prompts | None |
+| New Cursor sessions into MemHub in real time | `hooks.json` Capture Hooks |
+| Traditional Cursor Extension | None |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-安装 MCP、Skill、`beforeSubmitPrompt`/`afterAgentResponse` Capture Hooks，并创建和授权 Cursor Credential。MCP 用于 Cursor 主动查询；Hooks 只负责把可见会话事件实时送给 Core，不负责 Recall 注入。
+It installs the MCP, the Skill, the `beforeSubmitPrompt`/`afterAgentResponse` Capture Hooks, and creates and grants the Cursor Credential. MCP is for Cursor to query on its own; the Hooks only forward visible session events to Core in real time and do no Recall injection.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤销 Cursor Credential，再移除或恢复 MCP、Skill、Hooks 和 Journal。同步开关状态不变。
+It revokes the Cursor Credential first, then removes or restores the MCP, Skill, Hooks and Journal. The Sync toggle state is unchanged.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 补扫 Cursor 历史来源，恢复冻结 Job，启用轮询/Watcher；Capture Hook 发来的新事件也允许进入 Evidence。
+Core backfills Cursor history sources, resumes frozen Jobs and enables polling/Watcher; new events sent by Capture Hooks are also allowed into Evidence.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core 不再扫描、不 claim pending Job，也拒绝 Hook Capture 入库；已 running Job可结束，已有 Memory 保留。Cursor 的 MCP/Skill 仍存在且 Credential 未撤销，所以 Cursor 仍可查询以前已有的 Memory。
+Core stops scanning, stops claiming pending Jobs and also refuses Hook Capture intake; already-running Jobs may finish and existing Memory is kept. Cursor's MCP/Skill are still present and the Credential has not been revoked, so Cursor can still query previously stored Memory.
 
-### 组合效果
+### Combined effect
 
-- 一键开、同步关：Cursor 可 Recall，但新对话不再进入 MemHub。
-- 一键关、同步开：MemHub 仍学习 Cursor，会话侧不能 Recall。
-- 两者都开：双向接通；Recall 由模型主动调用，不是 Prompt 自动 Prefetch。
+- Insert on, sync off: Cursor can still Recall, but new conversations no longer enter MemHub.
+- Insert off, sync on: MemHub keeps learning from Cursor, but the session side cannot Recall.
+- Both on: both directions are connected; Recall happens because the model calls it, not as automatic Prefetch on prompts.
 
-## 实际安装
+## What gets installed
 
 ```text
 ~/.cursor/mcp.json
@@ -56,31 +56,31 @@ Core 不再扫描、不 claim pending Job，也拒绝 Hook Capture 入库；已 
 ~/.cursor/.one-memory/recall-install.json
 ```
 
-配置只保存 Credential 文件路径，不保存 Secret。安装前后状态和 Hash 记录在 Journal 中。
+The config only stores the Credential file path, never the Secret. Pre- and post-install state and hashes are recorded in the Journal.
 
-Layout 在 [recall-installer.ts](../../packages/host-bridge/src/recall-installer.ts)，Capture 合并在 [capture-hooks.ts](../../packages/host-bridge/src/capture-hooks.ts)。
+The Layout lives in [recall-installer.ts](../../packages/host-bridge/src/recall-installer.ts), and Capture merging lives in [capture-hooks.ts](../../packages/host-bridge/src/capture-hooks.ts).
 
-## Capture 与同步开关
+## Capture and the Sync toggle
 
-Capture Hook 使用 fail-open Shell 命令：失败不阻止 Cursor 发送 Prompt 或结束回答。Hook 只是实时事件入口；Core 的 capture 路径仍检查同步配置和 Root 授权。因此：
+The Capture Hook uses a fail-open shell command: a failure never stops Cursor from submitting a prompt or finishing an answer. The Hook is only the live event entry; Core's capture path still checks the sync config and Root authorization. Therefore:
 
 ```text
-一键插入 → 把 Capture 能力装进 Cursor
-同步开关 → 决定事件是否真的进入并被处理
+one-click insert → installs the Capture capability into Cursor
+the Sync toggle → decides whether events actually enter and get processed
 ```
 
-## 权限
+## Permissions
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:cursor`。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:cursor`.
 
-## 重复打开与关闭
+## Re-opening and closing
 
-- 已安装且 `approved`：不重装，只修复命令路径并 Probe。
-- 权限不完整：重新安装并签发新 Credential，不会重复追加 MCP 或 Hook。
-- 关闭：先撤权，再恢复或删除 MCP、Skill、Hooks 和 Journal。
-- 用户修改过的文件不会被强删；撤权后可能留下无权限残留。
+- Already installed and `approved`: no reinstall; only repair command paths and Probe.
+- Incomplete permissions: reinstall and issue a fresh Credential; nothing appends a second MCP or Hook entry.
+- Closing: revoke first, then restore or delete the MCP, Skill, Hooks and Journal.
+- Files with user edits are never force-deleted; after revocation, unpermitted leftovers may remain.
 
-## 生效与重启
+## Taking effect and restart
 
-Cursor 有专门的 Credential 更新重启提示。建议完全退出 Cursor 后重新打开，并开始新对话；只关闭聊天标签不保证后台进程重载 MCP、Skill 和 Hooks。
+Cursor has a dedicated restart prompt for Credential updates. Quit Cursor fully, then re-open and start a new conversation; closing only the chat tab does not guarantee the background process reloads the MCP, Skill and Hooks.

@@ -1,86 +1,86 @@
-# OpenClaw 一键插入支持
+# OpenClaw one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-OpenClaw 当前是“底层 MCP installer 已实现，但正式产品全链路 Freeze”。用户不能通过当前 App 正式启用一键插入。
+OpenClaw today is "the low-level MCP installer is implemented, but the full chain in the shipped product is frozen". Users cannot officially enable one-click insert from the current App.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | OpenClaw 当前真实状态 |
+| Item | OpenClaw actual status today |
 |---|---|
-| 一键插入产品状态 | 未开放 |
-| OpenClaw 查询 MemHub | 当前没有；只有未开放的 MCP 配置写入器 |
-| Skill | 没有安装 |
-| Plugin | 没有安装 |
-| Prompt Hook | 没有安装 |
-| 自动 Prefetch/上下文注入 | 没有实现 |
-| OpenClaw 新会话实时送入 MemHub | 没有 Hook；Core Adapter 也被冻结 |
-| Credential/Grant | 正式流程不会创建 |
+| One-click insert status | Not available |
+| How OpenClaw queries MemHub | None today; only the unexposed MCP config writer |
+| Skill | Not installed |
+| Plugin | Not installed |
+| Prompt Hook | Not installed |
+| Automatic Prefetch/context injection | Not implemented |
+| New OpenClaw sessions into MemHub in real time | No Hook; the Core Adapter is frozen too |
+| Credential/Grant | The official flow creates neither |
 
-当前用户无法通过 MemHub App 把任何插件、Hook 或 Prefetch Provider 安装进 OpenClaw。
+Users cannot install any plugin, Hook or Prefetch Provider into OpenClaw through the MemHub App today.
 
-## 如果只放开底层 MCP，会怎样
+## What would happen if only the low-level MCP were unblocked
 
-理论调用链是：
-
-```text
-OpenClaw 读取 openclaw.json
-→ 启动 mcp.servers.one-memory
-→ OpenClaw 模型在需要时主动调用 om_recall / om_context / om_conversations
-→ MemHub mcp.cjs 通过本机 Broker 调用 Core
-```
-
-这只是主动工具调用，不是：
+The theoretical call chain is:
 
 ```text
-用户发送 Prompt
-→ MemHub 自动 Prefetch
-→ 记忆自动注入 OpenClaw 上下文
+OpenClaw reads openclaw.json
+→ starts mcp.servers.one-memory
+→ the OpenClaw model calls om_recall / om_context / om_conversations itself when needed
+→ MemHub's mcp.cjs calls Core through the local Broker
 ```
 
-当前没有任何实现能自动完成后者。
-
-## 两个产品开关当前实际行为
-
-### “一键插入应用”
-
-当前不可用。Web、Desktop、Runtime、Connection Controller 和权限层都拒绝 OpenClaw，因此不会写 MCP、不会创建 Credential、不会安装 Skill/Hook/Plugin。
-
-### “同步开关”
-
-当前也不可用。OpenClaw 来源在 Core 中被全局暂停：不 `stat` 目录、不探测、不创建 Adapter、不扫描、不创建可执行 Job。
-
-### 所以当前组合结果
-
-无论用户如何尝试，正式产品中两个方向都没有接通：
+That is only active tool calling. It is not:
 
 ```text
-OpenClaw → MemHub：关闭
-MemHub → OpenClaw：关闭
-自动 Prefetch：不存在
+the user submits a prompt
+→ MemHub automatically Prefetches
+→ memories are automatically injected into the OpenClaw context
 ```
 
-## 真正支持 OpenClaw 需要什么
+Nothing implemented today does the latter automatically.
 
-至少有两种产品方案：
+## What the two product switches actually do today
 
-1. **只支持 MCP 主动 Recall**：开放 MCP 安装、Credential 和授权；不碰 memory-provider，模型是否查询依赖 Tool Description。
-2. **支持自动 Prefetch**：还需实现 OpenClaw memory-provider 集成，明确如何处理已有 Provider、如何组合或拒绝、如何回滚、超时如何 fail-open、注入内容如何避免再次入库。
+### "One-click insert"
 
-当前第二套完全没有实现。
+Unavailable today. Web, Desktop, Runtime, the Connection Controller and the permissions layer all reject OpenClaw, so no MCP is written, no Credential is created and no Skill/Hook/Plugin is installed.
 
-## 当前产品限制
+### "Sync toggle"
 
-- Web 一键映射中没有 OpenClaw。
-- Desktop Host 列表主动过滤 OpenClaw。
-- Runtime Host Control、Connection Controller、Connection Client 和 `HostPermissions` 都拒绝 OpenClaw。
-- Core 导入层把 OpenClaw 放入暂停列表，不探测、不启动、不读取。
+Also unavailable today. The OpenClaw source is globally paused inside Core: no `stat` on directories, no probing, no Adapter created, no scanning and no executable Jobs created.
 
-## 底层 installer 理论行为
+### So the combined result today
 
-如果直接调用底层安装器，会写：
+No matter what the user tries, neither direction is connected in the shipped product:
+
+```text
+OpenClaw → MemHub: closed
+MemHub → OpenClaw: closed
+Automatic Prefetch: does not exist
+```
+
+## What real OpenClaw support would require
+
+At least two product options exist:
+
+1. **Support active Recall over MCP only**: unblock the MCP install, Credential and grant; do not touch the memory-provider, and whether the model queries at all depends on the Tool Description.
+2. **Support automatic Prefetch**: this also needs an OpenClaw memory-provider integration, with clear rules for handling an existing Provider, how to combine or refuse, how to roll back, how to fail open on timeout, and how to keep injected content from being ingested back into memory.
+
+The second option is completely unimplemented today.
+
+## Current product limits
+
+- The Web one-click mapping has no OpenClaw.
+- The Desktop Host list actively filters OpenClaw out.
+- Runtime Host Control, the Connection Controller, the Connection Client and `HostPermissions` all reject OpenClaw.
+- The Core import layer puts OpenClaw on the paused list: no probing, no starting and no reading.
+
+## Theoretical behavior of the low-level installer
+
+Calling the low-level installer directly would write:
 
 ```text
 ~/.openclaw/openclaw.json
@@ -89,32 +89,32 @@ MemHub → OpenClaw：关闭
 ~/.openclaw/.one-memory/recall-install.json
 ```
 
-它不安装 Skill，也不安装 Capture Hook：
+It installs no Skill and no Capture Hook:
 
-- OpenClaw 的个人 Skill 位于共享 `~/.agents/skills`，直接写入会影响其他 Agent；
-- `skills.load.extraDirs` 需要额外安装和回滚状态，尚未完成；
-- 实时采集需要占用单一 memory-provider slot，可能覆盖用户已有 Provider。
+- OpenClaw personal Skills live in the shared `~/.agents/skills`, so writing there directly would affect other Agents;
+- `skills.load.extraDirs` would need extra install and rollback state that is not done yet;
+- real-time capture would have to take the single memory-provider slot, possibly overwriting a Provider the user already has.
 
-## 为什么 Freeze
+## Why it is frozen
 
-- 导入仅做过 fixture 级验证，没有真实 OpenClaw 会话回放验收；
-- 用户角色归因尚未解决，可能导致内容不能进入记忆提取；
-- Skill、Capture 和权限边界尚未形成完整产品流程。
+- Import has only been verified at fixture level, with no acceptance run on real OpenClaw session replays;
+- User role attribution is unresolved, which can keep content from entering memory extraction;
+- Skill, Capture and permission boundaries have not formed a complete product flow yet.
 
-## 底层 CLI 风险
+## Low-level CLI risk
 
-开发 installer CLI 仍可直接写 OpenClaw MCP 配置，但它不会创建正式 Credential 或 Grant；同一 CLI 的 rollback 还被禁用。
+The development installer CLI can still write OpenClaw MCP config directly, but it creates no official Credential or Grant, and rollback of the same CLI is disabled.
 
-因此可能产生：
+That can leave behind:
 
 ```text
-openclaw.json 中存在 one-memory
-但没有合法 Credential/Grant
-且不能通过正式产品流程管理
+one-memory present in openclaw.json
+but no valid Credential/Grant
+and no way to manage it through the official product flow
 ```
 
-这是开发工具残留，不代表产品支持。
+That is development tooling residue, not product support.
 
-## 卸载
+## Uninstall
 
-底层库函数可以按 Journal 恢复或删除 `mcp.servers.one-memory`，但正式 `HostPermissions.uninstall()` 因 OpenClaw 被排除而不可用。直接使用底层安装器的调用方必须自己负责 Credential 和卸载安全。
+The low-level library functions can restore or delete `mcp.servers.one-memory` according to the Journal, but the official `HostPermissions.uninstall()` is unavailable because OpenClaw is excluded. Callers that use the low-level installer directly must take responsibility for Credential and uninstall safety themselves.

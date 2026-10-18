@@ -1,209 +1,209 @@
-# Hy Memory SDK 环境变量参考
+# Hy Memory SDK Environment Variable Reference
 
-本文只列当前代码实际读取、且对公开 SDK 功能有直接作用的配置。所有变量均可通过进程环境
-或 `.env` 设置；未设置时使用表中的默认值。
+This page lists only the configuration that the current code actually reads and that directly affects public
+SDK functionality. Every variable can be set through the process environment or `.env`; when unset, the default value from the table applies.
 
-## 核心配置
+## Core Configuration
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
 | `MEMORY_MODE` | `pro` | `lite` / `pro` / `ultra` |
-| `MEMORY_DATA_DIR` | `~/.hy_memory` | 本地数据、缓存和日志根目录 |
+| `MEMORY_DATA_DIR` | `~/.hy_memory` | Root directory for local data, cache and logs |
 
-- `lite`：纯 Embedding 写入，Graph 强制关闭。
-- `pro`：LLM 提取与 reconcile；Graph 由 `MEMORY_ENABLE_GRAPH` 控制。
-- `ultra`：具备 pro 能力并强制启用 Graph；System 2 由调用方显式执行
-  `client.evolve()`，不会在 `add()` 后自动入队。
+- `lite`: embedding-only writes, Graph is always off.
+- `pro`: LLM extraction and reconcile; Graph is controlled by `MEMORY_ENABLE_GRAPH`.
+- `ultra`: everything `pro` offers plus Graph forced on; System 2 runs only when the caller explicitly
+  calls `client.evolve()`, and is never auto-enqueued after `add()`.
 
 ## LLM
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_LLM_PROVIDER` | `openai` | OpenAI-compatible Chat Completions 协议 |
-| `MEMORY_LLM_MODEL` | `gpt-4.1-nano` | 模型名 |
-| `MEMORY_LLM_API_KEY` | — | 回退：`LLM_API_KEY`、`OPENAI_API_KEY` |
-| `MEMORY_LLM_BASE_URL` | — | 回退到 `LLM_BASE_URL` |
-| `MEMORY_LLM_TEMPERATURE` | `0.1` | 统一温度；`none` / `omit` / 空值表示不发送 |
-| `MEMORY_LLM_OMIT_TEMPERATURE` | `false` | `true` 时完全不发送 `temperature` |
-| `MEMORY_LLM_MAX_TOKENS` | `1024` | 通用生成上限 |
-| `MEMORY_AGENT_MAX_TOKENS` | `2000` | Extract/Reconcile/System 2 等 Agent 调用上限 |
-| `MEMORY_LLM_TIMEOUT` | `180` | 单次超时，秒 |
-| `MEMORY_LLM_MAX_RETRIES` | `5` | 最大重试次数 |
-| `MEMORY_LLM_RETRY_DELAY` | `1.0` | 重试间隔，秒 |
-| `MEMORY_LLM_EXTRA_HEADERS` | — | JSON object，附加 HTTP headers |
-| `MEMORY_LLM_EXTRA_BODY` | — | JSON object，附加请求 body |
-| `MEMORY_FEW_SHOT_ENABLED` | `false` | 为内置 Extractor/Reconcile prompt 附加 few-shot |
-| `MEMORY_ENABLE_INTENTION` | `true` | 是否抽取并写入 L7 Intention |
-| `MEMORY_LOG_LLM_CONTENT` | `false` | `true` 才允许日志记录完整 prompt/response |
+| `MEMORY_LLM_PROVIDER` | `openai` | OpenAI-compatible Chat Completions protocol |
+| `MEMORY_LLM_MODEL` | `gpt-4.1-nano` | Model name |
+| `MEMORY_LLM_API_KEY` | — | Fallbacks: `LLM_API_KEY`, `OPENAI_API_KEY` |
+| `MEMORY_LLM_BASE_URL` | — | Falls back to `LLM_BASE_URL` |
+| `MEMORY_LLM_TEMPERATURE` | `0.1` | Shared temperature; `none` / `omit` / an empty value means do not send it |
+| `MEMORY_LLM_OMIT_TEMPERATURE` | `false` | When `true`, `temperature` is never sent at all |
+| `MEMORY_LLM_MAX_TOKENS` | `1024` | General generation cap |
+| `MEMORY_AGENT_MAX_TOKENS` | `2000` | Cap for agent calls such as Extract/Reconcile/System 2 |
+| `MEMORY_LLM_TIMEOUT` | `180` | Per-attempt timeout, seconds |
+| `MEMORY_LLM_MAX_RETRIES` | `5` | Maximum number of retries |
+| `MEMORY_LLM_RETRY_DELAY` | `1.0` | Retry interval, seconds |
+| `MEMORY_LLM_EXTRA_HEADERS` | — | JSON object with extra HTTP headers |
+| `MEMORY_LLM_EXTRA_BODY` | — | JSON object with extra request body fields |
+| `MEMORY_FEW_SHOT_ENABLED` | `false` | Attach few-shot examples to the built-in Extractor/Reconcile prompts |
+| `MEMORY_ENABLE_INTENTION` | `true` | Whether to extract and write L7 Intention |
+| `MEMORY_LOG_LLM_CONTENT` | `false` | Only `true` allows logs to record the full prompt/response |
 
 ## Embedding
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_EMBEDDER_PROVIDER` | `openai` | OpenAI-compatible Embeddings 协议 |
-| `MEMORY_EMBEDDER_MODEL` | `text-embedding-3-small` | 模型名 |
-| `MEMORY_EMBEDDER_API_KEY` | — | 回退：`EMBEDDING_API_KEY`、`OPENAI_API_KEY` |
-| `MEMORY_EMBEDDER_BASE_URL` | — | 回退到 `EMBEDDING_BASE_URL` |
-| `MEMORY_EMBEDDING_DIMS` | `1536` | Collection 维度；应与模型输出一致 |
-| `MEMORY_EMBEDDER_TIMEOUT` | `15` | 单次超时，秒 |
-| `MEMORY_EMBEDDER_MAX_RETRIES` | `2` | 最大重试次数 |
-| `MEMORY_EMBEDDER_RETRY_DELAY` | `0.3` | 重试间隔，秒 |
-| `MEMORY_EMBEDDER_EXTRA_HEADERS` | — | JSON object，附加 HTTP headers |
-| `MEMORY_EMBEDDER_EXTRA_BODY` | — | JSON object，附加请求 body |
+| `MEMORY_EMBEDDER_PROVIDER` | `openai` | OpenAI-compatible Embeddings protocol |
+| `MEMORY_EMBEDDER_MODEL` | `text-embedding-3-small` | Model name |
+| `MEMORY_EMBEDDER_API_KEY` | — | Fallbacks: `EMBEDDING_API_KEY`, `OPENAI_API_KEY` |
+| `MEMORY_EMBEDDER_BASE_URL` | — | Falls back to `EMBEDDING_BASE_URL` |
+| `MEMORY_EMBEDDING_DIMS` | `1536` | Collection dimensions; should match the model output |
+| `MEMORY_EMBEDDER_TIMEOUT` | `15` | Per-attempt timeout, seconds |
+| `MEMORY_EMBEDDER_MAX_RETRIES` | `2` | Maximum number of retries |
+| `MEMORY_EMBEDDER_RETRY_DELAY` | `0.3` | Retry interval, seconds |
+| `MEMORY_EMBEDDER_EXTRA_HEADERS` | — | JSON object with extra HTTP headers |
+| `MEMORY_EMBEDDER_EXTRA_BODY` | — | JSON object with extra request body fields |
 
 ## Vector Store
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
 | `MEMORY_VECTOR_STORE` | `chroma` | `chroma` / `qdrant` / `faiss` |
-| `MEMORY_COLLECTION_NAME` | `agent_memories` | 主 collection 名 |
-| `MEMORY_PERSIST_DIR` | `{DATA_DIR}/data/vector_db` | 本地持久化目录 |
-| `MEMORY_VECTOR_HOST` | — | Qdrant 等远程后端主机 |
-| `MEMORY_VECTOR_PORT` | — | 远程后端端口 |
-| `MEMORY_VECTOR_API_KEY` | — | 远程后端 API Key |
-`hybrid` 的关键词候选依赖后端实现。Chroma 会退化为纯向量；Qdrant 可使用
-sparse/BM25 候选。
+| `MEMORY_COLLECTION_NAME` | `agent_memories` | Name of the main collection |
+| `MEMORY_PERSIST_DIR` | `{DATA_DIR}/data/vector_db` | Local persistence directory |
+| `MEMORY_VECTOR_HOST` | — | Host of a remote backend such as Qdrant |
+| `MEMORY_VECTOR_PORT` | — | Port of the remote backend |
+| `MEMORY_VECTOR_API_KEY` | — | API key for the remote backend |
+Keyword candidates for `hybrid` depend on the backend implementation. Chroma degrades to pure vectors;
+Qdrant can use sparse/BM25 candidates.
 
 ## Graph Store
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_ENABLE_GRAPH` | `false` | 只在 pro 生效；lite 强制关，ultra 强制开 |
+| `MEMORY_ENABLE_GRAPH` | `false` | Only takes effect on `pro`; forced off on `lite`, forced on on `ultra` |
 | `MEMORY_GRAPH_PROVIDER` | `kuzu` | `kuzu` / `neo4j` |
-| `MEMORY_GRAPH_DB_PATH` | `{DATA_DIR}/data/kuzu_db` | Kuzu 数据库路径 |
-| `NEO4J_URL` | `bolt://localhost:7687` | Neo4j Bolt URL；可回退到 `MEMGRAPH_URL` |
-| `NEO4J_USERNAME` | — | 可回退到 `MEMGRAPH_USERNAME` |
-| `NEO4J_PASSWORD` | — | 可回退到 `MEMGRAPH_PASSWORD` |
+| `MEMORY_GRAPH_DB_PATH` | `{DATA_DIR}/data/kuzu_db` | Kuzu database path |
+| `NEO4J_URL` | `bolt://localhost:7687` | Neo4j Bolt URL; may fall back to `MEMGRAPH_URL` |
+| `NEO4J_USERNAME` | — | May fall back to `MEMGRAPH_USERNAME` |
+| `NEO4J_PASSWORD` | — | May fall back to `MEMGRAPH_PASSWORD` |
 | `NEO4J_DATABASE` | `neo4j` | Neo4j database |
 
-Graph 写入和读侧 Rerank 的高级开关见 [pro_graph_design.md](pro_graph_design.md)。
+Advanced switches for Graph writes and read-side Rerank are documented in [pro_graph_design.md](pro_graph_design.md).
 
 ## Cache
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_CACHE_BACKEND` | `sqlite` | `sqlite` / `mysql`；不支持 Redis |
-| `MEMORY_CACHE_DB_PATH` | `{DATA_DIR}/data/cache.db` | SQLite 文件路径 |
-| `MEMORY_MYSQL_HOST` | `localhost` | MySQL 主机 |
-| `MEMORY_MYSQL_PORT` | `3306` | MySQL 端口 |
-| `MEMORY_MYSQL_USER` | `root` | MySQL 用户 |
-| `MEMORY_MYSQL_PASSWORD` | — | MySQL 密码 |
-| `MEMORY_MYSQL_DATABASE` | `hy_memory` | MySQL 数据库 |
-| `MEMORY_MYSQL_POOL_SIZE` | `10` | 连接池大小 |
-| `MEMORY_MYSQL_POOL_RECYCLE` | `3600` | 连接回收周期，秒 |
+| `MEMORY_CACHE_BACKEND` | `sqlite` | `sqlite` / `mysql`; Redis is not supported |
+| `MEMORY_CACHE_DB_PATH` | `{DATA_DIR}/data/cache.db` | SQLite file path |
+| `MEMORY_MYSQL_HOST` | `localhost` | MySQL host |
+| `MEMORY_MYSQL_PORT` | `3306` | MySQL port |
+| `MEMORY_MYSQL_USER` | `root` | MySQL user |
+| `MEMORY_MYSQL_PASSWORD` | — | MySQL password |
+| `MEMORY_MYSQL_DATABASE` | `hy_memory` | MySQL database |
+| `MEMORY_MYSQL_POOL_SIZE` | `10` | Connection pool size |
+| `MEMORY_MYSQL_POOL_RECYCLE` | `3600` | Connection recycle period, seconds |
 
-## 写入、场景与 Query Rewrite
+## Write, Scene and Query Rewrite
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `RECONCILE_ENABLED` | `true` | 是否执行候选检索和 reconcile |
-| `MEMORY_ENABLE_SEARCH_QUERY` | `false` | Reconcile 前是否额外用 LLM 生成检索 query |
-| `MEMORY_EXTRACT_HISTORY_TURNS` | `5` | 本次输入之外注入 Extractor 的历史 user-turn 数 |
-| `MEMORY_CODING_ENABLED` | `true` | 是否启用 working/coding 独立链路 |
-| `MEMORY_CODING_DB_PATH` | `{DATA_DIR}/data/coding_memory.db` | 生产力记忆 SQLite 路径 |
-| `MEMORY_CODING_TOOL_RESULT_MAX_BYTES` | `2048` | 单条 tool result 的最大字节数 |
-| `MEMORY_CODING_VERBATIM_FALLBACK_ENABLED` | `false` | 无抽取结果时是否把渲染对话保存成 working fact |
-| `MEMORY_ENABLE_QUERY_REWRITE` | `false` | Coding 关闭时控制 default 多-query 是否 rewrite；Coding 开启时多-query 无论此值都会分类并 rewrite |
-| `MEMORY_QUERY_REWRITE_MAX_CHARS` | `1000` | default 多-query rewrite 长度保护 |
+| `RECONCILE_ENABLED` | `true` | Whether candidate retrieval and reconcile run |
+| `MEMORY_ENABLE_SEARCH_QUERY` | `false` | Whether an LLM additionally generates a retrieval query before reconcile |
+| `MEMORY_EXTRACT_HISTORY_TURNS` | `5` | Number of earlier user turns injected into the Extractor besides the current input |
+| `MEMORY_CODING_ENABLED` | `true` | Whether the separate working/coding pipeline is enabled |
+| `MEMORY_CODING_DB_PATH` | `{DATA_DIR}/data/coding_memory.db` | SQLite path for productivity memory |
+| `MEMORY_CODING_TOOL_RESULT_MAX_BYTES` | `2048` | Maximum bytes per tool result |
+| `MEMORY_CODING_VERBATIM_FALLBACK_ENABLED` | `false` | Whether to store the rendered conversation as a working fact when nothing is extracted |
+| `MEMORY_ENABLE_QUERY_REWRITE` | `false` | With Coding off, controls whether default multi-query input is rewritten; with Coding on, multi-query input is always classified and rewritten whatever this value is |
+| `MEMORY_QUERY_REWRITE_MAX_CHARS` | `1000` | Length guard for default multi-query rewrite |
 
-默认单 query Search 是零 LLM light search。`search_mode=agentic` 下，单 query、多 queries
-都会执行一次合并的场景判断、rewrite 和时间解析。default 多-query 超过长度保护时不做
-rewrite；Coding 开启时只分类，关闭时零 LLM。
+By default a single-query Search is a zero-LLM light search. Under `search_mode=agentic`, both single and
+multi-query input go through one merged pass of scene judgment, rewrite and time resolution. Default
+multi-query input past the length guard is not rewritten; with Coding on only classification runs, with it off there is zero LLM.
 
-## System 2 与 User Profile
+## System 2 and User Profile
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `SWEEPER_ENABLED` | `true` | Ultra evolve 是否执行 cross-domain sweeper |
-| `MEMORY_SUMMARY_ENABLED_IN_SYS2` | `false` | System 2 material 是否包含 L3 Summary |
-| `MEMORY_EVOLING_BALANCED_CATALOG_ENABLED` | `false` | Ultra evolve 是否生成 balanced catalog |
-| `MEMORY_EVOLING_BALANCED_CATALOG_MAX_FACTS` | `120` | 单次最多审阅的 L2 数 |
-| `MEMORY_EVOLING_BALANCED_CATALOG_CONTENT_CHARS` | `180` | Prompt 中每条 L2 的字符上限 |
-| `MEMORY_EVOLING_BALANCED_CATALOG_MAX_TOKENS` | `512` | Catalog 选择输出上限 |
-| `MEMORY_EVOLING_SPECIFIC_SUPPLEMENT_ENABLED` | `false` | Ultra evolve 是否生成 supplement |
-| `MEMORY_USER_PROFILE_BALANCED_CATALOG_ENABLED` | `false` | `get_user_profile()` 是否附加 active catalog |
-| `MEMORY_USER_PROFILE_SPECIFIC_SUPPLEMENT_ENABLED` | `false` | 是否附加 active supplement |
+| `SWEEPER_ENABLED` | `true` | Whether Ultra evolve runs the cross-domain sweeper |
+| `MEMORY_SUMMARY_ENABLED_IN_SYS2` | `false` | Whether System 2 material includes L3 Summary |
+| `MEMORY_EVOLING_BALANCED_CATALOG_ENABLED` | `false` | Whether Ultra evolve generates a balanced catalog |
+| `MEMORY_EVOLING_BALANCED_CATALOG_MAX_FACTS` | `120` | Maximum number of L2 entries reviewed in one run |
+| `MEMORY_EVOLING_BALANCED_CATALOG_CONTENT_CHARS` | `180` | Character cap per L2 entry in the prompt |
+| `MEMORY_EVOLING_BALANCED_CATALOG_MAX_TOKENS` | `512` | Output cap for catalog selection |
+| `MEMORY_EVOLING_SPECIFIC_SUPPLEMENT_ENABLED` | `false` | Whether Ultra evolve generates a supplement |
+| `MEMORY_USER_PROFILE_BALANCED_CATALOG_ENABLED` | `false` | Whether `get_user_profile()` attaches the active catalog |
+| `MEMORY_USER_PROFILE_SPECIFIC_SUPPLEMENT_ENABLED` | `false` | Whether the active supplement is attached |
 
-Catalog 和 supplement 只由 `user_id` 确定，不作为普通 L6 出现在 Search，也不占
-`schema_limit`。
+Catalog and supplement are determined by `user_id` alone; they never appear in Search as ordinary L6 and do
+not consume `schema_limit`.
 
 ### Cross-domain Sweeper
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_CROSS_DOMAIN_ENABLE` | `true` | 是否执行 cross-domain 碰撞扫描 |
-| `MEMORY_CROSS_DOMAIN_MIN_BASICS` | `5` | 进入通用碰撞扫描所需的最低 schema 数 |
-| `MEMORY_CROSS_DOMAIN_BEH_THRESHOLD` | `0.70` | 行为向量相似度阈值 |
-| `MEMORY_CROSS_DOMAIN_CON_THRESHOLD` | `0.60` | 内容向量的跨域差异阈值 |
+| `MEMORY_CROSS_DOMAIN_ENABLE` | `true` | Whether the cross-domain collision scan runs |
+| `MEMORY_CROSS_DOMAIN_MIN_BASICS` | `5` | Minimum number of schemas needed to enter the general collision scan |
+| `MEMORY_CROSS_DOMAIN_BEH_THRESHOLD` | `0.70` | Behavior-vector similarity threshold |
+| `MEMORY_CROSS_DOMAIN_CON_THRESHOLD` | `0.60` | Cross-domain difference threshold for the content vector |
 
-## Reader 与本地 Rerank
+## Reader and Local Rerank
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `HY_MEMORY_READER` | `legacy` | `legacy`（向量）/ `hybrid`（向量 + 后端关键词候选） |
-| `MEMORY_HYBRID_V2_VDB_WEIGHT_BM25` | `0.35` | Hybrid BM25 加成权重；当前仍保留旧前缀 |
-| `MEMORY_LOCAL_RERANK_ENABLED` | `false` | 两个 Reader 共用的本地 cross-encoder Rerank |
-| `MEMORY_LOCAL_RERANK_MODEL` | `nreimers/mmarco-mMiniLMv2-L6-H384-v1` | 小型多语言 Hugging Face 模型名或本地路径 |
-| `MEMORY_LOCAL_RERANK_DEVICE` | `auto` | `auto` / `cpu` / `cuda` 等 device |
-| `MEMORY_LOCAL_RERANK_BATCH_SIZE` | `16` | 一次 forward 的 batch，不是请求并发限制 |
-| `MEMORY_LOCAL_RERANK_MAX_LENGTH` | `512` | Tokenizer 最大长度 |
-| `MEMORY_LOCAL_RERANK_POOL_FACTOR` | `3` | 候选池相对最终 limit 的倍数 |
-| `HY_MEMORY_TAG_INDEX_WRITE` | `true` | 是否维护写侧 Tag Index |
+| `HY_MEMORY_READER` | `legacy` | `legacy` (vector) / `hybrid` (vector + backend keyword candidates) |
+| `MEMORY_HYBRID_V2_VDB_WEIGHT_BM25` | `0.35` | Hybrid BM25 boost weight; the old prefix is still kept |
+| `MEMORY_LOCAL_RERANK_ENABLED` | `false` | Local cross-encoder Rerank shared by both Readers |
+| `MEMORY_LOCAL_RERANK_MODEL` | `nreimers/mmarco-mMiniLMv2-L6-H384-v1` | Model name or local path of the small multilingual Hugging Face model |
+| `MEMORY_LOCAL_RERANK_DEVICE` | `auto` | A device such as `auto` / `cpu` / `cuda` |
+| `MEMORY_LOCAL_RERANK_BATCH_SIZE` | `16` | Batch per forward pass, not a request concurrency limit |
+| `MEMORY_LOCAL_RERANK_MAX_LENGTH` | `512` | Maximum tokenizer length |
+| `MEMORY_LOCAL_RERANK_POOL_FACTOR` | `3` | Candidate pool multiplier over the final limit |
+| `HY_MEMORY_TAG_INDEX_WRITE` | `true` | Whether the write-side Tag Index is maintained |
 
-SDK 不设置 Rerank Search 并发上限。开启后模型在 `HyMemoryClient` 初始化阶段加载并
-执行一次预热；初始化失败会直接阻止 Client ready。运行中的单次推理异常仍 fail-open。
-详见 [hy_memory_search_skill.md](hy_memory_search_skill.md)。
+The SDK sets no concurrency cap for Rerank Search. Once enabled, the model is loaded and warmed up once during
+`HyMemoryClient` initialization, and a failed initialization keeps the Client from becoming ready. A single
+inference failure during operation still fails open. See [hy_memory_search_skill.md](hy_memory_search_skill.md).
 
-## Episode 与摘要
+## Episode and Summaries
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_EPISODE_GAP_SECONDS` | `1800` | 超过该间隔时开启新 episode |
-| `MEMORY_EPISODE_MAX_MEMORIES` | `50` | 单 episode 的 user-side 记忆上限 |
-| `MEMORY_EPISODE_SUMMARY_ENABLED` | `false` | Episode 结束时是否生成 L3 Summary |
-| `MEMORY_EPISODE_SUMMARY_MIN_MEMORIES` | `3` | Summary 最低记忆数 |
-| `MEMORY_EPISODE_RECALL_ENABLED` | `false` | Search 是否使用 Episode 关系加权 |
-| `MEMORY_EPISODE_RECALL_WEIGHT` | `0.7` | Episode 结构支持权重 |
-| `MEMORY_TOPIC_SUMMARY_ENABLED` | `false` | 是否生成 Topic Summary |
-| `MEMORY_TOPIC_SUMMARY_MIN_MEMORIES` | `5` | Topic Summary 最低记忆数 |
-| `MEMORY_TOPIC_SUMMARY_STEP` | `5` | Topic 新增多少条后重新生成 Summary |
-| `MEMORY_SESSION_EPISODE_ENABLED` | `false` | 是否允许 `finalize_session()` 归档指定 session |
-| `MEMORY_SESSION_EPISODE_CONTEXT_ENABLED` | `false` | Reader 是否召回 Session Episode 上下文 |
-| `MEMORY_SESSION_EPISODE_LIMIT` | `5` | Session Episode 候选上限 |
-| `MEMORY_SESSION_EPISODE_FACT_LIMIT` | `2` | 每个 Session Episode 附带事实数 |
+| `MEMORY_EPISODE_GAP_SECONDS` | `1800` | A new episode starts once this gap is exceeded |
+| `MEMORY_EPISODE_MAX_MEMORIES` | `50` | User-side memory cap per episode |
+| `MEMORY_EPISODE_SUMMARY_ENABLED` | `false` | Whether an L3 Summary is generated when an episode ends |
+| `MEMORY_EPISODE_SUMMARY_MIN_MEMORIES` | `3` | Minimum number of memories for a Summary |
+| `MEMORY_EPISODE_RECALL_ENABLED` | `false` | Whether Search weights Episode relationships |
+| `MEMORY_EPISODE_RECALL_WEIGHT` | `0.7` | Weight of Episode structural support |
+| `MEMORY_TOPIC_SUMMARY_ENABLED` | `false` | Whether Topic Summaries are generated |
+| `MEMORY_TOPIC_SUMMARY_MIN_MEMORIES` | `5` | Minimum number of memories for a Topic Summary |
+| `MEMORY_TOPIC_SUMMARY_STEP` | `5` | How many memories a Topic gains before its Summary is rebuilt |
+| `MEMORY_SESSION_EPISODE_ENABLED` | `false` | Whether `finalize_session()` may archive a given session |
+| `MEMORY_SESSION_EPISODE_CONTEXT_ENABLED` | `false` | Whether the Reader recalls Session Episode context |
+| `MEMORY_SESSION_EPISODE_LIMIT` | `5` | Candidate cap for Session Episodes |
+| `MEMORY_SESSION_EPISODE_FACT_LIMIT` | `2` | Number of facts attached to each Session Episode |
 
-## Recall 辅助能力
+## Supplementary Recall Features
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_RECALL_STRENGTH_ENABLED` | `false` | 是否按访问次数和闲置时长重排 normal 结果 |
-| `MEMORY_RECALL_STRENGTH_TAU` | `180` | 衰减时间常数，天 |
-| `MEMORY_RECALL_ACCESS_TRACKING` | `true` | Strength 开启时是否回写访问信息 |
-| `MEMORY_ENTITY_STORE_ENABLED` | `false` | 是否维护独立 entity collection；当前 Reader 不直接读取 |
+| `MEMORY_RECALL_STRENGTH_ENABLED` | `false` | Whether normal results are reranked by access count and idle time |
+| `MEMORY_RECALL_STRENGTH_TAU` | `180` | Decay time constant, days |
+| `MEMORY_RECALL_ACCESS_TRACKING` | `true` | Whether access information is written back when Strength is on |
+| `MEMORY_ENTITY_STORE_ENABLED` | `false` | Whether a separate entity collection is maintained; the current Reader does not read it directly |
 
-旧数据可调用当前公开方法 `client.build_entity_store(user_id)` 补建 Entity Store。
+For older data, the currently public `client.build_entity_store(user_id)` builds the Entity Store afterwards.
 
-## 日志、Trace 与历史
+## Logging, Trace and History
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_LOG_LEVEL` | `INFO` | 运行日志级别 |
+| `MEMORY_LOG_LEVEL` | `INFO` | Runtime log level |
 | `MEMORY_LOG_FORMAT` | `text` | `text` / `json` |
-| `MEMORY_LOG_DIR` | — | 统一日志根目录 |
-| `MEMORY_TRACE_LOG_DIR` | — | JSONL 日志目录的兼容旧名；优先使用 `MEMORY_LOG_DIR` |
-| `MEMORY_PIPELINE_TRACE_ENABLED` | `true` | 是否写入 cache 的 pipeline trace 表 |
-| `MEMORY_MEMORY_OPERATIONS_ENABLED` | `false` | 是否写入 memory operation 审计记录 |
-| `MEMORY_HISTORY_ENABLE` | `true` | 是否启用历史记录 |
-| `MEMORY_HISTORY_DB_PATH` | `{DATA_DIR}/data/history.db` | History SQLite 路径 |
-| `MEMORY_HISTORY_RECORD_SEARCHES` | `false` | 是否记录 Search 操作 |
-| `MEMORY_CODING_CHAIN_REPO_ROOT` | — | coding 版本链读取本地 Git diff 的仓库根目录 |
+| `MEMORY_LOG_DIR` | — | Unified log root directory |
+| `MEMORY_TRACE_LOG_DIR` | — | Legacy alias for the JSONL log directory; prefer `MEMORY_LOG_DIR` |
+| `MEMORY_PIPELINE_TRACE_ENABLED` | `true` | Whether rows are written to the pipeline trace table in cache |
+| `MEMORY_MEMORY_OPERATIONS_ENABLED` | `false` | Whether memory operation audit records are written |
+| `MEMORY_HISTORY_ENABLE` | `true` | Whether history recording is enabled |
+| `MEMORY_HISTORY_DB_PATH` | `{DATA_DIR}/data/history.db` | History SQLite path |
+| `MEMORY_HISTORY_RECORD_SEARCHES` | `false` | Whether Search operations are recorded |
+| `MEMORY_CODING_CHAIN_REPO_ROOT` | — | Repository root from which the coding version chain reads local Git diffs |
 
 ## HTTP Server
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `HY_MEMORY_SERVER_HOST` | `127.0.0.1` | Server 监听地址 |
-| `HY_MEMORY_SERVER_PORT` | `19527` | Server 监听端口 |
+| `HY_MEMORY_SERVER_HOST` | `127.0.0.1` | Address the Server listens on |
+| `HY_MEMORY_SERVER_PORT` | `19527` | Port the Server listens on |
 
-历史配置不会生效；当前支持项以本页表格和 `.env.example` 为准。Cache backend 当前仅支持
-`sqlite` 和 `mysql`。
+Legacy settings have no effect; the table on this page and `.env.example` define what is currently supported.
+Cache backends currently support only `sqlite` and `mysql`.

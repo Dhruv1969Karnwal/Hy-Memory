@@ -1,62 +1,62 @@
-# One Memory 诊断日志合同
+# One Memory diagnostic logging contract
 
-更新：2026-09-24。关联 D07、D26、RT-D41。
+Updated: 2026-09-24. Related to D07, D26, RT-D41.
 
-## 目标
+## Purpose
 
-诊断日志用于在用户体验出现问题后，按最近时间、运行会话、一次操作或问题编号还原
-Desktop -> Runtime -> Core -> HY -> Host 的实际执行链。日志不是用户行为分析、调用记录或
-记忆来源，不进入 `call_events` 和记忆数据库，也不上传网络。
+Diagnostic logs exist so that, after something goes wrong for the user, the real execution chain
+Desktop -> Runtime -> Core -> HY -> Host can be reconstructed by recency, run session, one operation, or an incident id.
+The logs are not user behaviour analytics, call records, or a memory source: they never enter `call_events` or the memory database, and nothing is uploaded over the network.
 
-## 事件格式
+## Event format
 
-每行是一个 `DiagnosticEventV1` JSON 对象。必填字段为 `schema_version=1`、UTC
-`timestamp`、`level`、`service`、`component`、`event`、`outcome` 和 `session_id`。
-可选关联字段为 `trace_id`、`incident_id`、`instance_id`、`operation_id`、`request_id`、
-`job_id`、`task_id`、`duration_ms`、状态、稳定错误码、错误类型和清理后的仓库相对栈帧。
+Every line is one `DiagnosticEventV1` JSON object. Required fields are `schema_version=1`, the UTC
+`timestamp`, `level`, `service`, `component`, `event`, `outcome`, and `session_id`.
+Optional correlation fields are `trace_id`, `incident_id`, `instance_id`, `operation_id`, `request_id`,
+`job_id`, `task_id`, `duration_ms`, the status, the stable error code, the error type, and the sanitized repo-relative stack frames.
 
-`details` 只接受代码声明的标量白名单。禁止记录对话原文、查询、回答、模型输入输出、
-请求体、响应体、token、API Key、secret ref、完整用户路径或异常 message/cause。未知字段和
-不合规标识拒绝写入。日志写入失败不能阻断产品主链。
+`details` only accepts the scalar whitelist declared in code. Never record conversation text, queries, answers, model input or output,
+request bodies, response bodies, tokens, API keys, secret refs, full user paths, or an exception message/cause. Unknown fields and
+non-conforming identifiers are refused. A failed log write must never block the main product path.
 
-## 关联规则
+## Correlation rules
 
-- Desktop、Runtime、Core 各次启动有独立 `session_id`。
-- 用户请求生成 UUID `trace_id`，经 `X-One-Memory-Trace-Id` 在 Web、Broker 和 Core 之间传播；
-  无效外来值被替换，不原样记录。
-- 已有 operation/request/job/task 身份沿用业务合同，不创建平行身份。
-- “记录问题时间点”创建 `incident_id` 并记录当前 Runtime instance。按 incident 查询时返回
-  同桌面会话或同 Runtime instance 在标记前 15 分钟至后 5 分钟的事件。
+- Each Desktop, Runtime, and Core start has its own `session_id`.
+- A user request generates a UUID `trace_id`, propagated between Web, Broker, and Core via `X-One-Memory-Trace-Id`;
+  invalid inbound values are replaced and never recorded as-is.
+- Existing operation/request/job/task identities follow the business contracts; no parallel identity is created.
+- "Record issue time" creates an `incident_id` and records the current Runtime instance. A query by incident returns
+  events from the same desktop session or the same Runtime instance from 15 minutes before to 5 minutes after the mark.
 
-## 存储与读取
+## Storage and reading
 
-日志位于 One Memory Home 的 `logs/diagnostic-<service>.jsonl`，服务包括 runtime、core、
-host-bridge、desktop 和 cli。单文件 4 MiB，保留 3 份轮转；额外清理 14 天以前的文件并将
-总量限制在 128 MiB。POSIX 目录为 0700、文件为 0600。
+Logs live under One Memory Home as `logs/diagnostic-<service>.jsonl`, with services runtime, core,
+host-bridge, desktop, and cli. A single file is 4 MiB and keeps 3 rotations; on top of that, files older than 14 days are cleaned up and the
+total is capped at 128 MiB. On POSIX, directories are 0700 and files are 0600.
 
-读取器只枚举上述固定文件名的 regular file，不跟随符号链接，不接受任意路径。损坏行跳过
-并计数，不让一行损坏遮蔽其余证据。诊断导出是单个脱敏 JSON，包含版本、平台、架构、
-非秘密状态和最多 5000 条已验证事件，不包含数据库或配置文件。
+The reader only enumerates regular files with those fixed names, never follows symlinks, and accepts no arbitrary path. Damaged lines are skipped
+and counted, so one broken line never hides the rest of the evidence. The diagnostic export is a single sanitized JSON holding the version, platform, architecture,
+non-secret status, and at most 5000 verified events; it contains no database or configuration file.
 
-## 覆盖与节流
+## Coverage and throttling
 
-必须记录启动/停止、attach/spawn、身份核验、导入和记忆任务状态、模型/HY 调用、宿主召回、
-权限与安装操作、关键 IPC、失败分类、重试、耗时和终态。不记录无变化的高频轮询或逐条原文，
-导入使用阶段和计数汇总，避免日志反过来造成性能问题。
+Must record start/stop, attach/spawn, identity verification, import and memory task status, model/HY calls, host recall,
+permission and installation operations, key IPC, failure classification, retries, duration, and terminal state. High-frequency polls that change nothing and per-item raw text are not recorded;
+imports report phase and count summaries so that logging itself never becomes a performance problem.
 
-产品进度判断使用以下稳定事件：
+Product-side progress decisions use these stable events:
 
-- `import.finished`：`stored_count`、`revised_count`、`skipped_count`、`error_count`；
-- `hy.ingest.completed`：SDK 本次返回的 `result_count`；
-- `hy.reconcile.completed`：新增、更新、取代和删除数量；
-- `memory_task.finished`：最终 `result_count`、剩余 `pending_count` 和 `attempt`。
+- `import.finished`: `stored_count`, `revised_count`, `skipped_count`, `error_count`;
+- `hy.ingest.completed`: the `result_count` the SDK returned for this call;
+- `hy.reconcile.completed`: the created, updated, superseded, and deleted counts;
+- `memory_task.finished`: the final `result_count`, the remaining `pending_count`, and `attempt`.
 
-其中 `memory_task.finished` 是产品侧判断沉淀是否持续推进的最终事件；不能只用
-`hy.ingest.completed` 代替，因为后者早于 Governance 写入。
+Of these, `memory_task.finished` is the final event the product uses to decide whether distillation keeps making progress; it cannot be
+replaced by `hy.ingest.completed` alone, because the latter happens before the Governance write.
 
-## 验收
+## Acceptance
 
-隐私测试必须先植入一条可检测的秘密作为正向对照，再证明真实链路日志和导出均不含该秘密。
-至少用隔离数据制造 Core 启动失败、HY 失败和宿主连接失败，并仅凭日志还原失败组件、时间、
-关联 ID、稳定错误码和代码位置。自动测试通过只能标记 verified，正式安装 App 的真实体验仍需
-单独验收。
+A privacy test must first plant a detectable secret as a positive control, then prove that neither the real pipeline logs nor the export contain it.
+Using isolated data, at minimum induce a Core start failure, an HY failure, and a host connection failure, and reconstruct from the logs alone the failing component, the time,
+the correlation IDs, the stable error code, and the code location. Passing automated tests only earns a verified marker; the real experience of the
+installed app still needs its own acceptance run.

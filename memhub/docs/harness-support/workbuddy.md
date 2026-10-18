@@ -1,49 +1,49 @@
-# WorkBuddy 一键插入支持
+# WorkBuddy one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-WorkBuddy 是当前唯一真正安装成 `.codebuddy-plugin` 目录的 Harness。它会同时写 Marketplace 副本、Runtime Cache 副本、三个 Registry、Skill、Hooks、Credential 和 Grant。
+WorkBuddy is the only Harness today that really installs as a `.codebuddy-plugin` directory. It writes the Marketplace copy, the Runtime Cache copy, three Registries, the Skill, the Hooks, the Credential and the Grant all at once.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | WorkBuddy 当前实现 |
+| Item | WorkBuddy current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| WorkBuddy 查询 MemHub | Plugin 内 MCP Server |
-| 告诉模型何时查询 | Plugin 内 Skill |
-| 自动 Prefetch/注入 | 有，Plugin Hook 会运行 Recall Injection |
-| WorkBuddy 新会话实时送入 MemHub | Plugin Capture Hooks |
-| 安装形态 | 真正的 `.codebuddy-plugin` |
+| One-click insert status | Available |
+| How WorkBuddy queries MemHub | MCP Server inside the Plugin |
+| How the model knows when to query | Skill inside the Plugin |
+| Automatic Prefetch/injection | Yes; the Plugin Hook runs Recall Injection |
+| New WorkBuddy sessions into MemHub in real time | Plugin Capture Hooks |
+| Install shape | A real `.codebuddy-plugin` |
 
-WorkBuddy 与其他 Harness 最大的不同是：它不仅允许模型主动调用 MCP，还能在 `SessionStart` 和 `UserPromptSubmit` Hook 中运行 Recall Injection，把 MemHub 返回的上下文直接交给当前会话。`Stop` Hook 则只负责 Capture。
+What makes WorkBuddy most different from the other Harnesses is that it not only lets the model call MCP on its own; it also runs Recall Injection in the `SessionStart` and `UserPromptSubmit` Hooks and hands the context MemHub returns straight to the current session. The `Stop` Hook only handles Capture.
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-安装完整 Plugin、MCP、Skill、自动 Recall Injection Hook、Capture Hook，并创建 WorkBuddy Credential。此后 WorkBuddy 既能主动调用 MCP，也能在 Hook 触发时自动获取上下文。
+It installs the full Plugin, MCP, Skill, the automatic Recall Injection Hook and the Capture Hook, and creates the WorkBuddy Credential. From then on WorkBuddy can both call MCP on its own and fetch context automatically when Hooks fire.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤销 Credential，再恢复 Registry、删除 Plugin 树、Skill、Injection/Capture Hooks 和 Journal。它不改变 Core 的同步设置。
+It revokes the Credential first, then restores the Registries, deletes the Plugin tree, the Skill, the Injection/Capture Hooks and the Journal. It does not change Core's sync settings.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 补扫 WorkBuddy 历史会话，恢复冻结 Job，并允许 Plugin Capture Hook 发来的新会话进入 Evidence。
+Core backfills WorkBuddy history sessions, resumes frozen Jobs and allows new sessions sent by the Plugin Capture Hook into Evidence.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core 停止扫描和 pending Job claim，并拒绝 Capture 入库；running Job可结束，已有 Memory 保留。由于一键插入 Credential 仍有效，WorkBuddy 仍可主动 Recall，Injection Hook 也仍可能查询已有 Memory。
+Core stops scanning and pending Job claims and refuses Capture intake; running Jobs may finish and existing Memory is kept. Because the one-click insert Credential is still valid, WorkBuddy can still Recall on its own and the Injection Hook may still query existing Memory.
 
-### 组合效果
+### Combined effect
 
-- 一键开、同步关：WorkBuddy 仍可主动查询或自动注入已有 Memory，但新对话不再进入 MemHub。
-- 一键关、同步开：MemHub 继续读取 WorkBuddy，会话侧没有 MCP、Skill 或自动注入。
-- 两者都开：双向接通，并具备自动 Recall Injection。
+- Insert on, sync off: WorkBuddy can still query existing Memory on its own or inject it automatically, but new conversations no longer enter MemHub.
+- Insert off, sync on: MemHub keeps reading WorkBuddy, with no MCP, Skill or automatic injection on the session side.
+- Both on: both directions connected, plus automatic Recall Injection.
 
-## Plugin 身份
+## Plugin identity
 
 ```text
 marketplaceName = one-memory
@@ -53,9 +53,9 @@ version         = 1.0.0
 pluginId        = one-memory-recall@one-memory
 ```
 
-## 实际安装目录
+## Actual install directories
 
-Marketplace 副本：
+Marketplace copy:
 
 ```text
 ~/.workbuddy/plugins/marketplaces/one-memory/
@@ -66,7 +66,7 @@ Marketplace 副本：
     └── skills/memhub-recall/SKILL.md
 ```
 
-Runtime Cache 副本：
+Runtime Cache copy:
 
 ```text
 ~/.workbuddy/plugins/cache/one-memory/one-memory-recall/1.0.0/
@@ -75,41 +75,41 @@ Runtime Cache 副本：
 └── skills/memhub-recall/SKILL.md
 ```
 
-WorkBuddy 从 Marketplace 副本加载 Skill，从 Cache 副本加载 MCP，因此两个位置都是真实运行依赖。实现见 [codebuddy-plugin.ts](../../packages/host-bridge/src/codebuddy-plugin.ts)。
+WorkBuddy loads the Skill from the Marketplace copy and the MCP from the Cache copy, so both locations are real runtime dependencies. See [codebuddy-plugin.ts](../../packages/host-bridge/src/codebuddy-plugin.ts).
 
-## Registry 修改
+## Registry changes
 
-| 文件 | MemHub 写入内容 |
+| File | What MemHub writes |
 |---|---|
-| `~/.workbuddy/plugins/known_marketplaces.json` | 注册 `one-memory` Marketplace |
-| `~/.workbuddy/plugins/installed_plugins.json` | 注册 Cache 中的 `one-memory-recall@one-memory` |
+| `~/.workbuddy/plugins/known_marketplaces.json` | registers the `one-memory` Marketplace |
+| `~/.workbuddy/plugins/installed_plugins.json` | registers `one-memory-recall@one-memory` in the Cache |
 | `~/.workbuddy/settings.json` | `enabledPlugins["one-memory-recall@one-memory"] = true` |
 
-安装 Journal：
+Install Journal:
 
 ```text
 ~/.workbuddy/.one-memory/recall-plugin-install.json
 ```
 
-## Plugin 内容与 Capture
+## Plugin content and Capture
 
-Plugin 内包含：
+Inside the Plugin there is:
 
-- MCP Server 配置；
-- `memhub-recall` Skill；
-- `SessionStart`、`UserPromptSubmit`、`Stop` Hooks。
+- the MCP Server config;
+- the `memhub-recall` Skill;
+- the `SessionStart`, `UserPromptSubmit` and `Stop` Hooks.
 
-Hooks 的精确职责：
+The exact responsibilities of the Hooks:
 
-- `SessionStart`：运行 Recall Injection，并返回 MemHub 上下文和跨会话提示；
-- `UserPromptSubmit`：运行 Recall Injection，同时异步触发 Capture；
-- `Stop`：只运行 Capture，不再启动一次 Recall。
+- `SessionStart`: runs Recall Injection and returns the MemHub context plus a cross-session hint;
+- `UserPromptSubmit`: runs Recall Injection and also triggers Capture asynchronously;
+- `Stop`: only runs Capture and never starts another Recall.
 
-失败采用 fail-open，不阻断 WorkBuddy。
+Failures are fail-open and never block WorkBuddy.
 
-## 旧安装迁移
+## Legacy install migration
 
-旧 scattered 安装位于：
+The old scattered install lives at:
 
 ```text
 ~/.workbuddy/mcp.json
@@ -117,18 +117,18 @@ Hooks 的精确职责：
 ~/.workbuddy/.one-memory/recall-install.json
 ```
 
-迁移顺序是先完整安装新 Plugin，再删除旧安装，避免新安装失败后 WorkBuddy 完全失去 Recall。
+The migration order installs the new Plugin fully first and only then deletes the old install, so WorkBuddy is never left with no Recall at all if the new install fails.
 
-## 权限、重复打开与关闭
+## Permissions, re-opening and closing
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:workbuddy`。
-- 已安装且 `approved`：不重装，只修复命令并 Probe。
-- 关闭：先撤权，再恢复三个 Registry，并删除 Marketplace/Cache 插件树和 Journal。
-- Plugin 或 Registry 被修改时不强删，尽量撤权并要求人工核对。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:workbuddy`.
+- Already installed and `approved`: no reinstall; only repair the command and Probe.
+- Closing: revoke first, then restore the three Registries and delete the Marketplace/Cache plugin trees and the Journal.
+- A modified Plugin or Registry is not force-deleted; revoke what can be revoked and ask for manual review.
 
-安装器对插件树使用 staging + rename，避免 WorkBuddy 看到半写入插件。Registry 文件采用非常保守的 Hash 校验，WorkBuddy 或其他插件修改同一 Registry 后可能导致自动卸载拒绝。
+The installer uses staging + rename for the plugin tree so WorkBuddy never sees a half-written plugin. Registry files use very conservative hash checking, so if WorkBuddy or another plugin modifies the same Registry, automatic uninstall may be refused.
 
-## 生效与重启
+## Taking effect and restart
 
-Probe 不证明正在运行的 WorkBuddy 已重新读取 Marketplace、Cache、Registry、Skill 和 Hooks。建议重启 WorkBuddy，至少新开会话。
+A Probe does not prove a running WorkBuddy has re-read the Marketplace, Cache, Registries, Skill and Hooks. Restart WorkBuddy, or at least start a new session.

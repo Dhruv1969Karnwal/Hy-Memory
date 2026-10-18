@@ -1,34 +1,34 @@
-# 开发验收闭环
+# Development acceptance loop
 
-每个步骤只有经过以下状态才算完成：
+A step counts as finished only after it has passed through these states:
 
 `Ready → In progress → Verify → Done`
 
-任何检查失败：
+If any check fails:
 
 `Verify → Rework → Verify`
 
-## 开始前
+## Before starting
 
-1. 读取 `AGENTS.md`、项目规则和实现计划。
-2. 确认本步输入、产物、边界用例和硬指标。
-3. 先写会失败的测试或 Gate，并确认它能捕获目标回归。
+1. Read `AGENTS.md`, the project rules, and the implementation plan.
+2. Confirm this step's inputs, artifacts, edge cases, and hard metrics.
+3. Write the failing test or Gate first and confirm that it catches the target regression.
 
-## 实现与验证
+## Implementation and verification
 
-1. 做最小范围实现。
-2. 运行受影响测试。
-3. 运行 `pnpm check`。
-4. 使用临时数据目录跑本步端到端流程。
-5. 保存命令、退出码、样本数和失败原因。
+1. Implement the smallest possible scope.
+2. Run the affected tests.
+3. Run `pnpm check`.
+4. Run this step's end-to-end flow with a temporary data directory.
+5. Save the commands, exit codes, sample counts, and failure reasons.
 
-## 完成定义
+## Definition of done
 
-- 代码、测试和文档一致。
-- 自动测试全绿。
-- 目标回归注入后 Gate 确实变红。
-- 端到端流程无需手工改数据库或配置补救。
-- 已知问题分级并进入计划。
+- Code, tests, and documentation agree.
+- The automated tests are all green.
+- The Gate really turns red once the target regression is injected.
+- The end-to-end flow needs no manual database or configuration fix to pass.
+- Known issues are triaged and enter the plan.
 
-任何一项不满足都不能标 Done。
-既有失败与本轮失败必须分开记录，不能弱化断言换取绿色。
+If any one of these is unmet, the step cannot be marked Done.
+Pre-existing failures and this round's failures are recorded separately; assertions are never weakened to buy green.

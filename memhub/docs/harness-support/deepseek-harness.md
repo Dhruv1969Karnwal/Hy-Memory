@@ -1,48 +1,48 @@
-# DeepSeek Harness 一键插入支持
+# DeepSeek Harness one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-DeepSeek Harness 的 Profile 级 MCP 安装器已经实现，但当前桌面 Profile 安装会因 Host ID 校验 Bug 在 Preview 阶段失败。
+The Profile-level MCP installer for DeepSeek Harness is implemented, but today a desktop Profile install fails at the Preview stage because of a Host ID validation bug.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | DeepSeek Harness 当前实现 |
+| Item | DeepSeek Harness current implementation |
 |---|---|
-| 应用详情页一键插入 | 有意排除，因为无法选择 Profile |
-| 来源管理页 Profile 安装 | UI 显示，但当前因 Host ID Bug 失败 |
-| Harness 查询 MemHub | 理论上通过 Profile 级 Cordis MCP Client |
-| Skill | 没有 |
-| Prompt 前自动 Prefetch | 没有 |
-| Capture Hook/Plugin | 没有 |
-| Harness 新会话进入 MemHub | Core 扫描 `$DSH_HOME/sessions` |
+| One-click insert on the app detail page | Deliberately excluded, because no Profile can be selected |
+| Profile install on the source management page | Shown in the UI, but currently fails due to the Host ID bug |
+| How the Harness queries MemHub | In theory through the Profile-level Cordis MCP Client |
+| Skill | None |
+| Automatic Prefetch before prompts | None |
+| Capture Hook/Plugin | None |
+| How new sessions reach MemHub | Core scans `$DSH_HOME/sessions` |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### “一键插入应用”
+### "One-click insert"
 
-应用详情页不可用。来源管理页理论上对每个 Profile 写 `cordis.patch.yml`、创建独立 Credential 并授权；但当前 `deepseek-harness:<profile>` 含冒号，被权限层拒绝，所以实际不写文件。
+It is unavailable on the app detail page. On the source management page it would in theory write `cordis.patch.yml` for each Profile, create a separate Credential and grant it; but today `deepseek-harness:<profile>` contains a colon and is rejected by the permissions layer, so no file is actually written.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-同步开关针对整个 `deepseek-harness` 来源，而不是某个 Profile。Core 扫描 `$DSH_HOME/sessions`，补处理历史会话并持续轮询新 Session。
+The Sync toggle applies to the whole `deepseek-harness` source, not to an individual Profile. Core scans `$DSH_HOME/sessions`, backfills historical sessions and keeps polling for new Sessions.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core 停止扫描和 pending Job claim，running Job可结束，已有 Memory 保留。它不会修改任何 Profile 的 `cordis.patch.yml` 或 Credential。
+Core stops scanning and pending Job claims, running Jobs may finish, and existing Memory is kept. It does not modify any Profile's `cordis.patch.yml` or Credential.
 
-### 修复一键安装后的组合语义
+### Combined semantics after the one-click install is fixed
 
-未来修复 Profile Host ID 后：
+Once the Profile Host ID is fixed in the future:
 
-- 某个 Profile 的一键插入只决定该 Profile 是否能查询 MemHub；
-- 全局同步开关决定 MemHub 是否继续读取整个 DeepSeek Harness 的 Session；
-- 没有自动 Prefetch，也没有 Capture Hook。
+- One-click insert for a Profile only decides whether that Profile can query MemHub;
+- The global Sync toggle decides whether MemHub keeps reading Sessions across all of DeepSeek Harness;
+- There is no automatic Prefetch and no Capture Hook.
 
-## Profile 粒度
+## Profile granularity
 
-默认 `DSH_HOME=~/.dsh`，每个 Profile 独立：
+Default `DSH_HOME=~/.dsh`; each Profile is independent:
 
 ```text
 $DSH_HOME/profiles/<profile>/cordis.yml
@@ -50,7 +50,7 @@ $DSH_HOME/profiles/<profile>/cordis.patch.yml
 $DSH_HOME/.one-memory/recall-install-<profile>.json
 ```
 
-桌面枚举出的 Host ID 为：
+The Host IDs enumerated by the desktop app are:
 
 ```text
 deepseek-harness:web
@@ -58,11 +58,11 @@ deepseek-harness:headless
 ...
 ```
 
-理论上每个 Profile 拥有独立 Patch、Journal、Credential 和 Grant；Core 会话同步仍按统一的 `deepseek-harness` 来源扫描 `$DSH_HOME/sessions`。
+In theory each Profile owns an independent Patch, Journal, Credential and Grant; Core session sync still scans `$DSH_HOME/sessions` as the single unified `deepseek-harness` source.
 
 ## MCP Patch
 
-安装器在 `cordis.patch.yml` 中维护受管文本块：
+The installer maintains a managed text block inside `cordis.patch.yml`:
 
 ```yaml
 # >>> one-memory recall — managed block, do not edit >>>
@@ -79,40 +79,40 @@ deepseek-harness:headless
 # <<< one-memory recall — managed block <<<
 ```
 
-实现见 [dsh-patch.ts](../../packages/host-bridge/src/dsh-patch.ts)。安装器不解析整份 YAML，因为 Cordis Patch 可能包含 `!!js` 等普通 YAML 库不能安全往返的内容。
+See [dsh-patch.ts](../../packages/host-bridge/src/dsh-patch.ts). The installer does not parse the whole YAML, because a Cordis Patch can contain content such as `!!js` that ordinary YAML libraries cannot round-trip safely.
 
-DeepSeek Harness 不安装 Skill，也不安装 Capture Hook；新会话进入 MemHub 依赖 Core 扫描。
+DeepSeek Harness gets no Skill and no Capture Hook; new sessions reaching MemHub relies on Core scanning.
 
-## UI 状态
+## UI status
 
-- 应用详情页排除 DeepSeek Harness，因为单一来源页无法选择 Profile。
-- 首次导入批量连接也排除它。
-- 来源管理页会列出每个 Profile，并显示独立安装按钮。
+- The app detail page excludes DeepSeek Harness, because a single source page cannot select a Profile.
+- The first-import bulk connect flow also excludes it.
+- The source management page lists each Profile and shows a separate install button for it.
 
-## 当前确定 Bug
+## The currently confirmed bug
 
-来源管理页安装实际会失败：
+An install from the source management page currently does fail:
 
 ```text
-系统生成 hostId = deepseek-harness:<profile>
-HostPermissions 只接受 [a-z][a-z0-9-]*
-HostGrantStore 也不接受冒号
+The system generates hostId = deepseek-harness:<profile>
+HostPermissions only accepts [a-z][a-z0-9-]*
+HostGrantStore also rejects the colon
 ```
 
-因此安装在写入 `cordis.patch.yml` 和创建 Credential 之前就被拒绝。这不是 DeepSeek Harness 不支持 MCP，而是 Profile Host ID 格式与权限校验不一致。
+So installation is rejected before anything is written to `cordis.patch.yml` or any Credential is created. This is not DeepSeek Harness failing to support MCP; it is a mismatch between the Profile Host ID format and the permission validation.
 
-## 修复后的权限语义风险
+## Permission semantics risk after the fix
 
-来源管理页当前默认授权选择可能包含：
+The default grant selection on the source management page may currently include:
 
-- `om_recall`、`om_ask`、`om_conversations`、`om_diagnostic_trace`；
-- `all-apps`；
-- 所有已授权 Source 和 Workspace。
+- `om_recall`, `om_ask`, `om_conversations`, `om_diagnostic_trace`;
+- `all-apps`;
+- every authorized Source and Workspace.
 
-这比应用详情页通用授权更宽。修复 Host ID 后应确认是否希望每个 Profile 默认获得如此宽的权限。
+That is broader than the generic grant on the app detail page. After the Host ID is fixed, it should be confirmed whether every Profile is really meant to get permissions this broad by default.
 
-## 重复安装与卸载
+## Repeat install and uninstall
 
-底层 Patch 安装是幂等的：已有受管块时替换，不追加第二份。相同 Row ID 出现在 MemHub 哨兵块外时默认拒绝接管。
+The underlying Patch install is idempotent: an existing managed block is replaced, and a second copy is never appended. When the same Row ID appears outside MemHub's sentinel block, it refuses to take over by default.
 
-正常卸载设计是先撤销该 Profile Credential，再删除受管块并保留其他 Patch；如果删完没有其他 Row，恢复 `[]`。用户修改过受管块时不强删。
+The normal uninstall design revokes the Profile Credential first, then removes the managed block while keeping the rest of the Patch; if no Row remains afterwards, it restores `[]`. A managed block modified by the user is not force-deleted.

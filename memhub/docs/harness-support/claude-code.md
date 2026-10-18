@@ -1,47 +1,47 @@
-# Claude Code 一键插入支持
+# Claude Code one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-Claude Code 已开放一键插入。它安装的是 **MCP 配置 + Skill + 三组 Capture Hook**，不是传统插件。
+Claude Code ships with one-click insert. What it installs is **MCP config + Skill + three Capture Hooks**, not a traditional plugin.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | Claude Code 当前实现 |
+| Item | Claude Code current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| Claude Code 查询 MemHub | MCP Server |
-| 告诉模型何时查询 | Skill |
-| Prompt 前自动 Prefetch | 一键插入本身没有；另有独立同步 Hook 机制 |
-| 新会话实时送入 MemHub | `UserPromptSubmit`、`Stop`、`SubagentStop` Capture Hooks |
-| 传统 Plugin | 没有 |
+| One-click insert status | Available |
+| How Claude Code queries MemHub | MCP Server |
+| How the model knows when to query | Skill |
+| Automatic Prefetch before prompts | Not by one-click insert itself; a separate sync Hook mechanism exists |
+| New Claude Code sessions into MemHub in real time | `UserPromptSubmit`, `Stop`, `SubagentStop` Capture Hooks |
+| Traditional Plugin | None |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-写 `~/.claude.json` 的 MCP、安装 Skill、向 `settings.json` 合并三组 Capture Hook，并创建授权 Credential。
+It writes the MCP entry into `~/.claude.json`, installs the Skill, merges the three Capture Hooks into `settings.json`, and creates the granted Credential.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤权，再精确删除或恢复 MCP、Skill 和 Capture Hook。它不关闭 Core 同步。
+It revokes the grant first, then precisely deletes or restores the MCP entry, the Skill and the Capture Hooks. It does not turn Core sync off.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 扫描 `.claude/projects` 中未处理会话，恢复 Job，并允许 Capture Hook 事件进入 Evidence。
+Core scans `.claude/projects` for unprocessed sessions, resumes Jobs, and allows Capture Hook events to enter Evidence.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core Freeze：停止扫描与 pending Job claim，Capture Hook 后续调用被 Core 拒绝，running Job可完成，已有 Memory 仍保留。
+Core freezes: scanning and pending Job claims stop, later Capture Hook calls are refused by Core, running Jobs may finish, and existing Memory is kept.
 
-### 组合效果
+### Combined effect
 
-- 一键开、同步关：Claude Code 能查旧 Memory，但新会话不再进入 MemHub。
-- 一键关、同步开：MemHub 继续读取 Claude Code，但 Claude Code 无 Recall 工具。
-- 两者都开：双向接通；一键插入的 MCP 是主动查询，不是自动 Prefetch。
+- Insert on, sync off: Claude Code can still query old Memory, but new sessions no longer enter MemHub.
+- Insert off, sync on: MemHub keeps reading Claude Code, but Claude Code has no Recall tools.
+- Both on: both directions are connected; the one-click insert MCP is active querying, not automatic Prefetch.
 
-## 实际安装
+## What gets installed
 
 ```text
 ~/.claude.json
@@ -57,24 +57,24 @@ Core Freeze：停止扫描与 pending Job claim，Capture Hook 后续调用被 C
 ~/.claude/.one-memory/recall-install.json
 ```
 
-Layout 和 MCP/Skill 写入位于 [recall-installer.ts](../../packages/host-bridge/src/recall-installer.ts)，Hook 生成位于 [capture-hooks.ts](../../packages/host-bridge/src/capture-hooks.ts)。
+The Layout and the MCP/Skill writing live in [recall-installer.ts](../../packages/host-bridge/src/recall-installer.ts), and Hook generation lives in [capture-hooks.ts](../../packages/host-bridge/src/capture-hooks.ts).
 
-## 与独立同步 Hook 的区别
+## Difference from the standalone sync Hooks
 
-项目中还有一套 Claude Code 专用“同步 Hook”。它不是一键插入安装的三组 Capture Hook。当前权限层会检查两套机制的冲突，独立同步 Hook 存在时可能要求先处理再安装或卸载 Recall。
+The project also ships a separate set of Claude Code-specific "sync Hooks". They are not the three Capture Hooks installed by one-click insert. The current permissions layer checks for conflicts between the two mechanisms, and when the standalone sync Hooks are present, installing or uninstalling Recall may require dealing with them first.
 
-## 权限
+## Permissions
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:claude-code`。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:claude-code`.
 
-## 重复打开与关闭
+## Re-opening and closing
 
-- 已安装且 `approved`：只修复命令路径并 Probe。
-- 权限不完整：重新 Preview/Install，签发新 Credential，再授权。
-- 关闭：先撤权，再精确移除 MemHub MCP、Skill 和 Capture Hooks，保留其他 Hook。
-- 文件被用户修改时不强删，撤权并要求人工核对。
+- Already installed and `approved`: only repair command paths and Probe.
+- Incomplete permissions: run Preview/Install again, issue a fresh Credential, then grant.
+- Closing: revoke first, then precisely remove MemHub's MCP, Skill and Capture Hooks, keeping other Hooks.
+- Files modified by the user are not force-deleted; the grant is revoked and manual review is requested.
 
-## 生效与重启
+## Taking effect and restart
 
-MemHub 不会重启 Claude Code，也不能证明老进程热加载 `~/.claude.json`、Skill 和 Hook。建议完全退出后重新打开并新建会话。
+MemHub does not restart Claude Code and cannot prove an existing process has hot-loaded `~/.claude.json`, the Skill and the Hooks. Quit fully, then re-open and start a new session.

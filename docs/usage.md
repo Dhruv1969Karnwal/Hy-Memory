@@ -1,21 +1,21 @@
-# Hy Memory 使用指南
+# Hy Memory Usage Guide
 
-本文只描述当前 `HyMemoryClient` 已公开的方法和返回结构。
+This guide describes only the methods and return structures that `HyMemoryClient` currently exposes.
 
-## 安装与快速开始
+## Installation and Quick Start
 
 ```bash
 pip install hy-memory==2.0.3
 
-# 可选后端
+# Optional backends
 pip install 'hy-memory[qdrant]==2.0.1'
 pip install 'hy-memory[faiss]==2.0.1'
-pip install 'hy-memory[graph]==2.0.1'     # Neo4j；Kuzu 已在核心依赖中
+pip install 'hy-memory[graph]==2.0.1'     # Neo4j; Kuzu is already a core dependency
 pip install 'hy-memory[mysql]==2.0.1'
-pip install 'hy-memory[rerank]==2.0.1'    # 本地多语言 cross-encoder rerank
+pip install 'hy-memory[rerank]==2.0.1'    # Local multilingual cross-encoder rerank
 ```
 
-默认 LLM 和 Embedding 均使用 OpenAI-compatible 接口。使用 OpenAI 时可只设置：
+The LLM and the Embedder both default to OpenAI-compatible interfaces. With OpenAI this is enough:
 
 ```bash
 export OPENAI_API_KEY="sk-your-key"
@@ -26,11 +26,11 @@ from hy_memory import HyMemoryClient
 
 with HyMemoryClient(mode="pro") as client:
     client.add(
-        "用户喜欢科幻电影，特别是《星际穿越》",
+        "The user likes science-fiction movies, especially Interstellar",
         user_id="user_001",
     )
     result = client.search(
-        "用户喜欢什么？",
+        "What does the user like?",
         user_ids=["user_001"],
     )
     for channel, memories in result["memories"].items():
@@ -38,9 +38,9 @@ with HyMemoryClient(mode="pro") as client:
             print(channel, memory["score"], memory["content"])
 ```
 
-## 配置
+## Configuration
 
-SDK 会加载项目目录中的 `.env`。完整配置见 [env_reference.md](env_reference.md)。
+The SDK loads `.env` from the project directory. The full list of settings is in [env_reference.md](env_reference.md).
 
 ```bash
 MEMORY_MODE=pro
@@ -53,7 +53,7 @@ MEMORY_EMBEDDER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 MEMORY_EMBEDDING_DIMS=1024
 ```
 
-也可以使用当前公开的 `from_config()`：
+The currently public `from_config()` works as well:
 
 ```python
 client = HyMemoryClient.from_config({
@@ -76,23 +76,23 @@ client = HyMemoryClient.from_config({
 })
 ```
 
-通过 `from_config()` 配置时，Embedder 与 Vector Store 的维度是两个独立字段，必须保持
-一致；环境变量方式则统一使用 `MEMORY_EMBEDDING_DIMS`。
+When you configure through `from_config()`, the Embedder and Vector Store dimensions are two separate fields
+that must be kept equal; with environment variables a single `MEMORY_EMBEDDING_DIMS` covers both.
 
-支持的向量后端为 `chroma`、`qdrant`、`faiss`。Graph 后端通常使用
-`kuzu` 或 `neo4j`。
+Supported vector backends are `chroma`, `qdrant` and `faiss`. Graph backends are usually
+`kuzu` or `neo4j`.
 
 ## Client API
 
-同步和异步方法使用相同参数。异步方法以 `async_` 为前缀。
+Synchronous and asynchronous methods take the same arguments. Asynchronous methods are prefixed with `async_`.
 
 ### `add()` / `async_add()`
 
 ```python
 result = client.add(
     [
-        {"role": "user", "content": "推荐一部电影"},
-        {"role": "assistant", "content": "推荐《星际穿越》"},
+        {"role": "user", "content": "Recommend a movie"},
+        {"role": "assistant", "content": "I recommend Interstellar"},
     ],
     user_id="user_001",
     agent_id="default_agent",
@@ -106,34 +106,34 @@ result = client.add(
 )
 ```
 
-`scene` 的公开取值：
+Public values of `scene`:
 
-- `None`：普通文本直接走 chat；messages 含 tool 时执行快速场景判断。
-- `chat`：强制走普通记忆链路。
-- `working`：强制走生产力记忆链路。
-- `coding`：强制走软件工程变体，并维护版本演进链。
+- `None`: plain text goes straight to chat; messages that contain tools trigger a quick scene judgment.
+- `chat`: forces the ordinary memory pipeline.
+- `working`: forces the productivity memory pipeline.
+- `coding`: forces the software-engineering variant and maintains the version evolution chain.
 
-强制 `working` / `coding` 时输入必须含 tool 消息，否则回退 chat。普通 chat 写入返回
-`success`、`scene`、`memory_id`、`request_id`、`elapsed_ms` 等字段；生产力链路返回其
-双层 reconcile 操作、`experience_ids`、`fact_ids` 等字段，完整结构见
-[scene_coding_usage.md](scene_coding_usage.md#4-返回结构)。
+Forcing `working` / `coding` requires tool messages in the input, otherwise it falls back to chat. A normal chat
+write returns fields such as `success`, `scene`, `memory_id`, `request_id` and `elapsed_ms`; the productivity
+pipeline returns its two-tier reconcile operations, `experience_ids`, `fact_ids` and similar fields, and the
+full structure is documented in [scene_coding_usage.md](scene_coding_usage.md#4-return-structure).
 
-`mode="lite"` 不执行 LLM 抽取，写入内容直接以 `L1_RAW` 形式保存。lite 的 Search 是
-严格的 raw-only 向量检索：无论调用方传入什么 `layers`、`scene` 或 `search_mode`，都只
-召回 `L1_RAW`，不会进入 working/coding、Schema 或 Intention 链路，也不会调用场景判断
-LLM。pro / ultra 仍遵循各自的层级与场景参数，默认不公开原始对话。
+`mode="lite"` runs no LLM extraction and stores written content directly as `L1_RAW`. Search on lite is
+strictly raw-only vector retrieval: whatever `layers`, `scene` or `search_mode` the caller passes, only
+`L1_RAW` comes back, the working/coding, Schema and Intention pipelines are never entered, and no scene
+judgment LLM is called. pro / ultra still honor their own layer and scene parameters and do not expose raw conversations by default.
 
-`source` 是调用方应用来源，例如 `openclaw`、`cursor`、`codex`。它与 `agent_id`
-正交：前者说明“从哪个产品/入口写入”，后者仍是记忆隔离中的 agent 身份。source 会
-执行 `strip().lower()` 后存储，并随 chat、working、coding 记忆一起返回。
+`source` identifies the calling application, for example `openclaw`, `cursor` or `codex`. It is orthogonal to
+`agent_id`: the first says which product or entry point wrote the memory, the second is still the agent
+identity used for memory isolation. source is stored after `strip().lower()` and returned with chat, working and coding memories.
 
 ### `search()` / `async_search()`
 
-普通 chat 检索：
+Normal chat retrieval:
 
 ```python
 result = client.search(
-    query="用户喜欢什么？",
+    query="What does the user like?",
     user_ids=["user_001"],
     agent_ids=None,
     session_ids=None,
@@ -144,38 +144,38 @@ result = client.search(
     schema_limit=10,
     schema_min_score=0.4,
     intention_limit=0,
-    reader="",                  # HY_MEMORY_READER；默认 legacy
+    reader="",                  # HY_MEMORY_READER; defaults to legacy
     layers=None,
     created_after=None,
     search_mode="default",
 )
 ```
 
-source 过滤语义为：
+Source filtering means:
 
 ```text
 source IN include_sources AND source NOT IN exclude_sources
 ```
 
-任一列表为空时省略对应条件；两者冲突时黑名单优先。Chroma/Qdrant/Graph 会在数据库
-候选截断前执行过滤，FAISS 使用 ID selector 在索引搜索前限定候选，不采用多路召回或
-扩大 top-k 后过滤。多来源证据派生出的聚合记忆标记为 `mixed`；开启任意 source 过滤
-时默认排除 `mixed`，只有显式将 `mixed` 放入白名单才返回。
+An empty list drops the matching condition; when the two conflict, the deny list wins. Chroma/Qdrant/Graph
+filter before the database candidate list is truncated, and FAISS narrows candidates with an ID selector before
+the index search instead of using multi-way recall or filtering after a wider top-k. Aggregate memories derived
+from evidence of several sources are marked `mixed`; any source filter excludes `mixed` by default and returns it only when `mixed` is explicitly whitelisted.
 
-chat 成功路径返回：
+The chat success path returns:
 
 ```python
 {
     "request_id": "...",
     "memories": {
-        "normal": [],      # L2/L3 普通记忆；L4/L5 当前未启用
+        "normal": [],      # L2/L3 ordinary memories; L4/L5 are currently unused
         "schema": [],      # L6 Schema
-        "proactive": [],   # L7 Intention；默认关闭
+        "proactive": [],   # L7 Intention; off by default
     },
     "rewrite": {
         "used": False,
-        "original_query": "用户喜欢什么？",
-        "effective_query": "用户喜欢什么？",
+        "original_query": "What does the user like?",
+        "effective_query": "What does the user like?",
         "created_after": None,
         "scene": "normal",
     },
@@ -183,16 +183,16 @@ chat 成功路径返回：
 }
 ```
 
-Reader 执行失败时返回空的 `memories` 三桶和 `request_id` / `elapsed_ms`；当前失败兜底不
-包含 `rewrite`。
+If the Reader fails, an empty three-bucket `memories` plus `request_id` / `elapsed_ms` is returned; the current
+failure fallback does not include `rewrite`.
 
-L0 用户画像不在 Search 中。`schema_limit` 只控制 L6，不会被 L0 占位。
+The L0 user profile is not part of Search. `schema_limit` only bounds L6 and is never taken up by L0.
 
-Search 也可以路由到独立生产力记忆库：
+Search can also route to the separate productivity memory store:
 
 ```python
 result = client.search(
-    "这个异常最后是怎么修复的？",
+    "How was this exception eventually fixed?",
     user_ids=["user_001"],
     scene="coding",
     workspace_id="repo-id",
@@ -200,34 +200,34 @@ result = client.search(
 )
 ```
 
-`working` / `coding` 路径返回 `scene="productivity"`、`facts`、`experiences`，不使用
-chat 的三桶结构；`coding` 还会返回 `chain_block` 和 `chain_used`。
+The `working` / `coding` paths return `scene="productivity"`, `facts` and `experiences` instead of the chat
+three-bucket structure; `coding` also returns `chain_block` and `chain_used`.
 
 #### `search_mode`
 
-| `search_mode` | `scene` | 行为 |
+| `search_mode` | `scene` | Behavior |
 |---|---|---|
-| `default` | `None` + 单个 `query` | 固定 chat/normal，零 LLM |
-| `default` | `None` + `queries=[...]` | 行为由 Coding 与 Query Rewrite 开关共同决定，见下表 |
-| `agentic` | `None` + 单/多 query | 一次 LLM 完成场景判断、改写和时间解析 |
-| 任意 | 显式 `chat/working/coding` | 直接路由，不调用 judge/rewrite LLM |
+| `default` | `None` + a single `query` | Fixed chat/normal, zero LLM |
+| `default` | `None` + `queries=[...]` | Decided by the Coding and Query Rewrite switches together, see the table below |
+| `agentic` | `None` + single/multiple query | One LLM call does scene judgment, rewrite and time resolution |
+| Any | Explicit `chat/working/coding` | Routed directly, no judge/rewrite LLM call |
 
-`query` 与 `queries` 二选一；`queries` 最后一项是目标 query，前面的项用于上下文消解。
-LLM 或解析失败时回退到 chat/normal 和原 query。
+Pass either `query` or `queries`; the last item of `queries` is the target query and the earlier ones provide
+context for resolution. If the LLM or the parsing fails, it falls back to chat/normal and the original query.
 
-default 多-query 在总字符数不超过 `MEMORY_QUERY_REWRITE_MAX_CHARS` 时：
+Default multi-query input whose total character count stays within `MEMORY_QUERY_REWRITE_MAX_CHARS`:
 
-| `MEMORY_CODING_ENABLED` | `MEMORY_ENABLE_QUERY_REWRITE` | 行为 |
+| `MEMORY_CODING_ENABLED` | `MEMORY_ENABLE_QUERY_REWRITE` | Behavior |
 |---|---|---|
-| `true` | 任意 | 一次 LLM 完成 `chat / working / coding` 分类和 query rewrite |
-| `false` | `true` | 一次 LLM 完成 rewrite 与时间解析，不做场景分类 |
-| `false` | `false` | 零 LLM，固定 chat/normal，使用最后一条 query |
+| `true` | Any | One LLM call does `chat / working / coding` classification and query rewrite |
+| `false` | `true` | One LLM call does rewrite and time resolution, no scene classification |
+| `false` | `false` | Zero LLM, fixed chat/normal, uses the last query |
 
-超过长度保护时不做 rewrite；Coding 开启时只执行有界场景分类，关闭时零 LLM。
+Past the length guard no rewrite runs; with Coding on only a bounded scene classification runs, with Coding off there is zero LLM.
 
 ### `get_user_profile()` / `async_get_user_profile()`
 
-用户画像只由 `user_id` 唯一确定，不接收 `agent_id` 或 `session_id`：
+The user profile is determined by `user_id` alone and accepts neither `agent_id` nor `session_id`:
 
 ```python
 result = client.get_user_profile(user_id="user_001")
@@ -253,17 +253,17 @@ profile = result["profile"]
 }
 ```
 
-不存在 L0 且没有可附加的 balanced catalog 时，`profile` 为 `None`。该接口不调用
-Embedding 或 LLM。启用对应开关后，active catalog 和 supplement 会附加到同一画像；
-catalog 也可以在没有基础 L0 时形成只读的合成画像。
+When no L0 exists and there is no balanced catalog to attach, `profile` is `None`. This call uses neither
+Embedding nor LLM. Once the matching switches are enabled, the active catalog and supplement are attached to the
+same profile; a catalog can also form a read-only synthetic profile when there is no base L0.
 
-### CRUD、列表与克隆
+### CRUD, Listing and Cloning
 
-以下均为当前公开方法：
+All of the following are currently public methods:
 
 ```python
 memory = client.get("memory_id")
-result = client.update("memory_id", "更新后的内容")
+result = client.update("memory_id", "updated content")
 result = client.delete("memory_id")
 result = client.delete_all(user_id="user_001")
 
@@ -279,16 +279,16 @@ page = client.list_memories(
 result = client.clone_user("user_001", "user_002", agent_id=None)
 ```
 
-对应异步方法为 `async_get()`、`async_update()`、`async_delete()`、
-`async_delete_all()`、`async_list_memories()`、`async_clone_user()`。
+The matching async methods are `async_get()`, `async_update()`, `async_delete()`,
+`async_delete_all()`, `async_list_memories()` and `async_clone_user()`.
 
-普通 `list_memories()` 返回 `vdb` 桶，并在 Graph 有结果时附带 `graph`；传入
-`workspace_id` 时返回生产力记忆的 `scene="productivity"` 和 `experiences`。
+Plain `list_memories()` returns the `vdb` bucket and adds `graph` whenever Graph has results; when a
+`workspace_id` is passed it returns productivity memory as `scene="productivity"` and `experiences`.
 
-### `evolve()` / `async_evolve()`（Ultra）
+### `evolve()` / `async_evolve()` (Ultra)
 
-System 2 不在 `add()` 中自动触发，当前也没有 `get_write_status()` 接口。调用方完成一批
-写入后显式执行：
+System 2 is not triggered automatically by `add()`, and there is no `get_write_status()` interface either. After
+a batch of writes is complete, the caller runs it explicitly:
 
 ```python
 result = client.evolve(
@@ -297,23 +297,23 @@ result = client.evolve(
 )
 ```
 
-`evolve()` 仅允许 `mode="ultra"`；同步方法阻塞到本次认知加工完成。它读取当前 VDB
-全量，生成或更新 L6 Schema，并执行配置允许的 System 2 处理。
+`evolve()` is only allowed with `mode="ultra"`; the synchronous method blocks until this round of cognitive
+processing is done. It reads the full current VDB, creates or updates L6 Schema, and runs the System 2 processing the configuration allows.
 
-### 其他当前公开方法
+### Other Currently Public Methods
 
-- `finalize_session()` / `async_finalize_session()`：在功能开关开启时归档指定 session。
-- `get_user_basic_info()` / `async_get_user_basic_info()`：读取 L0 basic info 记录。
-- `sweep()` / `async_sweep()`：Ultra 下显式执行 cross-domain sweeper。
-- `get_metrics()` / `async_get_metrics()`：读取 SDK 指标。
-- `build_memory_graph()` / `async_build_memory_graph()`：回填普通记忆关系图。
-- `build_entity_store()` / `async_build_entity_store()`：回填独立 Entity Store。
-- `history()` / `async_history()`、`get_recent_history()` / `async_get_recent_history()`。
+- `finalize_session()` / `async_finalize_session()`: archives a given session when the feature switch is on.
+- `get_user_basic_info()` / `async_get_user_basic_info()`: reads the L0 basic info record.
+- `sweep()` / `async_sweep()`: explicitly runs the cross-domain sweeper on Ultra.
+- `get_metrics()` / `async_get_metrics()`: reads SDK metrics.
+- `build_memory_graph()` / `async_build_memory_graph()`: backfills the ordinary memory relation graph.
+- `build_entity_store()` / `async_build_entity_store()`: backfills the separate Entity Store.
+- `history()` / `async_history()` and `get_recent_history()` / `async_get_recent_history()`.
 
-## Embedding 端点覆盖
+## Embedding Endpoint Override
 
-`add()` / `async_add()` / `search()` / `async_search()` 支持 per-call
-`embed_override`：
+`add()` / `async_add()` / `search()` / `async_search()` accept a per-call
+`embed_override`:
 
 ```python
 override = {
@@ -322,23 +322,23 @@ override = {
     "extra_headers": {"X-Route": "direct"},
     "timeout": 15,
 }
-client.add("用户喜欢篮球", user_id="u1", embed_override=override)
-client.search("兴趣爱好", user_ids=["u1"], embed_override=override)
+client.add("The user likes basketball", user_id="u1", embed_override=override)
+client.search("hobbies", user_ids=["u1"], embed_override=override)
 ```
 
-它只覆盖接入端点，不覆盖 model、维度或 `extra_body`。新端点必须运行与已入库数据兼容的
-Embedding 模型。
+It overrides only the access endpoint, never the model, the dimensions or `extra_body`. The new endpoint must
+run an Embedding model compatible with the data that is already stored.
 
-## 数据隔离与处理模式
+## Data Isolation and Processing Modes
 
-普通记忆使用 `user_id → agent_id → session_id` 三层作用域。Search 必须传非空
-`user_ids`；不传 `agent_ids` / `session_ids` 时可跨对应维度检索。
+Ordinary memory uses the three-level scope `user_id → agent_id → session_id`. Search requires a non-empty
+`user_ids`; when `agent_ids` / `session_ids` are omitted the search spans those dimensions.
 
-用户画像是例外：L0、balanced catalog 和 specific supplement 从生成到读取都只由
-`user_id` 唯一确定。
+The user profile is the exception: L0, the balanced catalog and the specific supplement are all determined by
+`user_id` alone, from generation through to reading.
 
-- `lite`：原文向量化，不调用提取 LLM。
-- `pro`：Embedding + LLM 提取 + reconcile；Graph 可通过 `MEMORY_ENABLE_GRAPH` 开启。
-- `ultra`：具备 pro 能力并强制启用 Graph；System 2 由调用方显式调用 `evolve()`。
+- `lite`: the raw text is vectorized, no extraction LLM is called.
+- `pro`: Embedding + LLM extraction + reconcile; Graph can be turned on with `MEMORY_ENABLE_GRAPH`.
+- `ultra`: everything pro offers with Graph forced on; System 2 runs when the caller explicitly calls `evolve()`.
 
-Reader、Rerank 和 Search 参数详见 [hy_memory_search_skill.md](hy_memory_search_skill.md)。
+Reader, Rerank and Search parameters are covered in [hy_memory_search_skill.md](hy_memory_search_skill.md).

@@ -1,17 +1,17 @@
-# 多说话人对话支持
+# Multi-Speaker Dialogue Support
 
-Hy Memory 支持在一段对话中区分当前用户、其他具名真人和 AI assistant。该能力使用标准 messages 输入中的 `role` 与 `name`，不增加 participant 表或新的 Memory 字段。
+Hy Memory can tell the current user, other named real people and the AI assistant apart inside one dialogue. The capability uses `role` and `name` from the standard messages input and adds no participant table and no new Memory fields.
 
-## 1. 输入约定
+## 1. Input Conventions
 
-调用方负责确定“当前用户”的视角：
+The caller decides whose perspective is the "current user":
 
-- `role="user"` 表示当前记忆所属的用户；可以通过 `name` 提供用户姓名。
-- `role="assistant"` 且带 `name` 表示另一位具名真人。
-- `role="assistant"` 且不带 `name` 表示 AI assistant。
-- `role="tool"` 的 `name` 是工具名，不是说话人姓名。
+- `role="user"` is the user whose memory this is; the user's name may be supplied through `name`.
+- `role="assistant"` with `name` is another named real person.
+- `role="assistant"` without `name` is the AI assistant.
+- For `role="tool"` the `name` is a tool name, not a speaker name.
 
-例如，以 Tim 为当前用户、John 为对话中的另一位真人：
+For example, with Tim as the current user and John as the other real person in the dialogue:
 
 ```python
 from hy_memory import HyMemoryClient
@@ -26,18 +26,18 @@ result = client.add(
 )
 ```
 
-OpenAI 风格字符串消息与 Anthropic 风格 content blocks 都会保留非 tool 角色的 `name`。OpenAI 的独立 tool message 仍将 `name` 解析为工具名。
+Both OpenAI-style string messages and Anthropic-style content blocks keep the `name` of non-tool roles. A standalone OpenAI tool message still resolves `name` to the tool name.
 
-## 2. 内部渲染
+## 2. Internal Rendering
 
-普通 user-AI 对话保持原格式：
+An ordinary user-AI dialogue keeps the original format:
 
 ```text
 [user]: I like coffee.
 [assistant]: Noted.
 ```
 
-具名多说话人对话会渲染为：
+A named multi-speaker dialogue renders as:
 
 ```text
 The user's name is Tim
@@ -45,64 +45,64 @@ The user's name is Tim
 [John]: I am a nurse in Berlin.
 ```
 
-中文消息对应：
+With Chinese message content the name line follows the message language and is written below as the `\uXXXX` escapes used in `hy_memory/pipelines/base.py`; the message lines keep the caller's own text and are shown here in translation:
 
 ```text
-用户名叫Tim
-[user]: 我在 Stripe 工作。
-[John]: 我是住在柏林的护士。
+\u7528\u6237\u540d\u53ebTim
+[user]: I work at Stripe.
+[John]: I am a nurse in Berlin.
 ```
 
-| 输入 | 渲染标签 | 语义 |
+| Input | Rendered label | Semantics |
 |---|---|---|
-| `role=user` | `[user]` | 当前用户；即使有 `name` 也不改成姓名 |
-| `role=assistant, name=John` | `[John]` | 其他具名真人 |
-| `role=assistant`，无 `name` | `[assistant]` | AI assistant |
-| `role=system/tool` | 原 role | 系统或工具消息 |
+| `role=user` | `[user]` | Current user; the label stays even when `name` is set |
+| `role=assistant, name=John` | `[John]` | Another named real person |
+| `role=assistant` without `name` | `[assistant]` | AI assistant |
+| `role=system/tool` | Original role | System or tool message |
 
-当前用户的姓名单独放在文首，整段只出现一次。名字行的语言由消息内容自动判断。
+The current user's name sits on its own line at the very start and appears exactly once per block. The language of that line is derived from the message content automatically.
 
-## 3. 记忆归属
+## 3. Memory Ownership
 
-抽取链按以下规则生成事实：
+The extraction chain produces facts by these rules:
 
-- 当前用户的事实以 `The user ...` / `用户...` 为主体，`owner="user"`。
-- 其他具名真人的事实以姓名为主体，例如 `John is a nurse in Berlin.`，`owner="user"`。
-- AI assistant 提供或产出的内容以 assistant 为主体，`owner="agent"`。
+- Facts about the current user take `The user ...`, or the zh equivalent, as the subject, with `owner="user"`.
+- Facts about another named real person take that person's name as the subject, for example `John is a nurse in Berlin.`, with `owner="user"`.
+- Content the AI assistant supplies or produces takes the assistant as the subject, with `owner="agent"`.
 
-具名真人虽然在输入协议中可能使用 `role="assistant"`，但不会因此变成 `owner="agent"`。
+A named real person may arrive with `role="assistant"` in the input protocol, but that does not turn them into `owner="agent"`.
 
-L0 basic profile 只描述当前用户。`role=user` 的 `name` 是 `basic_info.name` 的可信输入；其他具名真人的职业、位置等信息应进入普通事实，而不是当前用户的 L0。
+The L0 basic profile describes the current user only. The `name` of `role=user` is an authoritative input for `basic_info.name`; the occupation, location and similar details of other named real people belong in ordinary facts, not in the current user's L0.
 
-Reconcile prompt 明确禁止把不同主体的事实互相 UPDATE 或 SUPERSEDE。例如 `The user likes coffee` 与 `John likes coffee` 应保留为两条独立事实。
+The Reconcile prompt explicitly forbids UPDATE or SUPERSEDE between facts with different subjects. For example, `The user likes coffee` and `John likes coffee` stay as two separate facts.
 
-## 4. 历史上下文
+## 4. History Context
 
-L1_RAW 保存的内容使用上述渲染格式。历史回读时：
+What L1_RAW stores uses the rendering format above. When history is read back:
 
-- 文首姓名行会被识别并去重，不会被误当成一条 user message。
-- `[John]:` 这类具名标签会被保留。
-- 多行消息按说话人前缀拆分，不会把正文续行误拆成新消息。
-- 历史中的 assistant 与其他具名真人消息会按历史上下文上限截断；user 消息完整保留。
+- The leading name line is recognized and deduplicated, and is never mistaken for a user message.
+- Named labels such as `[John]:` are preserved.
+- Multi-line messages are split on the speaker prefix, so a continuation line is never split off as a new message.
+- Assistant and other named real person messages in history are truncated by the history context limit; user messages are kept in full.
 
-## 5. 当前边界
+## 5. Current Boundaries
 
-- 调用方必须用 `role` 指定当前用户视角；SDK 不根据姓名猜测谁是当前用户。
-- 目前没有具名 AI agent 的独立身份模型。`role=assistant + name` 被解释为具名真人。
-- 说话人主体主要编码在事实文本中，不是独立的检索过滤字段。
-- 不会为其他具名真人创建独立 L0 profile。若需要分别维护多个人的用户画像，应使用不同的 `user_id` 写入各自视角。
+- The caller must state the current user perspective through `role`; the SDK never guesses it from names.
+- There is no separate identity model for named AI agents yet. `role=assistant + name` is read as a named real person.
+- The speaker subject is carried inside the fact text rather than in a dedicated retrieval filter field.
+- No separate L0 profile is created for other named real people. To maintain profiles for several people, write each perspective under its own `user_id`.
 
-## 6. 实现与验证
+## 6. Implementation and Verification
 
-主要实现位置：
+Main implementation locations:
 
-- `hy_memory/pipelines/base.py`：`ChatMessage.name`、说话人标签和对话渲染。
-- `hy_memory/client.py`：OpenAI/Anthropic messages 规范化。
-- `hy_memory/agent/extractor.py` 与 `hy_memory/agent/prompts_zh.py`：主体、owner 和 basic profile 规则。
-- `hy_memory/agent/reconciler.py`：跨主体合并约束。
-- `hy_memory/pipelines/writer.py`：L1_RAW 历史解析。
+- `hy_memory/pipelines/base.py`: `ChatMessage.name`, speaker labels and dialogue rendering.
+- `hy_memory/client.py`: OpenAI/Anthropic message normalization.
+- `hy_memory/agent/extractor.py` and `hy_memory/agent/prompts_zh.py`: subject, owner and basic profile rules.
+- `hy_memory/agent/reconciler.py`: cross-subject merge constraints.
+- `hy_memory/pipelines/writer.py`: L1_RAW history parsing.
 
-定向测试：
+Targeted tests:
 
 ```bash
 python -m pytest -q \
