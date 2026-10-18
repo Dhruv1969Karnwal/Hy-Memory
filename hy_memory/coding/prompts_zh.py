@@ -274,30 +274,35 @@ that needed it and has no way of knowing it ever existed.
 
 EXTRACT_PROMPT_CODING_ZH = """\
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║ HARD CONSTRAINT -- read this section first; it overrides any wording later in this prompt that sounds like it wants a narrative.   ║
+║  HARD CONSTRAINT -- read this section first; it overrides any wording     ║
+║  later in this prompt that sounds like it wants a narrative.              ║
 ║                                                                           ║
-║ You are not writing a report of what some person did. You are writing the information a FUTURE AGENT needs in order to act.        ║
-║ That agent already has its own task; it does not care what this user wanted. It needs to know: what was decided here,              ║
-║ at which code coordinates, what was tried and rejected, and whether it was verified.                                          ║
+║  You are not writing a report of what some person did. You are writing    ║
+║  the information a FUTURE AGENT needs in order to act. That agent already ║
+║  has its own task; it does not care what this user wanted. It needs to    ║
+║  know: what was decided here, at which code coordinates, what was tried   ║
+║  and rejected, and whether it was verified.                               ║
 ║                                                                           ║
-║ Specifically, every `statement` and every `solution` must obey the following:                                                  ║
-║   · The grammatical subject must be the CODE or THE DECISION -- never "the user", and never   ║
-║     "the agent". Do not write "The user attempted to...", "The user wanted...",   ║
-║     “The agent then checked…”.                                           ║
-║   · Never close with bookkeeping phrases like "the session was completed", "the error was noted",         ║
-║     "no solution was found yet". Close with the decision and its verification    ║
-║     status. If no decision was made, close with what was ruled out and the next unexplored lead -- that is the ║
-║     reusable part.                                                        ║
-║   · Keep the concrete symptom (error string, failing command, wrong output) -- future searches ║
-║     match on exactly this content.                                                ║
+║  Specifically, every `statement` and every `solution` must obey the       ║
+║  following:                                                               ║
+║   · The grammatical subject must be the CODE or THE DECISION -- never     ║
+║      "the user", and never "the agent". Do not write "The user attempted  ║
+║      to...", "The user wanted...", “The agent then checked…”.             ║
+║   · Never close with bookkeeping phrases like "the session was            ║
+║      completed", "the error was noted", "no solution was found yet".      ║
+║      Close with the decision and its verification status. If no decision  ║
+║      was made, close with what was ruled out and the next unexplored lead ║
+║      -- that is the reusable part.                                        ║
+║   · Keep the concrete symptom (error string, failing command, wrong       ║
+║      output) -- future searches match on exactly this content.            ║
 ║                                                                           ║
-║ bad:  “The user attempted to write a QTable to RST with header_rows and   ║
-║        hit a TypeError. The session was completed with the error noted.”  ║
-║ good: “ascii.rst's RST writer rejects header_rows:                        ║
-║        `tbl.write(..., format='ascii.rst', header_rows=['name','unit'])`  ║
-║        raises TypeError because RST.__init__ does not forward it, unlike  ║
-║        ascii.fixed_width which accepts it. No fix written — the writer    ║
-║        needs the same header_rows plumbing as fixed_width.”               ║
+║ bad: “The user attempted to write a QTable to RST with header_rows and    ║
+║      hit a TypeError. The session was completed with the error noted.”    ║
+║ good: “ascii.rst's RST writer rejects header_rows: `tbl.write(...,        ║
+║      format='ascii.rst', header_rows=['name','unit'])` raises TypeError   ║
+║      because RST.__init__ does not forward it, unlike ascii.fixed_width   ║
+║      which accepts it. No fix written — the writer needs the same         ║
+║      header_rows plumbing as fixed_width.”                                ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 You extract durable WORKING memories from a task-execution session segment.
