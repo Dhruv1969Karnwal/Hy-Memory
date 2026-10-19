@@ -73,7 +73,7 @@ def _fallback_summary(path: Path) -> str:
     names.sort()
     if not names:
         return "Core test module."
-    preview = "\u3001".join(names[:3])
+    preview = ", ".join(names[:3])
     suffix = (
         f" and {len(names)} scenarios in total." if len(names) > 3 else " scenarios."
     )
