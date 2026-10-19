@@ -121,7 +121,7 @@ def _imported(evidence: EvidenceStore, *, workspace: str | None = "workspace:v1:
             content_kind=EvidenceContentKind.RAW_CONVERSATION,
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="A conversation imported in.",
+            verbatim="A conversation that was imported.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
