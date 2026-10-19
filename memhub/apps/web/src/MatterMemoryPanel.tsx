@@ -1,4 +1,5 @@
 import type { GovernedMemory, MemoryDetail } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 export function MatterMemoryPanel({
   memories,
@@ -33,7 +34,8 @@ export function MatterMemoryPanel({
           >
             <span>{memory.content}</span>
             <small>
-              Baseline memory · {memory.evidence_ids.length} quotes · r
+              Baseline memory ·{" "}
+              {countLabel(memory.evidence_ids.length, "quote")} · r
               {memory.revision}
             </small>
           </button>

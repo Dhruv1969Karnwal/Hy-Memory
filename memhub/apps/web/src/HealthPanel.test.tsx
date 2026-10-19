@@ -157,11 +157,11 @@ describe("HealthPanel", () => {
       "100000 originals · 50000 complete turns",
     );
     expect(details.textContent).toContain(
-      "120 calls · 100 done · 1 uncertain results · 2 failed · 3 cancelled",
+      "120 calls · 100 done · 1 uncertain result · 2 failed · 3 cancelled",
     );
     expect(details.textContent).toContain("80 memories");
     expect(details.textContent).toContain(
-      "20 injections · 1 timeouts · 0 unavailable",
+      "20 injections · 1 timeout · 0 unavailable",
     );
   });
 
@@ -340,7 +340,7 @@ describe("HealthPanel", () => {
 
     const block = await screen.findByLabelText("Memory processing");
     expect(block.textContent).toContain(
-      "Memory extraction stuck: Generation model API key missing (1 items)",
+      "Memory extraction stuck: Generation model API key missing (1 item)",
     );
     expect(block.textContent).toContain(
       "2 items: Failed to organize this round; retrying",

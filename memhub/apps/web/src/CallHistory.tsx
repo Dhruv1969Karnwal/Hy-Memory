@@ -28,6 +28,7 @@ import { R6Button } from "./R6Controls";
 import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal } from "./write-outcome";
 import "./call-history.css";
+import { countLabel, groupedCountLabel } from "./count-label";
 
 const PAGE_SIZE = 20;
 const stateLabels: Record<CallEvent["state"], string> = {
@@ -528,8 +529,8 @@ export function CallHistory({
                   {stateLabels[selected.state]}
                 </p>
                 <p className="call-history-stage">
-                  Found {selected.raw_count} source excerpts · memories{" "}
-                  {selected.memory_count} · elapsed{" "}
+                  Found {countLabel(selected.raw_count, "source excerpt")} ·
+                  memories {selected.memory_count} · elapsed{" "}
                   {(selected.elapsed_ms / 1000).toFixed(1)} seconds
                 </p>
                 {callDeliveryLabel(selected) && (
@@ -670,8 +671,8 @@ export function CallHistory({
         page.retention_days !== null &&
         page.max_events !== null && (
           <p className="call-history-policy">
-            Retained for {page.retention_days} days, up to{" "}
-            {new Intl.NumberFormat("zh-CN").format(page.max_events)} records
+            Retained for {countLabel(page.retention_days, "day")}, up to{" "}
+            {groupedCountLabel(page.max_events, "record")}
           </p>
         )}
       {confirmation && (
@@ -679,7 +680,7 @@ export function CallHistory({
           title={
             confirmation.kind === "all"
               ? "Clear all usage records?"
-              : `Clear ${confirmation.ids.length} records on this page?`
+              : `Clear ${countLabel(confirmation.ids.length, "record")} on this page?`
           }
           description={
             confirmation.kind === "all"

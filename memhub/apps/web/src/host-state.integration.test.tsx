@@ -178,7 +178,7 @@ describe("one host state shared by the home and detail pages", () => {
         <Detail />
       </>,
     );
-    await waitFor(() => expect(access()).toContain("1 apps connected"));
+    await waitFor(() => expect(access()).toContain("1 app connected"));
     const insertion = screen.getByRole("switch", {
       name: "One-click insertion",
     });
@@ -222,7 +222,7 @@ describe("one host state shared by the home and detail pages", () => {
     } as unknown as NonNullable<typeof window.oneMemory>;
     const imports = importsWith([cursor]);
     const home = render(<Home imports={imports} />);
-    await waitFor(() => expect(access()).toContain("1 apps connected"));
+    await waitFor(() => expect(access()).toContain("1 app connected"));
     home.unmount();
     const detail = render(<Detail />);
     const insertion = await screen.findByRole("switch", {
@@ -314,7 +314,7 @@ describe("home host polling", () => {
       typeof window.oneMemory
     >;
     render(<Home imports={importsWith([cursor])} />);
-    await waitFor(() => expect(access()).toContain("1 apps connected"));
+    await waitFor(() => expect(access()).toContain("1 app connected"));
     const settled = getRecallHosts.mock.calls.length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_100);
@@ -388,7 +388,7 @@ describe("host writes land in the shared state", () => {
     detail.unmount();
     getRecallHosts.mockImplementation(() => new Promise(() => {}));
     render(<Home imports={importsWith([cursor])} />);
-    expect(access()).toContain("1 apps connected");
+    expect(access()).toContain("1 app connected");
   });
 
   it("re-reads once after a failed turn-on and shows what is really there", async () => {
@@ -410,7 +410,7 @@ describe("host writes land in the shared state", () => {
         "One-click connection for this app didn't finish. Other apps are unaffected.Reason: The app control channel is unavailable.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(access()).toContain("1 apps connected"));
+    await waitFor(() => expect(access()).toContain("1 app connected"));
     // One read before the install, one after the failure; no polling in between.
     expect(getRecallHosts.mock.calls.length).toBe(before + 2);
   });
@@ -579,12 +579,12 @@ it("keeps the last host state on the home page and says so when a poll fails", a
     typeof window.oneMemory
   >;
   render(<Home imports={importsWith([cursor])} />);
-  await waitFor(() => expect(access()).toContain("1 apps connected"));
+  await waitFor(() => expect(access()).toContain("1 app connected"));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(3_100);
   });
   await waitFor(() => expect(getRecallHosts.mock.calls.length).toBe(2));
-  expect(access()).toContain("1 apps connected");
+  expect(access()).toContain("1 app connected");
   expect(
     (await screen.findByRole("status", { name: "App connection status" }))
       .textContent,

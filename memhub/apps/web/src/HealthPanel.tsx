@@ -11,6 +11,7 @@ import {
   readBackgroundHealth,
 } from "./background-health-read";
 import { clockStamp } from "./clock-stamp";
+import { countLabel } from "./count-label";
 import { exportDiagnosticsFile } from "./diagnostics-export";
 import type { RecallHostStatus } from "./global";
 import { refreshRecallHosts } from "./host-state";
@@ -345,7 +346,7 @@ export function HealthPanel({ imports }: { imports: ImportState }) {
               <div key={source.source_id}>
                 <dt>{source.display_name}</dt>
                 <dd>
-                  {`${source.imported_conversations} conversations · ${source.imported_messages} messages`}
+                  {`${countLabel(source.imported_conversations, "conversation")} · ${countLabel(source.imported_messages, "message")}`}
                 </dd>
               </div>
             ))}
@@ -367,19 +368,19 @@ export function HealthPanel({ imports }: { imports: ImportState }) {
               <dl aria-label="Import and organizing details">
                 <div>
                   <dt>Source text and full conversation turns</dt>
-                  <dd>{`${processing.metrics.raw_evidence} originals · ${processing.metrics.complete_turns} complete turns`}</dd>
+                  <dd>{`${countLabel(processing.metrics.raw_evidence, "original")} · ${countLabel(processing.metrics.complete_turns, "complete turn")}`}</dd>
                 </div>
                 <div>
                   <dt>HY organizing</dt>
-                  <dd>{`${processing.metrics.hy_calls} calls · ${processing.metrics.completed} done · ${processing.metrics.unknown} uncertain results · ${processing.metrics.failed} failed · ${processing.metrics.cancelled} cancelled`}</dd>
+                  <dd>{`${countLabel(processing.metrics.hy_calls, "call")} · ${processing.metrics.completed} done · ${countLabel(processing.metrics.unknown, "uncertain result")} · ${processing.metrics.failed} failed · ${processing.metrics.cancelled} cancelled`}</dd>
                 </div>
                 <div>
                   <dt>Output</dt>
-                  <dd>{`${processing.metrics.governed_memories} memories`}</dd>
+                  <dd>{`${countLabel(processing.metrics.governed_memories, "memory")}`}</dd>
                 </div>
                 <div>
                   <dt>WorkBuddy memory lookups</dt>
-                  <dd>{`${processing.metrics.workbuddy.injected} injections · ${processing.metrics.workbuddy.timed_out} timeouts · ${processing.metrics.workbuddy.unavailable} unavailable`}</dd>
+                  <dd>{`${countLabel(processing.metrics.workbuddy.injected, "injection")} · ${countLabel(processing.metrics.workbuddy.timed_out, "timeout")} · ${processing.metrics.workbuddy.unavailable} unavailable`}</dd>
                 </div>
               </dl>
             ) : null}
@@ -388,7 +389,7 @@ export function HealthPanel({ imports }: { imports: ImportState }) {
                 {splitBlockedStages(processing.blocked_stages).named.map(
                   (block) => (
                     <li key={`${block.kind}:${block.reason}`}>
-                      {`${taskKindLabel(block.kind)} stuck: ${blockReasonLabel(block.reason)} (${block.count} items)`}
+                      {`${taskKindLabel(block.kind)} stuck: ${blockReasonLabel(block.reason)} (${countLabel(block.count, "item")})`}
                     </li>
                   ),
                 )}

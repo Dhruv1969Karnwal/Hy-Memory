@@ -583,7 +583,7 @@ it("requires confirmation and cancelling or Escape sends no clear request", asyn
   let dialog = await openClear();
   expect(
     within(dialog).getByRole("heading", {
-      name: "Clear 1 records on this page?",
+      name: "Clear 1 record on this page?",
     }),
   ).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));

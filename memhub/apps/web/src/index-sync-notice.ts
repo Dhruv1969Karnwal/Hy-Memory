@@ -1,4 +1,5 @@
 import type { MemoryIndexSync } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 export type IndexSyncAction = "retry" | "configure" | "refresh" | "none";
 
@@ -18,7 +19,7 @@ export function indexSyncPresentation(
   updatedAt: string,
 ): IndexSyncPresentation {
   const attempted = sync.attempts > 0;
-  const attemptedLine = `${attempted ? `Sync attempted ${sync.attempts} times` : "Sync has not been attempted"} - Status updated at ${updatedAt}`;
+  const attemptedLine = `${attempted ? `Sync attempted ${countLabel(sync.attempts, "time")}` : "Sync has not been attempted"} - Status updated at ${updatedAt}`;
   const reason = sync.last_error_code;
 
   if (reason === "hy_memory_update_rejected") {

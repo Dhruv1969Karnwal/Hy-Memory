@@ -6,6 +6,7 @@ import type {
 import { FileText, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getConversation, getSourceImportReceipt } from "./api";
+import { groupedCountLabel } from "./count-label";
 
 export function SourceImportReceipt({ source }: { source: SourceResponse }) {
   return source.authorized ? (
@@ -155,7 +156,7 @@ function ReceiptBody({ source }: { source: SourceResponse }) {
               </dl>
               <p className="source-receipt-note">
                 {receipt.unknown_time_messages > 0
-                  ? `${receipt.unknown_time_messages.toLocaleString()} records have no original time, the import time was not substituted.`
+                  ? `${groupedCountLabel(receipt.unknown_time_messages, "record")} have no original time, the import time was not substituted.`
                   : "Original times come from the saved records."}{" "}
                 Author counts are classified from the current records; they do
                 not mean extraction finished or that meaning was verified.

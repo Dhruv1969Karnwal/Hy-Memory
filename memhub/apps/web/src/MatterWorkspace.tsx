@@ -49,6 +49,7 @@ import { memoryWriteErrorText } from "./model-error-text";
 import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal } from "./write-outcome";
 import "./matters.css";
+import { countLabel, groupedCountLabel } from "./count-label";
 
 const kinds: Record<MatterClaim["kind"], string> = {
   goal: "Goal",
@@ -555,8 +556,10 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
             <strong>{running.phase}</strong>
             <span>
               Base memories {running.completed_batches} /{" "}
-              {running.total_batches || "..."} batches -{" "}
-              {Math.round(running.elapsed_seconds)} seconds
+              {running.total_batches
+                ? countLabel(running.total_batches, "batch")
+                : "... batches"}{" "}
+              - {countLabel(Math.round(running.elapsed_seconds), "second")}
             </span>
           </div>
           <progress
@@ -583,10 +586,14 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
               ? "Complete read this run"
               : "Incomplete read this run"}
           </span>
-          <span>Read {runs[0].selected_records} records</span>
-          <span>HY input {runs[0].hy_input_records ?? 0} records</span>
+          <span>Read {countLabel(runs[0].selected_records, "record")}</span>
+          <span>
+            HY input {countLabel(runs[0].hy_input_records ?? 0, "record")}
+          </span>
           {runs[0].omitted_records > 0 && (
-            <span>{runs[0].omitted_records} records not processed</span>
+            <span>
+              {countLabel(runs[0].omitted_records, "record")} not processed
+            </span>
           )}
           {runs[0].status === "completed" && (
             <span>File pending verification</span>
@@ -634,8 +641,8 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
               <span>
                 <strong>{item.title}</strong>
                 <small>
-                  {item.claims.length} memory points - {item.source_count}{" "}
-                  sources
+                  {countLabel(item.claims.length, "memory point")} -{" "}
+                  {countLabel(item.source_count, "source")}
                 </small>
                 <em>
                   {item.scope_confirmed
@@ -655,10 +662,13 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
           <footer className="matter-sidebar-footer">
             {runs[0] ? (
               <>
-                <span>{runs[0].selected_records} messages joined this run</span>
                 <span>
-                  {runs[0].omitted_records.toLocaleString()} messages outside
-                  this run
+                  {countLabel(runs[0].selected_records, "message")} joined this
+                  run
+                </span>
+                <span>
+                  {groupedCountLabel(runs[0].omitted_records, "message")}{" "}
+                  outside this run
                 </span>
               </>
             ) : (
@@ -929,8 +939,8 @@ export function MatterWorkspace({ onOpenSources }: { onOpenSources(): void }) {
                       <span data-kind="schema">Schema</span>
                       <span data-kind="topic">Topics</span>
                       <span>
-                        {projection.memories.length} memories -{" "}
-                        {projection.graph.edges.length} links
+                        {countLabel(projection.memories.length, "memory")} -{" "}
+                        {countLabel(projection.graph.edges.length, "link")}
                       </span>
                     </fieldset>
                   </>

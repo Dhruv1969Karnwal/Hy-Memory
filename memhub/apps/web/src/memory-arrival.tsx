@@ -8,6 +8,7 @@ import { blockReasonLabel, taskKindLabel } from "./memory-processing-labels";
 import { useMediaPreference } from "./use-media-preference";
 import "./memory-arrival.css";
 import "./import-progress-strip.css";
+import { groupedCountLabel } from "./count-label";
 
 export type { MemoryArrival, MemoryArrivalPhase } from "./memory-arrival-state";
 
@@ -65,9 +66,9 @@ export function MemoryArrivalPanel({
       </div>
       {(hasOriginals || arrival.importing) && (
         <p className="memory-arrival-counts">
-          Saved {arrival.importedMessages.toLocaleString("zh-CN")} messages
+          Saved {groupedCountLabel(arrival.importedMessages, "message")}
           {" · "}
-          {arrival.importedConversations.toLocaleString("zh-CN")} conversations
+          {groupedCountLabel(arrival.importedConversations, "conversation")}
         </p>
       )}
       {arrival.importing &&
@@ -99,7 +100,7 @@ export function MemoryArrivalPanel({
               {arrival.blockedStages?.map((block) => (
                 <li key={`${block.kind}:${block.reason}`}>
                   {taskKindLabel(block.kind)} · {blockReasonLabel(block.reason)}{" "}
-                  · {block.count.toLocaleString("zh-CN")} items
+                  · {groupedCountLabel(block.count, "item")}
                 </li>
               ))}
             </ul>

@@ -1,6 +1,7 @@
 import type { GovernedMemory } from "@one-memory/contracts";
 import { type CoreReader, RESERVED_MEMORY_SEGMENTS } from "./core-client.js";
 import { validateMemoryDetail, validateMemoryPage } from "./core-responses.js";
+import { counted, countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 /** Output budget: a long memory is shortened visibly, never dropped silently. */
@@ -159,7 +160,7 @@ export function renderMemoryPageText(document: MemoryPageDocument): string {
       `- ${memory.memory_id}  ${memory.status}/${memory.kind}  rev ${memory.revision}  scopes=${
         (memory.scopes as string[]).join(",") || "none"
       }`,
-      `  ${memory.content}${memory.content_truncated ? ` ... (${memory.content_characters} characters total)` : ""}`,
+      `  ${memory.content}${memory.content_truncated ? ` ... (${countLabel(counted(memory.content_characters), "character")} total)` : ""}`,
     );
   }
   if (document.memories.length === 0)
@@ -185,7 +186,7 @@ export function renderMemoryDetailText(document: MemoryDetailDocument): string {
     "",
     String(memory.content),
     memory.content_truncated
-      ? `... (${memory.content_characters} characters total)`
+      ? `... (${countLabel(counted(memory.content_characters), "character")} total)`
       : "",
     "",
     "Source excerpt:",
@@ -193,7 +194,7 @@ export function renderMemoryDetailText(document: MemoryDetailDocument): string {
   for (const item of document.evidence) {
     lines.push(
       `- ${item.evidence_id}  source=${item.source_id ?? "unknown"}  author=${item.written_by ?? "unknown"}  readable=${item.available}`,
-      `  ${item.excerpt}${item.excerpt_truncated ? ` ... (${item.excerpt_characters} characters total)` : ""}`,
+      `  ${item.excerpt}${item.excerpt_truncated ? ` ... (${countLabel(counted(item.excerpt_characters), "character")} total)` : ""}`,
     );
   }
   if (document.evidence.length === 0) lines.push("(no readable source text)");
@@ -201,7 +202,7 @@ export function renderMemoryDetailText(document: MemoryDetailDocument): string {
   for (const item of document.history) {
     lines.push(
       `- rev ${item.revision}  ${item.action}  ${item.status}  scopes=${(item.scopes as string[]).join(",")}`,
-      `  ${item.content}${item.content_truncated ? ` ... (${item.content_characters} characters total)` : ""}`,
+      `  ${item.content}${item.content_truncated ? ` ... (${countLabel(counted(item.content_characters), "character")} total)` : ""}`,
     );
   }
   if (document.history.length === 0) lines.push("(none)");

@@ -5,6 +5,7 @@ import { OptionMenu } from "./OptionMenu";
 import { R6ColdStartFrame } from "./R6ColdStartFrame";
 import { R6Button } from "./R6Controls";
 import "./onboarding-model-r6.css";
+import { countLabel } from "./count-label";
 
 /** Strings preserve partial numeric edits. The owner validates and maps to API payloads. */
 export interface OnboardingModelDraft {
@@ -113,7 +114,7 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
   const sourceSummary =
     props.sourceNames.length <= 3
       ? props.sourceNames.join(" · ")
-      : `${props.sourceNames.slice(0, 3).join(" · ")} and ${props.sourceNames.length} apps in total`;
+      : `${props.sourceNames.slice(0, 3).join(" · ")} and ${countLabel(props.sourceNames.length, "app")} in total`;
   async function run(action: Action) {
     if (flight.current || locked) return;
     if (action === "save-and-enable" && !canEnable) return;
@@ -591,9 +592,13 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
               <p>Conversation sources</p>
               <strong>{sourceSummary || "No sources selected yet"}</strong>
               <small>
-                Imported {props.importedConversationCount ?? 0} conversations;
-                the source switches keep controlling what syncs to this machine
-                later.
+                Imported{" "}
+                {countLabel(
+                  props.importedConversationCount ?? 0,
+                  "conversation",
+                )}
+                ; the source switches keep controlling what syncs to this
+                machine later.
               </small>
             </div>
             <div className="onboarding-model-summary-status">

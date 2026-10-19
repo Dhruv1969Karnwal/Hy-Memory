@@ -42,6 +42,7 @@ import { R6Button } from "./R6Controls";
 import { prefetchDataRuntime } from "./runtime-state";
 import type { useImportSources } from "./use-import-sources";
 import "./applications-home.css";
+import { countLabel } from "./count-label";
 
 type HomeViewState = {
   expanded: boolean;
@@ -686,10 +687,10 @@ export function ApplicationsHome({
     : hostReadFailed
       ? "Pending verification"
       : !unchecked.length
-        ? `${admitted} apps connected`
+        ? `${countLabel(admitted, "app")} connected`
         : admitted
-          ? `${admitted} apps connected, ${unchecked.length} pending verification`
-          : `${unchecked.length} apps pending verification`;
+          ? `${countLabel(admitted, "app")} connected, ${unchecked.length} pending verification`
+          : `${countLabel(unchecked.length, "app")} pending verification`;
   const accessUnknownText = accessPending
     ? null
     : hostReadFailed
@@ -747,7 +748,7 @@ export function ApplicationsHome({
     (failure) => failure.kind === "sync",
   );
   const syncState = authorizedSyncSources.length
-    ? `${authorizedSyncSources.length} apps enabled`
+    ? `${countLabel(authorizedSyncSources.length, "app")} enabled`
     : syncApplyFailed
       ? "Not enabled"
       : wantsSync || !visible
@@ -1134,7 +1135,7 @@ export function ApplicationsHome({
         }}
       >
         <header>
-          <h2>{expanded ? `${apps.length} apps` : "My apps"}</h2>
+          <h2>{expanded ? `${countLabel(apps.length, "app")}` : "My apps"}</h2>
           {apps.length > 3 ? (
             <button
               type="button"
@@ -1146,7 +1147,7 @@ export function ApplicationsHome({
               className="r6-home-expand"
               onClick={() => toggleAll(true)}
             >
-              View all {apps.length} apps
+              View all {countLabel(apps.length, "app")}
             </button>
           ) : null}
         </header>

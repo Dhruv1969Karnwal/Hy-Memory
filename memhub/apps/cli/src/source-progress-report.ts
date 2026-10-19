@@ -16,6 +16,7 @@ import {
   validateProcessing,
   validateSources,
 } from "./core-responses.js";
+import { counted, countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 type ReadState =
@@ -242,11 +243,11 @@ export function renderSourcesText(document: SourcesDocument): string {
   if (document.state !== "ok") {
     return "App connection status could not be read right now. Confirm the backend is running and try again.\n";
   }
-  const lines = [`Found ${document.sources.length} apps:`];
+  const lines = [`Found ${countLabel(document.sources.length, "app")}:`];
   for (const source of document.sources) {
     lines.push(
       `- ${source.display_name}: ${source.authorized ? "Connected" : source.available ? "Can connect" : "Not found"}; processing ${source.sync_enabled === true ? "on" : "frozen"}`,
-      `  Imported ${source.imported_conversations} conversations - ${source.imported_messages} messages`,
+      `  Imported ${countLabel(counted(source.imported_conversations), "conversation")} - ${countLabel(counted(source.imported_messages), "message")}`,
     );
   }
   if (document.sources.length === 0) lines.push("(no sources)");
@@ -278,7 +279,7 @@ export function renderProgressText(document: ProgressDocument): string {
         : "Some tasks need attention.",
     document.imports.imported_messages === null
       ? "Imported so far: not available right now"
-      : `Imported so far: ${document.imports.imported_conversations} conversations - ${document.imports.imported_messages} messages`,
+      : `Imported so far: ${countLabel(document.imports.imported_conversations ?? 0, "conversation")} - ${countLabel(document.imports.imported_messages, "message")}`,
     `Import jobs: ${document.imports.validated}`,
   ];
   if (document.imports.issues) {

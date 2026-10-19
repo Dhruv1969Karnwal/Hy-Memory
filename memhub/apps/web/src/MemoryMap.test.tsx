@@ -1010,7 +1010,7 @@ it("REV09: fallback search matches source names and IDs without bypassing the se
   await userEvent.type(search, "LOCAL");
   expect(
     screen.getByRole("button", {
-      name: "Select Cursor · 1 conversations in the graph",
+      name: "Select Cursor · 1 conversation in the graph",
     }),
   ).toBeTruthy();
   expect(
@@ -1144,7 +1144,7 @@ it("REV09: changing source discards the previous source's pending original", asy
   await userEvent.click(screen.getByRole("button", { name: /All memories/ }));
   await userEvent.click(
     screen.getByRole("button", {
-      name: "Select Cursor · 1 conversations in the graph",
+      name: "Select Cursor · 1 conversation in the graph",
     }),
   );
   await act(async () => finish(importedConversation));

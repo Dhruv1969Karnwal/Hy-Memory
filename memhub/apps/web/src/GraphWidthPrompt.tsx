@@ -4,6 +4,7 @@ import type {
 } from "@one-memory/contracts";
 import { useEffect, useRef, useState } from "react";
 import { decideGraphWidth, getGraphWidth } from "./api";
+import { countLabel } from "./count-label";
 import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal, writeTraceStatus } from "./write-outcome";
 
@@ -98,11 +99,11 @@ export function GraphWidthPrompt({
   const choices: { value: GraphWidthDecision; label: string }[] = [
     {
       value: "keep_existing",
-      label: `Keep the existing memory library (default): stay on the original embedding configuration and leave the ${status.memory_count} memories and the graph untouched`,
+      label: `Keep the existing memory library (default): stay on the original embedding configuration and leave the ${countLabel(status.memory_count, "memory")} and the graph untouched`,
     },
     {
       value: "rebuild_with_new",
-      label: `Switch to the built-in model: the existing graph is archived rather than deleted, and the relations of ${status.memory_count} memories have to be rebuilt`,
+      label: `Switch to the built-in model: the existing graph is archived rather than deleted, and the relations of ${countLabel(status.memory_count, "memory")} have to be rebuilt`,
     },
     {
       value: "export_first",
@@ -139,7 +140,7 @@ export function GraphWidthPrompt({
     >
       <h2>The existing memory library does not match the built-in model</h2>
       <p>
-        {`Your memory library was built at ${stored_width} dimensions and the built-in model produces ${expected_width}. They do not connect, so extraction keeps failing until one is chosen.`}
+        {`Your memory library was built at ${countLabel(stored_width, "dimension")} and the built-in model produces ${expected_width}. They do not connect, so extraction keeps failing until one is chosen.`}
       </p>
       <ul>
         {choices.map((choice) => (

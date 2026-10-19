@@ -11,6 +11,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMediaPreference } from "./use-media-preference";
 import "./source-job-actions.css";
+import { groupedCountLabel } from "./count-label";
 
 export interface SourceJobActionsProps {
   job: ImportJob;
@@ -562,7 +563,7 @@ function CancelJobSheet({
             </div>
             <div>
               <dt>{isSyncJob(snapshot.job) ? "New this run" : "Saved"}</dt>
-              <dd>{snapshot.job.stored.toLocaleString()} items</dd>
+              <dd>{groupedCountLabel(snapshot.job.stored, "item")}</dd>
             </div>
           </dl>
           {snapshot.syncEnabled && (
@@ -712,7 +713,7 @@ function statusLabel(job: ImportJob) {
     completed: "Import completed",
     cancelled: "Import canceled",
   };
-  return `${names[job.status] ?? "Status needs verification"} · Saved ${job.stored.toLocaleString()} items`;
+  return `${names[job.status] ?? "Status needs verification"} · Saved ${groupedCountLabel(job.stored, "item")}`;
 }
 
 function operationLabel(job: ImportJob) {

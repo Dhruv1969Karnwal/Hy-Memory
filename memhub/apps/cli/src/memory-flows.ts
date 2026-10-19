@@ -13,6 +13,7 @@ import {
   validateGovernedMemory,
   validateMemoryDetail,
 } from "./core-responses.js";
+import { countLabel } from "./count-label.js";
 import { isMemoryId } from "./memory-report.js";
 import { PRODUCT } from "./version.js";
 
@@ -368,7 +369,7 @@ export function renderMemoryFlowText(document: MemoryFlowDocument): string {
     }
     if (plan.content_characters !== undefined) {
       lines.push(
-        `body: ${plan.content_characters} characters, sha256=${plan.content_sha256}`,
+        `body: ${countLabel(plan.content_characters, "character")}, sha256=${plan.content_sha256}`,
       );
     }
     lines.push(

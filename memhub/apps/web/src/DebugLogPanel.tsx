@@ -31,6 +31,7 @@ import {
   subscribeRendererDebugLogs,
 } from "./renderer-debug-log";
 import "./debug-log-panel.css";
+import { countLabel } from "./count-label";
 
 const LEVELS: Array<{ value: DebugLogLevel | "all"; label: string }> = [
   { value: "all", label: "All" },
@@ -141,7 +142,7 @@ export function DebugLogPanel() {
           <header className="debug-log-header">
             <div>
               <strong>Debug logs</strong>
-              <span>{entries.length} entries, this session</span>
+              <span>{countLabel(entries.length, "entry")}, this session</span>
             </div>
             <div className="debug-log-header-actions">
               <button
@@ -238,7 +239,7 @@ export function DebugLogPanel() {
             ))}
           </fieldset>
           <div className="debug-log-status" aria-live="polite">
-            <span>{filtered.length} matches</span>
+            <span>{countLabel(filtered.length, "match")}</span>
             <span>{live ? "Live refresh" : "Paused"}</span>
             {snapshot?.truncated ? <span>Too many logs; truncated</span> : null}
             {readState === "error" ? (

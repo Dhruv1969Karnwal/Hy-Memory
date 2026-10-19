@@ -22,6 +22,7 @@ import {
   type SourceConnectionCandidate,
   validateSourceConnectionCandidates,
 } from "./core-responses.js";
+import { countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 export interface BatchSourceRow {
@@ -297,7 +298,7 @@ export function renderBatchScanText(document: BatchScanDocument): string {
   });
   const summary =
     document.state === "committed"
-      ? `Completed: ${document.accepted_source_ids.length} sources`
+      ? `Completed: ${countLabel(document.accepted_source_ids.length, "source")}`
       : document.state === "partial"
         ? `Partially complete: ${document.accepted_source_ids.length} succeeded, see above for the rest`
         : `Not completed: ${document.code ?? "unknown"}`;

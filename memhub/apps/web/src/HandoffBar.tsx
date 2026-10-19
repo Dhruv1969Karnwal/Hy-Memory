@@ -2,6 +2,7 @@ import type { GovernedMemory } from "@one-memory/contracts";
 import { Copy, ExternalLink, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { copyText } from "./copy-text";
+import { countLabel, groupedCountLabel } from "./count-label";
 import type { RecallHostStatus } from "./global";
 import { useRecallHosts } from "./host-state";
 
@@ -165,8 +166,8 @@ function HandoffDialog({
           </button>
         </header>
         <p>
-          {count} memories - {prompt.length.toLocaleString()} characters -
-          nothing omitted
+          {countLabel(count, "memory")} -{" "}
+          {groupedCountLabel(prompt.length, "character")} - nothing omitted
         </p>
         <textarea
           aria-label="Full content to hand off"

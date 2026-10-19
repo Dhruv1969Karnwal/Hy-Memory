@@ -4,6 +4,7 @@ import {
   getCallHistoryRequest,
   getCallReferencesRequest,
 } from "./api";
+import { countLabel } from "./count-label";
 
 export interface CallReference {
   kind: "raw" | "memory";
@@ -79,7 +80,7 @@ export function callEventHeadline(
   if (item.state === "denied")
     return `${host} was not allowed to look up memory`;
   if (item.state === "empty") return `${host} found no related memory`;
-  return `${host} found ${count} related items`;
+  return `${host} found ${countLabel(count, "related item")}`;
 }
 export function callRowHeadline(item: CallEvent) {
   return callEventHeadline(item);

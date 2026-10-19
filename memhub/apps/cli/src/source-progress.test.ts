@@ -466,7 +466,7 @@ describe("CLI-19 progress and issue reads", () => {
     }
     const output = streams.stdout();
     expect(output).toContain(
-      "Refreshing every 1 seconds; press Ctrl-C to leave the watch, the background does not stop\n",
+      "Refreshing every 1 second; press Ctrl-C to leave the watch, the background does not stop\n",
     );
     expect(output).toContain("[15:04:05.067] progress #1");
     expect(output).toContain("[15:04:05.067] progress #2");

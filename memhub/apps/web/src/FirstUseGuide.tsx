@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { getMemories, getMemory } from "./api";
 import { copyText } from "./copy-text";
+import { countLabel, groupedCountLabel } from "./count-label";
 import {
   draftForScenario,
   GUIDE_SCENARIOS,
@@ -321,11 +322,11 @@ export function FirstUseGuide({
       <p className="first-use-description">{scenario.description}</p>
       {importedMessages > 0 && (
         <p className="first-use-receipt">
-          This device has saved {importedMessages.toLocaleString()} raw messages
-          ·{" "}
+          This device has saved{" "}
+          {groupedCountLabel(importedMessages, "raw message")}·{" "}
           {loading
             ? "Reading organized memories"
-            : `This page has loaded ${memories.length} usable memories`}
+            : `This page has loaded ${countLabel(memories.length, "usable memory")}`}
           The two stages are counted separately.
         </p>
       )}
@@ -411,8 +412,8 @@ export function FirstUseGuide({
               </select>
             </label>
             <p className="first-use-meta">
-              Chosen from the {memories.length} usable memories loaded here, not
-              your full history.
+              Chosen from the {countLabel(memories.length, "usable memory")}{" "}
+              loaded here, not your full history.
             </p>
             {detailLoading ? (
               <p role="status">Checking the original evidence...</p>
@@ -435,7 +436,8 @@ export function FirstUseGuide({
                 </p>
                 <details className="first-use-evidence" open>
                   <summary>
-                    Original evidence · {detail.evidence.length} segments
+                    Original evidence ·{" "}
+                    {countLabel(detail.evidence.length, "segment")}
                   </summary>
                   {detail.evidence.map((item) => (
                     <article key={item.evidence_id}>

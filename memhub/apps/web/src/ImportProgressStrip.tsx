@@ -21,6 +21,7 @@ import {
   validReceipt,
 } from "./SourceJobActions";
 import "./import-progress-strip.css";
+import { groupedCountLabel } from "./count-label";
 
 const RUNNING = new Set(["running"]);
 const PAUSABLE = new Set(["pending", "running"]);
@@ -252,7 +253,7 @@ export function ImportProgressStrip({
       0,
     );
     const message = firstImport
-      ? `Importing your conversation history, ${imported.toLocaleString("zh-CN")} conversations imported so far. Memories will appear gradually; you can keep using the app.`
+      ? `Importing your conversation history, ${groupedCountLabel(imported, "conversation")} imported so far. Memories will appear gradually; you can keep using the app.`
       : currentArrival?.phase === "model-required"
         ? "The model is not set up yet; new conversations will not be organized into memories for now."
         : "Some content failed to process; check Settings for details.";
@@ -352,12 +353,12 @@ export function ImportProgressStrip({
           {canShowCounts && (
             <span className="import-strip-counts">
               {confirmedMessages > 0
-                ? `Saved ${confirmedMessages.toLocaleString("zh-CN")} originals · ${confirmedConversations.toLocaleString("zh-CN")} conversations`
-                : `${savedInLatestJobs.toLocaleString("zh-CN")} originals saved this run`}
+                ? `Saved ${groupedCountLabel(confirmedMessages, "original")} · ${groupedCountLabel(confirmedConversations, "conversation")}`
+                : `${groupedCountLabel(savedInLatestJobs, "original")} saved this run`}
               {currentArrival?.memoryCount !== undefined &&
               Number.isFinite(currentArrival.memoryCount) &&
               currentArrival.memoryCount >= 0
-                ? ` · ${currentArrival.memoryCount.toLocaleString("zh-CN")} memories`
+                ? ` · ${groupedCountLabel(currentArrival.memoryCount, "memory")}`
                 : ""}
             </span>
           )}
@@ -412,7 +413,7 @@ export function ImportProgressStrip({
                         {knownSources
                           .map(
                             (item) =>
-                              `${item.display_name} ${item.imported_messages.toLocaleString("zh-CN")} originals · ${item.imported_conversations.toLocaleString("zh-CN")} conversations`,
+                              `${item.display_name} ${groupedCountLabel(item.imported_messages, "original")} · ${groupedCountLabel(item.imported_conversations, "conversation")}`,
                           )
                           .join("; ")}
                       </span>
@@ -423,7 +424,7 @@ export function ImportProgressStrip({
                         {latest
                           .map(
                             (item) =>
-                              `${nameOf(item.source_id)} ${isSyncJob(item) ? "New-item sync" : "History import"}, scanned ${item.discovered.toLocaleString("zh-CN")} records, ${jobSummary(item, isSyncJob(item))}`,
+                              `${nameOf(item.source_id)} ${isSyncJob(item) ? "New-item sync" : "History import"}, scanned ${groupedCountLabel(item.discovered, "record")}, ${jobSummary(item, isSyncJob(item))}`,
                           )
                           .join("; ")}
                       </span>
@@ -473,7 +474,7 @@ export function ImportProgressStrip({
                       {group.map((item) => nameOf(item.source_id)).join(", ")}
                       {sync ? " for new conversations" : " history"}
                       {totals.discovered > 0
-                        ? `, scanned ${totals.discovered.toLocaleString("zh-CN")} records`
+                        ? `, scanned ${groupedCountLabel(totals.discovered, "record")}`
                         : ""}
                       .
                     </span>
@@ -556,7 +557,7 @@ export function ImportProgressStrip({
                 {knownSources
                   .map(
                     (item) =>
-                      `${item.display_name} ${item.imported_messages.toLocaleString("zh-CN")} originals · ${item.imported_conversations.toLocaleString("zh-CN")} conversations`,
+                      `${item.display_name} ${groupedCountLabel(item.imported_messages, "original")} · ${groupedCountLabel(item.imported_conversations, "conversation")}`,
                   )
                   .join("; ")}
               </span>
@@ -580,7 +581,7 @@ export function ImportProgressStrip({
                   <li key={`${block.kind}:${block.reason}`}>
                     {taskKindLabel(block.kind)} ·{" "}
                     {blockReasonLabel(block.reason)} ·{" "}
-                    {block.count.toLocaleString("zh-CN")} items
+                    {groupedCountLabel(block.count, "item")}
                   </li>
                 ))}
               </ul>
@@ -735,5 +736,5 @@ function jobSummary(
   },
   sync = false,
 ) {
-  return `${sync ? `${totals.stored.toLocaleString("zh-CN")} new originals this run` : `${totals.stored.toLocaleString("zh-CN")} originals saved`}${totals.merged > 0 ? ` · ${totals.merged.toLocaleString("zh-CN")} already existed` : ""}${totals.skipped > 0 ? ` · ${totals.skipped.toLocaleString("zh-CN")} skipped` : ""}${totals.errors > 0 ? ` · ${totals.errors.toLocaleString("zh-CN")} issues` : ""}`;
+  return `${sync ? `${groupedCountLabel(totals.stored, "new original")} this run` : `${groupedCountLabel(totals.stored, "original")} saved`}${totals.merged > 0 ? ` · ${totals.merged.toLocaleString("zh-CN")} already existed` : ""}${totals.skipped > 0 ? ` · ${totals.skipped.toLocaleString("zh-CN")} skipped` : ""}${totals.errors > 0 ? ` · ${groupedCountLabel(totals.errors, "issue")}` : ""}`;
 }

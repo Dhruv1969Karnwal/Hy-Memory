@@ -1,6 +1,7 @@
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConnectionFallback } from "./ConnectionFallback";
+import { countLabel } from "./count-label";
 import type {
   RecallHostStatus,
   RecallInstallPreview,
@@ -679,14 +680,16 @@ export function SourcesView({ imports }: { imports: ImportState }) {
                 <p className="source-counts">
                   {snapshotStale ? "Recently confirmed: " : ""}
                   {source.authorized
-                    ? `Total ${source.imported_conversations} conversations · ${source.imported_messages} messages${job ? ` · ${job.stored} ${isSyncJob(job) ? "new from this sync" : "new from this import"}` : ""} · ${capabilityLabel(source)}`
+                    ? `Total ${countLabel(source.imported_conversations, "conversation")} · ${countLabel(source.imported_messages, "message")}${job ? ` · ${job.stored} ${isSyncJob(job) ? "new from this sync" : "new from this import"}` : ""} · ${capabilityLabel(source)}`
                     : job
                       ? `${job.stored} ${isSyncJob(job) ? "new from this sync" : "new from this import"} · ${job.merged} already present · ${job.skipped} skipped`
                       : source.available
                         ? (foundSessionsLabel(source) ??
                           "Saved directory found")
                         : "Not found on this Mac"}
-                  {job && job.errors > 0 ? ` · ${job.errors} issues` : ""}
+                  {job && job.errors > 0
+                    ? ` · ${countLabel(job.errors, "issue")}`
+                    : ""}
                 </p>
                 <div className="source-row-actions">
                   {authorizationErrors[source.source_id] ? (
@@ -775,7 +778,7 @@ export function SourcesView({ imports }: { imports: ImportState }) {
               <ShieldCheck size={14} aria-hidden="true" />
               {bulkBusy && bulk === null
                 ? "Preparing..."
-                : `Connect all ${bulkTargets.length} apps in one click`}
+                : `Connect all ${countLabel(bulkTargets.length, "app")} in one click`}
             </button>
           )}
         </div>
@@ -1353,7 +1356,7 @@ function foundSessionsLabel(
   const count = source.session_count;
   if (count === null || count === undefined) return null;
   return count > 0
-    ? `Found ${count} conversations`
+    ? `Found ${countLabel(count, "conversation")}`
     : "Installed, no conversations found yet";
 }
 
@@ -1597,7 +1600,9 @@ function BulkConnectSheet({
         }}
       >
         <p className="eyebrow">First confirmation</p>
-        <h2 id="bulk-connect-title">Connect {pending.length} apps</h2>
+        <h2 id="bulk-connect-title">
+          Connect {countLabel(pending.length, "app")}
+        </h2>
         <p>
           Each app gets a read connection installed, and memory use is allowed
           with every tool and scope that can be verified right now. Below is
@@ -1623,7 +1628,9 @@ function BulkConnectSheet({
                 </div>
                 {step.install ? (
                   <details>
-                    <summary>Would change {changed} files</summary>
+                    <summary>
+                      Would change {countLabel(changed, "file")}
+                    </summary>
                     <InstallFileList
                       preview={step.install}
                       hostLabel={step.label}
@@ -1642,15 +1649,16 @@ function BulkConnectSheet({
         </ul>
         {skipped > 0 && (
           <p className="consent-exclusion">
-            {skipped} apps could not be prepared and were skipped; the other
-            apps are unaffected.
+            {`${countLabel(skipped, "app")} could not be prepared and ${
+              skipped === 1 ? "was" : "were"
+            } skipped; the other apps are unaffected.`}
           </p>
         )}
         {done && (
           <p role="status">
             {unfinished.length
-              ? `${done.length} apps connected, ${unfinished.length} unfinished: ${unfinished.join(", ")}. You can retry each one below.`
-              : `${done.length} apps connected.`}
+              ? `${countLabel(done.length, "app")} connected, ${unfinished.length} unfinished: ${unfinished.join(", ")}. You can retry each one below.`
+              : `${countLabel(done.length, "app")} connected.`}
           </p>
         )}
         <div className="consent-actions">
@@ -1670,7 +1678,7 @@ function BulkConnectSheet({
             >
               {busy
                 ? "Connecting..."
-                : `Confirm connecting ${pending.length} apps`}
+                : `Confirm connecting ${countLabel(pending.length, "app")}`}
             </button>
           )}
         </div>

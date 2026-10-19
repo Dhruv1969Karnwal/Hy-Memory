@@ -3,6 +3,7 @@ import type {
   MemoryProcessingSummary,
   SourceResponse,
 } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 /** One row of the left column: a topic, with what is actually under it. */
 export interface Matter {
@@ -144,7 +145,7 @@ export function findingsOf({
       id: "dormant",
       kind: "dormant",
       label: "Not touched in a long time",
-      text: `${dormant.length} memories have not been changed or mentioned in two months. They may be out of date and worth another look.`,
+      text: `${countLabel(dormant.length, "memory")} have not been changed or mentioned in two months. They may be out of date and worth another look.`,
       memoryIds: dormant.map((item) => item.memory_id),
     });
   }
@@ -156,7 +157,10 @@ export function findingsOf({
       id: "blocked",
       kind: "blocked",
       label: "Stuck",
-      text: `${blockedCount} conversation segments are queued on a condition rather than on time. Their source text is already stored and searchable any time.`,
+      text:
+        blockedCount === 1
+          ? "1 conversation segment is queued on a condition rather than on time. Its source text is already stored and searchable any time."
+          : `${countLabel(blockedCount, "conversation segment")} are queued on a condition rather than on time. Their source text is already stored and searchable any time.`,
       memoryIds: [],
     });
   }

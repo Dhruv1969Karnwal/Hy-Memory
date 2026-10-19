@@ -100,6 +100,7 @@ import {
   validateImportJob,
   validateSourceConnectionCandidates,
 } from "./core-responses.js";
+import { countLabel } from "./count-label.js";
 import { applyDataDeletion, planDataDeletion } from "./data-deletion.js";
 import {
   composeDoctorReport,
@@ -891,7 +892,7 @@ async function runCommand(
         emit(
           asJson
             ? `${JSON.stringify(document)}\n`
-            : `Managed backup restored: ${restored.result.restoredBytes} bytes; protective backup at ${restored.result.previousBackupPath}\n`,
+            : `Managed backup restored: ${countLabel(restored.result.restoredBytes, "byte")}; protective backup at ${restored.result.previousBackupPath}\n`,
         );
         return EXIT_OK;
       }
@@ -1100,7 +1101,7 @@ async function runCommand(
       );
       if (report.invalid_lines) {
         process.stderr.write(
-          `${PRODUCT}: skipped ${report.invalid_lines} corrupt diagnostic records.\n`,
+          `${PRODUCT}: skipped ${countLabel(report.invalid_lines, "corrupt diagnostic record")}.\n`,
         );
       }
       return EXIT_OK;
@@ -2024,7 +2025,7 @@ async function runCommand(
                   ? "This is a dry run: nothing connected and nothing imported; drop --dry-run and add --import to execute"
                   : "Add --import to import the history of every detected source right away",
               })}\n`
-            : `Will connect ${batch.candidates.length} sources: ${detectedSourceIds(
+            : `Will connect ${countLabel(batch.candidates.length, "source")}: ${detectedSourceIds(
                 batch.candidates,
               ).join(
                 ", ",
@@ -4151,7 +4152,7 @@ function emitWatchEvent<T>(
   if (process.stdout.isTTY) {
     process.stdout.write("\x1b[2J\x1b[H");
     process.stdout.write(
-      `Refreshing every ${Math.round(intervalMs / 1000)} seconds; press Ctrl-C to leave the watch, the background does not stop\n`,
+      `Refreshing every ${countLabel(Math.round(intervalMs / 1000), "second")}; press Ctrl-C to leave the watch, the background does not stop\n`,
     );
   }
   const clock = new Date(event.observed_at);

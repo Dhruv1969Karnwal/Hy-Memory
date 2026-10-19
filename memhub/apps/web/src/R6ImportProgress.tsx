@@ -2,6 +2,7 @@ import type { ImportJob, SourceResponse } from "@one-memory/contracts";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { AppMark } from "./app-mark";
 import "./r6-import-progress.css";
+import { groupedCountLabel } from "./count-label";
 
 export function R6ImportProgress({
   sourceIds,
@@ -103,9 +104,9 @@ export function R6ImportProgress({
             </div>
             <h2>{source?.display_name ?? id}</h2>
             {job && job.stored > 0 ? (
-              <p>{`Saved ${job.stored.toLocaleString()} messages`}</p>
+              <p>{`Saved ${groupedCountLabel(job.stored, "message")}`}</p>
             ) : job && job.discovered > 0 ? (
-              <p>{`Scanned ${job.discovered.toLocaleString()} entries, saving`}</p>
+              <p>{`Scanned ${groupedCountLabel(job.discovered, "entry")}, saving`}</p>
             ) : noImportedHistory ? (
               <p>No historical conversations to save</p>
             ) : null}
@@ -118,7 +119,7 @@ export function R6ImportProgress({
                     ? names[job.status]
                     : "Importing"}
               {job && job.errors > 0
-                ? ` - ${job.errors.toLocaleString()} read errors`
+                ? ` - ${groupedCountLabel(job.errors, "read error")}`
                 : ""}
             </small>
           </article>

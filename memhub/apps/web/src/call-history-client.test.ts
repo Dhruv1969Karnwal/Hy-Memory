@@ -122,7 +122,7 @@ it("clear-all uses the dedicated transport and never reuses page IDs", async () 
   await expect(clearAllCallEvents()).rejects.toThrow();
 });
 it("uses one plain-language lookup vocabulary across summary surfaces", () => {
-  expect(callEventHeadline(event)).toBe("Codex found 1 related items");
+  expect(callEventHeadline(event)).toBe("Codex found 1 related item");
   expect(callDetailHeadline({ ...event, memory_count: 2 })).toBe(
     "Codex found 3 related items",
   );
@@ -138,7 +138,7 @@ it("uses one plain-language lookup vocabulary across summary surfaces", () => {
   expect(callDetailHeadline({ ...event, state: "denied" })).toBe(
     "Codex was not allowed to look up memory",
   );
-  expect(callRowHeadline(event)).toBe("Codex found 1 related items");
+  expect(callRowHeadline(event)).toBe("Codex found 1 related item");
   expect(callRowHeadline({ ...event, state: "unavailable" })).toBe(
     "Codex cannot look up memory right now",
   );

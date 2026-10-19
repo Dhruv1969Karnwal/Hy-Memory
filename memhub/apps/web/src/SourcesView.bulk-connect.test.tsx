@@ -258,7 +258,7 @@ describe("connecting every app at once", () => {
       (await within(screen.getByRole("dialog")).findByRole("status"))
         .textContent,
     ).toBe(
-      "1 apps connected, 1 unfinished: Claude (Could not finish). You can retry each one below.",
+      "1 app connected, 1 unfinished: Claude (Could not finish). You can retry each one below.",
     );
   });
 
@@ -277,9 +277,9 @@ describe("connecting every app at once", () => {
     expect(dialog.textContent).toContain(
       "Skipped: Could not read this app's connection change preview",
     );
-    expect(dialog.textContent).toContain("1 apps could not be prepared");
+    expect(dialog.textContent).toContain("1 app could not be prepared");
     await user.click(
-      screen.getByRole("button", { name: "Confirm connecting 1 apps" }),
+      screen.getByRole("button", { name: "Confirm connecting 1 app" }),
     );
     await waitFor(() =>
       expect(api.setRecallPermission).toHaveBeenCalledTimes(1),
@@ -295,7 +295,7 @@ describe("connecting every app at once", () => {
       (await within(screen.getByRole("dialog")).findByRole("status"))
         .textContent,
     ).toBe(
-      "1 apps connected, 1 unfinished: Claude (Could not read this app's connection change preview). You can retry each one below.",
+      "1 app connected, 1 unfinished: Claude (Could not read this app's connection change preview). You can retry each one below.",
     );
   });
 

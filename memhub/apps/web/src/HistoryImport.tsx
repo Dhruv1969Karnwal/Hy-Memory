@@ -14,6 +14,7 @@ import {
   reconcileHistoryUpload,
   uploadHistoryFile,
 } from "./api";
+import { countLabel } from "./count-label";
 import { readPendingFileUpload } from "./pending-file-upload";
 import { traceUiAction } from "./ui-trace";
 
@@ -794,8 +795,11 @@ export function HistoryImport({
                     <div>
                       <dt>Excluded</dt>
                       <dd>
-                        {receipt.skipped_records} non-conversation records -{" "}
-                        {receipt.ignored_files} other files
+                        {countLabel(
+                          receipt.skipped_records,
+                          "non-conversation record",
+                        )}{" "}
+                        - {countLabel(receipt.ignored_files, "other file")}
                       </dd>
                     </div>
                   )}
@@ -804,7 +808,7 @@ export function HistoryImport({
                   <details className="history-preview" open>
                     <summary>
                       Source preview - {receipt.preview.length} /{" "}
-                      {receipt.messages} records
+                      {countLabel(receipt.messages, "record")}
                     </summary>
                     <ol>
                       {receipt.preview.map((item, index) => (

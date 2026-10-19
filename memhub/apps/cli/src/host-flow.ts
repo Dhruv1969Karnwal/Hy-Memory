@@ -4,6 +4,7 @@ import {
   isHostPresent,
   recallHosts,
 } from "@one-memory/runtime-control";
+import { countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 /** Operations the Runtime exposes for one host, by name.
@@ -262,7 +263,9 @@ export function renderHostText(document: HostFlowDocument): string {
     // the refusal looks like a bug rather than a request to look.
     const review = result.review;
     if (Array.isArray(review) && review.length > 0) {
-      lines.push(`  review  ${review.length} items still need manual review:`);
+      lines.push(
+        `  review  ${countLabel(review.length, "item")} still need manual review:`,
+      );
       for (const item of review.slice(0, 12)) {
         const entry = item as Record<string, unknown>;
         lines.push(`    - ${String(entry.path)} :: ${String(entry.where)}`);

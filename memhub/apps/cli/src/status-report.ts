@@ -17,6 +17,7 @@ import {
   validateProcessing,
   validateSources,
 } from "./core-responses.js";
+import { nounLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 export type SectionState =
@@ -188,7 +189,10 @@ export function renderStatusText(
   if (report.summary.state === "partial") {
     const notes = [
       report.summary.degraded.length > 0
-        ? `${report.summary.degraded.join(", ")} issues`
+        ? `${report.summary.degraded.join(", ")} ${nounLabel(
+            report.summary.degraded.length,
+            "issue",
+          )}`
         : "",
       report.summary.not_checked.length > 0
         ? `${report.summary.not_checked.join(", ")} could not be read`

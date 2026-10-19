@@ -56,6 +56,7 @@ import { traceUiAction } from "./ui-trace";
 import { useMemoryLibrary } from "./use-memory-library";
 import { isDefiniteRefusal, writeTraceStatus } from "./write-outcome";
 import "./r6-memory.css";
+import { countLabel } from "./count-label";
 import { indexSyncPresentation } from "./index-sync-notice";
 import {
   MemoryNoteComposer,
@@ -1433,7 +1434,7 @@ export function MemorySpace({
                     ? `${mapLibrary.page.total} settled${settledFilterLabel ? ` (${settledFilterLabel})` : ""} · ${mapLibrary.page.items.length} shown`
                     : "Loading..."
               : loaded
-                ? `Loaded ${memories.filter((m) => m.status !== "deleted").length} memories`
+                ? `Loaded ${countLabel(memories.filter((m) => m.status !== "deleted").length, "memory")}`
                 : "Loading..."}
           </span>
         </div>
@@ -1539,7 +1540,7 @@ export function MemorySpace({
               />
               {processing.running || processing.pending
                 ? `${processing.running} processing · ${queueWaiting(processing)}${queueEta(processing)}`
-                : `${processing.completed} processing runs completed`}
+                : `${countLabel(processing.completed, "processing run")} completed`}
               {processing.outside_window_pending ? (
                 <span className="pipeline-outside-window">
                   {` · ${processing.outside_window_pending} outside the window (source text still searchable)`}
@@ -1547,7 +1548,7 @@ export function MemorySpace({
               ) : null}
               {processing.manual_extract_batches_planned ? (
                 <span className="pipeline-manual-batches">
-                  {` · ${processing.manual_extract_batches_planned} batches planned, currently on batch ${processing.manual_extract_batches_current}`}
+                  {` · ${countLabel(processing.manual_extract_batches_planned, "batch")} planned, currently on batch ${processing.manual_extract_batches_current}`}
                 </span>
               ) : null}
               {blocked.named.length ? (
@@ -1568,7 +1569,7 @@ export function MemorySpace({
             </p>
             {(processing.unknown ?? 0) > 0 ? (
               <div className="memory-processing-unknown" role="status">
-                <span>{`${processing.unknown} conversations have an uncertain processing result`}</span>
+                <span>{`${countLabel(processing.unknown ?? 0, "conversation")} have an uncertain processing result`}</span>
                 <R6Button disabled={busy} onClick={() => void retryUnknown()}>
                   Reprocess
                 </R6Button>
@@ -2042,7 +2043,8 @@ export function MemorySpace({
                       <span>{memory.content}</span>
                       <small>
                         {kindLabel(memory.kind)} · {statusLabel(memory.status)}{" "}
-                        · {memory.evidence_ids.length} source quotes
+                        ·{" "}
+                        {countLabel(memory.evidence_ids.length, "source quote")}
                       </small>
                     </button>
                     {failure ? (
@@ -2469,9 +2471,9 @@ function queueWaiting(processing: MemoryProcessingSummary): string {
     return `${fresh} new pending${activeSuffix}`;
   }
   if (fresh === 0) {
-    return `${backlog} backlog items${activeSuffix}`;
+    return `${countLabel(backlog, "backlog item")}${activeSuffix}`;
   }
-  return `${fresh} new pending · ${backlog} backlog items${activeSuffix}`;
+  return `${fresh} new pending · ${countLabel(backlog, "backlog item")}${activeSuffix}`;
 }
 
 const EXTRACTION_WINDOW_PRESETS: ExtractionWindowPreset[] = [
@@ -2578,7 +2580,7 @@ function queueEta(processing: MemoryProcessingSummary): string {
     return ` (~${Math.max(1, Math.round(hours * 60))} min)`;
   }
   if (hours < 24) {
-    return ` (~${Math.round(hours)} hours)`;
+    return ` (~${countLabel(Math.round(hours), "hour")})`;
   }
-  return ` (~${Math.round(hours / 24)} days)`;
+  return ` (~${countLabel(Math.round(hours / 24), "day")})`;
 }

@@ -255,7 +255,7 @@ it("keeps source to host direction for raw hits with a source", async () => {
     />,
   );
   fireEvent.click(await screen.findByRole("tab", { name: "Recent calls" }));
-  await screen.findByText("WorkBuddy found 1 related items");
+  await screen.findByText("WorkBuddy found 1 related item");
   const direction = document.querySelector(".r6-home-call-direction");
   expect(direction?.querySelectorAll("img")).toHaveLength(1);
   expect(direction?.querySelector("svg")).toBeTruthy();
@@ -333,7 +333,7 @@ it("keeps the latest call visible when recording is incomplete", async () => {
     />,
   );
   fireEvent.click(await screen.findByRole("tab", { name: "Recent calls" }));
-  await screen.findByText("Cursor found 1 related items");
+  await screen.findByText("Cursor found 1 related item");
   expect(screen.getByText(/a few calls were not recorded/)).toBeTruthy();
   expect(
     screen.queryByText("Call records cannot be read right now"),
@@ -1200,7 +1200,7 @@ it("never renders an app whose permission could not be read as zero connected", 
     .mockResolvedValue([installed("app-0", { state: "approved" })]);
   homeWithHosts(read);
   await waitFor(() =>
-    expect(accessRow()).toContain("1 apps pending verification"),
+    expect(accessRow()).toContain("1 app pending verification"),
   );
   expect(screen.queryByText("0 apps connected")).toBeNull();
   expect(
@@ -1209,7 +1209,7 @@ it("never renders an app whose permission could not be read as zero connected", 
     ),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Verify again" }));
-  await waitFor(() => expect(accessRow()).toContain("1 apps connected"));
+  await waitFor(() => expect(accessRow()).toContain("1 app connected"));
   expect(read).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("button", { name: "Verify again" })).toBeNull();
 });
@@ -1217,7 +1217,7 @@ it("never renders an app whose permission could not be read as zero connected", 
 it("treats a host without any permission answer as unchecked, not unconnected", async () => {
   homeWithHosts(vi.fn().mockResolvedValue([installed("app-0")]));
   await waitFor(() =>
-    expect(accessRow()).toContain("1 apps pending verification"),
+    expect(accessRow()).toContain("1 app pending verification"),
   );
   expect(screen.queryByText("0 apps connected")).toBeNull();
 });
@@ -1232,7 +1232,7 @@ it("keeps the known count and names only the unchecked rest", async () => {
       ]),
   );
   await waitFor(() =>
-    expect(accessRow()).toContain("1 apps connected, 1 pending verification"),
+    expect(accessRow()).toContain("1 app connected, 1 pending verification"),
   );
   expect(
     screen.getByText(
@@ -1256,7 +1256,7 @@ it("says a failed host read is unchecked and offers to read again", async () => 
     ),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Verify again" }));
-  await waitFor(() => expect(accessRow()).toContain("1 apps connected"));
+  await waitFor(() => expect(accessRow()).toContain("1 app connected"));
   expect(read).toHaveBeenCalledTimes(2);
 });
 

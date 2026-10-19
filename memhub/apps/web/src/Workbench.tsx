@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { getConversation } from "./api";
+import { countLabel } from "./count-label";
 import { HandoffBar } from "./HandoffBar";
 import { MemoryGraph3D } from "./MemoryGraph3D";
 import { MemoryRecallScope, memoryProvenanceLabel } from "./MemoryRecallScope";
@@ -207,8 +208,10 @@ export function Workbench({
               >
                 {item.label}
                 <small>
-                  {item.memoryCount} memories
-                  {item.sourceCount ? ` · ${item.sourceCount} sources` : ""}
+                  {countLabel(item.memoryCount, "memory")}
+                  {item.sourceCount
+                    ? ` · ${countLabel(item.sourceCount, "source")}`
+                    : ""}
                 </small>
               </button>
               {/* The graph is a canvas: clicking a circle is a mouse-only
@@ -344,7 +347,7 @@ export function Workbench({
             <p className="wb-receipt">
               Drawn{" "}
               {shown.nodes.filter((node) => node.node_type === "memory").length}{" "}
-              / {graph.total_memories} memories in total
+              / {countLabel(graph.total_memories, "memory")} in total
               <span>{graphReceipt(shown)}</span>
             </p>
           ) : null}
@@ -433,7 +436,7 @@ export function Workbench({
           <p className="wb-column-label">Original conversation</p>
           <p className="wb-evidence-note">
             {detail
-              ? `This memory comes from the ${evidence.length} quotes below, ordered by time`
+              ? `This memory comes from the ${countLabel(evidence.length, "quote")} below, ordered by time`
               : "Click any circle in the graph and the quotes behind it show up here"}
           </p>
           {evidence.map((item) => (
@@ -822,8 +825,8 @@ export function Answer({
       </p>
       <p className="wb-answer-source">
         {answer
-          ? `${answer.mode === "generated" ? "Model synthesis" : answer.mode === "extractive" ? "Source excerpt" : "No match"} · based on ${shownMemories.length} confirmed memories`
-          : `Recalled ${shownMemories.length} memories`}
+          ? `${answer.mode === "generated" ? "Model synthesis" : answer.mode === "extractive" ? "Source excerpt" : "No match"} · based on ${countLabel(shownMemories.length, "confirmed memory")}`
+          : `Recalled ${countLabel(shownMemories.length, "memory")}`}
       </p>
       {groundedAnswer && !tooLong ? (
         <button
@@ -958,7 +961,7 @@ function skeleton(
     nodes: withHistory.map((item) => ({
       node_id: `source:${item.source_id}`,
       node_type: "source" as const,
-      label: `${item.display_name} · ${item.imported_conversations} conversations`,
+      label: `${item.display_name} · ${countLabel(item.imported_conversations, "conversation")}`,
       memory_id: null,
       source_id: item.source_id,
       kind: null,
@@ -1042,15 +1045,15 @@ function graphReceipt(graph: MemoryGraphResponse): string {
   };
   for (const edge of graph.edges) counts[edge.origin] += 1;
   const parts = [
-    `Quote source ${counts.provenance} lines`,
-    `Same conversation ${counts.same_conversation} lines`,
+    `Quote source ${countLabel(counts.provenance, "line")}`,
+    `Same conversation ${countLabel(counts.same_conversation, "line")}`,
   ];
   // Only mentioned once there is one. A young library has no shared tag yet,
   // and a line reading 0 would be one more thing to read past.
   if (counts.shared_tag > 0)
-    parts.push(`Same topic ${counts.shared_tag} lines`);
+    parts.push(`Same topic ${countLabel(counts.shared_tag, "line")}`);
   if (counts.hy_relation > 0) {
-    parts.push(`HY Memory summary ${counts.hy_relation} lines`);
+    parts.push(`HY Memory summary ${countLabel(counts.hy_relation, "line")}`);
     return parts.join(" · ");
   }
   parts.push(

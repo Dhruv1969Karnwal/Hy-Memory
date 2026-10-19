@@ -19,6 +19,7 @@ import {
 } from "./api";
 import { AppMark } from "./app-mark";
 import "./conversation-search.css";
+import { countLabel } from "./count-label";
 
 type OpenedConversation = {
   hit: ConversationSearchHit;
@@ -388,11 +389,13 @@ export function ConversationSearch({
                         {sourceLabel(hit.source_id)}
                       </span>
                       {hit.project ? <span>{hit.project}</span> : null}
-                      {hit.turn_count !== undefined ? (
-                        <span>{hit.turn_count} turns</span>
+                      {typeof hit.turn_count === "number" ? (
+                        <span>{countLabel(hit.turn_count, "turn")}</span>
                       ) : null}
                       {hit.memory_count ? (
-                        <span>{hit.memory_count} memories distilled</span>
+                        <span>
+                          {countLabel(hit.memory_count, "memory")} distilled
+                        </span>
                       ) : null}
                       <OriginalTime value={hit.created_at} />
                     </small>

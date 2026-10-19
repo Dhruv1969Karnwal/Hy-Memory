@@ -35,6 +35,7 @@ import { traceUiAction } from "./ui-trace";
 import type { ImportSourcesController } from "./use-import-sources";
 import { isDefiniteRefusal } from "./write-outcome";
 import "./cold-start.css";
+import { countLabel } from "./count-label";
 
 export type OnboardingDestination = "memory" | "sources" | "settings";
 
@@ -1030,7 +1031,7 @@ function SourceList({
             (more > 0
               ? `Scroll down for more · ${more} not shown`
               : count > 3
-                ? `All ${count} apps shown`
+                ? `All ${countLabel(count, "app")} shown`
                 : "")}
         </span>
         {selection}

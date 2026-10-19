@@ -21,6 +21,7 @@ import {
   getRecentConversations,
   searchConversations,
 } from "./api";
+import { countLabel, groupedCountLabel } from "./count-label";
 import { HandoffBar } from "./HandoffBar";
 import { MemoryEvidencePanel } from "./MemoryEvidencePanel";
 import { MemoryGraph3D } from "./MemoryGraph3D";
@@ -384,7 +385,7 @@ export function MemoryMap(props: Props) {
           node_type: "source" as const,
           source_id: s.source_id,
           memory_id: null,
-          label: `${s.display_name} · ${s.imported_conversations} conversations`,
+          label: `${s.display_name} · ${countLabel(s.imported_conversations, "conversation")}`,
           status: null,
           kind: null,
           confidence: null,
@@ -636,7 +637,7 @@ export function MemoryMap(props: Props) {
             {running || queued
               ? "The model connection checks out. The first memories will appear in the list as they are generated."
               : arrival.importedConversations > 0
-                ? `Imported ${arrival.importedConversations.toLocaleString()} conversations; they will appear here once organized into memories.`
+                ? `Imported ${groupedCountLabel(arrival.importedConversations, "conversation")}; they will appear here once organized into memories.`
                 : arrival.importedMessages > 0
                   ? "History is saved on this device. Memories will appear here when ready."
                   : "Connect an app and import history to start settling memories."}
@@ -829,14 +830,14 @@ export function MemoryMap(props: Props) {
             <span>
               {library.stale
                 ? library.page && library.page.total > 0
-                  ? `Total ${library.page.total} memories · checking sources...`
+                  ? `Total ${countLabel(library.page.total, "memory")} · checking sources...`
                   : "Checking sources..."
                 : library.failed
                   ? "Read failed"
                   : library.loading && library.page?.total === 0
                     ? "Reading..."
                     : library.page
-                      ? `Total ${library.page.total} memories${refreshing ? " · checking..." : ""}`
+                      ? `Total ${countLabel(library.page.total, "memory")}${refreshing ? " · checking..." : ""}`
                       : "Reading..."}
             </span>
             {!library.stale && (
@@ -881,7 +882,7 @@ export function MemoryMap(props: Props) {
         {!props.simplified && (
           <div className="map-list-heading">
             <span>{label}</span>
-            <span>{filtered.length} memories</span>
+            <span>{countLabel(filtered.length, "memory")}</span>
           </div>
         )}
         {arrivalCount > 0 && (
@@ -987,7 +988,10 @@ export function MemoryMap(props: Props) {
                       </span>
                     </>
                   ) : (
-                    <>Available · {m.evidence_ids.length} source segments</>
+                    <>
+                      Available ·{" "}
+                      {countLabel(m.evidence_ids.length, "source segment")}
+                    </>
                   )}
                 </small>
               </button>
@@ -1036,7 +1040,7 @@ export function MemoryMap(props: Props) {
                 <ChevronLeft size={16} aria-hidden="true" />
               </button>
               <span>
-                Total {library.page.total.toLocaleString()} memories, page{" "}
+                Total {groupedCountLabel(library.page.total, "memory")}, page{" "}
                 {library.page.total === 0
                   ? 0
                   : Math.floor(library.page.offset / library.page.limit) +
@@ -1196,7 +1200,9 @@ export function MemoryMap(props: Props) {
               <span>Lines show source attribution</span>
             ) : null
           ) : (
-            <span>{filtered.length} memories · currently loaded</span>
+            <span>
+              {countLabel(filtered.length, "memory")} · currently loaded
+            </span>
           )}
         </footer>
         {!props.simplified && (
@@ -1413,7 +1419,7 @@ export function MemoryMap(props: Props) {
               // single-column surface needs it — the three-column one already
               // lists the same memories in the pane beside this one.
               <>
-                <p>{`${filtered.length} memories settled`}</p>
+                <p>{`${countLabel(filtered.length, "memory")} settled`}</p>
                 <ul className="map-settled-list" aria-label="Settled memories">
                   {filtered.map((m) => (
                     <li key={m.memory_id}>{m.content}</li>
@@ -1532,7 +1538,8 @@ export function MemoryMap(props: Props) {
         {!props.simplified && !!visibleDetail?.history.length && (
           <details className="map-history">
             <summary>
-              Edit history · {visibleDetail.history.length} versions
+              Edit history ·{" "}
+              {countLabel(visibleDetail.history.length, "version")}
             </summary>
             {visibleDetail.history.map((h) => (
               <article key={h.revision}>

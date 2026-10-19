@@ -2516,7 +2516,7 @@ describe("MemorySpace", () => {
       ),
     ).toBeTruthy();
     expect(
-      screen.getAllByText(/Sync attempted 1 times - Status updated at/).length,
+      screen.getAllByText(/Sync attempted 1 time - Status updated at/).length,
     ).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Retry sync" }));
 

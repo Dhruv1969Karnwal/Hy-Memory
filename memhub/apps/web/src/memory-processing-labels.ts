@@ -1,4 +1,4 @@
-/** Chinese wording for the memory pipeline's own status codes.
+/** Wording for the memory pipeline's own status codes.
  *
  * Lives on its own because three screens now read the same summary — the
  * memory space, the onboarding completion page, and the health panel — and a
@@ -7,6 +7,7 @@
  */
 
 import type { MemoryProcessingBlock } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 export function taskKindLabel(kind: string): string {
   const labels: Record<string, string> = {
@@ -139,7 +140,7 @@ export function splitBlockedStages(
 
 /** The one line a reader gets for work the pipeline is handling by itself. */
 export function retryingBlockLabel(count: number): string {
-  return `${count} items: ${RETRYING}`;
+  return `${countLabel(count, "item")}: ${RETRYING}`;
 }
 
 /** The reasons that mean "no usable model", as the pipeline reports them.

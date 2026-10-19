@@ -18,6 +18,7 @@ import {
   parseMemoryNoteReceipt,
 } from "@one-memory/operations";
 import type { CoreOperations, CorePutOperations } from "./core-operations.js";
+import { countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -478,7 +479,7 @@ export function renderExtendedWriteText(
     switch (plan.kind) {
       case "memory_note_add":
         lines.push(
-          `Add in-app memory note: ${plan.content_characters} characters`,
+          `Add in-app memory note: ${countLabel(plan.content_characters, "character")}`,
         );
         break;
       case "memory_note_process":
@@ -492,7 +493,7 @@ export function renderExtendedWriteText(
         break;
       case "manual_extract":
         lines.push(
-          `Manual extraction: ${plan.evidence_ids.length} evidence items`,
+          `Manual extraction: ${countLabel(plan.evidence_ids.length, "evidence item")}`,
         );
         break;
     }

@@ -1,4 +1,5 @@
 import type { ImportJob, SourceResponse } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 interface SourceCardProps {
   source: SourceResponse;
@@ -203,7 +204,7 @@ function sessionSummary(source: SourceResponse) {
   return (
     <p className="session-count">
       {count > 0
-        ? `Found ${count} conversations`
+        ? `Found ${countLabel(count, "conversation")}`
         : "Installed, no conversations found yet"}
     </p>
   );
@@ -222,7 +223,7 @@ function sessionCountLabel(source: SourceResponse): string | null {
   const count = source.session_count;
   if (count === undefined || count === null) return null;
   if (count <= 0) return "Installed, no conversations found yet";
-  return `Found ${count} conversations`;
+  return `Found ${countLabel(count, "conversation")}`;
 }
 
 function statusLabel(
