@@ -83,7 +83,7 @@ class MemoryBatchExtractor:
                         "L7_INTENTION. Output strict JSON: "
                         '{"memories":[{"evidence_id":"...","support_quote":"source text",'
                         '"content":"...",'
-                        '"layer":"L2_FACT"}]}\u3002'
+                        '"layer":"L2_FACT"}]}. '
                         "Negative examples: 'research X for me', 'Can you review this?' and 'I "
                         "need you to change the page' "
                         "are tasks, not personal memories. Positive example: 'I have always "
