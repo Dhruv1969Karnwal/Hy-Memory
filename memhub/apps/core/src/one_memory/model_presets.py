@@ -42,7 +42,7 @@ CLAIM_SQLITE = (
 )
 CLAIM_MYSQL = "INSERT IGNORE INTO model_profile_seeds (name, seeded_at) VALUES (%s, %s)"
 
-PRESET_PROFILE_NAME = "Preset model service"
+PRESET_PROFILE_NAME = "Preconfigured model service"
 
 #: One row per preset ever seeded, so deleting one is a decision that
 #: survives a restart. Without it, seeding on an empty profile list would
