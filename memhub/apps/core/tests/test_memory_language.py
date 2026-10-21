@@ -217,8 +217,18 @@ def test_the_english_traceback_is_still_not_to_be_translated(tmp_path) -> None:
     # Core pins hy-memory==2.0.3, and the published artifact is still Chinese, so a needle
     # translated to match this branch's prompts_zh.py asserts against text nothing runs.
     # They flip to English the day the SDK ships translated and version-bumped together.
-    assert "\u4fdd\u7559\u539f\u59cb\u672f\u8bed\u3001\u54c1\u724c\u540d\u3001\u516c\u5f0f\u3001\u4ee3\u7801" in llm.system_prompt()
-    assert "\u4e0d\u8981\u8f6c\u5199\u6216\u7ffb\u8bd1\u4e13\u6709\u540d\u8bcd" in llm.system_prompt()
+    installed = llm.system_prompt()
+    first_needle = (
+        "\u4fdd\u7559\u539f\u59cb\u672f\u8bed\u3001\u54c1"
+        "\u724c\u540d\u3001\u516c\u5f0f\u3001\u4ee3\u7801"
+    )
+    assert first_needle in installed
+    second_needle = (
+        "\u4e0d\u8981\u8f6c\u5199\u6216"
+        "\u7ffb\u8bd1\u4e13\u6709\u540d\u8bcd"
+    )
+    assert second_needle in installed
+
 
 
 def test_a_reworded_sdk_prompt_still_gets_a_chinese_instruction(
