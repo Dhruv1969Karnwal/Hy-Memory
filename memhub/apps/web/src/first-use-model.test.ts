@@ -15,12 +15,12 @@ function guideDetail(
     memory: {
       memory_id: "m1",
       user_id: "local",
-      content: "周会不安排在周五",
+      content: "Do not schedule the weekly meeting on Fridays",
       kind: "chat",
       status: "confirmed",
       origin: "extracted",
       scopes: ["workspace:project-a"],
-      tags: ["项目周会"],
+      tags: ["project weekly meeting"],
       evidence_ids: ["e1"],
       revision: 1,
       created_at: "2026-09-01T00:00:00Z",
@@ -35,7 +35,8 @@ function guideDetail(
         written_by: "person",
         role: "user",
         created_at: null,
-        verbatim: "周五我有其他安排，周会避开周五。",
+        verbatim:
+          "I have other plans on Fridays; keep the weekly meeting off Fridays.",
         available: true,
       },
     ],
@@ -92,28 +93,28 @@ describe("first use evidence and draft boundaries", () => {
       const text = draftForScenario(
         scene,
         "query",
-        "项目周会",
+        "project weekly meeting",
         guideDetail(),
         "Cursor",
       );
       expect(text).toContain("MemHub");
-      expect(text).toContain("项目周会");
-      expect(text).not.toContain("周五");
+      expect(text).toContain("project weekly meeting");
+      expect(text).not.toContain("Friday");
       expect(text).not.toContain("m1");
     },
   );
   it("manual transfer retains full background and warns against invented personal profiles", () => {
-    const long = "不自动扩大授权。".repeat(1000);
+    const long = "will not widen authorization automatically ".repeat(1000);
     const text = draftForScenario(
       "new",
       "context",
-      "协作",
+      "collaboration",
       guideDetail({ content: long }),
       "Cursor",
     );
     expect(text).toContain(long);
     expect(text).toContain("[m1 · v1]");
-    expect(text).toContain("不代表完整个人画像");
+    expect(text).toContain("not a complete personal profile");
     expect(text).toContain("workspace:project-a");
   });
   it("invalidates changed revision, content, scope, citation or status", () => {
@@ -121,7 +122,7 @@ describe("first use evidence and draft boundaries", () => {
     expect(sameGuideMemory(original, guideDetail())).toBe(true);
     for (const update of [
       { revision: 2 },
-      { content: "已改" },
+      { content: "Changed" },
       { scopes: ["all-apps"] },
       { evidence_ids: ["e2"] },
       { status: "deleted" as const },

@@ -133,19 +133,19 @@ def test_personal_candidate_prefilter_excludes_unrelated_user_turns(tmp_path) ->
     stable = store.put(
         evidence(
             message_id="stable",
-            verbatim="我偏好简洁、克制的中文界面文案。",
+            verbatim="\u6211\u504f\u597d\u7b80\u6d01\u3001\u514b\u5236\u7684\u4e2d\u6587\u754c\u9762\u6587\u6848\u3002",
         )
     ).record
     store.put(
         evidence(
             message_id="task",
-            verbatim="请检查这个页面并运行测试。",
+            verbatim="\u8bf7\u68c0\u67e5\u8fd9\u4e2a\u9875\u9762\u5e76\u8fd0\u884c\u6d4b\u8bd5\u3002",
         )
     )
     store.put(
         evidence(
             message_id="assistant",
-            verbatim="我偏好简洁文案。",
+            verbatim="\u6211\u504f\u597d\u7b80\u6d01\u6587\u6848\u3002",
             written_by=WrittenBy.AGENT,
         )
     )
@@ -160,19 +160,19 @@ def test_workspace_candidate_prefilter_requires_explicit_cue_and_scope(tmp_path)
     stable = store.put(
         evidence(
             message_id="workspace-memory",
-            verbatim="录音纪要要挂在事件流，其他没问题，可以记录结论。",
+            verbatim="\u5f55\u97f3\u7eaa\u8981\u8981\u6302\u5728\u4e8b\u4ef6\u6d41\uff0c\u5176\u4ed6\u6ca1\u95ee\u9898\uff0c\u53ef\u4ee5\u8bb0\u5f55\u7ed3\u8bba\u3002",
         ).model_copy(update={"workspace": "workspace:v1:project"})
     ).record
     store.put(
         evidence(
             message_id="no-cue",
-            verbatim="请优化录音纪要页面。",
+            verbatim="\u8bf7\u4f18\u5316\u5f55\u97f3\u7eaa\u8981\u9875\u9762\u3002",
         ).model_copy(update={"workspace": "workspace:v1:project"})
     )
     store.put(
         evidence(
             message_id="no-workspace",
-            verbatim="这个可以记一下。",
+            verbatim="\u8fd9\u4e2a\u53ef\u4ee5\u8bb0\u4e00\u4e0b\u3002",
         ).model_copy(update={"conversation_id": "personal-conversation"})
     )
 
@@ -283,7 +283,7 @@ def test_file_adoption_refreshes_the_ingest_identity_in_the_same_transaction(tmp
             message_id=None,
             correlation_id=None,
             origin=EvidenceOrigin.HOOK,
-            verbatim="我喜欢蓝莓",
+            verbatim="I like blueberries",
         )
     ).record
     with sqlite3.connect(database) as connection:
@@ -297,7 +297,7 @@ def test_file_adoption_refreshes_the_ingest_identity_in_the_same_transaction(tmp
             source_id="workbuddy",
             message_id="file-message",
             origin=EvidenceOrigin.FILE,
-            verbatim="我喜欢蓝莓",
+            verbatim="I like blueberries",
         )
     ).record
 
@@ -319,7 +319,7 @@ def test_hook_adopts_one_recent_file_row_but_not_ambiguous_repeated_text(tmp_pat
             source_id="workbuddy",
             message_id="file-first",
             origin=EvidenceOrigin.FILE,
-            verbatim="我喜欢蓝莓",
+            verbatim="I like blueberries",
         )
     ).record
     hook_input = evidence(
@@ -327,7 +327,7 @@ def test_hook_adopts_one_recent_file_row_but_not_ambiguous_repeated_text(tmp_pat
         message_id=None,
         correlation_id=None,
         origin=EvidenceOrigin.HOOK,
-        verbatim="我喜欢蓝莓",
+        verbatim="I like blueberries",
     ).model_copy(update={"source_ordinal": "hook-visible"})
 
     merged = store.put(hook_input)
@@ -341,7 +341,7 @@ def test_hook_adopts_one_recent_file_row_but_not_ambiguous_repeated_text(tmp_pat
             source_id="workbuddy",
             message_id="file-second",
             origin=EvidenceOrigin.FILE,
-            verbatim="真的重复发送",
+            verbatim="genuinely repeated send",
         )
     )
     store.put(
@@ -349,10 +349,10 @@ def test_hook_adopts_one_recent_file_row_but_not_ambiguous_repeated_text(tmp_pat
             source_id="workbuddy",
             message_id="file-third",
             origin=EvidenceOrigin.FILE,
-            verbatim="真的重复发送",
+            verbatim="genuinely repeated send",
         )
     )
-    ambiguous = store.put(hook_input.model_copy(update={"verbatim": "真的重复发送"}))
+    ambiguous = store.put(hook_input.model_copy(update={"verbatim": "genuinely repeated send"}))
 
     assert ambiguous.was_created is True
     assert store.count() == 4

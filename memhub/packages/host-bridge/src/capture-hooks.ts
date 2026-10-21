@@ -154,8 +154,9 @@ export function captureCommandFor(
   );
 }
 
-export const UNPARSEABLE_HOOKS = "不是合法的 JSON，无法确认其中的采集命令";
-export const UNREADABLE = "无法读取";
+export const UNPARSEABLE_HOOKS =
+  "Not valid JSON, so the capture commands inside it cannot be confirmed";
+export const UNREADABLE = "Cannot be read";
 
 /** What a host's capture file says about us, read the way the host reads it.
  * `ours` when it runs `expected` however spelled. A command that names our

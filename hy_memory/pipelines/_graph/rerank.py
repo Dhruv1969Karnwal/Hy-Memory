@@ -1,26 +1,26 @@
-"""读侧：记忆关系图怎么参与打分。
+"""Read side: how the memory relation graph takes part in scoring.
 
-三种用法需要三套不同的数学，最常见的错误是拿一套加权去干这三件事：
+Three uses need three different pieces of maths; the most common mistake is one weighting scheme doing all three:
 
-| 用法 | 做什么 | 解决什么失败 | 引入新候选 |
+| Usage | What it does | Which failure it fixes | Adds new candidates |
 |---|---|---|---|
-| **A** `propagate_support` | 在**截断前的扩池结果内部**重排 | 分数接近时排序是噪声 | **不会** |
-| **B** `relax_admission` | 让被强命中支持的候选**降低准入门槛** | 相关但相似度低，被阈值挡掉 | 会（有界） |
-| **C** `find_relation_paths` | 输出连接两个命中的**路径** | 关系语义在平铺列表里丢了 | 少量 |
+| **A** `propagate_support` | Reranks **inside the widened pre-truncation pool** | Ordering is noise when scores are close | **No** |
+| **B** `relax_admission` | Lets candidates backed by strong hits **lower the admission bar** | Related but low similarity, blocked by the threshold | Yes (bounded) |
+| **C** `find_relation_paths` | Emits the **path** joining two hits | Relation semantics are lost in a flat list | A few |
 
-关键取舍（详见 `docs/pro_graph_design.md` §3）：
+Key trade-offs (details in `docs/pro_graph_design.md` §3):
 
-1. **A 必须作用在截断前的扩池结果上**。只把已选出的 top-10 换个顺序收益很小；
-   有价值的是从几十条候选里重新决定哪 10 条进最终结果。
-2. **B 绝不给扩展候选"发明"图分数**。图分和语义分不同量纲，硬融合就是靠拍系数把不可比的
-   东西凑一起。正确做法是图只动态放宽准入阈值，最终分仍是候选自己与 query 的相似度 ——
-   图修正的是**召回漏检**，不是相关性判断，所以永远不可能把真正不相关的东西捧上来。
-3. **tag 共属不作为遍历边**（τ=0）。它是分类关系而非关联关系：一个 `work` 标签下 200 条
-   记忆彼此"相关度相同"，既弱又均匀，且高频 tag 形成 hub。tag 的正确用法是读侧
-   **打分通道**（query BM25 terms ∩ mem.tags，权重高于 co_occur）以及 filter/boost。
-4. **用法 B 硬闸**：`sim(cand) ≥ seed_sim − δ`（默认 δ=0.2），替代旧的
-   `min_score·(1−γ·support)` 松弛门槛。扩展通过闸后按时间并进 seed（`\\n\\n`），
-   不单独占 top-k 坑。
+1. **A must act on the widened pool before truncation.** Reordering an already chosen top-10 buys little;
+   the value is re-deciding which 10 of several dozen candidates make the final result.
+2. **B never invents graph scores for expanded candidates.** Graph scores and semantic scores have different units, and hard fusion is just slapping coefficients onto incomparable things.
+   The right move is for the graph to only relax the admission threshold dynamically; the final score remains the
+   candidate's own similarity to the query -- the graph fixes **missed recall**, not relevance, so it can never lift genuinely irrelevant content into the result.
+3. **Shared tags are not traversal edges** (τ=0). A tag is a classification relation, not an association: 200 memories under one `work` tag
+   are all "equally related" -- weak and uniform, and frequent tags turn into hubs. The right use of tags on the read side
+   is a **scoring channel** (query BM25 terms ∩ mem.tags, weighted above co_occur) plus filter/boost.
+4. **Hard gate for usage B**: `sim(cand) ≥ seed_sim − δ` (default δ=0.2), replacing the old
+   `min_score*(1−γ*support)` slack threshold. Once an expansion passes the gate it is merged into the seed chronologically (`\\n\\n`),
+   and takes no top-k slot of its own.
 """
 
 import logging
@@ -31,30 +31,30 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 logger = logging.getLogger(__name__)
 
 
-# 边类型先验 τ。判据是**这条边能否提供向量检索本身拿不到的信息**。
+# Per-edge-type prior τ. The test is **whether this edge can add information vector search cannot obtain**.
 TYPE_PRIOR: Dict[str, float] = {
-    # LLM 标注：两端余弦往往很低，向量检索永远发现不了 → 信息量最高
+    # LLM-labelled: cosine at both ends is often low and vector search would never find it -> most informative
     "causes": 0.9,
     "contrasts": 0.7,
     "elaborates": 0.9,
     # Independent dated occurrences of the same concrete activity/event type.
     "same_series": 0.85,
-    # 时序脊：同 Topic 内的递进关系，有向。回答"X 之后/之前"靠它
+    # Temporal spine: ordered progression inside one Topic, directed. Answers "after/before X"
     "temporal_next": 0.7,
-    # 共同写入：仍参与邻域扩展，但先验低于 typed 边；最终分里 co_occur 通道权重也更低
-    # （相对 tag∩keyword）。噪声靠度数归一化 + seed_sim 硬闸控制。
+    # Written together: still part of neighbourhood expansion, but the prior is below typed edges, and the co_occur
+    # channel is weighted lower in the final score too (versus tag∩keyword). Noise is held by degree normalisation + the seed_sim gate.
     "co_occurs": 0.55,
-    # 确定性：记录的就是"语义相近"，而这正是向量索引本来就知道的事 → 高度冗余
+    # Deterministic: it records exactly "semantically close", which is what the vector index already knows -> highly redundant
     "semantic_neighbor": 0.35,
-    # Episode 共属：同一次讨论（跨 write 批次）。不走边，由 episode_id 字段框出，
-    # 本质是"跨批次延长的 co_occurs"，先验与之对齐
+    # Same episode: one discussion (across write batches). Not carried by edges, framed by the episode_id field;
+    # essentially co_occurs stretched across batches, so the prior matches it
     "episode": 0.55,
-    # 兜底（老数据里 System 2 写的无类型 RELATED_TO）
+    # Fallback (untyped RELATED_TO written by System 2 in old data)
     "related": 0.5,
 }
 _DEFAULT_PRIOR = 0.5
 
-# 读侧一律过滤的图节点状态：被判重逻辑删除的记忆不能从图里绕回来
+# Graph node statuses always filtered on the read side: memories logically deleted by dedup must not loop back in through the graph
 _EXCLUDED_STATUS = {"shadow"}
 
 
@@ -78,18 +78,18 @@ def build_adjacency(
     *,
     exclude_status: Optional[Set[str]] = None,
 ) -> Dict[str, List[Tuple[str, str, float]]]:
-    """把 `graph_store.get_related_edges()` 的结果建成无向邻接表。
+    """Build an undirected adjacency table from the result of `graph_store.get_related_edges()`.
 
-    同一对节点之间可能有多种关系（既 `co_occurs` 又 `causes`）。这里**折叠成一条、
-    取有效权重最大的那种**：度数应该数"有多少个不同的邻居"，而不是"有多少条平行边"，
-    否则 hub 降权（`sqrt(deg)`）会被平行边稀释，支持度也会重复计。
+    One node pair can carry several relations (both `co_occurs` and `causes`). These are **folded into a single
+    edge keeping the highest effective weight**: degree should count distinct neighbours, not parallel edges,
+    otherwise hub down-weighting (`sqrt(deg)`) gets diluted by parallel edges and support is counted twice.
 
     Returns:
         {node_id: [(neighbor_id, relation_type, effective_weight), ...]}
-        `effective_weight` = 边权 × 类型先验 τ，后续公式直接用它。
+        `effective_weight` = edge weight × type prior τ; the formulas below use it directly.
     """
     excluded = exclude_status if exclude_status is not None else _EXCLUDED_STATUS
-    # (node, neighbor) -> (relation_type, effective_weight)，只保留最强的
+    # (node, neighbor) -> (relation_type, effective_weight), keeping only the strongest
     best: Dict[Tuple[str, str], Tuple[str, float]] = {}
 
     for e in edges or []:
@@ -98,7 +98,7 @@ def build_adjacency(
             continue
         if (e.get("target_status") or "").lower() in excluded:
             continue
-        # 有向边（TEMPORAL_NEXT）从两端都可能命中，source 侧也要过滤 shadow
+        # Directed edges (TEMPORAL_NEXT) can be hit from either end, so shadow must be filtered on the source side too
         if (e.get("source_status") or "").lower() in excluded:
             continue
         rtype = e.get("relation_type") or "related"
@@ -107,7 +107,7 @@ def build_adjacency(
         except (TypeError, ValueError):
             w = 1.0
         eff = max(0.0, min(w, 1.0)) * edge_prior(rtype)
-        # 邻接表本身是无向的（A/B 只关心"挨着"）；方向信息由 forward_dirs 单独保留
+        # The adjacency table itself is undirected (A/B only care about "being next to each other"); direction is kept separately in forward_dirs
         for a, b in ((src, tgt), (tgt, src)):
             prev = best.get((a, b))
             if prev is None or eff > prev[1]:
@@ -120,10 +120,10 @@ def build_adjacency(
 
 
 def collect_directed_edges(edges: Iterable[Dict[str, Any]]) -> Set[Tuple[str, str]]:
-    """收集有向边的正向 (source, target) 集合（目前只有 `temporal_next`）。
+    """Collect the forward (source, target) set of directed edges (currently only `temporal_next`).
 
-    邻接表刻意做成无向的 —— 用法 A/B 只关心"挨着"。但用法 C 输出路径时要能说清
-    方向，否则"X 之后发生了什么"和"X 之前"分不开。
+    The adjacency table is deliberately undirected because usages A/B only care about adjacency. Usage C emits
+    paths and has to state direction, otherwise "what happened after X" and "before X" cannot be told apart.
     """
     out: Set[Tuple[str, str]] = set()
     for e in edges or []:
@@ -136,7 +136,7 @@ def collect_directed_edges(edges: Iterable[Dict[str, Any]]) -> Set[Tuple[str, st
 
 
 # ================================================================
-# 用法 A：池内支持度传播
+# Usage A: support propagation inside the pool
 # ================================================================
 
 def propagate_support(
@@ -147,30 +147,30 @@ def propagate_support(
     iterations: int = 1,
     support_cap: float = 1.0,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
-    """在**已召回池内部**做图正则化重排。
+    """Graph-regularized reranking **inside the already recalled pool**.
 
         support(v) = Σ_{u ∈ N(v) ∩ P, u≠v}  eff_w(u,v) · s(u)  /  sqrt(deg_pool(v))
         s'(v)      = s0(v) + beta · min(support(v), support_cap)
 
-    三个护栏都在公式里：
-      - `∩ P`（只在池内传播）→ 不引入新候选，不会 hub fan-out；
-      - `sqrt(deg_pool(v))` 度数归一化 → 这是 tag hub 问题的直接解药（图上的 IDF 类比）；
-      - `beta` 小 + `support_cap` → 这是**微调**而非重写排序。beta 大到能让排序翻天覆地，
-        就说明在用图代替检索，一定掉精度。
+    All three guardrails sit in the formula:
+      - `∩ P` (propagates only inside the pool) -> no new candidates, no hub fan-out;
+      - `sqrt(deg_pool(v))` degree normalisation -> the direct antidote to tag hubs (the graph analogue of IDF);
+      - small `beta` + `support_cap` -> this is a **nudge**, not a rewrite of the ranking. A beta large enough
+        to overturn the order would mean the graph replaces retrieval, and precision would certainly drop.
 
     Args:
-        scores: {node_id: s0}，直接召回分（**截断前的扩池结果**）
-        adjacency: build_adjacency() 的产物
-        iterations: 传播轮数，1~2 足够；更多轮收益递减且开始糊化
+        scores: {node_id: s0}, the direct recall scores (**the widened pool before truncation**)
+        adjacency: the product of build_adjacency()
+        iterations: propagation rounds, 1~2 is enough; more has diminishing returns and starts to blur
 
     Returns:
-        (新分数 dict, support dict)。support 单独返回，供观测和用法 B 复用。
+        (new scores dict, support dict). support is returned separately for observability and reuse by usage B.
     """
     if not scores or not adjacency or beta <= 0:
         return dict(scores), {}
 
     pool = set(scores)
-    # 池内度数（只算两端都在池里的边）
+    # Degree inside the pool (only edges whose both ends are in the pool)
     deg: Dict[str, int] = {}
     for v in pool:
         deg[v] = sum(1 for (nb, _t, _w) in adjacency.get(v, []) if nb in pool)
@@ -197,14 +197,14 @@ def propagate_support(
 
 
 # ================================================================
-# 用法 B：阈值松弛（图只降低门槛，绝不发明相关性）
+# Usage B: threshold relaxation (the graph only lowers the bar, it never invents relevance)
 # ================================================================
 
-# 边类型分组，用于扩展时按类型分配配额。
+# Edge type groups, used to hand out expansion quotas per type.
 #
-# 时间边数量天然最多、信息量最低（同一天写的东西不一定有关系）；关系边最少但信息量最高
-# （`causes` 两端的向量相似度可能很低，是向量检索永远找不到的）。不分配额的话，
-# 时间边会把关系边从 top-N 里挤出去 —— 这和 tag hub 淹没结果是同一类问题。
+# Temporal edges are the most numerous and least informative (same-day writes need not be related); relational
+# edges are the fewest but most informative (`causes` endpoints can be vector-dissimilar, exactly what vector
+# search can never find). Without quotas temporal edges crowd relational edges out of the top-N, the same class of problem as a tag hub drowning the result.
 _RELATIONAL_TYPES = {"causes", "elaborates", "contrasts", "same_series",
                      "co_occurs", "related",
                      "episode"}
@@ -223,11 +223,11 @@ def edge_group(relation_type: Optional[str]) -> str:
 def normalize_by_degree(
     adjacency: Dict[str, List[Tuple[str, str, float]]],
 ) -> Dict[str, List[Tuple[str, str, float]]]:
-    """按度数给边权贬值：`eff_w /= sqrt(deg(neighbor))`。
+    """Devalue edge weights by degree: `eff_w /= sqrt(deg(neighbor))`.
 
-    高连接节点（同一天写了很多条、或话题 hub）的每一条边都更不具区分度。
-    这是图上的 IDF 类比，也是时间边能不能安全参与扩展的前提 ——
-    否则一个高产的日子会把当天所有记忆等权拉进来。
+    Every edge of a highly connected node (many memories written the same day, or a topic hub) is less discriminative.
+    This is the graph analogue of IDF and the precondition for temporal edges joining expansion safely;
+    otherwise one productive day pulls in every memory of that day with equal weight.
     """
     deg = {n: len(nbs) for n, nbs in (adjacency or {}).items()}
     out: Dict[str, List[Tuple[str, str, float]]] = {}
@@ -250,18 +250,18 @@ def reachable_within(
     max_nodes: int = 200,
     multi_seed_bonus: float = 0.5,
 ) -> Dict[str, Tuple[float, str, str, int]]:
-    """从高分 seed 出发做 BFS，返回池外可达节点的结构支持度。
+    """Breadth-first search from high-scoring seeds, returning structural support for nodes reachable outside the pool.
 
-    这是**关系型结构多跳**的实现：`causes` / `co_occurs` / `temporal_next` 这些边
-    可以串起来走，"朋友推荐的餐厅"这类问题的两端往往隔着一个中间节点。
+    This is the **relational multi-hop** implementation: `causes` / `co_occurs` / `temporal_next` edges can be
+    chained, and the two ends of a question like "which restaurant did the friend recommend" often sit one intermediate node apart.
 
-    支持度沿路衰减：`support = Π(eff_w) · hop_decay^(hop-1) · s0(seed)`。
-    衰减 + 节点预算是必须的 —— 2 跳不加约束就等于把整个连通分量拉进来。
+    Support decays along the path: `support = Π(eff_w) * hop_decay^(hop-1) * s0(seed)`.
+    Decay plus a node budget are mandatory -- 2 hops without constraints pulls in the whole connected component.
 
-    **多 seed 佐证**：单个 seed 指向一个候选可能是巧合，**两个不同 seed 同时指向它**
-    才是真正的佐证（同一个"互相佐证"逻辑，用法 A 用在池内、这里用在扩展）。
-    所以 support 不是简单取 max，而是"最强路径 + 其余 seed 的贡献 × multi_seed_bonus"。
-    例：query 同时命中「吃饭」和「骑车」，两者都指向「公园」→ 公园显著上浮。
+    **Multi-seed corroboration**: one seed pointing at a candidate may be coincidence; **two different seeds pointing
+    at it at once** is real corroboration (the same mutual-corroboration logic usage A applies inside the pool).
+    So support is not a plain max but "strongest path + remaining seeds' contribution * multi_seed_bonus".
+    Example: a query hits both "eating" and "cycling", both point at "park" -> park rises noticeably.
 
     Returns:
         {node_id: (support, via_seed, relation_type_of_first_edge, hop)}
@@ -279,7 +279,7 @@ def reachable_within(
 
     # cand -> {seed: (best_support_from_that_seed, first_rel, hop)}
     per_seed: Dict[str, Dict[str, Tuple[float, str, int]]] = {}
-    # frontier: (node, 累计权重, via_seed, 首跳关系, hop)
+    # frontier: (node, accumulated weight, via_seed, first-hop relation, hop)
     frontier: List[Tuple[str, float, str, str, int]] = [
         (nid, s, nid, "", 0) for nid, s in seeds
     ]
@@ -291,7 +291,7 @@ def reachable_within(
             for nb, rtype, eff_w in adjacency.get(cur, []):
                 if nb == cur:
                     continue
-                # 跳数衰减：第 1 跳不衰减，之后每跳乘 hop_decay
+                # Hop decay: the first hop does not decay, each later hop multiplies by hop_decay
                 sup = acc * eff_w * (hop_decay ** (hop - 1))
                 rel = first_rel or rtype
                 if nb not in in_pool:
@@ -310,7 +310,7 @@ def reachable_within(
         if not frontier:
             break
 
-    # 合成：最强路径全额 + 其余 seed 的贡献打折累加（有界，避免多 seed 无限叠）
+    # Merge: strongest path in full + discounted contributions of the other seeds (bounded, so seeds cannot stack forever)
     best: Dict[str, Tuple[float, str, str, int]] = {}
     for cand, slots in per_seed.items():
         ranked = sorted(slots.items(), key=lambda kv: kv[1][0], reverse=True)
@@ -328,14 +328,14 @@ def apply_type_quota(
     top_n: int,
     quotas: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Tuple[float, str, str, int]]:
-    """按边类型分配 top-N 配额，再按 support 截断。
+    """Allocate the top-N quota per edge type, then truncate by support.
 
-    为什么必须分组：时间边数量天然最多、信息量最低；关系边最少但信息量最高
-    （`causes` 两端余弦可能很低，向量检索永远找不到）。不分配额的话时间边会把关系边
-    从 top-N 里挤出去。
+    Why grouping is mandatory: temporal edges are the most numerous and least informative, relational edges the
+    fewest but most informative (`causes` endpoints may have very low cosine and vector search would never find them).
+    Without a quota, temporal edges would push relational edges out of the top-N.
 
-    这一步是**免费的**（纯本地排序），必须放在"批量取向量算相似度"之前 ——
-    算相似度是整条链路上唯一有 I/O 成本的一步。
+    This step is **free** (pure local ordering) and must come before "batch-fetch vectors and compute similarity":
+    similarity is the only step in the whole pipeline that carries an I/O cost.
     """
     if top_n <= 0 or not reach:
         return {}
@@ -352,7 +352,7 @@ def apply_type_quota(
         for cand, val in items[:budget]:
             out[cand] = val
 
-    # 配额没用满时，用全局最强的候选补齐
+    # When the quotas are not filled, top up with the globally strongest candidates
     if len(out) < top_n:
         rest = sorted(
             ((c, v) for c, v in reach.items() if c not in out),
@@ -371,25 +371,25 @@ def episode_support(
     weight: float = 0.7,
     multi_seed_bonus: float = 0.5,
 ) -> Dict[str, Tuple[float, str, str, int]]:
-    """把 episode 共属折算成结构支持度，形状与 `reachable_within` 一致，可直接进同一漏斗。
+    """Turn episode membership into structural support, shaped like `reachable_within` so it enters the same funnel.
 
-    Episode 是"一次讨论"（跨 write 批次，SDK 内部按时间间隔切）。同一 episode 的记忆
-    彼此有真实关联，但向量可能互不相似 —— 这正是向量检索找不到的那部分。
+    An episode is one discussion (spanning write batches, split by time gaps inside the SDK). Memories in the same
+    episode are genuinely related, yet their vectors may be dissimilar -- exactly the part vector search cannot find.
 
-    为什么用字段而不是边：一个 episode 10-30 条记忆，两两连边是 45-435 条；
-    一个 `episode_id` + 一次过滤查询就够，而且**不依赖图**（graph 关掉也能用）。
+    Why a field rather than edges: an episode holds 10-30 memories, pairwise linking would mean 45-435 edges;
+    one `episode_id` plus one filtered query suffices, and it **does not depend on the graph** (works with graph disabled).
 
-    与 tag 桥接（τ=0，已否决）的区别：`work` 标签下可能有跨年的 200 条，是**分类关系**；
-    episode 是同一次讨论的 10-30 条，是**情节关系** —— 本质上是"跨批次延长的 co_occurs"。
+    Difference from tag bridging (τ=0, rejected): a `work` tag can hold 200 memories across years, a **classification
+    relation**; an episode holds 10-30 memories from one discussion, an **episodic relation** -- essentially co_occurs stretched across batches.
 
         support(c) = weight / sqrt(episode_size) · s0(seed)
 
-    `sqrt(episode_size)` 归一化：episode 越大，单条共属越不具区分度（同 tag hub 的道理）。
-    多 seed 佐证同样适用：两个高分命中同属一个 episode 时，该 episode 的成员更可信。
+    `sqrt(episode_size)` normalisation: the bigger the episode, the less discriminative one membership is (same reasoning as tag hubs).
+    Multi-seed corroboration applies as well: when two high-scoring hits belong to one episode, that episode's members are more credible.
 
     Args:
-        hits: 直接命中（用来挑 seed，也用来排除已在池内的）
-        episode_members: {episode_id: [member_node_id, ...]}，调用方从 VDB 框出来
+        hits: direct hits (used to pick seeds and to exclude what is already in the pool)
+        episode_members: {episode_id: [member_node_id, ...]}, framed by the caller out of the VDB
 
     Returns:
         {node_id: (support, via_seed, "episode", 1)}
@@ -398,7 +398,7 @@ def episode_support(
         return {}
 
     in_pool = {h.get("node_id") for h in hits if h.get("node_id")}
-    # episode_id → 该 episode 下分数最高的几个 seed
+    # episode_id -> the highest-scoring seeds inside that episode
     seeds_by_ep: Dict[str, List[Tuple[str, float]]] = {}
     for h in hits:
         score = float(h.get("score", 0.0))
@@ -435,23 +435,23 @@ def blend_support(
     lam: float = 0.3,
     support_cap: float = 1.0,
 ) -> Dict[str, Tuple[float, str, str, int]]:
-    """把「图边可达」与「episode 共属」两条来源的支持度**有界叠加**，而不是取 max。
+    """**Boundedly stack** the support from graph reachability and episode membership instead of taking a max.
 
-    为什么不能取 max：这是**两个独立观察**。`co_occurs` 说"这两条是同一段话里抽出来的"，
-    episode 共属说"这两条属于同一件事，哪怕隔了几次写入"。两者同时成立时，该候选比
-    只成立一个更可信；取 max 等于宣布"多一个独立证据不加分"。
+    Why not max: these are **two independent observations**. `co_occurs` says the two came from the same passage,
+    episode membership says they belong to the same affair even across several writes. When both hold, the
+    candidate is more credible than when only one holds; max would declare that an extra independent piece of evidence adds nothing.
 
-    而且取 max 会**系统性偏向粗粒度信号**：episode 的支持度被 `sqrt(episode_size)`
-    归一化压着，天然小于 `co_occurs`，所以 max 几乎总是选中图边 —— episode 通道在
-    "有共现边的候选"上等于完全不起作用，只在跨批次、无共现边的候选上才有效。
+    Max also **systematically favours the coarser signal**: episode support is pressed down by `sqrt(episode_size)`
+    normalisation, so it is naturally below `co_occurs` and max almost always picks the graph edge -- the episode
+    channel then does nothing for candidates that already have co-occurrence edges, working only on cross-batch candidates without them.
 
         support = min(support_cap, s_graph + lam · s_episode)
 
-    用折扣系数而不是直接相加，是为了避免两个弱证据叠出一个强结论；`support_cap`
-    封顶保证准入门槛最多降到 `(1 - gamma) · min_score`，护栏不变。
-    这与 `reachable_within` 里对多 seed 佐证的处理是同一套逻辑（最强的全额 + 其余打折）。
+    A discount factor rather than a plain sum stops two weak pieces of evidence stacking into a strong conclusion;
+    the `support_cap` ceiling guarantees the admission bar drops at most to `(1 - gamma) * min_score`, so the guardrail holds.
+    This is the same logic as multi-seed corroboration in `reachable_within` (strongest in full, the rest discounted).
 
-    归属信息（via_seed / relation_type / hop）取**支持度更强**的那一侧，便于观测。
+    Attribution (via_seed / relation_type / hop) is taken from the side with **stronger support**, for observability.
     """
     if not episode_reach:
         return dict(graph_reach or {})
@@ -477,19 +477,19 @@ def apply_temporal_affinity(
     tau_days: float = 7.0,
     floor: float = 0.3,
 ) -> Dict[str, Tuple[float, str, str, int]]:
-    """给结构支持度乘一个**时间亲和**因子：与锚点写得越近，联系越可能真实。
+    """Scale structural support by a **temporal affinity** factor: the closer to the anchor in time, the likelier the link is real.
 
-    这是打分的第二个维度（第一个是内容：边权 × 候选自身与 query 的相似度）。
+    This is the second scoring dimension (the first is content: edge weight times the candidate's own similarity to the query).
 
-    动机来自这样一次写入："我今天去公园玩了，是骑车去的，今天还去吃了东西" ——
-    公园 / 骑车 / 吃饭是**一起**被记下来的。之后问"上周吃饭的地方在哪"，
-    向量检索可能只捞到「吃饭」而捞不到「公园」，但它们同一时间点写入这件事本身
-    就是强信号。同批次的 `co_occurs` 边天然满足 Δt≈0 → 因子=1。
+    The motivation is a write like "I went to the park today and cycled there, and I also got something to eat today":
+    park / cycling / eating were recorded **together**. Later, asking "where was the place I ate at last week",
+    vector search may retrieve only "eating" and miss "park", yet the very fact that they were written at the same moment
+    is a strong signal. Same-batch `co_occurs` edges naturally have Δt≈0, so the factor is 1.
 
         factor = clamp(exp(-Δdays / tau_days), floor, 1.0)
 
-    `floor` 不设 0：时间远但关系强（如 LLM 标的 `causes`）的边不该被时间抹平。
-    取不到时间的节点按 1.0 处理 —— 不因缺字段惩罚。
+    `floor` is not 0: edges that are temporally distant but relationally strong (such as an LLM-labelled `causes`) should not be flattened by time.
+    Nodes whose time cannot be read are treated as 1.0 -- a missing field is not punished.
     """
     if not reach or not times:
         return reach
@@ -513,7 +513,7 @@ def temporal_affinity_factor(
     tau_days: float = 7.0,
     floor: float = 0.3,
 ) -> float:
-    """单对 (cand, seed) 的时间亲和 ∈ [floor, 1]；缺时间按 1.0。"""
+    """Temporal affinity for a single (cand, seed) pair ∈ [floor, 1]; a missing time yields 1.0."""
     if t_cand is None or t_seed is None:
         return 1.0
     tau_sec = max(1.0, tau_days * 86400.0)
@@ -525,14 +525,14 @@ _TERM_RE = re.compile(r"[a-z0-9\u4e00-\u9fff]+", re.I)
 
 
 def tokenize_query_terms(query: str) -> List[str]:
-    """轻量分词：用于 BM25/tag 通道（不引入 LLM；评测单 query 路径可用）。"""
+    """Lightweight tokenization for the BM25/tag channel (no LLM; usable on the single-query eval path)."""
     if not query:
         return []
     return [t.lower() for t in _TERM_RE.findall(query) if len(t) > 1]
 
 
 def keyword_content_overlap(terms: List[str], content: str) -> float:
-    """query terms 命中 content 的比例 ∈ [0, 1]。"""
+    """Share of query terms present in content ∈ [0, 1]."""
     if not terms or not content:
         return 0.0
     blob = content.lower()
@@ -541,16 +541,16 @@ def keyword_content_overlap(terms: List[str], content: str) -> float:
 
 
 def tag_keyword_overlap(terms: List[str], tags: Optional[Iterable[str]]) -> float:
-    """query BM25 terms ∩ mem.tags（大小写不敏感）的覆盖率 ∈ [0, 1]。
+    """Coverage of query BM25 terms ∩ mem.tags (case-insensitive) ∈ [0, 1].
 
-    tag 通道权重要高于 co_occur：专名/主题词对齐比弱共现边更可信。
+    The tag channel must outweigh co_occur: proper nouns and topic words align better than weak co-occurrence edges.
     """
     if not terms or not tags:
         return 0.0
     tag_set = {str(t).lower().strip() for t in tags if t}
     if not tag_set:
         return 0.0
-    # 精确交集 + tag 被 term 包含 / term 被 tag 包含（travel ↔ traveling）
+    # Exact intersection plus tag-contained-in-term / term-contained-in-tag (travel ↔ traveling)
     hit = 0
     for t in terms:
         if t in tag_set:
@@ -576,12 +576,12 @@ def score_expanded_candidate(
     w_co_occur: float = 0.15,
     w_struct: float = 0.25,
 ) -> float:
-    """扩展候选多通道融合分（无 LLM）。
+    """Multi-channel fusion score for an expanded candidate (no LLM).
 
         score = w_sem·sim + w_bm25·bm25 + w_tag·tag
               + w_temporal·temporal + w_edge·min(support,1)
 
-    `co_occurs` / `episode` 走较低的 `w_co_occur`；typed 边走 `w_struct`。
+    `co_occurs` / `episode` use the lower `w_co_occur`; typed edges use `w_struct`.
     """
     rtype = (relation_type or "").lower()
     if rtype in ("co_occurs", "episode"):
@@ -617,35 +617,35 @@ def relax_admission(
     candidate_temporal: Optional[Dict[str, float]] = None,
     channel_weights: Optional[Dict[str, float]] = None,
 ) -> List[Dict[str, Any]]:
-    """从高分 seed 的 k 跳邻域里捞回被漏检的候选，并**重新打分**。
+    """Recover missed candidates from the k-hop neighbourhood of high-scoring seeds and **rescore** them.
 
-    **硬闸（用法 B 准入）**：
+    **Hard gate (usage B admission)**:
 
-        admit(c) iff sim(c) ≥ seed_sim(via) − δ     （默认 δ=0.2）
+        admit(c) iff sim(c) ≥ seed_sim(via) − δ     (default δ=0.2)
 
-    `seed_sim` 是把 c 拉进来的 via_seed 相对 query 的分数。比旧的
-    `min_score·(1−γ·support)` 更直观：扩展不能比自己的种子低太多。
+    `seed_sim` is the score against the query of the via_seed that pulled c in. More intuitive than the old
+    `min_score*(1−γ*support)`: an expansion must not fall far below its own seed.
 
-    `gamma ≤ 0` 仍表示**关闭**用法 B（兼容 `MEMORY_GRAPH_RELAX_GAMMA=0`）。
+    `gamma ≤ 0` still means usage B is **off** (compatible with `MEMORY_GRAPH_RELAX_GAMMA=0`).
 
-    **多通道打分**（可选特征字典齐全时启用；否则退回 `sim + boost_beta·support`）：
+    **Multi-channel scoring** (enabled once the optional feature dicts are supplied; otherwise falls back to `sim + boost_beta*support`):
 
-        语义 + BM25(content) + tag∩keyword（高）+ 时序 + co_occur/结构（低）
+        semantic + BM25(content) + tag∩keyword (high) + temporal + co_occur/structure (low)
 
     Args:
         candidate_sims: {candidate_id: sim(query, candidate)}
-        seed_sim_delta: 硬闸 δ，env `MEMORY_GRAPH_SEED_SIM_DELTA`
-        candidate_bm25 / candidate_tag / candidate_temporal: 可选通道特征 ∈ [0,1]
-        channel_weights: {sem,bm25,tag,temporal,co_occur,struct} 覆盖默认权重
-        reach: 可选，预先算好（并已乘过时间亲和）的可达集
+        seed_sim_delta: the hard-gate δ, env `MEMORY_GRAPH_SEED_SIM_DELTA`
+        candidate_bm25 / candidate_tag / candidate_temporal: optional channel features ∈ [0,1]
+        channel_weights: {sem,bm25,tag,temporal,co_occur,struct} overriding the default weights
+        reach: optional precomputed reachability set (already scaled by temporal affinity)
 
     Returns:
         [{"node_id", "score", "sim", "support", "threshold", "via_seed",
-          "relation_type", "hop", ...}]，按 score 降序，最多 max_admit 条。
+          "relation_type", "hop", ...}], sorted by score descending, at most max_admit entries.
     """
     if gamma <= 0 or not seed_scores or not candidate_sims:
         return []
-    # 无邻接且无预计算 reach（例如只靠 episode）时也允许
+    # Also allowed with no adjacency and no precomputed reach (for instance episode-only)
     if reach is None and not adjacency:
         return []
 
@@ -735,12 +735,12 @@ def merge_expansions_into_seeds(
     hits: List[Dict[str, Any]],
     admitted_hits: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """把通过硬闸的扩展 mem **按时间并进**对应 seed，用 ``\\n\\n`` 分隔。
+    """Merge gate-passing expansions **into their seed chronologically**, separated by ``\\n\\n``.
 
-    - 合成后仍占 **1** 个 top-k 坑（保留 seed 原 score / 排序位置）
-    - 同一 cand 只并进 via 最强的那条 seed（admitted 已是单 via）
-    - 块顺序：seed + expansions 全部按 `memory_at`（缺则 `gmt_created`）升序
-    - 不写回 VDB；只改读侧返回的 content
+    - The synthesis still occupies exactly **1** top-k slot (the seed keeps its original score and rank)
+    - A candidate is merged only into the seed whose via is strongest (admitted entries are already single-via)
+    - Block order: seed plus expansions, all sorted ascending by `memory_at` (`gmt_created` when missing)
+    - Nothing is written back to the VDB; only the content returned on the read side changes
     """
     if not admitted_hits:
         return hits
@@ -792,14 +792,14 @@ def merge_expansions_into_seeds(
         )
         if not merged:
             continue
-        # 写到 hit 上：下游组 response 时优先用 item["content"] 覆盖 node.content
+        # Written onto the hit: downstream response assembly prefers item["content"] over node.content
         seed_hit["content"] = merged
         seed_hit["graph_merged"] = True
         seed_hit["_graph_merged_items"] = merged_items
         seed_hit["graph_merged_ids"] = [
             e.get("node_id") for e in exps if e.get("node_id")
         ]
-        # 保留最强扩展的观测字段，便于 trace
+        # Keep the strongest expansion's observability fields for tracing
         best = max(exps, key=lambda x: float(x.get("score", 0.0)))
         seed_hit["graph_support"] = best.get("graph_support") or best.get("support")
         seed_hit["graph_relation"] = best.get("graph_relation") or best.get("relation_type")
@@ -818,7 +818,7 @@ def merge_expansions_into_seeds(
                 for piece in merged_items if piece.get("node_id")
             ]
 
-    # 扩展不再作为独立 hit 返回
+    # Expansions are no longer returned as separate hits
     return hits
 
 
@@ -902,7 +902,7 @@ def merge_same_series_in_pool(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 
 # ================================================================
-# 用法 C：关系路径（独立输出通道，不进主排序）
+# Usage C: relation paths (an independent output channel, kept out of the main ranking)
 # ================================================================
 
 def find_relation_paths(
@@ -914,36 +914,36 @@ def find_relation_paths(
     typed_only: bool = True,
     forward_dirs: Optional[Set[Tuple[str, str]]] = None,
 ) -> List[Dict[str, Any]]:
-    """找出连接两个高分命中的 ≤2 跳路径。
+    """Find paths of at most 2 hops connecting two high-scoring hits.
 
-    关系型问题（"推荐那家餐厅的朋友是谁"）要的不是排好序的列表，而是一条**路径**。
-    把路径节点混进平铺的召回列表会丢掉关系语义 —— 答案 LLM 只看到几条互不相干的记忆。
-    所以这里作为独立字段返回，**不参与主排序**。
+    A relational question ("who is the friend that recommended that restaurant") wants a **path**, not a sorted list.
+    Mixing path nodes into a flat recall list drops the relational semantics: the answering LLM sees a few unrelated memories.
+    That is why this is returned as its own field and **takes no part in the main ranking**.
 
-    中间节点（1 跳路径没有；2 跳路径的桥接点）即使自己分数很低也会带上 —— 它是路径的一部分。
+    Intermediate nodes (none on a 1-hop path; the bridge on a 2-hop path) are included even when their own score is low -- they are part of the path.
 
     Args:
-        hit_scores: 直接命中 {node_id: score}
-        high_floor: 只在分数 ≥ 该值的命中之间找路径
-        typed_only: 只用信息量高的边（排除 semantic_neighbor —— 它只说明"语义相近"，
-            两条语义相近的记忆之间连一条路径对答案没有解释价值）
-        forward_dirs: `collect_directed_edges()` 的产物。有向边（`temporal_next`）
-            据此标出方向 —— `direction="forward"` 表示 A 在 B **之前**发生。
-            不标方向的话"X 之后"和"X 之前"在输出里分不开。
+        hit_scores: the direct hits {node_id: score}
+        high_floor: only look for paths between hits scoring ≥ this value
+        typed_only: only high-information edges (semantic_neighbor excluded -- it merely states "semantically close",
+            and a path between two semantically close memories has no explanatory value for the answer)
+        forward_dirs: the product of `collect_directed_edges()`. Directed edges (`temporal_next`)
+            get their direction from it: `direction="forward"` means A happened **before** B.
+            Without direction, "after X" and "before X" cannot be separated in the output.
 
     Returns:
         [{"score", "hops", "nodes": [id...], "relations": [{type, direction}...]}]
-        按 score 降序
+        Sorted by score descending
     """
     fwd = forward_dirs or set()
 
     def _rel(a: str, b: str, rtype: str) -> Dict[str, str]:
-        """描述 a→b 这一步的关系。有向边给出 forward / backward。"""
+        """Describe the relation of the a→b step. Directed edges get forward / backward."""
         item = {"type": rtype}
         if (a, b) in fwd:
-            item["direction"] = "forward"    # a 早于 b
+            item["direction"] = "forward"    # a is earlier than b
         elif (b, a) in fwd:
-            item["direction"] = "backward"   # a 晚于 b
+            item["direction"] = "backward"   # a is later than b
         return item
     anchors = sorted(
         [(nid, s) for nid, s in (hit_scores or {}).items() if s >= high_floor],
@@ -978,7 +978,7 @@ def find_relation_paths(
         })
 
     for a_id, a_s in anchors:
-        # 1 跳：两个 anchor 直接相连
+        # 1 hop: the two anchors are directly connected
         for nb, rtype, eff_w in adjacency.get(a_id, []):
             if not _usable(rtype):
                 continue
@@ -988,7 +988,7 @@ def find_relation_paths(
                     min(a_s, anchor_score[nb]) * eff_w,
                 )
 
-        # 2 跳：经一个中间节点连到另一个 anchor
+        # 2 hops: reach the other anchor through one intermediate node
         for mid, r1, w1 in adjacency.get(a_id, []):
             if mid in anchor_ids or not _usable(r1):
                 continue

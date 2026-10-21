@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-HY Memory - 日志系统配置
+HY Memory - logging configuration
 
-标准 Python logging + TimedRotatingFileHandler，
-每天一个文件，保留 15 天。支持 request_id 注入，
-可按 request_id grep 日志过滤完整请求链路。
+Standard Python logging + TimedRotatingFileHandler,
+one file per day, kept for 15 days. Supports request_id injection,
+so the complete request pipeline can be filtered by grepping the logs for a request_id.
 
 Usage:
     from hy_memory.utils.log_setup import setup_logging, set_request_id
 
-    setup_logging()  # 应用启动时调用一次
-    set_request_id("abc123def456")  # 每个请求入口设置
+    setup_logging()  # call once at application startup
+    set_request_id("abc123def456")  # set at each request entry point
 
-日志文件位置:
+Log file location:
     {MEMORY_DATA_DIR}/logs/hy_memory_{date}.log
-    默认: ~/.hy_memory/logs/hy_memory_{date}.log
+    Default: ~/.hy_memory/logs/hy_memory_{date}.log
 """
 
 import contextvars
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 # ================================================================
-# request_id 上下文变量 (协程安全)
+# request_id context variable (coroutine safe)
 # ================================================================
 
 _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -35,26 +35,26 @@ _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 def set_request_id(request_id: str) -> None:
-    """设置当前协程/线程的 request_id"""
+    """Set the request_id for the current coroutine/thread"""
     _request_id_var.set(request_id)
 
 
 def get_request_id() -> str:
-    """获取当前协程/线程的 request_id"""
+    """Return the request_id of the current coroutine/thread"""
     return _request_id_var.get()
 
 
 class request_id_scope:
     """
-    临时把 request_id 设为指定值（默认哨兵 "-"），退出时恢复原值。
+    Temporarily set request_id to the given value (the "-" sentinel by default), restoring the old value on exit.
 
-    用于「进程级 / 初始化」日志：即便外层（如 App 请求上下文）已 set 了业务
-    request_id，初始化期间的日志也不应继承它，否则按 request_id 过滤会混入
-    一次性 init 噪音。
+    For process-level / initialization logging: even when an outer scope (e.g. an App request context) has already set a business
+    request_id, initialization logs must not inherit it, otherwise filtering by request_id would pick up
+    one-off init noise.
 
-    用法：
-        with request_id_scope():   # 默认 "-"
-            ... 初始化、打 init 日志 ...
+    Usage:
+        with request_id_scope():   # "-" by default
+            ... initialization, emitting init logs ...
     """
 
     def __init__(self, request_id: str = "-"):
@@ -72,14 +72,14 @@ class request_id_scope:
 
 
 # ================================================================
-# 自定义 Filter: 将 request_id 注入 LogRecord
+# Custom filter: inject request_id into the LogRecord
 # ================================================================
 
 class RequestIdFilter(logging.Filter):
     """
-    从 contextvars 读取 request_id 并注入 LogRecord。
+    Reads request_id from contextvars and injects it into the LogRecord.
 
-    这样所有 handler 的 formatter 都可以用 %(request_id)s。
+    This lets every handler's formatter use %(request_id)s.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -89,10 +89,10 @@ class RequestIdFilter(logging.Filter):
 
 class _StdoutLevelFilter(logging.Filter):
     """
-    stdout handler 专用：只放 DEBUG/INFO 通过，WARNING 及以上拒绝。
+    For the stdout handler only: lets DEBUG/INFO through and rejects WARNING and above.
 
-    配合独立的 stderr handler（setLevel=WARNING）实现 Unix 惯例的
-    双流分离，避免 INFO 日志被监控系统（如 OpenClaw）按 stderr=WARN 误标。
+    Paired with a separate stderr handler (setLevel=WARNING) this realizes the Unix-conventional
+    two-stream split, so INFO logs are not mislabeled as WARN by monitoring systems (e.g. OpenClaw) that treat stderr as WARN.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -100,7 +100,7 @@ class _StdoutLevelFilter(logging.Filter):
 
 
 # ================================================================
-# 日志配置
+# Logging configuration
 # ================================================================
 
 _LOG_FORMAT = (
@@ -108,17 +108,17 @@ _LOG_FORMAT = (
 )
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# 全局标记，避免重复配置
+# Global flag to avoid configuring twice
 _logging_configured = False
 
 
 class SingleLineFormatter(logging.Formatter):
     """
-    纯文本 formatter，但保证每条日志输出为单行。
+    Plain-text formatter that guarantees every log record is emitted on a single line.
 
-    问题：message / exception 里可能含真实换行符（如用户 query 带 \\n），
-    单行模板被换行符截断后，下游按行采集的平台会拿到半截记录并报解析错误。
-    解决：渲染完成后把 \\r\\n 等控制换行转义为字面 \\n / \\r。
+    Problem: message / exception may contain real newlines (a user query may carry \\n),
+    and once the single-line template is cut by a newline, downstream line-based collectors get half a record and report parse errors.
+    Fix: after rendering, control newlines such as \\r\\n are escaped into literal \\n / \\r.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -130,12 +130,12 @@ class SingleLineFormatter(logging.Formatter):
 
 class JsonLineFormatter(logging.Formatter):
     """
-    结构化 JSON Lines formatter（每条日志一行合法 JSON）。
+    Structured JSON Lines formatter (each log record becomes one valid JSON line).
 
-    供按 JSON 解析每一行的日志采集平台使用：message 里的换行会被 json
-    自然转义，不会截断，也不会出现 "[json] error field" 之类的解析报错。
+    For log collection platforms that parse every line as JSON: newlines inside message are escaped naturally by json,
+    so lines are never cut and no "[json] error field" style parse errors appear.
 
-    字段：ts / level / request_id / logger / msg（+ exc 异常栈，如有）。
+    Fields: ts / level / request_id / logger / msg (plus exc for an exception stack, when present).
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -155,9 +155,9 @@ class JsonLineFormatter(logging.Formatter):
 
 def _make_formatter() -> logging.Formatter:
     """
-    根据 MEMORY_LOG_FORMAT 选择 formatter：
-    - "json"          → JsonLineFormatter（结构化，供 JSON 采集平台）
-    - 其它/未设置(默认) → SingleLineFormatter（纯文本，但保证单行不被换行截断）
+    Select the formatter from MEMORY_LOG_FORMAT:
+    - "json"          → JsonLineFormatter (structured, for JSON collection platforms)
+    - other/unset (default) → SingleLineFormatter (plain text, but a single line is never cut by newlines)
     """
     fmt = os.getenv("MEMORY_LOG_FORMAT", "text").strip().lower()
     if fmt == "json":
@@ -167,8 +167,8 @@ def _make_formatter() -> logging.Formatter:
 
 def _default_log_dir() -> str:
     """
-    确定日志目录:
-    1. 环境变量 MEMORY_LOG_DIR
+    Determine the log directory:
+    1. MEMORY_LOG_DIR environment variable
     2. {MEMORY_DATA_DIR}/logs/
     3. ~/.hy_memory/logs/
     """
@@ -188,20 +188,20 @@ def setup_logging(
     level: Optional[int] = None,
 ) -> None:
     """
-    配置 hy_memory 模块的日志。
+    Configure logging for the hy_memory module.
 
-    - 文件输出: TimedRotatingFileHandler, 每天午夜滚动, 保留 retention_days 天
-    - 控制台输出: 双流分离 — DEBUG/INFO 走 stdout，WARNING/ERROR/CRITICAL 走 stderr
-      （遵循 Unix 惯例；OpenClaw 等监控平台会把 stderr 整体标 WARN，
-       INFO 走 stdout 才不会被误归为告警）
-    - 所有日志行包含 request_id 字段
+    - File output: TimedRotatingFileHandler, rolls at midnight each day, retained for retention_days
+    - Console output: two-stream split -- DEBUG/INFO go to stdout, WARNING/ERROR/CRITICAL go to stderr
+      (following the Unix convention; monitoring platforms such as OpenClaw label all of stderr as WARN,
+       so INFO must use stdout to avoid being misclassified as an alert)
+    - every log line carries a request_id field
 
     Args:
-        log_dir:        日志目录。默认 {MEMORY_DATA_DIR}/logs/
-        retention_days: 日志保留天数，默认 15
-        level:          日志级别。默认从环境变量 MEMORY_LOG_LEVEL 读取，缺省 INFO
+        log_dir:        log directory, {MEMORY_DATA_DIR}/logs/ by default
+        retention_days: days of log retention, 15 by default
+        level:          log level, read from the MEMORY_LOG_LEVEL env var and defaulting to INFO
 
-    可多次调用，但只有首次生效。
+    Safe to call repeatedly; only the first call takes effect.
     """
     global _logging_configured
     if _logging_configured:
@@ -211,25 +211,25 @@ def setup_logging(
     if level is None:
         level = getattr(logging, os.getenv("MEMORY_LOG_LEVEL", "INFO").upper(), logging.INFO)
 
-    # 确定日志目录并创建
+    # Determine the log directory and create it
     resolved_dir = log_dir or _default_log_dir()
     os.makedirs(resolved_dir, exist_ok=True)
 
-    # hy_memory 根 logger
+    # hy_memory root logger
     root_logger = logging.getLogger("hy_memory")
     root_logger.setLevel(level)
 
-    # request_id filter — 必须加在 handler 上而非 logger 上。
-    # 原因: Python logging propagation 机制中，子 logger (如 hy_memory.client)
-    # 的日志记录传播到父 logger 时，只调用父 logger 的 handlers，
-    # 不经过父 logger 的 filters。如果 filter 只在 logger 上，
-    # 子 logger 的记录到达 handler 时 record 上没有 request_id，
-    # formatter 就会 KeyError crash。
+    # request_id filter -- it must be attached to handlers, not to the logger.
+    # Reason: in Python logging propagation, when a child logger (e.g. hy_memory.client)
+    # propagates a record to its parent, only the parent's handlers are invoked,
+    # never the parent's filters. If the filter sat only on the logger,
+    # child records would reach the handler without a request_id, and the
+    # formatter would crash with a KeyError.
     req_filter = RequestIdFilter()
 
     formatter = _make_formatter()
 
-    # ---- 文件 Handler ----
+    # ---- File handler ----
     log_file = os.path.join(resolved_dir, "hy_memory.log")
     file_handler = TimedRotatingFileHandler(
         filename=log_file,
@@ -238,19 +238,19 @@ def setup_logging(
         backupCount=retention_days,
         encoding="utf-8",
     )
-    # 滚动后文件名: hy_memory.log.2026-03-21
+    # Rotated file name: hy_memory.log.2026-03-21
     file_handler.suffix = "%Y-%m-%d"
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
     file_handler.addFilter(req_filter)
     root_logger.addHandler(file_handler)
 
-    # ---- 控制台 Handler: 双流分离 ----
-    # stdout: DEBUG / INFO（用 filter 排除 WARNING 及以上）
+    # ---- Console handler: two-stream split ----
+    # stdout: DEBUG / INFO (a filter excludes WARNING and above)
     # stderr: WARNING / ERROR / CRITICAL
-    # 修复 Issue: 之前所有级别都走单 StreamHandler 默认 stderr，
-    # OpenClaw 等监控平台会把整个 stderr 标 WARN，导致 INFO 日志
-    # 被误标为告警，刷屏。
+    # Issue fix: previously every level went through a single StreamHandler defaulting to stderr,
+    # and monitoring platforms such as OpenClaw labeled the whole stderr WARN, so INFO lines
+    # were mislabeled as alerts and flooded the view.
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
     stdout_handler.setLevel(level)
@@ -260,13 +260,13 @@ def setup_logging(
 
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(formatter)
-    # stderr 永远只接 WARNING+，独立于全局 level（即使全局 level=DEBUG，
-    # stderr 也不会拿到 INFO/DEBUG 行）
+    # stderr always takes only WARNING+, independent of the global level (even with level=DEBUG
+    # it never receives INFO/DEBUG lines)
     stderr_handler.setLevel(logging.WARNING)
     stderr_handler.addFilter(req_filter)
     root_logger.addHandler(stderr_handler)
 
-    # 避免日志向上传播到 root logger 导致重复输出
+    # Avoid propagating records up to the root logger, which would duplicate output
     root_logger.propagate = False
 
     # Suppress noisy third-party debug logs

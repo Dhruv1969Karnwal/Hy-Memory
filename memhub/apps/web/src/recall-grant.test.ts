@@ -126,7 +126,7 @@ describe("fullGrantSelection", () => {
     const scope = workspace("c");
     const selection = fullGrantSelection({
       sources: [],
-      workspaces: [{ scope, label: "隔离项目" }],
+      workspaces: [{ scope, label: "Isolated project" }],
     });
     expect(selection.allowedScopes).toEqual(["all-apps", scope]);
   });

@@ -141,7 +141,7 @@ class RecallGovernance(Protocol):
 PROBE_QUERY = "__om_probe__"
 
 #: Fixed, because the point is that the answer owes nothing to the library.
-_PROBE_ANSWER = "MemHub 链路自检正常"
+_PROBE_ANSWER = "MemHub pipeline self-check is healthy"
 
 #: Cap on SQL-matched candidates to score. Filters first; this is not
 #: "the newest N memories in the whole library".
@@ -598,5 +598,5 @@ def _terms(text: str) -> set[str]:
 
 
 _SINGLE_CJK_STOP_TERMS = frozenset(
-    "我你他她它的了是在和与或这那也都很没有就还而但却因且把被从给到又著着过啊呢吗吧"
+    "\u6211\u4f60\u4ed6\u5979\u5b83\u7684\u4e86\u662f\u5728\u548c\u4e0e\u6216\u8fd9\u90a3\u4e5f\u90fd\u5f88\u6ca1\u6709\u5c31\u8fd8\u800c\u4f46\u5374\u56e0\u4e14\u628a\u88ab\u4ece\u7ed9\u5230\u53c8\u8457\u7740\u8fc7\u554a\u5462\u5417\u5427"
 )

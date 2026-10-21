@@ -163,7 +163,7 @@ def test_semantic_hit_without_lexical_overlap_is_not_released(database):
     from one_memory.retrieval.raw_candidates import RawSemanticCandidate
 
     with sqlite3.connect(database) as db, db:
-        put(db, "e-mit", "用户决定 One Memory 采用 MIT 协议发布。")
+        put(db, "e-mit", "The user decided to release One Memory under the MIT license.")
     chunk = PublishedChunk(
         chunk_id="c1",
         build_id="b1",
@@ -186,7 +186,7 @@ def test_semantic_hit_without_lexical_overlap_is_not_released(database):
     )
     result = read_raw_indexed_context(
         database,
-        ContextSearchRequest(query="开源许可证怎么选", kinds=("raw",)),
+        ContextSearchRequest(query="Choosing an OSS agreement", kinds=("raw",)),
         source_ids=frozenset({"cursor"}),
         deadline=time.monotonic() + 5,
         index=index,
@@ -206,7 +206,7 @@ def test_semantic_candidate_with_lexical_corroboration_is_released(database):
     from one_memory.retrieval.raw_candidates import RawSemanticCandidate
 
     with sqlite3.connect(database) as db, db:
-        put(db, "e-mit", "用户决定 One Memory 采用 MIT 协议发布。")
+        put(db, "e-mit", "The user decided to release One Memory under the MIT license.")
     chunk = PublishedChunk(
         chunk_id="c1",
         build_id="b1",
@@ -229,7 +229,7 @@ def test_semantic_candidate_with_lexical_corroboration_is_released(database):
     )
     result = read_raw_indexed_context(
         database,
-        ContextSearchRequest(query="MIT 协议", kinds=("raw",)),
+        ContextSearchRequest(query="MIT license", kinds=("raw",)),
         source_ids=frozenset({"cursor"}),
         deadline=time.monotonic() + 5,
         index=index,
@@ -284,14 +284,16 @@ def test_real_built_index_semantic_only_hit_is_not_released_without_confirmation
         root=source,
         candidate_kind=RootCandidateKind.DEFAULT,
     )
-    put_evidence(evidence, "我们最后决定 One Memory 用 MIT 协议发布。")
-    request = ContextSearchRequest(query="开源软件的授权条款如何挑选", kinds=("raw",))
+    put_evidence(evidence, "We finally decided to release One Memory under the MIT license.")
+    request = ContextSearchRequest(query="Choosing an OSS licensing clause", kinds=("raw",))
     sources = frozenset({"codex"})
 
     lexical = read_raw_context(
         store.database_path, request, source_ids=sources, deadline=time.monotonic() + 5
     )
-    assert lexical.status == "empty", "词法已经命中，这条测试证明不了语义"
+    assert lexical.status == "empty", (
+        "the lexical lane already hit, so this test proves nothing about semantics"
+    )
 
     async def scenario():
         handle = ExistingRetrievalRuntime(tmp_path, minimum_free_bytes=0)
@@ -334,7 +336,7 @@ def test_revoked_source_semantic_hit_does_not_release_body(database):
     from tests.test_context_raw import revoke
 
     with sqlite3.connect(database) as db, db:
-        put(db, "e-revoked", "用户决定 One Memory 采用 MIT 协议发布。")
+        put(db, "e-revoked", "The user decided to release One Memory under the MIT license.")
         revoke(db, "cursor")
     chunk = PublishedChunk(
         chunk_id="c1",

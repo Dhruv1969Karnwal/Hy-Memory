@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""write(scene=None) 三分类结果必须真正选择 working/coding variant。"""
+"""The three-way write(scene=None) classification result must really select the working/coding variant."""
 
 import asyncio
 from types import SimpleNamespace
@@ -11,7 +11,7 @@ from hy_memory.client import HyMemoryClient
 
 def _messages():
     return [
-        {"role": "user", "content": "修改 auth.py 修复异常"},
+        {"role": "user", "content": "Modify auth.py to fix the exception"},
         {
             "role": "assistant",
             "content": "",

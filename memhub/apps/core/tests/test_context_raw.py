@@ -111,11 +111,11 @@ def test_explicit_source_filter_never_broadens_authority(database):
     "query, body",
     [
         ("beta alpha", "alpha then beta"),
-        ("记忆 搜索", "这里有搜索也有记忆"),
+        ("\u8bb0\u5fc6 \u641c\u7d22", "\u8fd9\u91cc\u6709\u641c\u7d22\u4e5f\u6709\u8bb0\u5fc6"),
         ("café привет", "привет café"),
         ("%_\\", "literal %_\\"),
         ('" OR *', 'literal " OR *'),
-        ("打包", "今天打包"),
+        ("\u6253\u5305", "\u4eca\u5929\u6253\u5305"),
     ],
 )
 def test_lexical_terms_multilingual_and_literal_syntax(database, query, body):
@@ -169,11 +169,17 @@ def test_neighbors_are_same_authorized_conversation_and_maximum_three(database):
 def test_anchor_body_precedes_adjacent_context_in_the_emitted_window(database):
     """The lexical anchor is the answer, not whatever message happens to be older."""
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "older", "上午 10:00", conversation="thread", created="2026-09-19T00:00:00+00:00")
+        put(
+            db,
+            "older",
+            "\u4e0a\u5348 10:00",
+            conversation="thread",
+            created="2026-09-19T00:00:00+00:00",
+        )
         put(
             db,
             "fact",
-            "C5回流验收标记：周会时间改为每周四上午九点，旧值作废。",
+            "C5\u56de\u6d41\u9a8c\u6536\u6807\u8bb0\uff1a\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9\uff0c\u65e7\u503c\u4f5c\u5e9f\u3002",
             conversation="thread",
             created=None,
         )
@@ -185,12 +191,15 @@ def test_anchor_body_precedes_adjacent_context_in_the_emitted_window(database):
             "UPDATE evidence SET imported_at=? WHERE evidence_id='fact'",
             ("2026-09-19T01:00:00+00:00",),
         )
-    result = read(database, query="周会时间改为每周四上午九点")
+    result = read(
+        database,
+        query="\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9",
+    )
     item = result.items[0]
     assert item.anchor_evidence_id == "fact"
     assert [message.evidence_id for message in item.messages] == ["fact", "older"]
     assert item.messages[0].evidence_id == item.anchor_evidence_id
-    assert "周四上午九点" in item.messages[0].text
+    assert "\u5468\u56db\u4e0a\u5348\u4e5d\u70b9" in item.messages[0].text
 
 
 def test_continuation_query_prefers_a_declared_fact_over_repeated_question_text(database):
@@ -198,20 +207,24 @@ def test_continuation_query_prefers_a_declared_fact_over_repeated_question_text(
         put(
             db,
             "question",
-            "继续上次的周会时间任务，只回答时间",
+            "\u7ee7\u7eed\u4e0a\u6b21\u7684\u5468\u4f1a\u65f6\u95f4\u4efb\u52a1\uff0c\u53ea\u56de\u7b54\u65f6\u95f4",
             conversation="thread-question",
             created=None,
         )
         put(
             db,
             "fact",
-            "C5回流验收标记：周会时间改为每周四上午九点，旧值作废。",
+            "C5\u56de\u6d41\u9a8c\u6536\u6807\u8bb0\uff1a\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9\uff0c\u65e7\u503c\u4f5c\u5e9f\u3002",
             conversation="thread-fact",
             created=None,
         )
-    result = read(database, query="继续上次的周会时间任务，只回答时间", limit=1)
+    result = read(
+        database,
+        query="\u7ee7\u7eed\u4e0a\u6b21\u7684\u5468\u4f1a\u65f6\u95f4\u4efb\u52a1\uff0c\u53ea\u56de\u7b54\u65f6\u95f4",
+        limit=1,
+    )
     assert result.items[0].anchor_evidence_id == "fact"
-    assert "周四上午九点" in result.items[0].messages[0].text
+    assert "\u5468\u56db\u4e0a\u5348\u4e5d\u70b9" in result.items[0].messages[0].text
 
 
 def test_continuation_query_prefers_person_fact_over_tool_output(database):
@@ -219,7 +232,7 @@ def test_continuation_query_prefers_person_fact_over_tool_output(database):
         put(
             db,
             "tool",
-            "周会时间记录：继续上次的周会时间任务",
+            "\u5468\u4f1a\u65f6\u95f4\u8bb0\u5f55\uff1a\u7ee7\u7eed\u4e0a\u6b21\u7684\u5468\u4f1a\u65f6\u95f4\u4efb\u52a1",
             conversation="thread-tool",
             role="tool",
             author="tool",
@@ -228,15 +241,19 @@ def test_continuation_query_prefers_person_fact_over_tool_output(database):
         put(
             db,
             "fact",
-            "C5回流验收标记：周会时间改为每周四上午九点，旧值作废。",
+            "C5\u56de\u6d41\u9a8c\u6536\u6807\u8bb0\uff1a\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9\uff0c\u65e7\u503c\u4f5c\u5e9f\u3002",
             conversation="thread-fact",
             created=None,
         )
-    result = read(database, query="继续上次的周会时间任务，只回答时间", limit=1)
+    result = read(
+        database,
+        query="\u7ee7\u7eed\u4e0a\u6b21\u7684\u5468\u4f1a\u65f6\u95f4\u4efb\u52a1\uff0c\u53ea\u56de\u7b54\u65f6\u95f4",
+        limit=1,
+    )
     ids = [item.anchor_evidence_id for item in result.items]
     assert ids.index("fact") < ids.index("tool")
     assert result.items[0].anchor_evidence_id == "fact"
-    assert "周四上午九点" in result.items[0].messages[0].text
+    assert "\u5468\u56db\u4e0a\u5348\u4e5d\u70b9" in result.items[0].messages[0].text
 
 
 def test_direct_fact_query_prefers_person_fact_over_repeated_question(database):
@@ -244,20 +261,24 @@ def test_direct_fact_query_prefers_person_fact_over_repeated_question(database):
         put(
             db,
             "question",
-            "周会时间改为每周四上午九点",
+            "\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9",
             conversation="thread-question",
             created="2026-09-29T00:00:00+00:00",
         )
         put(
             db,
             "fact",
-            "C5回流验收标记：周会时间改为每周四上午九点，旧值作废。",
+            "C5\u56de\u6d41\u9a8c\u6536\u6807\u8bb0\uff1a\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9\uff0c\u65e7\u503c\u4f5c\u5e9f\u3002",
             conversation="thread-fact",
             created=None,
         )
-    result = read(database, query="周会时间改为每周四上午九点", limit=1)
+    result = read(
+        database,
+        query="\u5468\u4f1a\u65f6\u95f4\u6539\u4e3a\u6bcf\u5468\u56db\u4e0a\u5348\u4e5d\u70b9",
+        limit=1,
+    )
     assert result.items[0].anchor_evidence_id == "fact"
-    assert "周四上午九点" in result.items[0].messages[0].text
+    assert "\u5468\u56db\u4e0a\u5348\u4e5d\u70b9" in result.items[0].messages[0].text
 
 
 @pytest.mark.parametrize("anchor_index", range(4))
@@ -351,10 +372,19 @@ def test_neighbors_match_canonical_conversation_order(
 @pytest.mark.parametrize(
     "query,body",
     [
-        ("我们之前讨论过的上下文检索方案是什么", "方案记录：采用上下文检索，保留来源。"),
-        ("检索方案和权限检查如何实现", "先做权限检查，然后设计检索方案。"),
+        (
+            "\u6211\u4eec\u4e4b\u524d\u8ba8\u8bba\u8fc7\u7684\u4e0a\u4e0b\u6587\u68c0\u7d22\u65b9\u6848\u662f\u4ec0\u4e48",
+            "\u65b9\u6848\u8bb0\u5f55\uff1a\u91c7\u7528\u4e0a\u4e0b\u6587\u68c0\u7d22\uff0c\u4fdd\u7559\u6765\u6e90\u3002",
+        ),
+        (
+            "\u68c0\u7d22\u65b9\u6848\u548c\u6743\u9650\u68c0\u67e5\u5982\u4f55\u5b9e\u73b0",
+            "\u5148\u505a\u6743\u9650\u68c0\u67e5\uff0c\u7136\u540e\u8bbe\u8ba1\u68c0\u7d22\u65b9\u6848\u3002",
+        ),
         ("alpha,beta?", "beta comes before alpha"),
-        ("权限，检索？", "检索结果必须核对权限"),
+        (
+            "\u6743\u9650\uff0c\u68c0\u7d22\uff1f",
+            "\u68c0\u7d22\u7ed3\u679c\u5fc5\u987b\u6838\u5bf9\u6743\u9650",
+        ),
     ],
 )
 def test_natural_lexical_query_is_not_a_whole_sentence_substring(database, query, body):
@@ -371,7 +401,11 @@ def test_natural_lexical_query_is_not_a_whole_sentence_substring(database, query
     [
         ("alpha,beta", "beta and alpha", "alpha only"),
         ("alpha beta", "beta and alpha", "alpha only"),
-        ("权限 检索", "检索之后核对权限", "只记录权限"),
+        (
+            "\u6743\u9650 \u68c0\u7d22",
+            "\u68c0\u7d22\u4e4b\u540e\u6838\u5bf9\u6743\u9650",
+            "\u53ea\u8bb0\u5f55\u6743\u9650",
+        ),
     ],
 )
 def test_coverage_ranking_precedes_limit_not_newest_candidate_pool(database, query, older, newer):
@@ -397,11 +431,15 @@ def test_exact_phrase_breaks_equal_coverage_before_time(database):
 
 
 def test_lexical_terms_stay_bounded_and_cover_whole_long_chinese_query():
-    terms = context_raw._terms("开头词" + "请检查这些已保存的内容" * 100 + "结尾词")
+    terms = context_raw._terms(
+        "\u5f00\u5934\u8bcd"
+        + "\u8bf7\u68c0\u67e5\u8fd9\u4e9b\u5df2\u4fdd\u5b58\u7684\u5185\u5bb9" * 100
+        + "\u7ed3\u5c3e\u8bcd"
+    )
     assert 0 < len(terms) <= 16
-    assert "开头词" in terms and "结尾词" in terms
+    assert "\u5f00\u5934\u8bcd" in terms and "\u7ed3\u5c3e\u8bcd" in terms
     assert all(len(term) == 3 for term in terms)
-    assert context_raw._terms("权限") == ("权限",)
+    assert context_raw._terms("\u6743\u9650") == ("\u6743\u9650",)
     assert context_raw._terms("alpha,beta;gamma") == ("alpha", "beta", "gamma")
 
 
@@ -425,7 +463,7 @@ def test_empty_and_index_or_database_failure_are_distinct(database, tmp_path):
     assert read(database).status == "empty"
     with closing(sqlite3.connect(database)) as db:
         db.execute("DROP TABLE evidence_search")
-    for query in ("needle", "短"):
+    for query in ("needle", "\u77ed"):
         result = read(database, query)
         assert result.status == "unavailable" and result.reason == "read_unavailable"
     missing = tmp_path / "not-created.sqlite3"
@@ -716,7 +754,7 @@ def test_revalidation_narrower_authority_and_missing_anchor_fail_closed(database
     "query",
     [
         "alpha,beta;gamma",
-        "权限，检索？",
+        "\u6743\u9650\uff0c\u68c0\u7d22\uff1f",
         " ".join(f"term{index:02}" for index in range(16)),
         "alpha " * 40,
     ],

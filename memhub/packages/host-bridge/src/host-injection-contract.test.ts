@@ -27,7 +27,8 @@ describe("host injection contract (reusable)", () => {
       hook_event_name: "UserPromptSubmit",
       session_id: "sess-contract",
       turn_id: "turn-contract",
-      prompt: "继续上次的周会改到周几任务",
+      prompt:
+        "Continue the task about which weekday the weekly meeting moved to",
     });
     // No broker, no credential: the worst case a host can hit.
     const result = await runRecallInjection(
@@ -37,6 +38,6 @@ describe("host injection contract (reusable)", () => {
       { startedAt: Date.now(), budgetMs: 500 },
     );
     expect(result.outcome).toBe("unavailable");
-    expect(result.stdout).toContain("请打开 MemHub 后重试");
+    expect(result.stdout).toContain("Open MemHub and try again");
   });
 });

@@ -10,10 +10,14 @@ import { CLI_VERSION, PRODUCT } from "./version.js";
 const GLOBAL_OPTIONS: readonly CommandOption[] = [
   {
     flag: "--help, -h",
-    summary: "显示帮助；可与 --json 组合输出机器可读目录。",
+    summary:
+      "Show help; can be combined with --json for a machine-readable catalog.",
   },
-  { flag: "--version, -V", summary: "显示 CLI 版本。" },
-  { flag: "--json", summary: "以 JSON 输出到 stdout，供脚本与 Agent 消费。" },
+  { flag: "--version, -V", summary: "Show the CLI version." },
+  {
+    flag: "--json",
+    summary: "Emit JSON on stdout for scripts and agents to consume.",
+  },
 ];
 
 export function renderGeneralHelp(): string {
@@ -33,8 +37,8 @@ export function renderGeneralHelp(): string {
       (exit) => `  ${exit.code}  ${pad(exit.name, 17)}${exit.summary}`,
     ),
     "",
-    "stdout 只输出数据，进度与诊断写入 stderr。",
-    `运行 ${PRODUCT} help <command> 查看单个命令的参数。`,
+    "stdout carries data only; progress and diagnostics go to stderr.",
+    `Run ${PRODUCT} help <command> for a single command's arguments.`,
     "",
   ].join("\n");
 }
@@ -101,7 +105,7 @@ export function renderUsageError(
   const nextStep = usageNextStep(command);
   const lines = [`${PRODUCT}: ${message}`];
   if (command) lines.push(`Usage: ${command.usage}`);
-  lines.push(`下一步：${nextStep}`, "");
+  lines.push(`Next: ${nextStep}`, "");
   return lines.join("\n");
 }
 
@@ -123,8 +127,8 @@ export function renderUsageErrorDocument(
 
 function usageNextStep(command: CommandDescriptor | undefined): string {
   return command
-    ? `运行 ${PRODUCT} help ${command.name} 查看该命令的参数。`
-    : `运行 ${PRODUCT} help 查看可用命令。`;
+    ? `Run ${PRODUCT} help ${command.name} for this command's arguments.`
+    : `Run ${PRODUCT} help to list available commands.`;
 }
 
 function pad(value: string, width = 21): string {

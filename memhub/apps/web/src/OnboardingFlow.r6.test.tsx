@@ -16,7 +16,7 @@ import type { ImportSourcesController } from "./use-import-sources";
 vi.mock("./api", () => ({ completeOnboarding: vi.fn() }));
 vi.mock("./FirstImportReview", () => ({
   FirstImportReview: ({ sourceIds }: { sourceIds: string[] }) => (
-    <p>已受理 {sourceIds.join(",")}</p>
+    <p>Accepted {sourceIds.join(",")}</p>
   ),
   defaultHostSourceIds: () => [],
 }));
@@ -103,29 +103,39 @@ it("renders the final shell, double title, step one, branded rows and exact sour
   expect(view.container.querySelector(".onboarding-r6-shell")).toBeTruthy();
   expect(view.container.querySelector(".cold-start-layout")).toBeNull();
   expect(
-    screen.getByRole("heading", { name: "把熟悉的背景，带到这里" }),
+    screen.getByRole("heading", { name: "Bring the context you know in here" }),
   ).toBeTruthy();
-  expect(screen.getByText("你的记忆，从这里接上")).toBeTruthy();
+  expect(screen.getByText("Your memory starts connecting here")).toBeTruthy();
   expect(
     screen
-      .getByRole("navigation", { name: "首次设置进度" })
+      .getByRole("navigation", { name: "First-time setup progress" })
       .querySelector('[aria-current="step"]')?.textContent,
-  ).toContain("导入历史");
-  expect(screen.getByRole("heading", { name: "本机 AI 应用" })).toBeTruthy();
+  ).toContain("Import history");
   expect(
-    screen.getByText("确认前只检查应用信息，不读取对话，也不安装连接。"),
+    screen.getByRole("heading", { name: "AI apps on this machine" }),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "导入历史包" })).toBeNull();
-  expect(screen.getByText("/fixture/workbuddy · 默认位置")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Before you confirm, only app metadata is checked: no conversations are read and no connections are installed.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Import history package" }),
+  ).toBeNull();
+  expect(
+    screen.getByText("/fixture/workbuddy · Default location"),
+  ).toBeTruthy();
   expect(
     view.container.querySelector('img[src$="r6/workbuddy.png"]'),
   ).toBeTruthy();
   expect(
     await within(
-      screen.getByRole("complementary", { name: "本次导入" }),
+      screen.getByRole("complementary", { name: "This import" }),
     ).findByText("3"),
   ).toBeTruthy();
-  expect(screen.getByText("少一些重复交代，多一些理解。")).toBeTruthy();
+  expect(
+    screen.getByText("Less repeating yourself, more being understood."),
+  ).toBeTruthy();
   expect(imports.detect).not.toHaveBeenCalled();
 });
 it("does not fabricate found rows while metadata is pending, then uses actual source count", async () => {
@@ -142,7 +152,7 @@ it("does not fabricate found rows while metadata is pending, then uses actual so
   expect(
     view.container.querySelectorAll(".onboarding-r6-skeleton").length,
   ).toBeGreaterThan(0);
-  expect(screen.queryByText("已发现")).toBeNull();
+  expect(screen.queryByText("Found")).toBeNull();
   await act(async () =>
     done({
       sources: [source("codex")],
@@ -152,21 +162,23 @@ it("does not fabricate found rows while metadata is pending, then uses actual so
       >["health"],
     }),
   );
-  expect(screen.getByText("/fixture/codex · 默认位置")).toBeTruthy();
-  expect(screen.getAllByText("已发现")).toHaveLength(1);
+  expect(screen.getByText("/fixture/codex · Default location")).toBeTruthy();
+  expect(screen.getAllByText("Found")).toHaveLength(1);
 });
 it("starts location discovery once and keeps a single initial focus owner", async () => {
   const imports = controller([source("codex")]);
   mount(imports);
   await waitFor(() => expect(imports.refresh).toHaveBeenCalledTimes(1));
   expect(document.activeElement).toBe(
-    screen.getByRole("heading", { name: "本机 AI 应用" }),
+    screen.getByRole("heading", { name: "AI apps on this machine" }),
   );
 });
 it("restores the first-step focus when the native window becomes active", async () => {
   const imports = controller([source("codex")]);
   mount(imports);
-  const firstStep = screen.getByRole("heading", { name: "本机 AI 应用" });
+  const firstStep = screen.getByRole("heading", {
+    name: "AI apps on this machine",
+  });
   (document.activeElement as HTMLElement | null)?.blur();
   expect(document.activeElement).not.toBe(firstStep);
 
@@ -181,13 +193,13 @@ it("keeps the summary count real and large enough to see while metadata resolves
     source("codex"),
   ]);
   const view = mount(imports);
-  const summary = screen.getByRole("complementary", { name: "本次导入" });
+  const summary = screen.getByRole("complementary", { name: "This import" });
   const count = summary.querySelector(".onboarding-r6-count");
   expect(count?.classList.contains("onboarding-r6-count")).toBe(true);
   expect(count?.textContent).toBe("1");
   expect(count?.getAttribute("aria-live")).toBe("polite");
   expect(count?.getAttribute("data-unknown")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "重新检测位置" }));
+  fireEvent.click(screen.getByRole("button", { name: "Re-check locations" }));
   await waitFor(() =>
     expect(summary.querySelector(".onboarding-r6-count")?.textContent).toBe(
       "3",
@@ -198,16 +210,16 @@ it("keeps the summary count real and large enough to see while metadata resolves
   ).toBe("false");
   expect(view.container.querySelector(".onboarding-r6-list-area")).toBeTruthy();
 });
-it("shows 未完成, never a number or zero, when the location check fails", async () => {
+it("shows Incomplete, never a number or zero, when the location check fails", async () => {
   // D51 item 3: only a *confirmed* source snapshot may show a numeric count.
-  // A failed detection must say 未完成 — a number here (especially `0`) would be
+  // A failed detection must say Incomplete — a number here (especially `0`) would be
   // a factual claim about the user's machine that the UI cannot support.
   const imports = controller([source("workbuddy"), source("cursor")]);
   vi.mocked(imports.refresh).mockRejectedValue(new Error("offline"));
   const view = mount(imports);
   const count = () =>
     view.container.querySelector(".onboarding-r6-count")?.textContent;
-  await waitFor(() => expect(count()).toBe("未完成"));
+  await waitFor(() => expect(count()).toBe("Incomplete"));
   expect(count()).not.toBe("0");
   expect(count()).not.toBe("2");
   // The unknown-state styling must still be applied, so a failure is not
@@ -218,7 +230,9 @@ it("shows 未完成, never a number or zero, when the location check fails", asy
       ?.getAttribute("data-unknown"),
   ).toBe("true");
   // And it must be announced as a failure in words, not only as a glyph.
-  expect(screen.getByRole("alert").textContent).toContain("位置检测未完成");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Location check did not finish",
+  );
 });
 it("keeps the first step inside the selected R6 cold-start shell", () => {
   const view = mount(controller([source("workbuddy")]));
@@ -259,12 +273,14 @@ it("shows the scroll hint only when the first-step list actually clips rows", as
       bottom: 80,
     } as DOMRect);
   fireEvent.scroll(list);
-  expect(screen.queryByText(/向下查看更多/)).toBeNull();
+  expect(screen.queryByText(/Scroll down for more/)).toBeNull();
   vi.mocked(list.children[3].getBoundingClientRect).mockReturnValue({
     bottom: 140,
   } as DOMRect);
   fireEvent.scroll(list);
-  expect(await screen.findByText("向下查看更多 · 还有 1 个应用")).toBeTruthy();
+  expect(
+    await screen.findByText("Scroll down for more · 1 not shown"),
+  ).toBeTruthy();
 });
 it("holds the native discovery placeholder, then shows every detected app ready to continue", async () => {
   vi.useFakeTimers();
@@ -279,16 +295,16 @@ it("holds the native discovery placeholder, then shows every detected app ready 
   expect(
     view.container.querySelectorAll(".onboarding-r6-skeleton"),
   ).toHaveLength(2);
-  expect(screen.getByText("正在检测其他应用…")).toBeTruthy();
-  expect(screen.getByText("已发现")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "开始导入" })).toHaveProperty(
+  expect(screen.getByText("Checking other apps...")).toBeTruthy();
+  expect(screen.getByText("Found")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start import" })).toHaveProperty(
     "disabled",
     true,
   );
   expect(
-    within(screen.getByRole("complementary", { name: "本次导入" })).getByText(
-      "1",
-    ),
+    within(
+      screen.getByRole("complementary", { name: "This import" }),
+    ).getByText("1"),
   ).toBeTruthy();
 
   await act(async () => vi.advanceTimersByTimeAsync(850));
@@ -297,15 +313,15 @@ it("holds the native discovery placeholder, then shows every detected app ready 
     view.container.querySelectorAll(".onboarding-r6-skeleton"),
   ).toHaveLength(0);
   expect(
-    screen.getByLabelText<HTMLInputElement>("导入 cursor 历史").checked,
+    screen.getByLabelText<HTMLInputElement>("Import cursor history").checked,
   ).toBe(true);
   expect(
-    screen.getByLabelText<HTMLInputElement>("导入 codebuddy 历史").checked,
+    screen.getByLabelText<HTMLInputElement>("Import codebuddy history").checked,
   ).toBe(true);
   expect(
-    screen.getByLabelText<HTMLInputElement>("导入 codex 历史").checked,
+    screen.getByLabelText<HTMLInputElement>("Import codex history").checked,
   ).toBe(true);
-  expect(screen.getByRole("button", { name: "开始导入" })).toHaveProperty(
+  expect(screen.getByRole("button", { name: "Start import" })).toHaveProperty(
     "disabled",
     false,
   );
@@ -318,19 +334,19 @@ it("custom source cancel does not grant or select and accepted import retains re
   mount(imports);
   await waitFor(() =>
     expect(
-      (screen.getByLabelText("导入 workbuddy 历史") as HTMLInputElement)
+      (screen.getByLabelText("Import workbuddy history") as HTMLInputElement)
         .checked,
     ).toBe(true),
   );
-  const codex = await screen.findByLabelText("导入 codex 历史");
+  const codex = await screen.findByLabelText("Import codex history");
   await waitFor(() => expect((codex as HTMLInputElement).disabled).toBe(false));
   fireEvent.click(codex);
-  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(
-    (screen.getByLabelText("导入 codex 历史") as HTMLInputElement).checked,
+    (screen.getByLabelText("Import codex history") as HTMLInputElement).checked,
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
-  await screen.findByText("已受理 workbuddy");
+  fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+  await screen.findByText("Accepted workbuddy");
   expect(vi.mocked(imports.connectForOnboarding).mock.calls[0]?.[0]).toEqual([
     "workbuddy",
   ]);
@@ -341,7 +357,7 @@ it("does not submit authorization when the first-step owner leaves during final 
   const view = mount(imports);
   await waitFor(() =>
     expect(
-      (screen.getByLabelText("导入 workbuddy 历史") as HTMLInputElement)
+      (screen.getByLabelText("Import workbuddy history") as HTMLInputElement)
         .checked,
     ).toBe(true),
   );
@@ -353,7 +369,7 @@ it("does not submit authorization when the first-step owner leaves during final 
       done = resolve;
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "开始导入" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start import" }));
   view.unmount();
   await act(async () =>
     done({

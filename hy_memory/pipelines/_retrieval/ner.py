@@ -1,15 +1,15 @@
 """
-轻量 NER 工具（spaCy），供 tag 属性标注与检索 entity×entity boost 使用。
+Lightweight NER utility (spaCy) for tag attribute annotation and retrieval entity×entity boost.
 
-spaCy en_core_web_*（OntoNotes）实体类型一览：
+spaCy en_core_web_* (OntoNotes) entity type overview:
   PERSON, NORP, FAC, ORG, GPE, LOC, PRODUCT, EVENT, WORK_OF_ART, LAW, LANGUAGE
   DATE, TIME, PERCENT, MONEY, QUANTITY, ORDINAL, CARDINAL
 
-参与 tag boost 的白名单见 BOOST_ENTITY_LABELS。
-默认排除：
-  - PERSON：对话里问句几乎都带说话人名字，会把整库同名 tag 记忆 +0.3 冲垮 top-k
-  - LAW / LANGUAGE：极稀、噪声
-  - DATE/TIME/数量类：不进入标注白名单，避免 May/2023 乱撞
+See BOOST_ENTITY_LABELS for the whitelist participating in tag boost.
+Excluded by default:
+  - PERSON: questions in conversations almost always carry speaker names, which would +0.3 every same-name tag memory in the whole store and wreck top-k
+  - LAW / LANGUAGE: extremely rare, noisy
+  - DATE/TIME/quantity types: excluded from the annotation whitelist to avoid spurious May/2023 matches
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
-# 写入 tag_ners 时可标注的类型（含 PERSON，便于排查；不代表会 boost）
+# Types that may be annotated when writing tag_ners (includes PERSON for troubleshooting; does not imply boost)
 ANNOTATE_ENTITY_LABELS: Set[str] = {
     "PERSON",
     "GPE",
@@ -37,7 +37,7 @@ ANNOTATE_ENTITY_LABELS: Set[str] = {
     "LANGUAGE",
 }
 
-# 检索 entity×entity boost 白名单（不适类型已剔除）
+# Retrieval entity×entity boost whitelist (unsuitable types removed)
 BOOST_ENTITY_LABELS: Set[str] = {
     "GPE",
     "LOC",
@@ -49,10 +49,10 @@ BOOST_ENTITY_LABELS: Set[str] = {
     "WORK_OF_ART",
 }
 
-# 兼容旧名：历史代码 / 测试里的 ENTITY_LABELS = 标注全集
+# Legacy name kept for compatibility: ENTITY_LABELS in old code / tests = full annotation set
 ENTITY_LABELS: Set[str] = set(ANNOTATE_ENTITY_LABELS)
 
-# 同类才 boost，避免 GPE×ORG 乱加分（PERSON 已不参与 boost，组仍保留供 same_group 工具）
+# Boost only within the same group to avoid spurious GPE×ORG bonuses (PERSON no longer participates in boost; the group is kept for the same_group utility)
 ENTITY_GROUPS: Dict[str, Set[str]] = {
     "GEO": {"GPE", "LOC", "FAC"},
     "PERSON": {"PERSON"},
@@ -64,7 +64,7 @@ _LABEL_TO_GROUP = {
     lab: grp for grp, labs in ENTITY_GROUPS.items() for lab in labs
 }
 
-# TitleCase 单 token；启发式不再猜 GPE（Prius 会被误标成地点）
+# TitleCase single token; the heuristic no longer guesses GPE (Prius would be mislabeled as a location)
 _TITLE_TOKEN = re.compile(r"^[A-Z][\w'-]+$")
 _TOPIC_BLACKLIST = {
     "travel", "family", "health", "event", "habits", "gym", "hiking",
@@ -74,7 +74,7 @@ _TOPIC_BLACKLIST = {
     "outdoor", "trip", "vacation", "exercise", "fitness", "basic_info",
 }
 
-# 地理意图：问句无 boostable 实体时，给候选 GPE/LOC/FAC tag 一个 prior（不碰 PERSON）
+# Geo intent: when a question has no boostable entities, give candidate GPE/LOC/FAC tags a prior (never touches PERSON)
 _GEO_INTENT_RE = re.compile(
     r"(?is)"
     r"(?:\b(?:which|what)\s+country\b)"
@@ -101,7 +101,7 @@ _MONTH_NAME_TO_NUM = {
 }
 # (year|None, month)
 TimeHint = Tuple[Optional[int], int]
-# (year, month, day) — day-level soft admit / boost（非 LLM）
+# (year, month, day) — day-level soft admit / boost (non-LLM)
 DayHint = Tuple[int, int, int]
 
 # The lemmatizer intentionally disables NER. Cache the separate full pipeline:
@@ -112,7 +112,7 @@ _ner_load_lock = threading.Lock()
 
 
 def _get_nlp():
-    """懒加载 spaCy；模型缺失时返回 None（降级：不猜类型）。"""
+    """Lazily load spaCy; return None when the model is missing (degrade: no type guessing)."""
     global _ner_nlp, _ner_load_attempted
     if _ner_load_attempted:
         return _ner_nlp
@@ -165,9 +165,9 @@ def extract_entities(
     *,
     for_boost: bool = False,
 ) -> List[Tuple[str, str]]:
-    """从文本抽实体 → [(span_text, label), ...]。
+    """Extract entities from text → [(span_text, label), ...].
 
-    for_boost=True 时只保留 BOOST_ENTITY_LABELS（检索加分用）。
+    When for_boost=True, keep only BOOST_ENTITY_LABELS (for retrieval scoring).
     """
     if not text or not str(text).strip():
         return []
@@ -175,37 +175,37 @@ def extract_entities(
 
 
 def classify_tag(tag: str) -> str:
-    """给单个 tag 打 NER label；非实体返回空串。
+    """Assign a NER label to a single tag; return empty string for non-entities.
 
-    优先 spaCy 整段 NER。不再用 TitleCase→GPE 启发式（会把 Prius 标成地点）。
-    全小写专名会再试一次 Title Case 形式供 spaCy 识别。
+    Prefers whole-text spaCy NER. No longer uses the TitleCase→GPE heuristic (it labels Prius as a location).
+    All-lowercase proper nouns are retried once in Title Case form so spaCy can recognize them.
     """
     if not tag or not str(tag).strip():
         return ""
     t = str(tag).strip()
-    # 整段跑 NER（"Weight Watchers" / "Icefields Parkway"）
+    # Run NER on the whole phrase ("Weight Watchers" / "Icefields Parkway")
     ents = extract_entities(t, for_boost=False)
     if not ents and t.islower() and t not in _TOPIC_BLACKLIST and t.isalpha():
         ents = extract_entities(t.title(), for_boost=False)
     if ents:
         best = max(ents, key=lambda x: len(x[0]))
         return best[1]
-    # 不猜测：TitleCase 专名若 spaCy 不认，宁可空也不要误标 GPE
+    # No guessing: if spaCy does not recognize a TitleCase proper noun, prefer empty over mislabeling GPE
     return ""
 
 
 def annotate_tag_ners(tags: Sequence[str]) -> List[str]:
-    """与 tags 等长的 ner label 列表（主题词为空串）。"""
+    """Ner label list the same length as tags (empty string for topic words)."""
     return [classify_tag(t) for t in tags]
 
 
 def has_geo_intent(query: str) -> bool:
-    """问句是否在问地点/旅行（用于 geo-intent → GEO-tag prior）。"""
+    """Whether the question asks about a place/travel (used for geo-intent → GEO-tag prior)."""
     return bool(_GEO_INTENT_RE.search(query or ""))
 
 
 def query_time_hints(query: str) -> List[TimeHint]:
-    """从问句抽 (year?, month) 软约束，如 May 2023 → [(2023, 5)]。"""
+    """Extract (year?, month) soft constraints from the question, e.g. May 2023 → [(2023, 5)]."""
     if not query:
         return []
     q = str(query)
@@ -251,9 +251,9 @@ def query_time_hints(query: str) -> List[TimeHint]:
 
 
 def query_day_hints(query: str) -> List[DayHint]:
-    """从问句抽具体日 (y,m,d)，如 9th December 2023 / December 9, 2023 / 2023-12-09。
+    """Extract a specific day (y,m,d) from the question, e.g. 9th December 2023 / December 9, 2023 / 2023-12-09.
 
-    纯正则，供 light-search 时间窗准入；不调用 LLM。
+    Pure regex, for light-search time-window admission; does not call the LLM.
     """
     if not query:
         return []
@@ -291,7 +291,7 @@ def query_day_hints(query: str) -> List[DayHint]:
 
 
 def memory_at_day_tuple(memory_at: Any) -> Optional[DayHint]:
-    """把 memory_at（unix / datetime / ISO 字符串）解析成 (y,m,d)。"""
+    """Parse memory_at (unix / datetime / ISO string) into (y,m,d)."""
     if memory_at is None or memory_at == "":
         return None
     # datetime-like
@@ -321,7 +321,7 @@ def memory_matches_day_hints(
     memory_at: Any,
     hints: Sequence[DayHint],
 ) -> bool:
-    """无 hints → True；否则 memory_at 落在任一 (y,m,d) 即 True。"""
+    """No hints → True; otherwise True if memory_at falls within any (y,m,d)."""
     if not hints:
         return True
     day = memory_at_day_tuple(memory_at)
@@ -336,7 +336,7 @@ def memory_matches_time_hints(
     *,
     memory_at: Any = None,
 ) -> bool:
-    """无 hints → True；否则 content / memory_at 命中任一月约束即可。"""
+    """No hints → True; otherwise True if content / memory_at hits any month constraint."""
     if not hints:
         return True
     text = (content or "").lower()
@@ -379,10 +379,10 @@ def apply_geo_intent_prior(
     *,
     prior: float = 0.6,
 ) -> Dict[str, float]:
-    """query 无 boostable 实体且具 geo-intent 时，给 GEO-tag 候选写入 prior。
+    """When the query has no boostable entities and carries geo-intent, write a prior for GEO-tag candidates.
 
-    nodes: MemoryNode-like（.node_id / .tags / .tag_ners / .content / .memory_at）。
-    已有 tag_cos 取 max；prior<=0 时禁用。
+    nodes: MemoryNode-like (.node_id / .tags / .tag_ners / .content / .memory_at).
+    Takes max with existing tag_cos; disabled when prior<=0.
     """
     out: Dict[str, float] = dict(tag_cos_by_id or {})
     if prior <= 0:
@@ -421,9 +421,9 @@ def entity_tag_pairs(
     *,
     for_boost: bool = True,
 ) -> List[Tuple[str, str]]:
-    """返回实体 tag → [(tag_text, label), ...]。
+    """Return entity tags → [(tag_text, label), ...].
 
-    默认 for_boost=True：只保留 BOOST_ENTITY_LABELS（排除 PERSON 等）。
+    Defaults to for_boost=True: keep only BOOST_ENTITY_LABELS (excludes PERSON etc.).
     """
     if not tags:
         return []
@@ -469,13 +469,13 @@ def max_entity_tag_cos(
     min_cos: float = 0.5,
     require_same_group: bool = True,
 ) -> Tuple[float, Optional[Tuple[str, str, str, str]]]:
-    """query 实体 × memory 实体 tag 的最大余弦。
+    """Max cosine between query entities × memory entity tags.
 
-    embeddings: text → vector（query span 与 tag 名都要有）。
-    返回 (cos_or_0, (q_text, q_lab, tag, tag_lab) | None)。
-    仅当 max cos >= min_cos 时返回该 cos，否则 0。
+    embeddings: text → vector (both query spans and tag names must be present).
+    Returns (cos_or_0, (q_text, q_lab, tag, tag_lab) | None).
+    Returns that cos only when max cos >= min_cos, otherwise 0.
 
-    调用方应只传入 BOOST_ENTITY_LABELS 内的实体（本函数再滤一层兜底）。
+    Callers should pass only entities within BOOST_ENTITY_LABELS (this function filters again as a fallback).
     """
     best = 0.0
     best_pair: Optional[Tuple[str, str, str, str]] = None

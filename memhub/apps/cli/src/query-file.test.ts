@@ -52,8 +52,8 @@ beforeEach(() => {
 describe("query file reading", () => {
   it("returns the query and always closes the handle", async () => {
     handle.stat.mockResolvedValue(regular(64));
-    serve("部署脚本\n");
-    expect(await readQueryFile("/tmp/query.txt")).toBe("部署脚本");
+    serve("deploy script\n");
+    expect(await readQueryFile("/tmp/query.txt")).toBe("deploy script");
     expect(handle.close).toHaveBeenCalledTimes(1);
   });
 
@@ -82,7 +82,7 @@ describe("query file reading", () => {
   });
 
   it("continues bounded partial reads instead of accepting a prefix", async () => {
-    const payload = Buffer.from("分段读取", "utf8");
+    const payload = Buffer.from("segmented read", "utf8");
     handle.stat.mockResolvedValue(regular(payload.length));
     handle.read.mockImplementation(
       async (
@@ -100,7 +100,7 @@ describe("query file reading", () => {
         return { bytesRead, buffer };
       },
     );
-    expect(await readQueryFile("/tmp/partial.txt")).toBe("分段读取");
+    expect(await readQueryFile("/tmp/partial.txt")).toBe("segmented read");
     expect(handle.read.mock.calls.length).toBeGreaterThan(1);
   });
 
@@ -109,8 +109,8 @@ describe("query file reading", () => {
       "x".repeat(QUERY_MAX_CHARACTERS + 1),
       "",
       "\n",
-      "第一行\n第二行",
-      "带\u0000空字节",
+      "line one\nline two",
+      "with a \u0000 null byte",
     ]) {
       handle.stat.mockResolvedValue(regular(Buffer.byteLength(text)));
       serve(text);

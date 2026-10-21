@@ -18,7 +18,7 @@ export function R6ColdStartFrame({
   return (
     <main className="onboarding-r6" aria-label={title}>
       {/* The source (143:3007 / 143:3008) puts a mark + "MemHub" on the
-          left of this bar and a "第一次见面" caption on the right. The user
+          left of this bar and a "First meeting" caption on the right. The user
           removed both deliberately on 2026-09-20 — this is a product decision,
           not a missing implementation, so do not "restore" them when comparing
           against the canvas. The bar itself stays: it is the 58px window drag

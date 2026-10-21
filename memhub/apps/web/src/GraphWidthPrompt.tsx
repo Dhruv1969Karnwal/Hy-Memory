@@ -4,6 +4,7 @@ import type {
 } from "@one-memory/contracts";
 import { useEffect, useRef, useState } from "react";
 import { decideGraphWidth, getGraphWidth } from "./api";
+import { countLabel } from "./count-label";
 import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal, writeTraceStatus } from "./write-outcome";
 
@@ -88,7 +89,7 @@ export function GraphWidthPrompt({
           ? reason instanceof Error
             ? reason.message
             : String(reason)
-          : "宽度选择尚未确认，现有记忆库未被改动。请重试。",
+          : "The width choice is not confirmed yet and the existing memory library was not changed. Retry.",
       );
     } finally {
       setBusy(false);
@@ -98,15 +99,16 @@ export function GraphWidthPrompt({
   const choices: { value: GraphWidthDecision; label: string }[] = [
     {
       value: "keep_existing",
-      label: `保留现有记忆库（默认）：继续用原来的 embedding 配置，${status.memory_count} 条记忆和关系图都不动`,
+      label: `Keep the existing memory library (default): stay on the original embedding configuration and leave the ${countLabel(status.memory_count, "memory")} and the graph untouched`,
     },
     {
       value: "rebuild_with_new",
-      label: `改用内置模型：现有关系图会被归档（不删除），${status.memory_count} 条记忆的关系需要重新建一遍`,
+      label: `Switch to the built-in model: the existing graph is archived rather than deleted, and the relations of ${countLabel(status.memory_count, "memory")} have to be rebuilt`,
     },
     {
       value: "export_first",
-      label: "先导出再决定：现在什么都不动，导出之后再回来选",
+      label:
+        "Export first and decide later: nothing changes now, come back and choose after the export",
     },
   ];
 
@@ -115,7 +117,7 @@ export function GraphWidthPrompt({
       className="graph-width-prompt"
       role="dialog"
       aria-modal="true"
-      aria-label="现有记忆库和内置模型对不上"
+      aria-label="The existing memory library does not match the built-in model"
       ref={panel}
       onKeyDown={(event) => {
         if (event.key !== "Tab" || !panel.current) return;
@@ -136,9 +138,9 @@ export function GraphWidthPrompt({
         }
       }}
     >
-      <h2>现有记忆库和内置模型对不上</h2>
+      <h2>The existing memory library does not match the built-in model</h2>
       <p>
-        {`你现在的记忆库按 ${stored_width} 维建的，内置模型出的是 ${expected_width} 维。两者接不上，不选一个的话抽取会一直失败。`}
+        {`Your memory library was built at ${countLabel(stored_width, "dimension")} and the built-in model produces ${expected_width}. They do not connect, so extraction keeps failing until one is chosen.`}
       </p>
       <ul>
         {choices.map((choice) => (
@@ -159,12 +161,13 @@ export function GraphWidthPrompt({
       </ul>
       {exportedPath ? (
         <p className="notice">
-          已导出到 <code>{exportedPath}</code>。原库没有动，现在可以再选一次。
+          Exported to <code>{exportedPath}</code>. The original library was not
+          touched, so you can choose again now.
         </p>
       ) : null}
       {error ? <p className="notice">{error}</p> : null}
       <button type="button" disabled={busy} onClick={() => void confirm()}>
-        就这么办
+        Do that
       </button>
     </div>
   );

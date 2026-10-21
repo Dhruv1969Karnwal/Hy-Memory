@@ -69,11 +69,11 @@ def test_receipt_counts_saved_records_without_inventing_dates_or_other_sources(t
             empty = (await client.get(endpoint)).json()
             assert empty["messages"] == 0 and empty["examples"] == []
             for item in [
-                record(1, text="预算<5；不能>5。" * 1000),
+                record(1, text="Budget<5; must not go >5." * 1000),
                 record(2, author=WrittenBy.AGENT, time=datetime(2026, 9, 1, tzinfo=UTC)),
                 record(3, author=WrittenBy.UNKNOWN),
                 record(4, author=WrittenBy.TOOL),
-                record(5, text="预算<5；不能>5。" * 1000),
+                record(5, text="Budget<5; must not go >5." * 1000),
                 record(6, source="another-source", text="excluded-source"),
                 record(7, user="another-user", text="excluded-user"),
             ]:
@@ -88,7 +88,9 @@ def test_receipt_counts_saved_records_without_inventing_dates_or_other_sources(t
             assert data["unknown_time_messages"] == 4
             assert len(data["examples"]) == 3
             assert "excluded-source" not in response.text and "excluded-user" not in response.text
-            excerpt = next(example for example in data["examples"] if "预算" in example["excerpt"])
+            excerpt = next(
+                example for example in data["examples"] if "Budget" in example["excerpt"]
+            )
             assert excerpt["truncated"] and len(excerpt["excerpt"]) == 600
             assert excerpt["created_at"] is None
             assert "<5" in excerpt["excerpt"] and ">5" in excerpt["excerpt"]
@@ -96,7 +98,7 @@ def test_receipt_counts_saved_records_without_inventing_dates_or_other_sources(t
             assert (await client.get("/api/v1/model-profiles")).json() == []
             (await client.post("/api/v1/sources/claude-code/revoke")).raise_for_status()
             denied = await client.get(endpoint)
-            assert denied.status_code == 403 and "预算" not in denied.text
+            assert denied.status_code == 403 and "Budget" not in denied.text
             assert (await client.get("/api/v1/sources/unknown/import-receipt")).status_code == 404
             assert (
                 await client.get(endpoint, headers={"Authorization": "Bearer invalid"})

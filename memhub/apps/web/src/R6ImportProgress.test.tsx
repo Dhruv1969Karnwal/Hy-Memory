@@ -29,14 +29,14 @@ it("uses the selected job's message count, never the source total or fake percen
       jobs={[job]}
     />,
   );
-  expect(screen.getByText("已保存 17 条消息")).toBeTruthy();
+  expect(screen.getByText("Saved 17 messages")).toBeTruthy();
   expect(container.querySelectorAll("article")).toHaveLength(1);
   expect(container.querySelector("article")?.getAttribute("data-running")).toBe(
     "true",
   );
   expect(container.textContent).not.toContain("9999");
   expect(container.textContent).not.toContain("%");
-  expect(container.textContent).not.toContain("持续导入中");
+  expect(container.textContent).not.toContain("Continuously importing");
 });
 it.each(["paused", "interrupted", "failed", "completed", "cancelled"] as const)(
   "does not animate %s as active work",
@@ -62,7 +62,7 @@ it("stops animation when source state is stale or revoked, without converting ol
       stale
     />,
   );
-  expect(screen.getByText("状态待核对")).toBeTruthy();
+  expect(screen.getByText("Status pending verification")).toBeTruthy();
   expect(
     view.container.querySelector("article")?.getAttribute("data-running"),
   ).toBe("false");
@@ -73,8 +73,8 @@ it("stops animation when source state is stale or revoked, without converting ol
       jobs={[job]}
     />,
   );
-  expect(screen.getByText("读取授权不可用")).toBeTruthy();
-  expect(screen.getByText("已保存 17 条消息")).toBeTruthy();
+  expect(screen.getByText("Read authorization unavailable")).toBeTruthy();
+  expect(screen.getByText("Saved 17 messages")).toBeTruthy();
 });
 it.each(["missing", "pending"] as const)(
   "shows %s work optimistically as a single importing status",
@@ -86,9 +86,9 @@ it.each(["missing", "pending"] as const)(
         jobs={kind === "pending" ? [{ ...job, status: "pending" }] : []}
       />,
     );
-    expect(screen.getByText("正在导入")).toBeTruthy();
-    expect(container.textContent).not.toContain("等待保存回执");
-    expect(container.textContent).not.toContain("持续导入中");
+    expect(screen.getByText("Importing")).toBeTruthy();
+    expect(container.textContent).not.toContain("Waiting for a save receipt");
+    expect(container.textContent).not.toContain("Continuously importing");
     expect(
       container.querySelector("article")?.getAttribute("data-running"),
     ).toBe("true");
@@ -151,7 +151,7 @@ it("keeps the first app anchored across receipts unless the user scrolls", () =>
     />,
   );
   const progress = screen.getByRole("region", {
-    name: "本次应用导入进度",
+    name: "Import progress for this app",
   });
   progress.scrollLeft = 420;
   fireEvent.scroll(progress);
@@ -185,7 +185,7 @@ it("does not claim importing when the source is revoked", () => {
       jobs={[]}
     />,
   );
-  expect(screen.getByText("读取授权不可用")).toBeTruthy();
+  expect(screen.getByText("Read authorization unavailable")).toBeTruthy();
   expect(container.querySelector("article")?.getAttribute("data-running")).toBe(
     "false",
   );

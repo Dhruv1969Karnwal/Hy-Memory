@@ -1,18 +1,18 @@
 """
-HY Memory - System 2 Writer (ultra 模式)
+HY Memory - System 2 Writer (ultra mode)
 
-写入流程:
-  System 1 (同步): 复用 MemoryWriter 的 write 逻辑（含意图抽取 → L7_INTENTION，
-                   见 extractor + writer._store_intentions；意图属于 S1/pro，不是 S2）。
-                   write 只跑 S1 即返回。
-  System 2 (显式): 由 System 2 Agent（LLM + Graph tools）对 VDB 全量做认知加工，
-                   归纳心智模型 → L6_SCHEMA，再跑 cross-domain sweeper。
-                   Agent 是 Graph 的唯一写入者。
+Write flow:
+  System 1 (sync): reuses the MemoryWriter write logic (including intention extraction -> L7_INTENTION,
+                   see extractor + writer._store_intentions; intentions belong to S1/pro, not S2).
+                   write runs only S1 and returns.
+  System 2 (explicit): the System 2 Agent (LLM + Graph tools) does cognitive processing over the full VDB,
+                   inducing mental models into L6_SCHEMA, then runs the cross-domain sweeper.
+                   The Agent is the only writer of the Graph.
 
-触发时机由调用方（App 层）通过 evolve() 显式控制：
-  - write 不入队、不自动触发；SDK 不维护进程内 S2 队列（重启丢任务、多 Pod
-    各自一套队列、与 App 持久化 write 队列双轨等问题由此消除）。
-  - evolve() 一次 = 对该 user 的 VDB 全量跑一次 S2 + sweeper（同步阻塞、非幂等）。
+Trigger timing is controlled explicitly by the caller (App layer) through evolve():
+  - write neither enqueues nor auto-triggers; the SDK keeps no in-process S2 queue (tasks lost on restart,
+    one queue per Pod, dual tracking with the App persistent write queue: all such problems are gone).
+  - one evolve() call = one S2 + sweeper pass over the user's full VDB (synchronous blocking, not idempotent).
 """
 
 import os
@@ -45,14 +45,14 @@ _SWEEPER_ENABLED = os.getenv("SWEEPER_ENABLED", "true").lower() == "true"
 
 class System2Writer(WritePipeline):
     """
-    System 2 写入器 (ultra 模式)
+    System 2 writer (ultra mode)
 
-    特点:
-    - System 1 同步路径完全复用 MemoryWriter；write 只跑 S1 即返回。
-    - System 2 不在 write 里自动触发、不维护进程内队列。触发时机完全由调用方
-      （App 层）通过显式调用 evolve() 控制 —— 避免 SDK 内存队列重启丢任务、
-      多 Pod 各自一套队列、与 App 持久化 write 队列双轨等问题。
-    - evolve() 一次 = 对该 user 的 VDB 全量跑一次 S2 Agent + sweeper（非幂等）。
+    Properties:
+    - The System 1 sync path fully reuses MemoryWriter; write runs only S1 and returns.
+    - System 2 is not auto-triggered inside write and no in-process queue is kept. Trigger timing is fully
+      controlled by the caller (App layer) through explicit evolve() calls -- avoiding tasks lost on restart,
+      one queue per Pod, and dual tracking with the App persistent write queue.
+    - One evolve() call = one S2 Agent + sweeper pass over the user's full VDB (not idempotent).
     """
 
     VERSION = "system2"
@@ -71,17 +71,17 @@ class System2Writer(WritePipeline):
         self._graph_store = graph_store
         self._cache = cache
 
-        # System 1: 复用 MemoryWriter
+        # System 1: reuses MemoryWriter
         self._writer: Optional[MemoryWriter] = None
 
         self._initialized = False
 
     async def initialize(self) -> None:
-        """初始化 Pro Pipeline"""
+        """Initialize the Pro pipeline"""
         if self._initialized:
             return
 
-        # 初始化 MemoryWriter (System 1)
+        # Initialize MemoryWriter (System 1)
         self._writer = MemoryWriter(
             config=self.config,
             embed_service=self._embed_service,
@@ -101,13 +101,13 @@ class System2Writer(WritePipeline):
         tracer: Optional[PipelineTracer] = None,
     ) -> WriteResponse:
         """
-        执行 Pro 写入流程:
-        1. System 1 同步写入 (复用 Lite)，写完即返回。
-        2. System 2 不在此触发 —— 由调用方显式调用 evolve()。
+        Run the Pro write flow:
+        1. System 1 synchronous write (reusing Lite), returns as soon as the write completes.
+        2. System 2 is not triggered here -- the caller invokes evolve() explicitly.
         """
         start_time = datetime.now()
 
-        # 创建 tracer
+        # Create the tracer
         if tracer is None:
             tracer = create_tracer(
                 operation="system2_write",
@@ -118,12 +118,12 @@ class System2Writer(WritePipeline):
                 content_preview=request.content,
             )
 
-        # 确保已初始化
+        # Make sure we are initialized
         if not self._initialized:
             await self.initialize()
 
         # ============================================
-        # System 1: 复用 Lite 的完整写入流程
+        # System 1: reuse the full Lite write flow
         # ============================================
         with tracer.span("system1_write") as s:
             response = await self._writer.write(request, ctx=ctx)
@@ -137,7 +137,7 @@ class System2Writer(WritePipeline):
             response.elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
             return response
 
-        # System 2 由调用方通过 evolve() 显式触发，write 不入队、不自动跑。
+        # System 2 is triggered explicitly by the caller via evolve(); write does not enqueue or auto-run.
         response.extra["pipeline_version"] = "system2"
         response.extra["system2_task_ids"] = []
 
@@ -150,9 +150,9 @@ class System2Writer(WritePipeline):
         ctx: Optional[PipelineContext] = None,
         tracer: Optional[PipelineTracer] = None,
     ) -> WriteResponse:
-        """已抽取事实直写：委托给内部 MemoryWriter.write_extracted（跳过 extract）。
+        """Direct write of already extracted facts: delegates to the inner MemoryWriter.write_extracted (skips extract).
 
-        System 2 不在此触发——与 write() 一致，认知加工由 evolve() 显式触发。
+        System 2 is not triggered here -- as in write(), cognitive processing is triggered explicitly by evolve().
         """
         if not self._initialized:
             await self.initialize()
@@ -162,24 +162,24 @@ class System2Writer(WritePipeline):
         return response
 
     # ================================================================
-    # System 2 认知加工
+    # System 2 cognitive processing
     # ================================================================
 
     async def _run_system2_workers(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        System 2 认知加工 — System 2 Agent + Graph
+        System 2 cognitive processing -- System 2 Agent + Graph
 
-        全面使用 Agent（LLM + 8 tools）替代旧的独立 Workers。
-        Agent 是 Graph 的唯一写入者。
+        Replaces the old standalone Workers entirely with the Agent (LLM + 8 tools).
+        The Agent is the only writer of the Graph.
         """
         return await self._run_system2_agent(payload)
 
     async def _run_system2_agent_with_timing(self, payload: Dict[str, Any]) -> Dict[str, float]:
         """
-        包裹 _run_system2_agent，返回细分 timing:
+        Wraps _run_system2_agent and returns fine-grained timing:
           - preprocess_ms
-          - agent_generate_ms（纯 LLM 时间，= agent elapsed - tools 总耗时）
-          - tools_avg_ms（tool 平均执行耗时）
+          - agent_generate_ms (pure LLM time, = agent elapsed - total tool time)
+          - tools_avg_ms (average tool execution time)
         """
         from .system2_agent import prepare_materials, run_system2_agent, s2_agent_skip_reason
         from .system2_tools import System2ToolExecutor
@@ -245,7 +245,7 @@ class System2Writer(WritePipeline):
             config=self.config,
         )
 
-        # 计算 timing
+        # Compute timing
         agent_elapsed_ms = agent_result.get("elapsed_ms", 0)
         tool_call_log = agent_result.get("tool_call_log", [])
         tools_total_ms = sum(t.get("elapsed_ms", 0) for t in tool_call_log)
@@ -270,7 +270,7 @@ class System2Writer(WritePipeline):
             },
         )
 
-        # Step 2: SYSTEM2_AGENT_TRAJECTORY — 完整 tool_calls
+        # Step 2: SYSTEM2_AGENT_TRAJECTORY — full tool_calls
         import json as _json_s2_t
         tool_calls = agent_result.get("tool_calls", [])
         if self._cache and tool_calls:
@@ -296,7 +296,7 @@ class System2Writer(WritePipeline):
             except Exception as e:
                 logger.debug(f"[S2] store SYSTEM2_AGENT_TRAJECTORY failed: {e}")
 
-        # Step 3: SYSTEM2_AGENT_MESSAGES — 完整 LLM 对话历史
+        # Step 3: SYSTEM2_AGENT_MESSAGES — full LLM conversation history
         messages = agent_result.get("messages")
         if messages and self._cache:
             try:
@@ -334,7 +334,7 @@ class System2Writer(WritePipeline):
 
     async def _run_system2_agent(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        System 2 Agent — 预处理 + LLM Agent + Graph tools
+        System 2 Agent — preprocessing + LLM Agent + Graph tools
         """
         from .system2_agent import (
             build_evoling_batches,
@@ -365,7 +365,7 @@ class System2Writer(WritePipeline):
         vector_store = await self._writer._get_vector_store()
         embed_service = self._writer.embed_service
 
-        # Phase 1: 预处理
+        # Phase 1: preprocessing
         materials = await prepare_materials(
             user_id=user_id,
             agent_id=agent_id,
@@ -841,10 +841,10 @@ class System2Writer(WritePipeline):
             "remaining_holistic_therapy_facts": holistic_remaining,
         }
 
-        # Log agent result — 完整 trajectory
+        # Log agent result — full trajectory
         import json as _json_s2
 
-        # Step 1: SYSTEM2_AGENT 主日志（聚合统计）
+        # Step 1: SYSTEM2_AGENT main log (aggregated statistics)
         await self._store_system2_log(
             request_id=request_id,
             user_id=user_id,
@@ -861,8 +861,8 @@ class System2Writer(WritePipeline):
             },
         )
 
-        # Step 2: SYSTEM2_AGENT_TRAJECTORY — 完整 trajectory（tool_calls + reasoning）
-        # 无条件存储：即使没有 tool calls，Agent 的推理过程本身就是 trajectory
+        # Step 2: SYSTEM2_AGENT_TRAJECTORY — full trajectory (tool_calls + reasoning)
+        # Stored unconditionally: even without tool calls, the Agent reasoning process is itself the trajectory
         tool_calls = agent_result.get("tool_calls", [])
         if self._cache:
             try:
@@ -887,11 +887,11 @@ class System2Writer(WritePipeline):
             except Exception as e:
                 logger.debug(f"[S2] store SYSTEM2_AGENT_TRAJECTORY failed: {e}")
 
-        # Step 3: SYSTEM2_AGENT_MESSAGES — 完整 LLM 对话历史（可重放）
+        # Step 3: SYSTEM2_AGENT_MESSAGES — full LLM conversation history (replayable)
         messages = agent_result.get("messages")
         if messages and self._cache:
             try:
-                # 过滤掉 embedding 等大字段，只保留文本
+                # Drop large fields such as embeddings and keep only the text
                 clean_messages = []
                 for m in messages:
                     clean_msg = {"role": m.get("role", "")}
@@ -918,7 +918,7 @@ class System2Writer(WritePipeline):
             except Exception as e:
                 logger.debug(f"[S2] store SYSTEM2_AGENT_MESSAGES failed: {e}")
 
-        # Step 4: Graph 写入操作记 memory_operations（可追溯）
+        # Step 4: Graph write operations are recorded in memory_operations (traceable)
         tool_call_log = agent_result.get("tool_call_log", [])
         if tool_call_log and self._cache:
             for tc in tool_call_log:
@@ -927,7 +927,7 @@ class System2Writer(WritePipeline):
                                  "revise_schema", "retire_schema", "add_edge"):
                     try:
                         result_preview = tc.get("result_preview", "")
-                        # 尝试提取 node_id
+                        # Try to extract the node_id
                         try:
                             result_data = _json_s2.loads(result_preview) if result_preview else {}
                         except Exception:
@@ -1045,7 +1045,7 @@ class System2Writer(WritePipeline):
         llm_call,
         request_id: str = "",
     ) -> Dict[str, Any]:
-        """在 System2 Agent 之后运行跨域突破性归纳"""
+        """Run cross-domain breakthrough induction after the System2 Agent"""
         if not _SWEEPER_ENABLED:
             return {"skipped": True, "reason": "SWEEPER_ENABLED=false"}
 
@@ -1070,12 +1070,12 @@ class System2Writer(WritePipeline):
             return {"error": str(e)}
 
     def _get_llm_call(self):
-        """返回 sweeper 需要的 async LLM callable: async (prompt: str) -> str"""
+        """Return the async LLM callable the sweeper needs: async (prompt: str) -> str"""
         from ..agent.llm_provider import LLMProvider
 
         provider = LLMProvider(self.config)
-        # 不传 temperature：由 provider 统一按 config.llm 解析
-        # （自己兜一个 0.3 会绕过用户配置，也会绕过 omit_temperature）
+        # No temperature argument: the provider resolves it from config.llm in one place
+        # (falling back to our own 0.3 would bypass user config and also bypass omit_temperature)
         async def _call(prompt: str) -> str:
             resp = await provider._call_llm(prompt, max_tokens=1024)
             return resp.content
@@ -1112,7 +1112,7 @@ class System2Writer(WritePipeline):
             logger.debug(f"[S2] store {step} pipeline log failed: {e}")
 
     # ================================================================
-    # 公开 API: evolve (手动触发 System 2)
+    # Public API: evolve (manually trigger System 2)
     # ================================================================
 
     async def run_sweeper(
@@ -1121,14 +1121,14 @@ class System2Writer(WritePipeline):
         agent_id: str = "default_agent",
     ) -> Dict[str, Any]:
         """
-        手动触发 cross-domain sweeper（同步等待完成）。
+        Manually trigger the cross-domain sweeper (waits synchronously for completion).
 
-        独立于 evolve 流程，不执行 S2 Agent，只做：
-        1. 补齐 schema 的 beh abstraction + beh_embedding
-        2. 碰撞扫描 + core 归纳
+        Independent of the evolve flow: no S2 Agent runs, it only does:
+        1. Backfill beh abstraction + beh_embedding for schemas
+        2. Collision scan + core induction
 
         Args:
-            user_id: SDK user_id（可含通用 namespace 前缀）
+            user_id: SDK user_id (may contain a generic namespace prefix)
             agent_id: Agent ID
 
         Returns:
@@ -1156,17 +1156,17 @@ class System2Writer(WritePipeline):
         max_batches: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        手动触发 System 2 认知加工（由调用方/App 层控制触发时机）。
+        Manually trigger System 2 cognitive processing (trigger timing controlled by the caller/App layer).
 
-        语义：evolve 一次 = 对该 user 的 VDB 全量跑一次 System 2（S2 Agent +
-        cross-domain sweeper）。S2 的输入是 prepare_materials 全量扫描的 VDB
-        （L2/L4 聚类 + 已有 Graph schema），与写入次数无关，只跑一次完整认知周期。
+        Semantics: one evolve = one System 2 pass over the user's full VDB (S2 Agent +
+        cross-domain sweeper). The S2 input is the VDB that prepare_materials scans in full
+        (L2/L4 clusters + existing Graph schema), independent of the number of writes; one complete cognitive cycle runs.
 
-        非幂等：每次 evolve 看到的是当前最新的 VDB 全量，连续多次 evolve 有意义
-        （例如先 add 一批 → evolve → 再 add 一批 → 再 evolve）。
+        Not idempotent: each evolve sees the current latest full VDB, so several evolves in a row are meaningful
+        (for example add a batch -> evolve -> add another batch -> evolve again).
 
         Args:
-            user_id: 用户 ID
+            user_id: user ID
             agent_id: Agent ID
 
         Returns:
@@ -1243,7 +1243,7 @@ class System2Writer(WritePipeline):
     # ================================================================
 
     async def close(self) -> None:
-        """释放 Pro 写入资源"""
+        """Release Pro write resources"""
         if self._writer:
             await self._writer.close()
 

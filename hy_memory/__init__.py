@@ -1,27 +1,27 @@
 """
-HY Memory - 核心 SDK
+HY Memory - Core SDK
 
-工业级智能体记忆系统核心框架。
+Industrial-grade core framework for an agent memory system.
 
-快速开始:
+Quickstart:
     export OPENAI_API_KEY="sk-your-key-here"
 
     from hy_memory import HyMemoryClient
 
-    # 最简用法 — 只需设置 OPENAI_API_KEY 环境变量
+    # Simplest usage -- just set the OPENAI_API_KEY environment variable
     client = HyMemoryClient(mode="pro")
-    client.add("用户喜欢科幻电影", user_id="test_user")
-    results = client.search("用户喜欢什么？", user_ids=["test_user"])
+    client.add("The user likes sci-fi movies", user_id="test_user")
+    results = client.search("What does the user like?", user_ids=["test_user"])
     client.close()
 
-默认配置:
-    - embedder: OpenAI text-embedding-3-small (1536 维)
+Default configuration:
+    - embedder: OpenAI text-embedding-3-small (1536 dimensions)
     - llm: OpenAI gpt-4.1-nano
-    - vector_store: Chroma 本地嵌入式 (零外部依赖)
+    - vector_store: embedded Chroma local (zero external dependencies)
 
-    只需设置 OPENAI_API_KEY 环境变量即可运行。
+    Just set the OPENAI_API_KEY environment variable and it runs.
 
-    # 自定义配置
+    # Custom configuration
     client = HyMemoryClient.from_config({
         "vector_store": {"provider": "qdrant"},
         "graph_store": {
@@ -33,16 +33,16 @@ HY Memory - 核心 SDK
         "enable_graph": True,
     })
 
-数据隔离 (三级):
-    - user_id:  一级 key — 每个用户唯一的记忆库
-    - agent_id: 二级 key — 同一用户下不同 Agent 场景的隔离
-    - session_id: 三级 key — 同一 Agent 下不同会话的隔离
+Data isolation (three levels):
+    - user_id:    level-1 key -- a memory library unique to each user
+    - agent_id:   level-2 key -- isolates Agent scenes under the same user
+    - session_id: level-3 key -- isolates sessions under the same Agent
 
-安装方式:
-    pip install hy-memory          # 核心依赖 (含 Chroma，开箱即用)
-    pip install hy-memory[qdrant]  # + Qdrant 向量库
-    pip install hy-memory[faiss]   # + FAISS 向量库
-    pip install hy-memory[all]     # 包含所有可选依赖
+Installation:
+    pip install hy-memory          # core dependencies (includes Chroma, works out of the box)
+    pip install hy-memory[qdrant]  # + Qdrant vector database
+    pip install hy-memory[faiss]   # + FAISS vector database
+    pip install hy-memory[all]     # includes all optional dependencies
 """
 
 try:
@@ -51,18 +51,18 @@ try:
 except Exception:
     __version__ = "0.1.0"
 
-# ====== 用户级 API（推荐） ======
+# ====== User-level API (recommended) ======
 from .client import HyMemoryClient
 from .inspector import MemoryInspector
 from .runtime import SharedRuntime
 
-# ====== 配置 ======
+# ====== Configuration ======
 from .config import MemoryConfig
 
-# ====== Embedding 端点覆盖（per-call，不改 model/dims，只换接入端点）======
+# ====== Embedding endpoint override (per-call; keeps model/dims, swaps only the access endpoint) ======
 from .core.embed_service import embed_endpoint_override
 
-# ====== 高级 API（按需使用） ======
+# ====== Advanced API (as needed) ======
 from .pipelines import (
     ComponentFactory,
     PipelineConfig,
@@ -75,7 +75,7 @@ from .pipelines import (
     ReadResponse,
 )
 
-# ====== 数据模型 ======
+# ====== Data models ======
 from .models import (
     MemoryLayer,
     MemoryNode,
@@ -107,15 +107,15 @@ from .models import (
 
 __all__ = [
     "__version__",
-    # 用户级 API
+    # User-level API
     "HyMemoryClient",
     "MemoryInspector",
     "SharedRuntime",
-    # 配置
+    # Configuration
     "MemoryConfig",
-    # Embedding 端点覆盖
+    # Embedding endpoint override
     "embed_endpoint_override",
-    # 高级 API
+    # Advanced API
     "ComponentFactory",
     "PipelineConfig",
     "WritePipeline",
@@ -125,7 +125,7 @@ __all__ = [
     "WriteResponse",
     "ReadRequest",
     "ReadResponse",
-    # 数据模型
+    # Data models
     "MemoryLayer",
     "MemoryNode",
     "MemoryEntry",

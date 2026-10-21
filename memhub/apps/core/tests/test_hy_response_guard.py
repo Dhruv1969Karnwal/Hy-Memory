@@ -438,13 +438,16 @@ def test_native_no_candidate_reconcile_retains_extractor_owner(tmp_path, monkeyp
     native = MemoryReconciler(MemoryConfig())
     native._enable_search_query = False
     arguments = {
-        "new_memories": ["Agent建议启用备份，用户尚未确认。"],
+        "new_memories": ["The agent suggests enabling backups; the user has not confirmed."],
         "user_id": "test",
         "agent_id": "test",
         "embed_service": Embeddings(),
         "vector_store": Store(),
         "new_memories_with_meta": [
-            {"content": "Agent建议启用备份，用户尚未确认。", "owner": "agent"}
+            {
+                "content": "The agent suggests enabling backups; the user has not confirmed.",
+                "owner": "agent",
+            }
         ],
     }
     result = asyncio.run(HyReconcileGuard(native).reconcile(**arguments))

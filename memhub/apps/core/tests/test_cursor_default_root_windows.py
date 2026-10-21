@@ -1,11 +1,11 @@
-"""R-29 剩余：Cursor 默认根路径不能写死成 macOS。
+"""R-29 leftover: the Cursor default root path must not be hardcoded to macOS.
 
-`registry._cursor_data_root` 已经按平台分了 darwin / win32 / XDG，但
-`cursor.cursor_default_root` 仍硬返回
-`~/Library/Application Support/Cursor/User`。这条路径在 Windows 上不存在，
-谁调用它都会得到一个永远 detect 失败的根。
+`registry._cursor_data_root` already splits by platform into darwin / win32 / XDG, but
+`cursor.cursor_default_root` still returns
+`~/Library/Application Support/Cursor/User` hard-coded. That path does not exist on Windows,
+so whoever calls it gets a root whose detection always fails.
 
-两处必须是同一份意见：fallback 逻辑只许有一份。
+The two places must hold one opinion: there may only be one fallback rule.
 """
 
 from pathlib import Path
@@ -58,7 +58,7 @@ def test_cursor_default_root_on_linux_uses_xdg(tmp_path: Path) -> None:
 
 
 def test_cursor_default_root_on_darwin_keeps_the_library_path(tmp_path: Path) -> None:
-    """绿对照：macOS 行为不许被顺手改掉。"""
+    """Green control: the macOS behavior must not be changed in passing."""
     home = tmp_path / "home"
 
     assert cursor_default_root(home, platform="darwin", environment={}) == (
@@ -69,10 +69,11 @@ def test_cursor_default_root_on_darwin_keeps_the_library_path(tmp_path: Path) ->
 def test_registry_fallback_and_cursor_default_root_are_the_same_opinion(
     tmp_path: Path,
 ) -> None:
-    """两处曾各写一份；漂移过一次就会再漂。
+    """The two places each had their own copy; once they drifted they will drift again.
 
-    `~/.cursor` 不存在时，registry 的 fallback 必须就是 cursor_default_root
-    给出的那条路径 —— 否则 Windows 上 catalog 指向一处、别处读另一处。
+    When `~/.cursor` does not exist, the registry fallback must be exactly the path that \
+cursor_default_root
+    returns -- otherwise on Windows the catalog points at one place while other code reads another.
     """
     home = tmp_path / "home"
     app_data = tmp_path / "Roaming"

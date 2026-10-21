@@ -90,41 +90,41 @@ def target(
 def test_a_host_reaches_the_project_it_is_working_in(tmp_path: Path) -> None:
     scope, known = cursor_workspace(PROJECT)
     recall, evidence_store = target(tmp_path, (known,))
-    confirmed(recall, evidence_store, "接口错误码统一用 problem+json", (scope,))
+    confirmed(recall, evidence_store, "API error codes all use problem+json", (scope,))
 
-    without = recall.recall(RecallRequest(query="错误码 约定"))
-    with_path = recall.recall(RecallRequest(query="错误码 约定", workspace_path=PROJECT))
+    without = recall.recall(RecallRequest(query="error codes convention"))
+    with_path = recall.recall(RecallRequest(query="error codes convention", workspace_path=PROJECT))
 
     # This is the whole defect: the default every installed host performs.
     assert without.state is RecallState.EMPTY
-    assert [hit.content for hit in with_path.hits] == ["接口错误码统一用 problem+json"]
+    assert [hit.content for hit in with_path.hits] == ["API error codes all use problem+json"]
 
 
 def test_naming_one_project_does_not_open_another(tmp_path: Path) -> None:
     mine, known_mine = cursor_workspace(PROJECT)
     theirs, known_theirs = cursor_workspace(OTHER_PROJECT)
     recall, evidence_store = target(tmp_path, (known_mine, known_theirs))
-    confirmed(recall, evidence_store, "错误码 用于本项目", (mine,))
-    confirmed(recall, evidence_store, "错误码 用于另一个项目", (theirs,))
+    confirmed(recall, evidence_store, "error codes apply to this project", (mine,))
+    confirmed(recall, evidence_store, "error codes apply to the other project", (theirs,))
 
-    receipt = recall.recall(RecallRequest(query="错误码", workspace_path=PROJECT))
+    receipt = recall.recall(RecallRequest(query="error codes", workspace_path=PROJECT))
 
-    assert [hit.content for hit in receipt.hits] == ["错误码 用于本项目"]
+    assert [hit.content for hit in receipt.hits] == ["error codes apply to this project"]
 
 
 def test_the_person_profile_still_comes_through_with_a_project(tmp_path: Path) -> None:
     scope, known = cursor_workspace(PROJECT)
     recall, evidence_store = target(tmp_path, (known,))
-    confirmed(recall, evidence_store, "用户偏好 用 axios 封装", ("all-apps",))
-    confirmed(recall, evidence_store, "用户偏好 本项目走 grpc", (scope,))
+    confirmed(recall, evidence_store, "The user prefers wrapping requests in axios", ("all-apps",))
+    confirmed(recall, evidence_store, "The user prefers grpc in this project", (scope,))
 
-    receipt = recall.recall(RecallRequest(query="用户偏好", workspace_path=PROJECT))
+    receipt = recall.recall(RecallRequest(query="user prefers", workspace_path=PROJECT))
 
     # Being in a project must not cost the caller the cross-app memories it
     # already had; a host wants both.
     assert {hit.content for hit in receipt.hits} == {
-        "用户偏好 用 axios 封装",
-        "用户偏好 本项目走 grpc",
+        "The user prefers wrapping requests in axios",
+        "The user prefers grpc in this project",
     }
 
 
@@ -133,11 +133,11 @@ def test_the_same_directory_is_reached_whichever_app_recorded_it(tmp_path: Path)
     claude = opaque_workspace_id("claude-code", PROJECT)
     assert claude is not None
     recall, evidence_store = target(tmp_path)
-    confirmed(recall, evidence_store, "结论 部署走蓝绿", (claude,))
+    confirmed(recall, evidence_store, "decision: deployment goes blue-green", (claude,))
 
-    receipt = recall.recall(RecallRequest(query="结论 部署", workspace_path=PROJECT))
+    receipt = recall.recall(RecallRequest(query="decision deployment", workspace_path=PROJECT))
 
-    assert [hit.content for hit in receipt.hits] == ["结论 部署走蓝绿"]
+    assert [hit.content for hit in receipt.hits] == ["decision: deployment goes blue-green"]
 
 
 @pytest.mark.parametrize("source", ["qwen-code", "codex"])
@@ -146,11 +146,11 @@ def test_source_project_memory_is_recalled_only_in_its_project(tmp_path: Path, s
     theirs = opaque_workspace_id(source, OTHER_PROJECT)
     assert mine is not None and theirs is not None
     recall, evidence_store = target(tmp_path)
-    confirmed(recall, evidence_store, "项目周会 避开周五", (mine,))
-    confirmed(recall, evidence_store, "项目周会 安排周五", (theirs,))
-    result = recall.recall(RecallRequest(query="项目周会", workspace_path=PROJECT))
-    assert [hit.content for hit in result.hits] == ["项目周会 避开周五"]
-    assert not recall.recall(RecallRequest(query="项目周会")).hits
+    confirmed(recall, evidence_store, "project weekly meeting avoids Friday", (mine,))
+    confirmed(recall, evidence_store, "project weekly meeting is on Friday", (theirs,))
+    result = recall.recall(RecallRequest(query="project weekly meeting", workspace_path=PROJECT))
+    assert [hit.content for hit in result.hits] == ["project weekly meeting avoids Friday"]
+    assert not recall.recall(RecallRequest(query="project weekly meeting")).hits
 
 
 def test_cursors_own_chat_store_is_reached_too(tmp_path: Path) -> None:
@@ -160,19 +160,19 @@ def test_cursors_own_chat_store_is_reached_too(tmp_path: Path) -> None:
     scope = opaque_workspace_id("cursor", digest)
     assert scope is not None
     recall, evidence_store = target(tmp_path)
-    confirmed(recall, evidence_store, "结论 缓存放 redis", (scope,))
+    confirmed(recall, evidence_store, "decision: caching goes in redis", (scope,))
 
-    receipt = recall.recall(RecallRequest(query="结论 缓存", workspace_path=PROJECT))
+    receipt = recall.recall(RecallRequest(query="decision caching", workspace_path=PROJECT))
 
-    assert [hit.content for hit in receipt.hits] == ["结论 缓存放 redis"]
+    assert [hit.content for hit in receipt.hits] == ["decision: caching goes in redis"]
 
 
 def test_the_wildcard_keeps_meaning_everything(tmp_path: Path) -> None:
     scope, known = cursor_workspace(PROJECT)
     recall, evidence_store = target(tmp_path, (known,))
-    confirmed(recall, evidence_store, "结论 属于某个项目", (scope,))
+    confirmed(recall, evidence_store, "decision belonging to one project", (scope,))
 
-    receipt = recall.recall(RecallRequest(query="结论", scope="*"))
+    receipt = recall.recall(RecallRequest(query="decision", scope="*"))
 
     assert receipt.state is RecallState.GROUNDED
 
@@ -240,6 +240,8 @@ def test_the_label_matches_cursor_path_encoding() -> None:
         == "Users-example-example-admin-app"
     )
     assert (
-        cursor_project_label("/Users/example/example-admin-app/api/reports/产品示例")
+        cursor_project_label(
+            "/Users/example/example-admin-app/api/reports/\u4ea7\u54c1\u793a\u4f8b"
+        )
         == "Users-example-example-admin-app-api-reports"
     )

@@ -202,14 +202,14 @@ describe("memhub short-command contract", () => {
       ]),
     ].join("\n");
     // If the wizard is mentioned at all, the non-TTY behaviour must be too.
-    if (/交互式|向导/.test(text)) {
-      expect(text).toMatch(/非终端|不读 stdin|TTY/);
+    if (/interactive|wizard/.test(text)) {
+      expect(text).toMatch(/without a terminal|reads no stdin|TTY/);
     }
   });
 
   // Help must not understate what the CLI actually does. `path list/add/remove`
   // and `adapter list/probe` are wired to real Runtime endpoints (verified live),
-  // but an earlier catalog text still claimed they were "尚不可用". A user
+  // but an earlier catalog text still claimed they were "not yet available". A user
   // reading `help path` would not try a command that works.
   it("does not call the wired path/adapter commands unavailable", () => {
     for (const name of ["path", "adapter"]) {
@@ -219,7 +219,7 @@ describe("memhub short-command contract", () => {
         command?.summary ?? "",
         ...(command?.options ?? []).map((option) => option.summary),
       ].join("\n");
-      expect(text).not.toContain("尚不可用");
+      expect(text).not.toContain("not yet available");
     }
   });
 
@@ -230,7 +230,7 @@ describe("memhub short-command contract", () => {
       .map((option) => `${option.flag} ${option.summary}`)
       .join("\n")}`;
     expect(text).toContain("NDJSON");
-    expect(text).toContain("每行一个");
+    expect(text).toContain("one redacted event per line");
   });
 
   it("keeps mutating previews free of data-directory side effects", {

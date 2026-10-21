@@ -1,15 +1,15 @@
 """
-Agent Memory V2 - GraphStore Provider 工厂
+Agent Memory V2 - GraphStore provider factory
 
-根据配置选择图数据库后端 (Kuzu / Neo4j)。
+Selects the graph database backend (Kuzu / Neo4j) from config.
 
-用法:
+Usage:
     from .graph_store import create_graph_store, GraphStore
 
-    # 工厂函数 (推荐)
+    # Factory function (recommended)
     graph = create_graph_store(config)
 
-    # 向后兼容别名
+    # Backward-compatible alias
     graph = GraphStore(config)
 """
 
@@ -28,10 +28,10 @@ logger = logging.getLogger(__name__)
 
 def graph_data_may_exist(config: MemoryConfig) -> bool:
     """
-    判断是否存在需要 purge 的图数据（与 MEMORY_MODE 无关）。
+    Decide whether graph data exists that needs purging (independent of MEMORY_MODE).
 
-    - Kuzu：仅当 db_path 上已有数据库文件/目录时返回 True，避免 pro 模式误建空库。
-    - Neo4j/Memgraph：外部服务，始终尝试连接并 purge。
+    - Kuzu: return True only when a database file/directory already exists at db_path, so pro mode does not create an empty store.
+    - Neo4j/Memgraph: external services, always try to connect and purge.
     """
     provider_raw = getattr(config.graph_store, "provider", None)
     if not provider_raw or not str(provider_raw).strip():
@@ -63,13 +63,13 @@ def graph_data_may_exist(config: MemoryConfig) -> bool:
 
 def create_graph_store(config: MemoryConfig) -> GraphStoreBase:
     """
-    工厂函数: 根据 config.graph_store.provider 创建对应的 GraphStore 实现。
+    Factory function: create the matching GraphStore implementation from config.graph_store.provider.
 
-    - "kuzu"     → KuzuGraphStore     (嵌入式)
-    - "neo4j"    → Neo4jGraphStore    (客户端-服务端)
-    - "memgraph" → Neo4jGraphStore    (兼容 bolt 协议, 复用 Neo4j 驱动)
+    - "kuzu"     → KuzuGraphStore     (embedded)
+    - "neo4j"    → Neo4jGraphStore    (client-server)
+    - "memgraph" → Neo4jGraphStore    (bolt protocol compatible, reuses the Neo4j driver)
 
-    未配置或配置未知 provider 直接抛错；不做任何静默 fallback 到 kuzu。
+    A missing or unknown provider raises immediately; there is no silent fallback to kuzu.
     """
     provider = getattr(config.graph_store, 'provider', None)
     if not provider or not str(provider).strip():
@@ -94,8 +94,8 @@ def create_graph_store(config: MemoryConfig) -> GraphStoreBase:
         )
 
 
-# 向后兼容: `from .graph_store import GraphStore` 仍然可用
-# GraphStore 现在是工厂函数的别名，调用 GraphStore(config) 等价于 create_graph_store(config)
+# Backward compatibility: `from .graph_store import GraphStore` still works
+# GraphStore is now an alias for the factory function; GraphStore(config) is equivalent to create_graph_store(config)
 def GraphStore(config: MemoryConfig) -> GraphStoreBase:
-    """向后兼容别名 — 等价于 create_graph_store(config)"""
+    """Backward-compatible alias -- equivalent to create_graph_store(config)"""
     return create_graph_store(config)

@@ -1,8 +1,9 @@
-"""新记忆一经创建即有效；「待确认」「已拒绝」只作为旧库迁移的输入存在。
+"""A new memory is valid from the moment it is created; "pending confirmation" and "rejected" only \
+exist as legacy migration input
 
-旧库里的行用原始 SQL 写入，而不是调用治理接口：这样同一份测试在
-去掉 candidate 之前的代码上也能构造出待确认 / 已拒绝的记忆，用来证明
-每条断言在旧实现下都会失败。
+Legacy rows go in through raw SQL instead of the governance API, so this same test can build
+pending and rejected memories against the code from before candidate was dropped, which is what
+proves that every assertion fails on the old implementation.
 """
 
 import asyncio
@@ -55,7 +56,7 @@ LEGACY_HISTORIES = {
     "confirmed": (("create", "candidate"), ("confirm", "confirmed")),
     "deleted": (("create", "candidate"), ("delete", "deleted")),
 }
-# 旧回执里已不存在的操作，迁移后在 v2 里的写法。
+# Operations the old receipts no longer hold, written the way v2 writes them after migration.
 LEGACY_OPERATIONS = {"reject": "delete", "confirm": "legacy"}
 
 
@@ -93,7 +94,7 @@ def _legacy_memory(
             ),
         )
         for revision, (action, version_status) in enumerate(history, start=1):
-            version_content = content if revision == len(history) else f"{content}（旧）"
+            version_content = content if revision == len(history) else f"{content} (old)"
             connection.execute(
                 "INSERT INTO governed_memory_versions (memory_id,revision,action,status,"
                 "content,scopes_json,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -145,7 +146,7 @@ def _tables(database: Path) -> dict[str, list[tuple[object, ...]]]:
 
 
 def _rows(database: Path, table: str) -> list[dict[str, object]]:
-    """按列名读，迁移前的表可能还没有迁移要加的列。"""
+    """Read by column name: a pre-migration table may not have the columns the migration adds."""
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
     try:
@@ -164,9 +165,11 @@ def _backups(data_dir: Path) -> list[Path]:
 
 
 def _f6d624a_library(database: Path, journal: str = "wal") -> None:
-    """按固定的旧版表结构建一个空库，不经过当前的任何 store。
+    """Create an empty library from the fixed legacy schema, without going through any current \
+store.
 
-    `journal` 是库文件原本的日志模式：更早的库没切过 WAL，升级前的备份要照原样保留它。
+    `journal` is the journal mode the library file already had: older libraries never switched to \
+WAL, and the pre-upgrade backup must keep it exactly as it is.
     """
     connection = sqlite3.connect(database)
     try:
@@ -177,7 +180,8 @@ def _f6d624a_library(database: Path, journal: str = "wal") -> None:
 
 
 def _open(database: Path) -> MemoryGovernanceStore:
-    """先走升级前那一步再开治理 store，和 Core 启动的顺序一样。"""
+    """Run the pre-upgrade step and then open the governance store, in the same order Core starts \
+in."""
     from one_memory.library_upgrade import prepare_library
 
     return MemoryGovernanceStore(database, prepared=prepare_library(database))
@@ -214,28 +218,29 @@ def _legacy_evidence(database: Path, *, index: int, content: str) -> str:
 def _legacy_library(
     tmp_path: Path, stores=None, *, journal: str = "wal"
 ) -> tuple[Path, dict[str, str]]:
-    """不给 stores 时构造固定旧库；给了则在当前库里写旧状态的行。"""
+    """Without stores this builds the fixed legacy library; with stores it writes legacy status \
+rows into the current library."""
     database = tmp_path / "one-memory.sqlite3"
     if stores is None:
         _f6d624a_library(database, journal)
     ids: dict[str, str] = {}
     for index, name in enumerate(LEGACY_HISTORIES):
         if stores is None:
-            evidence_id = _legacy_evidence(database, index=index, content=f"原话 {name}")
+            evidence_id = _legacy_evidence(database, index=index, content=f"source text {name}")
         else:
             evidence_id = _put(
                 stores[0],
                 message_id=f"m{index}",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                content=f"原话 {name}",
+                content=f"source text {name}",
             ).evidence_id
         _legacy_memory(
             database,
             memory_id=name,
             history=LEGACY_HISTORIES[name],
             evidence_id=evidence_id,
-            content=f"记忆 {name}",
+            content=f"memory {name}",
             origin="agent" if name == "candidate" else None,
         )
         ids[name] = evidence_id
@@ -261,7 +266,7 @@ def test_a_new_hy_memory_is_confirmed_from_its_first_revision(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我偏好本地优先。",
+        content="I prefer local-first.",
     )
     asyncio.run(_runner(tmp_path, stores, FakeBridge()).run(_task(tasks, profile, record).task_id))
 
@@ -331,7 +336,7 @@ def test_a_digested_schema_is_confirmed_from_its_first_revision(tmp_path) -> Non
         message_id="m1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         workspace="workspace:v1:project",
     )
     _legacy_memory(
@@ -339,7 +344,7 @@ def test_a_digested_schema_is_confirmed_from_its_first_revision(tmp_path) -> Non
         memory_id="seed",
         history=(("create", "confirmed"),),
         evidence_id=record.evidence_id,
-        content="记忆 seed",
+        content="memory seed",
         scopes=("workspace:v1:project",),
     )
     supervisor = MemoryProcessingSupervisor(
@@ -353,7 +358,11 @@ def test_a_digested_schema_is_confirmed_from_its_first_revision(tmp_path) -> Non
     supervisor._bridges[(profile.profile_id, profile.revision, None)] = FakeBridge(
         outputs=(),
         graph_nodes=(
-            HyGraphNode(node_id="schema-1", content="用户偏好可验证的结论。", layer="l6_schema"),
+            HyGraphNode(
+                node_id="schema-1",
+                content="The user prefers verifiable conclusions.",
+                layer="l6_schema",
+            ),
         ),
     )
 
@@ -394,7 +403,7 @@ def test_api_created_memory_is_confirmed_and_confirm_reject_are_gone(tmp_path) -
                 message_id="m1",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                content="手写的一条记忆的原话",
+                content="source text of a hand written memory",
             )
             created = await client.post(
                 "/api/v1/memories",
@@ -403,7 +412,7 @@ def test_api_created_memory_is_confirmed_and_confirm_reject_are_gone(tmp_path) -
                     "draft": {
                         "user_id": "local",
                         "kind": "chat",
-                        "content": "手写记忆",
+                        "content": "hand written memory",
                         "scopes": ["all-apps"],
                         "evidence_ids": [record.evidence_id],
                     },
@@ -421,7 +430,7 @@ def test_api_created_memory_is_confirmed_and_confirm_reject_are_gone(tmp_path) -
             # The operations that stay keep working on a memory born confirmed.
             corrected = await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
-                json={"request_id": "correct-1", "expected_revision": 1, "content": "改过的"},
+                json={"request_id": "correct-1", "expected_revision": 1, "content": "corrected"},
             )
             assert corrected.status_code == 200
             assert corrected.json()["status"] == "confirmed"
@@ -520,7 +529,8 @@ def test_legacy_pending_and_rejected_memories_are_migrated_in_place(tmp_path) ->
     ]
     for table in ("governed_memory_evidence", "evidence"):
         assert after[table] == before[table], table
-    # 旧版拒绝从不通知 HY 删除，迁移成 deleted 时补登一条待删除，由删除同步去做。
+    # The legacy reject never told HY to delete, so migrating it to deleted registers a pending
+    # deletion for the deletion sync to run.
     assert [(row[0], row[1]) for row in after["memory_deletions"]] == [("rejected", "pending")]
 
     # Every memory now reads through the enum, history included.
@@ -551,14 +561,14 @@ def test_migration_backs_up_first_and_is_idempotent(tmp_path) -> None:
 def test_a_library_without_legacy_states_is_not_backed_up(tmp_path) -> None:
     stores = _setup(tmp_path)
     record = _put(
-        stores[0], message_id="m1", role="user", written_by=WrittenBy.PERSON, content="原话"
+        stores[0], message_id="m1", role="user", written_by=WrittenBy.PERSON, content="source text"
     )
     _legacy_memory(
         tmp_path / "one-memory.sqlite3",
         memory_id="current",
         history=(("create", "confirmed"),),
         evidence_id=record.evidence_id,
-        content="记忆",
+        content="memory",
     )
     before = _tables(tmp_path / "one-memory.sqlite3")
 
@@ -577,11 +587,12 @@ def test_undo_on_a_migrated_memory_never_restores_a_pending_state(tmp_path) -> N
     )
 
     assert undone.status is MemoryStatus.CONFIRMED
-    assert undone.content == "记忆 corrected-candidate（旧）"
+    assert undone.content == "memory corrected-candidate (old)"
 
 
 def test_a_matter_saved_with_a_pending_reference_still_reads_as_confirmed() -> None:
-    """事项正文里存着引用当时的记忆状态；迁移后同一修订的记忆已是 confirmed。"""
+    """A matter body stores the memory status as of the citation; after migration that revision \
+already reads confirmed."""
     from one_memory.matters.models import MemoryRef
 
     saved = {
@@ -602,11 +613,12 @@ def test_a_matter_saved_with_a_pending_reference_still_reads_as_confirmed() -> N
         MemoryRef.model_validate({**saved, "status": "rejected"})
 
 
-# ---------------------------------------------------------------- 回归：一个启动迁移事务
+# ---------------------------------------------------------------- Regression: one startup migration
+# transaction
 
 
 def _old_schema(database: Path) -> None:
-    """还没有 `mutations.created_at` 的早期数据库。"""
+    """An early database that does not have `mutations.created_at` yet."""
     connection = sqlite3.connect(database)
     try:
         connection.execute("ALTER TABLE governed_memory_mutations DROP COLUMN created_at")
@@ -623,7 +635,8 @@ def _columns(database: Path, table: str) -> set[str]:
 
 
 def test_a_library_without_the_ledger_timestamp_still_migrates(tmp_path) -> None:
-    """补 `created_at` 的 UPDATE 会隐式开事务，之后再 BEGIN IMMEDIATE 就报错。"""
+    """The UPDATE that backfills `created_at` opens a transaction implicitly, so a later BEGIN \
+IMMEDIATE fails."""
     database, _evidence = _legacy_library(tmp_path)
     _old_schema(database)
 
@@ -653,7 +666,8 @@ def test_core_starts_on_a_library_without_the_ledger_timestamp(tmp_path) -> None
 
 @pytest.mark.parametrize("aged", [False, True], ids=["f6d624a", "without-ledger-timestamp"])
 def test_core_start_backs_up_the_library_before_anything_changes_it(tmp_path, aged) -> None:
-    """备份是这次启动之前的库：本次启动里任何 store 建的表、索引都不在备份里。"""
+    """The backup is the library as it stood before this start: no table or index any store \
+creates during this start is in it."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     database, _evidence = _legacy_library(data_dir)
@@ -684,7 +698,8 @@ def _journal_mode(database: Path) -> str:
 
 
 def test_a_failed_migration_leaves_the_library_exactly_as_it_was(tmp_path) -> None:
-    """建表、补列、状态迁移、回执改写在同一个事务里：半路失败全部回滚，日志模式也不动。"""
+    """Create tables, backfill columns, migrate statuses and rewrite receipts happen in one \
+transaction: a failure half way rolls all of it back and leaves the journal mode alone."""
     database, _evidence = _legacy_library(tmp_path, journal="delete")
     _old_schema(database)
     connection = sqlite3.connect(database)
@@ -695,7 +710,8 @@ def test_a_failed_migration_leaves_the_library_exactly_as_it_was(tmp_path) -> No
     connection.close()
     before = _tables(database)
     schema = _schema(database)
-    # 文件头第 18、19 字节是读写版本：1 为回滚日志，2 为 WAL。
+    # Bytes 18 and 19 of the file header are the read/write version: 1 is a rollback journal, 2 is
+    # WAL.
     header = database.read_bytes()[18:20]
     assert (header, _journal_mode(database)) == (b"\x01\x01", "delete")
 
@@ -711,7 +727,8 @@ def test_a_failed_migration_leaves_the_library_exactly_as_it_was(tmp_path) -> No
 
 
 def test_a_successful_migration_leaves_the_library_in_wal(tmp_path) -> None:
-    """迁移提交后才切 WAL，但必须切：只开治理 store、没有别的 store 帮忙时也一样。"""
+    """WAL is only switched on after the migration commits, but it must be: also when just the \
+governance store is open and no other store helps."""
     database, _evidence = _legacy_library(tmp_path, journal="delete")
     _old_schema(database)
     assert _journal_mode(database) == "delete"
@@ -722,7 +739,8 @@ def test_a_successful_migration_leaves_the_library_in_wal(tmp_path) -> None:
     assert database.read_bytes()[18:20] == b"\x02\x02"
 
 
-# ---------------------------------------------------------------- 回归：旧拒绝残留在 HY
+# ---------------------------------------------------------------- Regression: legacy rejections
+# left behind in HY
 
 
 class _Hy:
@@ -761,13 +779,13 @@ def _deleted(stores, count: int) -> list[str]:
             message_id=f"gone-{index}",
             role="user",
             written_by=WrittenBy.PERSON,
-            content=f"要删的原话 {index}",
+            content=f"source text to delete {index}",
         )
         memory = as_person(governance).create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"要删的记忆 {index}",
+                content=f"memory to delete {index}",
                 scopes=("all-apps",),
                 evidence_ids=(record.evidence_id,),
             ),
@@ -784,7 +802,8 @@ def _deleted(stores, count: int) -> list[str]:
 
 
 def _time_passes(database: Path) -> None:
-    """把所有待重试删除的下次时间拨到过去，代替真的等退避过去。"""
+    """Move the next attempt of every pending deletion into the past instead of really waiting out \
+the backoff."""
     connection = sqlite3.connect(database)
     with connection:
         connection.execute(
@@ -905,7 +924,8 @@ def test_a_deletion_that_failed_at_one_start_lands_after_the_next(tmp_path, monk
 
 
 class _BrokenHy(_Hy):
-    """HY 失败的方式不是 HyMemoryBridgeError，比如取不到模型密钥。"""
+    """HY fails in a way that is not a HyMemoryBridgeError, for example a model key it cannot \
+read."""
 
     def __init__(self) -> None:
         super().__init__(available=False)
@@ -999,7 +1019,7 @@ def test_the_deletion_sync_keeps_running_and_retries_without_a_restart(
                 message_id="m1",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                content="要删的原话",
+                content="source text to delete",
             )
             created = await client.post(
                 "/api/v1/memories",
@@ -1008,7 +1028,7 @@ def test_the_deletion_sync_keeps_running_and_retries_without_a_restart(
                     "draft": {
                         "user_id": "local",
                         "kind": "chat",
-                        "content": "要删的记忆",
+                        "content": "memory to delete",
                         "scopes": ["all-apps"],
                         "evidence_ids": [record.evidence_id],
                     },
@@ -1037,11 +1057,12 @@ def test_the_deletion_sync_keeps_running_and_retries_without_a_restart(
     asyncio.run(scenario())
 
 
-# ------------------------------------------------ 回归：在途抽取不得让删掉的记忆复活
+# ------------------------------------------------ Regression: an in-flight extraction must not
+# revive a deleted memory
 
 
 class _HeldBridge(FakeBridge):
-    """HY 调用停在半路，等测试做完别的事再返回。"""
+    """The HY call stalls half way and only returns after the test has done something else."""
 
     def __init__(self, outputs: tuple[HyMemoryOutput, ...]) -> None:
         super().__init__(outputs=outputs)
@@ -1063,13 +1084,13 @@ def test_a_memory_deleted_while_hy_is_extracting_does_not_come_back(tmp_path, or
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我住在杭州。",
+        content="I live in Hangzhou.",
     )
     doomed = as_person(governance).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户住在杭州。",
+            content="The user lives in Hangzhou.",
             scopes=("all-apps",),
             evidence_ids=(record.evidence_id,),
             origin=origin,
@@ -1095,7 +1116,9 @@ def test_a_memory_deleted_while_hy_is_extracting_does_not_come_back(tmp_path, or
 
     asyncio.run(scenario())
 
-    assert bridge.requests, "HY 必须真的被调用过，否则这条断言守的是空场景"
+    assert bridge.requests, (
+        "HY must really have been called, otherwise this assertion guards an empty scenario"
+    )
     alive = [m for m in governance.list(user_id="local") if m.status is MemoryStatus.CONFIRMED]
     assert [m.content for m in alive] == []
     finished = tasks.get(task.task_id)
@@ -1121,7 +1144,7 @@ def _overrule_mid_call(stores, bridge: "_HeldBridge", doomed, run) -> None:
         await running
 
     asyncio.run(scenario())
-    assert bridge.requests, "HY 必须真的被调用过"
+    assert bridge.requests, "HY must really have been called"
 
 
 def _manual(governance, record, content: str, request_id: str):
@@ -1142,13 +1165,21 @@ def test_hy_naming_an_existing_memory_cannot_link_it_to_overruled_evidence(tmp_p
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     elsewhere = _put(
-        evidence, message_id="u0", role="user", written_by=WrittenBy.PERSON, content="别处的原话"
+        evidence,
+        message_id="u0",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="source text from elsewhere",
     )
     record = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
-    standing = _manual(governance, elsewhere, "用户住在杭州。", "seed-standing")
-    doomed = _manual(governance, record, "用户在杭州。", "seed-doomed")
+    standing = _manual(governance, elsewhere, "The user lives in Hangzhou.", "seed-standing")
+    doomed = _manual(governance, record, "The user is in Hangzhou.", "seed-doomed")
     bridge = _HeldBridge(
         (
             HyMemoryOutput(
@@ -1183,12 +1214,19 @@ def test_hy_revising_a_known_memory_cannot_draw_on_overruled_evidence(tmp_path) 
             (T0,),
         )
     first = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
     earlier = FakeBridge(
         outputs=(
             HyMemoryOutput(
-                memory_id="hy-known", content="用户住在杭州。", layer="L2_FACT", owner="user"
+                memory_id="hy-known",
+                content="The user lives in Hangzhou.",
+                layer="L2_FACT",
+                owner="user",
             ),
         )
     )
@@ -1197,16 +1235,20 @@ def test_hy_revising_a_known_memory_cannot_draw_on_overruled_evidence(tmp_path) 
     asyncio.run(supervisor._create_runner().run(task.task_id))
     known = governance.get("hy-known", user_id="local")
     assert known is not None, tasks.get(task.task_id)
-    doomed = _manual(governance, first, "用户在杭州。", "seed-doomed")
+    doomed = _manual(governance, first, "The user is in Hangzhou.", "seed-doomed")
 
     second = _put(
-        evidence, message_id="u2", role="user", written_by=WrittenBy.PERSON, content="下个月搬家。"
+        evidence,
+        message_id="u2",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="Moving next month.",
     )
     bridge = _HeldBridge(
         (
             HyMemoryOutput(
                 memory_id="hy-known",
-                content="用户住在杭州，下个月搬家。",
+                content="The user lives in Hangzhou and is moving next month.",
                 layer="L2_FACT",
                 owner="user",
                 evidence_ids=(first.evidence_id,),
@@ -1253,13 +1295,16 @@ def test_later_hy_revision_omits_stale_known_memory_without_invalidating_evidenc
         message_id="stale-u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我住在杭州。",
+        content="I live in Hangzhou.",
         conversation_id="rolling",
     )
     initial = FakeBridge(
         outputs=(
             HyMemoryOutput(
-                memory_id="hy-known", content="用户住在杭州。", layer="L2_FACT", owner="user"
+                memory_id="hy-known",
+                content="The user lives in Hangzhou.",
+                layer="L2_FACT",
+                owner="user",
             ),
         )
     )
@@ -1272,7 +1317,7 @@ def test_later_hy_revision_omits_stale_known_memory_without_invalidating_evidenc
         message_id="stale-u2",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="下个月搬家。",
+        content="Moving next month.",
         conversation_id="rolling",
     )
     waiting = supervisor._enqueue_chunk((first, second), profile, freeze_inputs=True)
@@ -1282,14 +1327,14 @@ def test_later_hy_revision_omits_stale_known_memory_without_invalidating_evidenc
         message_id="stale-u3",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="已经搬到上海。",
+        content="Already moved to Shanghai.",
         conversation_id="rolling",
     )
     evolve = FakeBridge(
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-known",
-                content="用户住在上海。",
+                content="The user lives in Shanghai.",
                 layer="L2_FACT",
                 owner="user",
             ),
@@ -1329,15 +1374,15 @@ def test_hy_revising_a_coding_memory_cannot_draw_on_overruled_evidence(tmp_path)
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="测试统一用 pytest。",
+        content="Tests all use pytest.",
     )
-    revisable = _manual(governance, record, "项目测试用 pytest。", "seed-revisable")
-    doomed = _manual(governance, record, "项目用 pytest。", "seed-doomed")
+    revisable = _manual(governance, record, "The project tests use pytest.", "seed-revisable")
+    doomed = _manual(governance, record, "The project uses pytest.", "seed-doomed")
     bridge = _HeldBridge(
         (
             HyMemoryOutput(
                 memory_id=revisable.memory_id,
-                content="项目测试统一用 pytest。",
+                content="The project tests all use pytest.",
                 layer=HY_WORKING_FACT_LAYER,
                 evidence_ids=(record.evidence_id,),
             ),
@@ -1354,7 +1399,7 @@ def test_hy_revising_a_coding_memory_cannot_draw_on_overruled_evidence(tmp_path)
     assert tasks.get(task.task_id).last_error_code == "hy_memory_evidence_changed"
 
 
-# ---------------------------------------------------------------- 回归：备份文件
+# ---------------------------------------------------------------- Regression: backup files
 
 
 class _BackupSpy:

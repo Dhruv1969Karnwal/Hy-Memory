@@ -1,22 +1,22 @@
 name: Feature
-description: 提议 MVP 范围内的能力
+description: Propose a capability within MVP scope
 title: "[Feature] "
 body:
   - type: textarea
     id: problem
     attributes:
-      label: 用户问题
+      label: User Problem
     validations:
       required: true
   - type: textarea
     id: outcome
     attributes:
-      label: 可验收结果
+      label: Verifiable Outcome
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
-      label: 数据与权限范围
+      label: Data and Permission Scope
     validations:
       required: true

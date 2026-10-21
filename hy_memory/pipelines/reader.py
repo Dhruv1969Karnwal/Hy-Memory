@@ -1,17 +1,17 @@
 """
 HY Memory - Read (Dispatcher)
 
-对外统一入口 `MemoryReader`，根据环境变量 `HY_MEMORY_READER` 选择并代理
-真正的实现：
+The unified public entry `MemoryReader` selects and proxies the real implementation
+based on the environment variable `HY_MEMORY_READER`:
 
-  - "legacy" → LegacyReadPipeline  (默认，向量候选召回)
-  - "hybrid" → HybridReadPipeline  (向量 + BM25 候选召回)
+  - "legacy" → LegacyReadPipeline  (default, vector candidate retrieval)
+  - "hybrid" → HybridReadPipeline  (vector + BM25 candidate retrieval)
 
-两者共享同一套后处理：profile/intention、episode、tag/entity、graph、
-local rerank、演化链、配额与结果格式化。
+Both share the same post-processing: profile/intention, episode, tag/entity, graph,
+local rerank, evolution chains, quotas, and result formatting.
 
-cache 参数从 Registry 注入，用于 read 侧的 trace 写入；传 None 时
-trace 写入静默跳过。
+The cache parameter is injected from the Registry and used for trace writes on the read side; when None,
+trace writes are silently skipped.
 """
 
 from typing import Any, Optional
@@ -35,7 +35,7 @@ def _build_impl(
     graph_store: Optional[GraphStoreBase] = None,
     cache: Any = None,
 ) -> ReadPipeline:
-    """按环境变量选择内部实现类并构造实例。"""
+    """Select the internal implementation class via the environment variable and construct the instance."""
     name = _retrieval_config.resolve_reader_name()
     if name == _retrieval_config.READER_HYBRID:
         try:
@@ -47,7 +47,7 @@ def _build_impl(
         except ImportError as e:
             logger.warning(f"[reader-dispatch] hybrid import failed: {e}; fallback to legacy")
 
-    # 默认 / fallback
+    # Default / fallback
     from .reader_legacy import LegacyReadPipeline
     return LegacyReadPipeline(
         config, embed_service, vector_store,
@@ -57,11 +57,11 @@ def _build_impl(
 
 class MemoryReader(ReadPipeline):
     """
-    读取器（对外入口）。
+    Reader (public entry point).
 
-    按环境变量 `HY_MEMORY_READER` 分发到不同实现：
+    Dispatches to different implementations via the `HY_MEMORY_READER` environment variable:
       - legacy / hybrid
-    默认 legacy，行为与 post13 之前一致。
+    Defaults to legacy; behavior matches pre-post13.
     """
 
     VERSION = "reader"
@@ -98,7 +98,7 @@ class MemoryReader(ReadPipeline):
     async def close(self) -> None:
         await self._impl.close()
 
-    # ---- 便捷属性：暴露内部实现给诊断脚本 ----
+    # ---- Convenience properties: expose the internal implementation to diagnostic scripts ----
     @property
     def impl(self) -> ReadPipeline:
         return self._impl

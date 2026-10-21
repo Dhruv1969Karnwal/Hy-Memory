@@ -27,7 +27,7 @@ requires_spacy_model = pytest.mark.skipif(
 
 class TestScoreVdbNodeAdditive:
     def test_no_bm25_keeps_full_sem(self):
-        # 旧公式会把无 BM25 的 sem 乘 0.6；新公式应保留满权重
+        # The old formula multiplied a sem without BM25 by 0.6; the new one keeps full weight
         assert abs(score_vdb_node_additive(0.3578) - 0.3578) < 1e-6
         assert abs(score_vdb_node(0.3578, 0.0, 0.6, 0.4) - 0.21468) < 1e-4
 
@@ -76,7 +76,7 @@ class TestNerTag:
         assert lab in ("GPE", "LOC", "FAC")
 
     def test_classify_prius_not_gpe_heuristic(self):
-        # spaCy 常不认 Prius；旧 TitleCase→GPE 启发式会误标，现应为空或 PRODUCT
+        # spaCy rarely recognizes Prius; the old TitleCase->GPE heuristic mislabeled it, now it must be empty or PRODUCT
         lab = classify_tag("Prius")
         assert lab in ("", "PRODUCT")
 

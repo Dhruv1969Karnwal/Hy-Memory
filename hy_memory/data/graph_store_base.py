@@ -1,29 +1,29 @@
 """
-Agent Memory V2 - GraphStore 抽象基类
+Agent Memory V2 - GraphStore abstract base class
 
-定义图存储层的统一接口（Provider 模式），允许切换不同的图数据库后端。
+Defines the unified interface of the graph storage layer (Provider pattern) so different graph database backends can be swapped in.
 
-当前支持:
-- Kuzu (嵌入式)
-- Neo4j (客户端-服务端)
+Currently supported:
+- Kuzu (embedded)
+- Neo4j (client-server)
 
-图 Schema:
-  节点类型:
-    User    — 用户根节点
-    Memory  — 记忆节点 (L6_SCHEMA / L7_INTENTION)
-                embedding FLOAT[dims]      — 内容向量 V_con (HNSW 索引)
-                beh_embedding FLOAT[dims]  — 行为向量 V_beh (HNSW 索引, 可 NULL)
-    Topic   — 主题标签（LLM tags，≠ 正文 NER 实体）
-    Entity  — 正文 NER 实体（GPE/ORG/PRODUCT…；不含 PERSON）
-    VdbRef  — VDB 影子节点 (evidence 引用)
+Graph Schema:
+  Node types:
+    User    — user root node
+    Memory  — memory node (L6_SCHEMA / L7_INTENTION)
+                embedding FLOAT[dims]      — content vector V_con (HNSW indexed)
+                beh_embedding FLOAT[dims]  — behaviour vector V_beh (HNSW indexed, may be NULL)
+    Topic   — topic tag (LLM tags, not body-text NER entities)
+    Entity  — body-text NER entities (GPE/ORG/PRODUCT...; PERSON excluded)
+    VdbRef  — VDB shadow node (evidence reference)
 
-  边类型:
+  Edge types:
     HAS_MEMORY          : User → Memory
     TAGGED_WITH         : Memory → Topic
     MENTIONS            : Memory → Entity
-    RELATED_TO          : Memory ↔ Memory (双向)
-    DERIVED_FROM        : Memory → VdbRef (evidence 关系)
-    CROSS_ABSTRACTS_TO  : Memory → Memory (单向, L6 basic → L6 core)
+    RELATED_TO          : Memory ↔ Memory (bidirectional)
+    DERIVED_FROM        : Memory → VdbRef (evidence relation)
+    CROSS_ABSTRACTS_TO  : Memory → Memory (directed, L6 basic → L6 core)
 """
 
 from abc import ABC, abstractmethod
@@ -34,12 +34,12 @@ from ..config import MemoryConfig
 
 
 async def embed_text_for_graph(embed_service, text: str) -> Optional[List[float]]:
-    """给图层用的 embedding 调用，兼容 `embed_queued` / `embed` 两种方法名。
+    """Embedding call for the graph layer, tolerating both `embed_queued` / `embed` method names.
 
-    历史上两个后端各写了一个：Kuzu 用 `embed_queued`、Neo4j 用 `embed`。真实
-    `EmbedService` 两个都有，所以都能跑；但任何只实现其中一个的实现（测试 fake、
-    精简版 embed service）会让另一个后端的 tag 归一化**静默退化成字符串精确匹配** ——
-    而不归一化，tag 图就会碎成一堆同义孤岛。这里统一入口，消掉这个隐患。
+    Historically each backend used its own: Kuzu called `embed_queued`, Neo4j called `embed`. The real
+    `EmbedService` has both, so both work; but any implementation providing only one of them (test fakes,
+    slimmed-down embed services) makes tag normalization on the other backend **silently degrade to exact string matching** --
+    and without normalization the tag graph shatters into a pile of synonym islands. This unified entry point removes that hazard.
     """
     if embed_service is None or not text:
         return None
@@ -49,12 +49,12 @@ async def embed_text_for_graph(embed_service, text: str) -> Optional[List[float]
             continue
         return await fn(text)
     raise AttributeError(
-        "embed_service 需要提供 embed_queued() 或 embed() 之一"
+        "embed_service must provide either embed_queued() or embed()"
     )
 
 
 def make_entity_id(isolation_key: str, label: str, name: str) -> str:
-    """确定性 Entity 主键：isolation + label + casefold(name)。"""
+    """Deterministic Entity primary key: isolation + label + casefold(name)."""
     import uuid as _uuid
     norm = (name or "").strip().casefold()
     lab = (label or "").strip().upper()
@@ -69,9 +69,9 @@ def normalize_entity_name(name: str) -> str:
 
 class GraphStoreBase(ABC):
     """
-    图存储抽象基类
+    Graph store abstract base class
 
-    所有图数据库后端必须实现此接口。
+    Every graph database backend must implement this interface.
     """
 
     def __init__(self, config: MemoryConfig):
@@ -84,26 +84,26 @@ class GraphStoreBase(ABC):
     _supports_batch_temporal_edges: bool = False
 
     # ================================================================
-    # 生命周期
+    # Lifecycle
     # ================================================================
 
     @abstractmethod
     async def initialize(self) -> None:
-        """初始化图数据库连接和 Schema"""
+        """Initialize the graph database connection and Schema"""
         ...
 
     @abstractmethod
     async def close(self) -> None:
-        """关闭连接"""
+        """Close the connection"""
         ...
 
     @abstractmethod
     async def get_stats(self) -> Dict[str, Any]:
-        """获取图统计信息"""
+        """Get graph statistics"""
         ...
 
     # ================================================================
-    # User 节点管理
+    # User node management
     # ================================================================
 
     @abstractmethod
@@ -113,16 +113,16 @@ class GraphStoreBase(ABC):
         user_id: str = "",
         agent_id: str = "",
     ) -> None:
-        """确保 User 节点存在"""
+        """Ensure the User node exists"""
         ...
 
     # ================================================================
-    # Memory 节点 CRUD
+    # Memory node CRUD
     # ================================================================
 
     @abstractmethod
     async def upsert_memory_node(self, node: MemoryNode) -> str:
-        """创建或更新 Memory 节点 + User→Memory 边，返回 node_id"""
+        """Create or update a Memory node plus the User→Memory edge and return node_id"""
         ...
 
     async def upsert_memory_nodes_batch(
@@ -143,12 +143,12 @@ class GraphStoreBase(ABC):
 
     @abstractmethod
     async def get_node(self, node_id: str) -> Optional[MemoryNode]:
-        """获取单个 Memory 节点"""
+        """Fetch a single Memory node"""
         ...
 
     @abstractmethod
     async def get_nodes_by_ids(self, node_ids: List[str]) -> List[MemoryNode]:
-        """批量获取 Memory 节点"""
+        """Fetch Memory nodes in batch"""
         ...
 
     @abstractmethod
@@ -159,7 +159,7 @@ class GraphStoreBase(ABC):
         status: Optional[MemoryStatus] = None,
         limit: int = 100,
     ) -> List[MemoryNode]:
-        """按条件获取节点列表"""
+        """Fetch the node list matching the given filters"""
         ...
 
     async def get_nodes_by_user(
@@ -179,22 +179,22 @@ class GraphStoreBase(ABC):
 
     @abstractmethod
     async def get_profile(self, isolation_key: str) -> Optional[MemoryNode]:
-        """获取 L5 Identity Profile 节点"""
+        """Fetch the L5 Identity Profile node"""
         ...
 
     @abstractmethod
     async def update_node(self, node_id: str, updates: Dict[str, Any]) -> bool:
-        """更新节点属性"""
+        """Update node properties"""
         ...
 
     @abstractmethod
     async def delete_node(self, node_id: str) -> bool:
-        """删除 Memory 节点及其关联边"""
+        """Delete a Memory node and its incident edges"""
         ...
 
     @abstractmethod
     async def delete_all_nodes(self, isolation_key: str) -> int:
-        """删除某隔离键下所有 Memory 节点，返回删除数量"""
+        """Delete all Memory nodes under an isolation key and return the deleted count"""
         ...
 
     async def clear_projection(
@@ -204,19 +204,19 @@ class GraphStoreBase(ABC):
         *,
         layer: str = "l2_fact",
     ) -> Dict[str, int]:
-        """清掉某用户的 **pro 投影**（默认只删 `l2_fact`），供重建前使用。
+        """Drop one user's **pro projection** (by default only `l2_fact`), for use before a rebuild.
 
-        为什么需要它：图是可重建的派生物，但重建**不会删旧节点**。改了投影规则之后
-        （例如 Topic 隔离键从 `user::agent::session` 收窄成 `user::agent`），旧的
-        session 粒度 Topic 仍挂着 `TAGGED_WITH` 边留在库里，`get_all_topics` 会同时
-        返回新旧两套，效果打折。
+        Why it is needed: the graph is a rebuildable derivation, but a rebuild **does not delete old nodes**. After changing the projection rules
+        (e.g. narrowing the Topic isolation key from `user::agent::session` to `user::agent`) the old
+        session-granularity Topics keep their `TAGGED_WITH` edges in the store, so `get_all_topics` returns
+        both generations at once and the results degrade.
 
-        ⚠️ 必须按 layer 收窄：一个用户的 Memory 节点里还有 System 2 / ultra 写的
-        `l6_schema`，无条件删会把那部分数据一起毁掉。
+        ⚠️ It must be narrowed by layer: a user's Memory nodes also include ones written by System 2 / ultra,
+        `l6_schema`, and deleting unconditionally would destroy that data too.
 
-        同时清掉因此变成孤儿的 Topic / Entity 节点（没有任何 Memory 挂着的）。
+        Also clears the Topic / Entity nodes that become orphans this way (with no Memory attached at all).
 
-        默认返回 0（未实现该能力的后端不做任何事）。
+        Returns 0 by default (backends without this capability do nothing).
         """
         return {"memories": 0, "topics": 0, "entities": 0}
 
@@ -228,20 +228,20 @@ class GraphStoreBase(ABC):
         session_id: Optional[str] = None,
     ) -> int:
         """
-        按 metadata 字段组合删除 Memory 节点。
+        Delete Memory nodes by a combination of metadata fields.
 
-        粒度:
-        - 仅 user_id          → 删除该用户所有记忆
-        - user_id + agent_id   → 删除该用户指定 agent 下所有记忆
-        - user_id + agent_id + session_id → 删除精确 session 的记忆
+        Granularity:
+        - user_id only         → delete every memory of this user
+        - user_id + agent_id   → delete all memories of this user under the given agent
+        - user_id + agent_id + session_id → delete the memories of that exact session
 
         Returns:
-            删除的节点数量
+            Number of deleted nodes
         """
         ...
 
     # ================================================================
-    # 边操作
+    # Edge operations
     # ================================================================
 
     @abstractmethod
@@ -252,7 +252,7 @@ class GraphStoreBase(ABC):
         edge_type: str,
         properties: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """添加 Memory→Memory 关系边 (RELATED_TO)"""
+        """Add a Memory→Memory relation edge (RELATED_TO)"""
         ...
 
     async def add_edges_batch(
@@ -274,7 +274,7 @@ class GraphStoreBase(ABC):
         topic_name: str,
         isolation_key: str,
     ) -> str:
-        """记忆节点关联主题 (Memory→Topic)，返回 topic_id"""
+        """Attach a topic to a memory node (Memory→Topic) and return topic_id"""
         ...
 
     async def add_topic_tags_batch(
@@ -348,7 +348,7 @@ class GraphStoreBase(ABC):
         return []
 
     # ================================================================
-    # Entity（正文 NER）+ MENTIONS
+    # Entity (body-text NER) + MENTIONS
     # ================================================================
 
     async def add_entity_mention(
@@ -358,10 +358,10 @@ class GraphStoreBase(ABC):
         label: str,
         isolation_key: str,
     ) -> str:
-        """Memory -[:MENTIONS]-> Entity。返回 entity_id；失败返回空串。
+        """Memory -[:MENTIONS]-> Entity. Returns entity_id, or an empty string on failure.
 
-        Entity ≠ Topic：Topic 来自 LLM tags；Entity 来自正文 spaCy NER。
-        默认 no-op（未实现的后端不影响主路径）。
+        Entity is not Topic: Topics come from LLM tags; Entities come from body-text spaCy NER.
+        No-op by default (a backend without it does not affect the main path).
         """
         return ""
 
@@ -390,7 +390,7 @@ class GraphStoreBase(ABC):
         return out
 
     async def clear_entity_mentions(self, memory_node_id: str) -> int:
-        """删掉某 Memory 的全部 MENTIONS 边（UPDATE 投影前重建用）。返回删边数。"""
+        """Delete all MENTIONS edges of a Memory (rebuilt before UPDATE projection). Returns the number of deleted edges."""
         return 0
 
     async def find_memories_by_entities(
@@ -399,55 +399,55 @@ class GraphStoreBase(ABC):
         entities: Sequence[Tuple[str, str]],
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """按实体名（casefold）反查挂 MENTIONS 的 active Memory。
+        """Look up active Memories carrying MENTIONS by entity name (casefold).
 
-        entities: [(name, label), ...]；label 仅作同组过滤提示（可空）。
-        返回 [{node_id, entity_name, entity_label, match_score}]，match_score∈(0,1]。
+        entities: [(name, label), ...]; label is only a same-group filter hint (may be empty).
+        Returns [{node_id, entity_name, entity_label, match_score}] with match_score in (0,1].
         """
         return []
 
     # ================================================================
-    # Topic 检索 (Tag 收敛 + Tag 桥接召回)
+    # Topic retrieval (tag convergence + tag bridge recall)
     # ================================================================
 
     async def get_all_topics(
         self,
         isolation_key: str,
     ) -> List[Dict[str, Any]]:
-        """获取某 isolation_key 下的所有 Topic 节点
+        """Fetch all Topic nodes under an isolation_key
 
-        返回 [{topic_id, name, embedding, degree}]：
-        - `embedding` 可能为 None（旧数据 / 写入时未传 embed_service）
-        - `degree` = 挂在该 Topic 上的 active 记忆数，画像聚合用
-          （Topic 度数 + 新鲜度排序 ≈ "用户是什么样的人"，零 LLM 成本）
+        Returns [{topic_id, name, embedding, degree}]:
+        - `embedding` may be None (legacy data / no embed_service passed at write time)
+        - `degree` = number of active memories attached to this Topic, used for profile aggregation
+          (Topic degree + freshness ranking ≈ "what kind of person the user is", at zero LLM cost)
 
-        两个后端必须返回同样的键，否则依赖 `degree` 的能力会在某个后端上静默失效。
+        Both backends must return the same keys, otherwise anything relying on `degree` silently fails on one backend.
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     async def tag_bridge_search(
         self,
         topic_ids: List[str],
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
-        """Tag 桥接召回：从 Topic 节点反向查找关联的 Memory 节点
+        """Tag bridge recall: reverse lookup of the Memory nodes attached to Topic nodes
 
-        即 MATCH (t:Topic)<-[:TAGGED_WITH]-(m:Memory) WHERE m.status = 'active'
-        返回 [{node_id, content, layer, confidence, topic_name, custom_json}]
+        i.e. MATCH (t:Topic)<-[:TAGGED_WITH]-(m:Memory) WHERE m.status = 'active'
+        Returns [{node_id, content, layer, confidence, topic_name, custom_json}]
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     # ================================================================
     # V3: VdbRef (shadow node) + DERIVED_FROM edge
     # ================================================================
 
     async def ensure_vdbref(self, node_id: str, layer: str) -> None:
-        """确保 VdbRef 影子节点存在（不存在则创建，已存在则跳过）"""
-        ...  # 默认 no-op，子类覆盖
+        """Ensure the VdbRef shadow node exists (created when missing, skipped when present)"""
+        ...  # Default no-op, overridden by subclasses
 
     async def add_derived_from(self, memory_node_id: str, vdbref_node_id: str) -> bool:
-        """添加 DERIVED_FROM 边: Memory → VdbRef (evidence 关系)"""
-        return False  # 默认 no-op
+        """Add a DERIVED_FROM edge: Memory → VdbRef (evidence relation)"""
+        return False  # Default no-op
 
     async def find_referencing_memories(
         self,
@@ -456,23 +456,23 @@ class GraphStoreBase(ABC):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """反向查找: 给定 VDB node_id 列表，找到 Graph 中引用它们的 Memory 节点
+        """Reverse lookup: given a list of VDB node_ids, find the Graph Memory nodes referencing them
 
-        即 MATCH (v:VdbRef)<-[:DERIVED_FROM]-(m:Memory)
-        返回 [{node_id, content, layer, confidence, evidence_vdb_id}]
+        i.e. MATCH (v:VdbRef)<-[:DERIVED_FROM]-(m:Memory)
+        Returns [{node_id, content, layer, confidence, evidence_vdb_id}]
         """
-        return []  # 默认 no-op
+        return []  # Default no-op
 
 
     async def get_evidence_vdbrefs(self, memory_node_id: str) -> List[Dict[str, Any]]:
-        """获取一个 Graph Memory 节点的所有 DERIVED_FROM evidence VdbRef
+        """Fetch every DERIVED_FROM evidence VdbRef of one Graph Memory node
 
-        返回 [{node_id, layer}]
+        Returns [{node_id, layer}]
         """
-        return []  # 默认 no-op
+        return []  # Default no-op
 
     # ================================================================
-    # 图检索
+    # Graph retrieval
     # ================================================================
 
     @abstractmethod
@@ -482,45 +482,45 @@ class GraphStoreBase(ABC):
         hop: int = 1,
         max_nodes: int = 50,
     ) -> List[Dict[str, Any]]:
-        """从锚点节点出发，沿图边扩展 N 跳"""
+        """Expand N hops from the anchor nodes along graph edges"""
         ...
 
     async def get_topic_memories(
         self, topic_id: str, *, limit: int = 200,
     ) -> List[Dict[str, Any]]:
-        """列出某个 Topic 下的 active 记忆，按 memory_at 正序。
+        """List the active memories under one Topic, ordered ascending by memory_at.
 
-        给 Topic-scoped summary 和时序脊用。
-        刻意不复用 `tag_bridge_search` —— 那条是 legacy reader 的召回通道，
-        而 tag 共属已决定不作为遍历边（τ=0，见 docs/pro_graph_design.md §3.0）。
+        Used by Topic-scoped summaries and the temporal spine.
+        Deliberately does not reuse `tag_bridge_search` -- that one is a recall channel of the legacy reader,
+        and shared tags were decided not to be traversal edges (τ=0, see docs/pro_graph_design.md §3.0).
 
-        ⚠️ **图里没有事件时间**：Kuzu 的 `Memory` 表只有 `created_at`（落库时间），
-        没有 `memory_at`，而新增列对已有 DB 不生效。所以时间一律以 VDB 为准 ——
-        调用方拿到 node_id 后回 VDB 取 `memory_at` 再排序
-        （见 `pipelines/_graph/projector.resolve_memory_times`）。
+        ⚠️ **The graph holds no event time**: the Kuzu `Memory` table only has `created_at` (persist time),
+        not `memory_at`, and new columns do not take effect on an existing DB. The VDB is therefore always authoritative for time --
+        callers take the node_ids back to the VDB to read `memory_at` and sort there
+        (see `pipelines/_graph/projector.resolve_memory_times`).
 
         Returns:
-            [{"node_id", "content"}, ...]，按 created_at 正序
+            [{"node_id", "content"}, ...], ordered ascending by created_at
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     async def add_temporal_edge(
         self, prev_id: str, next_id: str, topic_id: str = "",
     ) -> bool:
-        """建一条时序脊边（TEMPORAL_NEXT，**有向**：prev → next）。
+        """Create one temporal spine edge (TEMPORAL_NEXT, **directed**: prev → next).
 
-        `topic_id` 为空串表示**全局脊**（跨话题，按事件时间连相邻两条）；
-        非空表示 Topic 内脊。两者共存：Topic 内脊表达"这个主题怎么演变"，
-        全局脊表达"那几天前后发生了什么"。
+        An empty `topic_id` means a **global spine** (topic-agnostic, linking the two adjacent memories by event time);
+        a non-empty one means a within-Topic spine. Both coexist: the Topic spine expresses "how this topic evolved",
+        while the global spine expresses "what happened around those days".
 
-        ⚠️ 时间关系刻意**不建成"同天两两相连"的团**：一天 20 条记忆就是 190 条边、
-        度数 19，一跳把当天全拉进来、两跳把三天全拉进来 —— 和 tag hub 淹没结果同类。
-        全局脊每条只连时间最近的前一条，度数恒为 2，同天记忆仍可达但候选量由跳数预算控制。
+        ⚠️ Temporal relations deliberately **do not form a same-day clique**: 20 memories in one day would be 190 edges and
+        a degree of 19; one hop would pull in the whole day and two hops three days -- the same flooding as a tag hub.
+        In the global spine each node links only to its nearest predecessor in time, so the degree stays at 2; same-day memories remain reachable while the candidate volume is bounded by the hop budget.
 
-        与 `supersedes` 的区别：`supersedes` 表达矛盾取代（旧的不再成立），
-        `TEMPORAL_NEXT` 表达递进（旧的仍然成立，只是更早）。
+        Difference from `supersedes`: `supersedes` means contradictory replacement (the old one no longer holds),
+        while `TEMPORAL_NEXT` means progression (the old one still holds, it is only earlier).
         """
-        return False  # 默认 no-op，子类覆盖
+        return False  # Default no-op, overridden by subclasses
 
     async def add_temporal_edges_batch(
         self, edges: Sequence[Tuple[str, str, str]],
@@ -541,25 +541,25 @@ class GraphStoreBase(ABC):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """取出所有一端落在 node_ids 里的 RELATED_TO 边（无向，去重后每对只返回一次）。
+        """Return every RELATED_TO edge with one endpoint in node_ids (undirected, each pair returned once after deduplication).
 
-        这是读侧图重排的**唯一图查询原语**，一次查询同时服务三种用法：
-          - 用法 A（池内支持度传播）：过滤出两端都在召回池里的边
-          - 用法 B（阈值松弛）：取另一端不在池里的边 → 候选
-          - 用法 C（关系路径）：用同一批边在 Python 侧建邻接、找 ≤2 跳路径
+        This is the **only graph query primitive** of read-side graph reranking; one query serves three uses:
+          - Use A (in-pool support propagation): keep the edges whose both endpoints are in the recall pool
+          - Use B (threshold relaxation): take the edges whose other endpoint is outside the pool as candidates
+          - Use C (relation paths): build adjacency from the same edges on the Python side and find paths of ≤2 hops
 
-        返回里带上 target 的 status / layer，省掉一次回查：读侧必须能过滤
-        SHADOW（判重逻辑删除）节点，否则被删掉的记忆会从图里绕回来。
+        The result carries the target status / layer to save a second lookup: the read side must be able to filter
+        SHADOW (deduplication-deleted) nodes, otherwise deleted memories would circle back through the graph.
 
-        `include_temporal=True` 时把 TEMPORAL_NEXT 也一起返回，
-        `relation_type="temporal_next"` + `directed=True`（方向为 source→target，
-        即"更早 → 更晚"）。A/B 把它当普通边用（按 τ 先验加权），C 用它的方向。
+        With `include_temporal=True`, TEMPORAL_NEXT edges are returned too,
+        with `relation_type="temporal_next"` + `directed=True` (direction source→target,
+        i.e. "earlier → later"). A/B treat them as ordinary edges (weighted by the τ prior), C uses their direction.
 
         Returns:
             [{"source_id", "target_id", "relation_type", "weight",
               "target_status", "target_layer", "directed"}, ...]
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     async def expand_with_tags(
         self,
@@ -568,20 +568,20 @@ class GraphStoreBase(ABC):
         max_nodes: int = 500,
         isolation_key: str = "",
     ) -> List[Dict[str, Any]]:
-        """从锚点出发，沿 RELATED_TO + TAGGED_WITH(双向) 展开 N 跳。
+        """Expand N hops from the anchors along RELATED_TO + TAGGED_WITH (both directions).
 
-        路径包括:
-        - Memory -[RELATED_TO]- Memory（双向）
-        - Memory -[TAGGED_WITH]-> Topic <-[TAGGED_WITH]- Memory（经 Topic 桥接）
+        Paths include:
+        - Memory -[RELATED_TO]- Memory (both directions)
+        - Memory -[TAGGED_WITH]-> Topic <-[TAGGED_WITH]- Memory (bridged through a Topic)
 
-        isolation_key 非空时只展开属于同一 isolation_key 的节点。
+        When isolation_key is non-empty, only nodes with the same isolation_key are expanded.
 
-        返回 [{node_id, content, layer, confidence, hop, source}]
+        Returns [{node_id, content, layer, confidence, hop, source}]
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     # ================================================================
-    # 向量检索 (Graph HNSW)
+    # Vector search (Graph HNSW)
     # ================================================================
 
     async def vector_search(
@@ -595,16 +595,16 @@ class GraphStoreBase(ABC):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """V_con 向量检索 Graph Memory 节点
+        """V_con vector search over Graph Memory nodes
 
-        使用 embedding 列的 HNSW 索引做 ANN 检索。
+        Uses the HNSW index on the embedding column for ANN retrieval.
         
-        当 isolation_key 为空但 user_id 非空时，执行跨 agent 搜索
-        （匹配 isolation_key 以 user_id + "::" 为前缀的所有节点）。
+        When isolation_key is empty but user_id is not, a cross-agent search runs
+        (matching every node whose isolation_key starts with user_id + "::").
         
-        返回 [{node_id, content, layer, confidence, score}]
+        Returns [{node_id, content, layer, confidence, score}]
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     async def beh_vector_search(
         self,
@@ -612,12 +612,12 @@ class GraphStoreBase(ABC):
         isolation_key: str,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        """V_beh 向量检索 L6 basic 节点 (sweeper 用)
+        """V_beh vector search over L6 basic nodes (used by the sweeper)
 
-        使用 beh_embedding 列的 HNSW 索引做 ANN 检索。
-        返回 [{node_id, content, embedding, beh_distance}]
+        Uses the HNSW index on the beh_embedding column for ANN retrieval.
+        Returns [{node_id, content, embedding, beh_distance}]
         """
-        return []  # 默认 no-op，子类覆盖
+        return []  # Default no-op, overridden by subclasses
 
     async def update_embedding(
         self,
@@ -625,11 +625,11 @@ class GraphStoreBase(ABC):
         embedding: Optional[List[float]] = None,
         beh_embedding: Optional[List[float]] = None,
     ) -> bool:
-        """更新节点的 embedding / beh_embedding 向量属性"""
-        return False  # 默认 no-op
+        """Update the node embedding / beh_embedding vector properties"""
+        return False  # Default no-op
 
     # ================================================================
-    # 跨域归纳 (Cross-Domain Schema Induction)
+    # Cross-domain schema induction
     # ================================================================
 
     async def add_cross_abstracts_to(
@@ -637,23 +637,23 @@ class GraphStoreBase(ABC):
         basic_id: str,
         core_id: str,
     ) -> bool:
-        """添加 CROSS_ABSTRACTS_TO 边: L6 basic → L6 core (单向)"""
-        return False  # 默认 no-op
+        """Add a CROSS_ABSTRACTS_TO edge: L6 basic → L6 core (directed)"""
+        return False  # Default no-op
 
     async def find_cores_from_basics(
         self,
         basic_ids: List[str],
         max_hops: int = 2,
     ) -> List[Dict[str, Any]]:
-        """从 L6 basic 出发，沿 RELATED_TO / CROSS_ABSTRACTS_TO 找 L6 core 节点
+        """Find L6 core nodes starting from L6 basic nodes along RELATED_TO / CROSS_ABSTRACTS_TO
 
-        返回 [{node_id, content, confidence}]，已去重
+        Returns [{node_id, content, confidence}], already deduplicated
         """
-        return []  # 默认 no-op
+        return []  # Default no-op
 
     async def get_cross_abstracts_targets(
         self,
         basic_id: str,
     ) -> List[str]:
-        """查询某个 L6 basic 已有的 CROSS_ABSTRACTS_TO 边指向的 core node_id 列表"""
-        return []  # 默认 no-op
+        """List the core node_ids that one L6 basic already points to via CROSS_ABSTRACTS_TO"""
+        return []  # Default no-op

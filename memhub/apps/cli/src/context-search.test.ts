@@ -180,7 +180,7 @@ describe("unified context search", () => {
     const output = streams.stdout();
     expect(output).toContain("Synthetic governed memory.");
     expect(output).toContain("Synthetic raw citation.");
-    expect(output).not.toMatch(/^- raw |memory-1|evidence-1|采用状态/m);
+    expect(output).not.toMatch(/^- raw |memory-1|evidence-1|adoption/m);
   });
 
   it("queries the current read-only context endpoint and preserves citations", async () => {

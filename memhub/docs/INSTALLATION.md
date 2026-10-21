@@ -1,28 +1,28 @@
-# MemHub 安装与发行
+# MemHub installation and distribution
 
-MemHub `v1.0.3`（build 7）的发行目标如下：
+Release targets for MemHub `v1.0.3` (build 7):
 
-| 平台 | 发行物 | 构建与验收 |
+| Platform | Artifact | Build and acceptance |
 | --- | --- | --- |
-| Linux x64 | Runtime tar.gz | GitHub Actions 原生 x64 runner |
-| Linux arm64 | Runtime tar.gz | GitHub Actions 原生 arm64 runner |
-| macOS arm64 | DMG 与 Runtime tar.gz | Developer ID 签名、公证和原生 arm64 验收 |
-| macOS x64 | DMG 与 Runtime tar.gz | Developer ID 签名、公证和原生 Intel 验收 |
-| Windows | 无 | 当前不支持 |
+| Linux x64 | Runtime tar.gz | Native x64 runner on GitHub Actions |
+| Linux arm64 | Runtime tar.gz | Native arm64 runner on GitHub Actions |
+| macOS arm64 | DMG plus Runtime tar.gz | Developer ID signing, notarization, and native arm64 acceptance |
+| macOS x64 | DMG plus Runtime tar.gz | Developer ID signing, notarization, and native Intel acceptance |
+| Windows | None | Currently not supported |
 
-正式支持以对应 GitHub Release 的 `release-manifest.json` 为准。Manifest 记录版本、
-build、Git commit、协议范围、文件大小和 SHA-256；缺少条目的平台不属于该版本支持范围。
-在 `v*` tag 上手动运行仓库的 `Linux lifecycle` GitHub Actions 后，Linux Runtime
-和 SHA-256 文件会自动上传到对应的 Draft Release；普通分支运行只保留 Actions
-Artifact。macOS 制品由发行流水线完成签名与公证后上传到同一个 Draft Release；
-GitHub 不保存 Apple 私钥。所有平台制品核对完成后再发布 Release。
+Formal support is defined by the `release-manifest.json` of the matching GitHub Release. The manifest records version,
+build, Git commit, protocol range, file size, and SHA-256; a platform missing an entry is outside the support scope of
+that version. Running the repository's `Linux lifecycle` GitHub Actions workflow manually on a `v*` tag uploads the
+Linux Runtime and SHA-256 files automatically to the matching Draft Release; runs on ordinary branches keep only the
+Actions Artifact. macOS artifacts are uploaded to the same Draft Release after the release pipeline has signed and
+notarized them; GitHub never holds the Apple private key. The Release is published only once every artifact is checked.
 
-最低支持 macOS 13。当前更新方式是从 GitHub Releases 手动下载新版本，不包含
-auto-updater。
+The minimum supported macOS version is 13. The current update method is to
+manually download the new version from GitHub Releases; there is no auto-updater.
 
-## 公开安装方式
+## Public installation
 
-npm 包与同版本 GitHub Release 上线后，标准入口是：
+Once the npm package and the same-version GitHub Release are live, the standard entry point is:
 
 ```bash
 npm install -g memhub-cli
@@ -31,22 +31,22 @@ memhub init
 memhub status
 ```
 
-`npm install` 只安装 Bootstrap CLI。第一次运行 `memhub install` 时才会：
+`npm install` installs the Bootstrap CLI only. The first `memhub install` run is what:
 
-1. 获取与 CLI 精确同版本、同 channel 的 `release-manifest.json`；
-2. 选择当前操作系统和 CPU 架构的 Runtime；
-3. 校验 Git commit、Runtime manifest schema，以及 CLI/Runtime 双向协议兼容范围；
-4. 校验 HTTPS URL、重定向域名、文件大小与 SHA-256；
-5. 安全解压并交叉验证内部 manifest 的版本、build、commit、协议和逐文件哈希；
-6. 调用现有安装事务，注册用户级服务和受管 CLI 链接；
-7. 失败时回滚，并保留当前 Runtime 和 Memory 数据。
+1. Fetches the `release-manifest.json` for the exact same version and channel as the CLI;
+2. Selects the Runtime for the current operating system and CPU architecture;
+3. Validates the Git commit, the Runtime manifest schema, and the two-way CLI/Runtime protocol compatibility range;
+4. Validates the HTTPS URL, redirect domains, file size, and SHA-256;
+5. Extracts safely and cross-validates the inner manifest's version, build, commit, protocol, and per-file hashes;
+6. Calls the existing install transaction, registering the user-level service and the managed CLI link;
+7. Rolls back on failure, preserving the current Runtime and Memory data.
 
-不带 `--yes` 的 `memhub install` 只下载较小的 Release manifest 并展示计划；显式确认后才
-下载完整 Runtime。npm `postinstall` 不下载 Runtime、不注册服务、不修改 shell profile。
+`memhub install` without `--yes` only downloads the smaller Release manifest and shows a plan; the
+full Runtime is downloaded only after explicit confirmation. npm `postinstall` does not download the Runtime, register a service, or modify the shell profile.
 
-## 离线安装
+## Offline installation
 
-已经取得 Runtime distribution 的开发者可以离线安装；仓库本身不包含该 distribution：
+Developers who already hold a Runtime distribution can install offline; the repository itself does not ship that distribution:
 
 ```bash
 /path/to/memhub-runtime/bin/one-memory install \
@@ -54,11 +54,11 @@ memhub status
   --yes
 ```
 
-提供 `--source` 后安装器完全离线，不请求 Release manifest 或 artifact。默认会先生成安装
-计划；上例中的 `--yes` 表示应用计划，但不会跳过 manifest、commit、协议、平台、架构或
-文件哈希校验。缺少协议声明的历史离线包不会作为新安装来源被接受。
+With `--source` the installer is fully offline and requests no Release manifest and no artifact.
+By default it first generates an install plan; the `--yes` in the example above applies the plan,
+but it does not skip manifest, commit, protocol, platform, architecture, or file-hash validation. Legacy offline packages with no protocol declaration are not accepted as a source for new installs.
 
-需要隔离测试时，可显式传入：
+For isolated testing you can pass explicitly:
 
 ```text
 --install-root <path>
@@ -69,57 +69,57 @@ memhub status
 --no-shell-path
 ```
 
-Linux 的用户级服务要求当前用户具有可用的 systemd user session。仅需前台运行时可使用
-完整 Runtime 内的 `memhub serve`，但这不等同于完成服务安装。
+A Linux user-level service requires a usable systemd user session for the current user. To run
+in the foreground only, use `memhub serve` from the full Runtime, but that is not a completed service install.
 
-## macOS App 与后台 Runtime
+## macOS App and background Runtime
 
-当前 macOS App 和 npm CLI 复用同一 Runtime、默认数据目录、安装根、收据、端口、协议和
-唯一 `com.tencent.onememory.runtime` LaunchAgent：
+The current macOS App and npm CLI reuse the same Runtime, default data directory, install root,
+receipts, ports, protocols, and the single `com.tencent.onememory.runtime` LaunchAgent:
 
-- 正式 App 首次从 `/Applications` 启动时安装稳定 Runtime 和统一 LaunchAgent；
-- 登录后由 LaunchAgent 直接启动 Runtime/Core/Broker，不启动 Electron 或打开窗口；
-- 关闭窗口、退出或强退 Electron 只断开 UI，后台 Runtime 继续工作；
-- “登录后启动后台服务”控制 launchd `KeepAlive.PathState` 使用的私有 marker，关闭时不
-  中断当前 Runtime，只影响未来登录/重启；
-- App-owned 服务持续核对 App bundle。用户删除 `/Applications/MemHub.app` 后，marker 被
-  撤销，Runtime/Core/Broker 停止且不会被 KeepAlive 拉起；Memory 数据默认保留；
-- 完整 `memhub install --yes` 或成功升级可以事务性接管为 CLI-owned。此后删除 GUI App
-  不影响服务，需用 `memhub uninstall` 管理；
-- App-first/CLI-second 和 CLI-first/App-second 都使用同一个服务声明与单写者 Runtime。
+- On its first launch from `/Applications`, the shipping App installs the stable Runtime and the unified LaunchAgent;
+- After login the LaunchAgent starts Runtime/Core/Broker directly, without Electron and without opening a window;
+- Closing, quitting, or force-quitting the Electron window only disconnects the UI; the background Runtime keeps working;
+- "Launch background service at login" controls the private marker used by launchd `KeepAlive.PathState`;
+  turning it off does not interrupt the running Runtime and only affects future logins/reboots;
+- App-owned services keep checking the App bundle. Once the user deletes `/Applications/MemHub.app`, the
+  marker is revoked, Runtime/Core/Broker stop and are not relaunched by KeepAlive; Memory data is kept by default;
+- A full `memhub install --yes` or a successful upgrade can transactionally take ownership as CLI-owned.
+  After that, deleting the GUI App does not affect the service, which is managed via `memhub uninstall`;
+- App-first/CLI-second and CLI-first/App-second both use the same service declaration and the single-writer Runtime.
 
-完整进程、owner 与卸载矩阵见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。真实注销/登录和整机
-重启属于发行验收，源码测试或隔离 launchctl 验收不能替代该系统级验证。
+The full process, owner, and uninstall matrix is in [`ARCHITECTURE.md`](ARCHITECTURE.md). Real logout/login and full
+machine reboots are part of release acceptance; source tests or isolated launchctl runs cannot replace that verification.
 
-Downloader 使用标准 `HTTPS_PROXY`/`https_proxy` 与 `NO_PROXY`/`no_proxy` 环境变量。代理只
-承载 HTTPS CONNECT 隧道；Release URL、重定向域名、大小、SHA-256、commit 和协议校验不会
-因代理而跳过。若 Release 主机列入 `NO_PROXY`，请求会直连。
+The downloader uses the standard `HTTPS_PROXY`/`https_proxy` and `NO_PROXY`/`no_proxy` environment variables. The proxy
+only carries HTTPS CONNECT tunnels; the checks on the Release URL, redirect domains, size, SHA-256, commit, and protocol
+are never skipped because a proxy is in play. If the Release host is listed in `NO_PROXY`, requests go direct.
 
-## 升级、卸载与数据
+## Upgrade, uninstall, and data
 
-- `npm uninstall -g memhub-cli`：只删除 npm CLI；不停止或删除受管 Runtime，不删除 Memory。
-  完整 fake Release 验收会在 Runtime 运行中执行真实 npm uninstall，并再次验证
-  systemd、`current`、受管 `memhub`、doctor 和 SQLite 均仍可用。
-- `memhub upgrade`：下载并校验新 Runtime，健康检查失败时恢复旧版本。
-- `memhub uninstall`：停止并移除受管服务、Runtime versions/current 和受管 CLI 链接；
-  默认保留数据。
-- `memhub delete-data`：唯一删除 Memory 的命令；Runtime 必须已停止，并要求 `--yes` 与
-  `--confirm <精确数据路径>` 两次确认。
+- `npm uninstall -g memhub-cli`: removes only the npm CLI; it does not stop or remove the managed Runtime and does not delete
+  Memory. The full fake Release acceptance runs a real npm uninstall while the Runtime is up, then verifies again that
+  systemd, `current`, the managed `memhub`, doctor, and SQLite are all still usable.
+- `memhub upgrade`: downloads and validates a new Runtime and restores the old version if the health check fails.
+- `memhub uninstall`: stops and removes the managed service, the Runtime versions/current, and the managed CLI link;
+  data is kept by default.
+- `memhub delete-data`: the only command that deletes Memory; the Runtime must already be stopped, and it requires two
+  confirmations, `--yes` plus `--confirm <exact data path>`.
 
-默认数据目录是 `~/.one-memory`。Python Core 是唯一业务数据写入者，SQLite 数据不位于
-npm package、App 临时目录或受管 Runtime 的版本目录中。Python Core 及其依赖由 Runtime
-携带，不会向用户的系统 Python 安装 package。
+The default data directory is `~/.one-memory`. Python Core is the only business data writer, and SQLite data
+never lives in the npm package, an App temp directory, or a managed Runtime version directory. Python Core and
+its dependencies are carried by the Runtime and never install packages into the user's system Python.
 
-## 代理、镜像和离线来源
+## Proxies, mirrors, and offline sources
 
-- `--source <path>`：完全离线，优先级最高。
-- `--release-manifest-url <https-url>`：显式 Release manifest。
-- `MEMHUB_RELEASE_MANIFEST_URL`：固定 manifest URL。
-- `MEMHUB_RELEASE_MANIFEST_URL_TEMPLATE`：用 `{version}` 构造同版本 URL。
-- `MEMHUB_DEFAULT_RELEASE_MANIFEST_URL_TEMPLATE`：仅供发行构建时注入默认模板；它不是用户
-  运行时配置。源码默认值为空，不硬编码私有仓库地址。
-- `MEMHUB_RELEASE_ALLOWED_HOSTS`：逗号分隔的额外重定向 hostname allow-list，适用于 Release
-  平台跳转到对象存储的场景。
+- `--source <path>`: fully offline, highest priority.
+- `--release-manifest-url <https-url>`: an explicit Release manifest.
+- `MEMHUB_RELEASE_MANIFEST_URL`: pins the manifest URL.
+- `MEMHUB_RELEASE_MANIFEST_URL_TEMPLATE`: builds a same-version URL from `{version}`.
+- `MEMHUB_DEFAULT_RELEASE_MANIFEST_URL_TEMPLATE`: injects the default template only at release build time; it is not a
+  user runtime setting. The source default is empty, so no private repository address is hardcoded.
+- `MEMHUB_RELEASE_ALLOWED_HOSTS`: comma-separated extra redirect hostnames for the allow-list, for the case where the
+  Release platform redirects to object storage.
 
-manifest 与 artifact 均只接受 HTTPS。跨 hostname 重定向默认拒绝，必须显式加入 allow-list。
-网络中断、大小/哈希不符、安全解压失败或磁盘空间不足时，安装器在进入本地安装事务前停止。
+Both the manifest and the artifact accept HTTPS only. Cross-hostname redirects are rejected by default and must be explicitly added to the allow-list. On a network interruption, a size/hash mismatch, a secure-extraction failure, or low disk
+space, the installer stops before entering the local install transaction.

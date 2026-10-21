@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Pipeline Log Writer — 环节级 JSONL 日志（始终开启，与 SQLite Trace 分离）。
+Pipeline Log Writer -- per-step JSONL logs (always on, separate from the SQLite trace).
 
-目录: {log_dir}/{subdir}/{date}.log
-每行: request_id, namespace, user_id, agent_id, step, prompt, content, parsed,
-tokens, elapsed_ms, timestamp。prompt/content 默认留空；只有显式设置
-MEMORY_LOG_LLM_CONTENT=true 才记录全文。
+Directory: {log_dir}/{subdir}/{date}.log
+Per line: request_id, namespace, user_id, agent_id, step, prompt, content, parsed,
+tokens, elapsed_ms, timestamp. prompt/content are empty by default; the full text is recorded only when
+MEMORY_LOG_LLM_CONTENT=true is explicitly set.
 
-子目录（subdir）来源（通用 namespace 约定）：
-  1. 从该条记录的 user_id 取第一个 "__" 左侧作为子目录；
-     调用方可把 user_id 拼成 "{namespace}__{user_id}"，让不同数据域分目录；
-  2. user_id 无 "__" 前缀（如单人直接使用 SDK）→ 回落到构造时传入的
-     default_subdir（默认 "default"）。
+Where the subdirectory (subdir) comes from (general namespace convention):
+  1. Take the part left of the first "__" in the record's user_id as the subdirectory;
+     callers may format user_id as "{namespace}__{user_id}" to bucket different data domains into different directories;
+  2. user_id without a "__" prefix (e.g. a single person using the SDK directly) -> falls back to the
+     default_subdir passed at construction time (default "default").
 """
 
 from __future__ import annotations
@@ -24,18 +24,18 @@ from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# 兼容旧 import
+# Compatibility with legacy imports
 TraceFileWriter = None  # set after class definition
 
 
 class PipelineLogWriter:
-    """按 {subdir}/{date}.log 追加 JSONL；best-effort，失败静默。
+    """Appends JSONL as {subdir}/{date}.log; best-effort, failures silent.
 
-    subdir 解析（通用 namespace 前缀）：
-      1. 从该条记录的 user_id 取第一个 "__" 左侧作为 subdir
-         （调用方可使用 "{namespace}__{user_id}" 约定分桶）；
-      2. user_id 无 "__" 前缀 → 回落到构造时传入的 default_subdir；
-      3. 再回落 "default"。
+    subdir resolution (general namespace prefix):
+      1. Take the part left of the first "__" in the record's user_id as the subdir
+         (callers can use the "{namespace}__{user_id}" convention for bucketing);
+      2. user_id without a "__" prefix -> fall back to the default_subdir given at construction;
+      3. Fall back to "default" after that.
     """
 
     def __init__(self, log_dir: str, default_subdir: str = "default"):
@@ -47,7 +47,7 @@ class PipelineLogWriter:
             pass
 
     def _resolve_subdir(self, user_id: str) -> str:
-        """从 user_id 的 "{prefix}__{user_id}" 前缀取 prefix 作为子目录；无前缀则回落。"""
+        """Take the prefix from the user_id's "{prefix}__{user_id}" form as the subdirectory; fall back when there is no prefix."""
         if user_id and "__" in user_id:
             prefix = user_id.split("__", 1)[0].strip()
             if prefix:
@@ -85,8 +85,8 @@ class PipelineLogWriter:
             if not is_llm_content_logging_enabled():
                 prompt = redact_content(prompt)
                 response = redact_content(response)
-            # timestamp = step 发生时刻（可读 ISO ms）。优先用上层统一捕获的 event_at_ms
-            # （与 DB 的 event_at_ms 同源，保证跨 JSONL/DB 对账），缺省回落当前时刻。
+            # timestamp = when the step happened (readable ISO ms). Prefer the event_at_ms captured uniformly
+            # by the upper layer (same source as the DB's event_at_ms, guaranteeing JSONL/DB reconciliation); otherwise fall back to the current time.
             if event_at_ms:
                 _ts = datetime.fromtimestamp(event_at_ms / 1000.0).isoformat(timespec="milliseconds")
             else:
@@ -120,5 +120,5 @@ class PipelineLogWriter:
             logger.debug(f"[pipeline-log] write failed: {e}")
 
 
-# 向后兼容
+# Backward compatibility
 TraceFileWriter = PipelineLogWriter

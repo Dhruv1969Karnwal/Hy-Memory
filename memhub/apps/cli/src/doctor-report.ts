@@ -60,35 +60,37 @@ export function renderDoctorText(document: DoctorDocument): string {
   const labels: Record<DoctorCheck["id"], string> = {
     core: "Core",
     broker: "Broker",
-    source_permissions: "来源权限",
-    sync: "来源同步",
-    model: "模型",
-    pending_operations: "待处理操作",
+    source_permissions: "Source permissions",
+    sync: "Source sync",
+    model: "Model",
+    pending_operations: "Pending operations",
   };
   return [
-    `MemHub 检查：${doctorState(document.state)}`,
+    `MemHub check: ${doctorState(document.state)}`,
     ...document.checks.map(
       (check) =>
-        `${symbol(check.state)} ${labels[check.id]}：${checkState(check.state)}`,
+        `${symbol(check.state)} ${labels[check.id]}: ${checkState(check.state)}`,
     ),
     ...(document.state === "healthy"
       ? []
-      : ["下一步：打开 MemHub 的“帮助与诊断”查看并处理异常。"]),
+      : [
+          "Next step: open MemHub's Help & diagnostics to review and handle the issues.",
+        ]),
     "",
   ].join("\n");
 }
 
 function doctorState(state: DoctorDocument["state"]): string {
-  if (state === "healthy") return "一切正常";
-  if (state === "attention") return "有项目需要处理";
-  return "暂时无法完成检查";
+  if (state === "healthy") return "All good";
+  if (state === "attention") return "Some items need attention";
+  return "The check couldn't be completed";
 }
 
 function checkState(state: CheckState): string {
-  if (state === "pass") return "正常";
-  if (state === "warn") return "需要处理";
-  if (state === "fail") return "异常";
-  return "未检查";
+  if (state === "pass") return "OK";
+  if (state === "warn") return "Needs attention";
+  if (state === "fail") return "Failed";
+  return "Not checked";
 }
 
 function coreCheck(status: StatusDocument): DoctorCheck {

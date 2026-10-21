@@ -1,22 +1,22 @@
 """
 HY Memory - Write (System 1)
 
-写入流程:
-  1. 参数校验
-  2. 向量化 (EmbedService)
-  3. Qdrant 持久化 (VectorStore) - 原始内容始终存为 L1_RAW
-  4. [可选] MemAgent 智能处理 (提取实体、生成摘要、冲突检测)
-     - Agent 提取的高层信息存为 L2_FACT/L3_SUMMARY（不再区分 L4_IDENTITY，统一 L2_FACT）
-     - intentions（前瞻意图）存为 L7_INTENTION（带 valid_until，过期由 reader 惰性转 L2）
-     - 提取成功后，L1_RAW 降级为 SHADOW 状态（不被召回）；
-       提取结果为空（extractor 判定无可提取事实）时同样降级 ——
-       「没什么可记」是正常结论，原始对话不应留在可召回层
-  5. [可选] 合并检测 (Merger)
+Write flow:
+  1. Validate parameters
+  2. Vectorize (EmbedService)
+  3. Qdrant persistence (VectorStore) - raw content is always stored as L1_RAW
+  4. [optional] MemAgent smart processing (entity extraction, summary generation, conflict detection)
+     - High-level info extracted by the agent is stored as L2_FACT/L3_SUMMARY (L4_IDENTITY is no longer separated; everything is L2_FACT)
+     - intentions (forward-looking intentions) are stored as L7_INTENTION (with valid_until; expired ones are lazily converted to L2 by the reader)
+     - after a successful extraction, L1_RAW is downgraded to SHADOW (excluded from recall);
+       the same downgrade applies when the extraction result is empty (the extractor found no extractable fact) --
+       "nothing worth recording" is a normal conclusion; the raw conversation should not stay in the recallable layer
+  5. [optional] Merge check (Merger)
 
-mode 行为差异:
-  - lite:  只存 L1_RAW，不调 LLM，最简 embed 入库
-  - pro:   L1_RAW + MemAgent 提取高层信息 → reconcile → L2/L4/L3
-  - ultra: 同 pro，但 System2Writer 会在之后异步执行 System 2 认知加工
+Mode behavior differences:
+  - lite:  stores L1_RAW only, no LLM call, minimal embed-and-store
+  - pro:   L1_RAW + MemAgent extracts high-level info → reconcile → L2/L4/L3
+  - ultra: same as pro, but System2Writer then runs System 2 cognitive processing asynchronously
 """
 
 import asyncio
@@ -68,8 +68,8 @@ def _write_apply_verify_enabled() -> bool:
         "true", "1", "yes",
     )
 
-# 同一用户的候选判断、reconcile 和落库必须原子地串行。否则两个并发首写都可能
-# 观察到空 L2/L4 并走 ADD 快速路径，制造重复。按 event loop 分桶，避免跨 loop 复用 Lock。
+# Candidate lookup, reconcile and persistence for the same user must be serialized atomically. Otherwise
+# two concurrent first writes could both observe empty L2/L4 and take the ADD fast path, producing duplicates. Bucketed per event loop to avoid reusing a Lock across loops.
 _RECONCILE_LOOP_USER_LOCKS = weakref.WeakKeyDictionary()
 
 
@@ -87,7 +87,7 @@ def _reconcile_user_lock(user_id: str) -> asyncio.Lock:
 
 
 def _count_user_owned(metas: List[Dict]) -> int:
-    """数 user 侧记忆条数（owner 缺省视为 user，与落库时的默认一致）。"""
+    """Count user-side memories (a missing owner defaults to user, matching persistence)."""
     return sum(
         1 for m in (metas or [])
         if (m.get("owner") or "user") == "user"
@@ -95,13 +95,13 @@ def _count_user_owned(metas: List[Dict]) -> int:
 
 
 def _norm_owner(value: Any) -> Optional[str]:
-    """归一化 extractor/reconcile 给出的 owner：仅接受 'user' / 'agent'，否则 None。"""
+    """Normalize the owner from extractor/reconcile: only 'user' / 'agent' are accepted, otherwise None."""
     if not value:
         return None
     v = str(value).strip().lower()
     if v in ("user", "agent"):
         return v
-    # 兼容 mem0 风格的 'assistant' → 'agent'
+    # Compatibility: mem0-style 'assistant' → 'agent'
     if v == "assistant":
         return "agent"
     return None
@@ -109,10 +109,10 @@ def _norm_owner(value: Any) -> Optional[str]:
 
 class MemoryWriter(WritePipeline):
     """
-    核心写入器 (System 1)
+    Core writer (System 1)
 
-    写入流程: 原始内容存 L1_RAW + 单路 Qdrant 存储 + 可选 MemAgent LLM 提取高层信息
-    lite 模式不调 LLM，pro/ultra 模式调 MemAgent。
+    Write flow: raw content stored as L1_RAW + single-path Qdrant storage + optional MemAgent LLM extraction of high-level info
+    lite mode makes no LLM call; pro/ultra modes call MemAgent.
     """
 
     VERSION = "writer"
@@ -129,7 +129,7 @@ class MemoryWriter(WritePipeline):
         self._embed_service = embed_service
         self._external_vector_store = vector_store
         self._cache = cache
-        # 记忆关系图（pro 模式）。None 表示图未启用 → 投影整段跳过。
+        # Memory relationship graph (pro mode). None means the graph is off → the whole projection is skipped.
         self._graph_store = graph_store
 
         self._merger: Optional[Merger] = None
@@ -200,12 +200,12 @@ class MemoryWriter(WritePipeline):
         return self._vector_store
 
     # ================================================================
-    # 私有辅助方法
+    # Private helpers
     # ================================================================
 
     @staticmethod
     def _build_custom(op, request_id: str, request: Optional[WriteRequest] = None) -> Dict[str, Any]:
-        """构造 VDB payload 中的 custom 字段。始终包含 request_id 以便追溯。"""
+        """Build the custom field of the VDB payload. Always includes request_id for traceability."""
         custom: Dict[str, Any] = {}
         if request_id:
             custom["request_id"] = request_id
@@ -282,11 +282,11 @@ class MemoryWriter(WritePipeline):
 
     @staticmethod
     def _attach_client_meta(custom: Dict[str, Any], request: Optional[WriteRequest]) -> None:
-        """给新建节点挂上调用方 meta（单份 list）。
+        """Attach caller meta to a newly created node (a single-entry list).
 
-        meta 存成 list 而非 dict：每份 meta 代表「该次 write 时刻的上下文」，
-        同一节点被后续写入合并时追加而非覆盖（见 _merge_client_meta）。
-        新建节点自然只有一份。
+        meta is stored as a list rather than a dict: each entry captures the context at that write,
+        and later writes merging into the same node append to it instead of overwriting (see _merge_client_meta).
+        A newly created node naturally holds only one entry.
         """
         meta = getattr(request, "client_meta", None) if request is not None else None
         if meta:
@@ -297,13 +297,13 @@ class MemoryWriter(WritePipeline):
         old_custom: Optional[Dict[str, Any]],
         request: Optional[WriteRequest],
     ) -> Optional[Dict[str, Any]]:
-        """把本次 meta 追加到旧节点已有的 meta list 上，返回待写回的完整 custom。
+        """Append this call's meta to the old node's meta list and return the full custom to write back.
 
-        用于原地更新（UPDATE）——节点身份不变，旧 meta 必须保留，否则该记忆
-        此前几次写入的上下文就丢了。
+        Used for in-place updates (UPDATE): the node identity is unchanged so the old meta must be kept, otherwise
+        the context of this memory's earlier writes would be lost.
 
-        返回 None 表示无需改动 custom（本次没传 meta），调用方据此跳过回读与写回，
-        使未使用该功能的调用方零额外开销。
+        Returning None means custom needs no change (no meta was passed), so the caller skips the read-back and write-back and
+        callers not using this feature pay no extra cost.
         """
         meta = getattr(request, "client_meta", None) if request is not None else None
         if not meta:
@@ -311,8 +311,8 @@ class MemoryWriter(WritePipeline):
 
         merged = dict(old_custom or {})
         existing = merged.get("meta")
-        # 容错：历史数据或人工改写可能让 meta 不是 list，此时不覆盖已有内容，
-        # 把它降级成 list 的首元素，避免静默丢数据
+        # Tolerance: legacy data or manual edits may leave meta as a non-list; instead of overwriting it,
+        # demote it to the first element of the list to avoid silently dropping data
         if isinstance(existing, list):
             chain = list(existing)
         elif existing:
@@ -326,9 +326,9 @@ class MemoryWriter(WritePipeline):
     async def _maybe_index_entities(
         self, vector_store, node, request,
     ) -> Any:
-        """若 entity_store 开关开启且为 L2_FACT，落库后刷 entity store（best-effort）。
+        """When the entity_store switch is on and this is an L2_FACT, refresh the entity store after persisting (best-effort).
 
-        覆盖 reconcile（ADD/UPDATE/SUPERSEDE）与首写（_direct_store）两条路。
+        Covers both the reconcile path (ADD/UPDATE/SUPERSEDE) and the first-write path (_direct_store).
         """
         try:
             if not getattr(self.config.recall, "entity_store_enabled", False):
@@ -352,20 +352,20 @@ class MemoryWriter(WritePipeline):
         extracted_info: Dict[str, Any],
     ) -> Tuple[List[str], List[Dict]]:
         """
-        从 extract 结果中收集新 memory 文本列表和完整 meta 列表。
+        Collect the new memory texts and the full meta list from the extract result.
 
-        注意：basic_info 字段由 extractor 在 JSON 输出中返回，writer 单独处理
-        （走 upsert_basic_profile() 落 L0_BASIC_INFO 演化链），这里不再收集。
+        Note: the extractor returns basic_info in its JSON output and the writer handles it separately
+        (via upsert_basic_profile() into the L0_BASIC_INFO evolution chain), so it is not collected here.
 
         Returns:
             (new_memory_texts, new_memories_meta)
-            每条 meta: {"content", "layer", "tags"}
+            each meta: {"content", "layer", "tags"}
         """
         new_memory_texts: List[str] = []
         new_memories_meta: List[Dict] = []
 
-        # 1) memory → 每条独立 memory（统一 L2_FACT）
-        #    新版 extractor 输出 `memory`；兼容旧版 `facts` 字段。
+        # 1) memory → one memory per entry (all L2_FACT)
+        #    The new extractor emits `memory`; the legacy `facts` field is still supported.
         for item in (extracted_info.get("memory") or extracted_info.get("facts") or []):
             if not isinstance(item, dict):
                 continue
@@ -386,8 +386,8 @@ class MemoryWriter(WritePipeline):
                 "topic_assignments_provided": "topic_assignments" in item,
             })
 
-        # 2) 向后兼容：旧 extractor 输出的 identity 也并入 L2_FACT
-        #    （新版 extractor 不再产出 identity；L4_IDENTITY 不再写入，仅读历史数据）
+        # 2) Backward compatibility: identity items from the old extractor also go into L2_FACT
+        #    (the new extractor no longer emits identity; L4_IDENTITY is no longer written, only read from historical data)
         for item in (extracted_info.get("identity") or []):
             if not isinstance(item, dict):
                 continue
@@ -408,7 +408,7 @@ class MemoryWriter(WritePipeline):
                 "topic_assignments_provided": "topic_assignments" in item,
             })
 
-        # 3) 兼容旧版 extract 输出（profile + facts）— 不处理 basic_info
+        # 3) Compatibility with the legacy extract output (profile + facts) -- basic_info is not handled
         if not new_memory_texts:
             profile = extracted_info.get("profile", {})
             if profile and isinstance(profile, dict):
@@ -441,14 +441,14 @@ class MemoryWriter(WritePipeline):
         request: "WriteRequest",
         req_id: str,
     ) -> Tuple[List[str], List[Dict], Dict[str, List[float]]]:
-        """对 extractor 新抽取的多条 memory 互相去重（入库前）。
+        """Deduplicate the freshly extracted memories against each other (before storing).
 
-        这些条目还没落库、无 node_id、无演化链 → 全按非链处理，额外 embed 一次，
-        delete_from_store=False（只丢弃重复项，不删库），并记 DEDUP log。
-        保留：用列表下标做确定性 gmt（越靠前越优先保留，等价 extractor 输出顺序）。
+        These entries are not persisted yet, have no node_id and no evolution chain → all are treated as non-chain, embedded once more,
+        delete_from_store=False (only drop duplicates, never delete from the store), and a DEDUP log is recorded.
+        Retention: the list index acts as a deterministic gmt (earlier entries win, matching extractor output order).
 
-        embed：优先一次 batch HTTP；批请求失败时才降级为逐条并行，兼顾正常路径吞吐
-        与故障时的部分成功。DEDUP log.parsed 记录墙钟与每条 meta。
+        Embed: prefer one batch HTTP call; only if that batch fails do we degrade to parallel per-item calls, balancing happy-path throughput
+        with partial success during outages. DEDUP log.parsed records wall time and each item's meta.
         """
         import asyncio
         import time
@@ -464,9 +464,9 @@ class MemoryWriter(WritePipeline):
             except Exception as e:
                 return e
 
-        # 所有文本并发进入 write queue，由 EmbedService 按 queue_batch_size 攒批。
-        # PMV2 单 chunk 抽出 15 条时，默认从 15 个 HTTP 收敛到约 2 个批请求；相比
-        # 强制塞进一个超大 batch，它保留较低的单请求墙钟并允许跨 write 合并。
+        # All texts enter the write queue concurrently; EmbedService batches them by queue_batch_size.
+        # A PMV2 chunk yielding 15 memories converges from 15 HTTP calls to about 2 batch requests; compared with
+        # forcing one huge batch, this keeps single-request wall time low and still allows merging across writes.
         t_wall0 = time.perf_counter()
         embed_results = await asyncio.gather(
             *[_embed_one(t) for t in new_memory_texts],
@@ -510,12 +510,12 @@ class MemoryWriter(WritePipeline):
             if not emb:
                 continue
             items.append(DedupItem(
-                node_id=str(i),               # 用下标作临时 id
+                node_id=str(i),               # use the index as a temporary id
                 embedding=emb,
                 content=text,
                 is_latest=True,
                 is_chain_head=False,
-                gmt_created=float(i),         # 越靠前 gmt 越小 → 优先保留
+                gmt_created=float(i),         # earlier entries get a smaller gmt → kept first
                 chain_node_ids=[str(i)],
             ))
 
@@ -527,10 +527,10 @@ class MemoryWriter(WritePipeline):
             "embed_metas": embed_metas,
         }
 
-        # 即使 <2 条可比较，也落 DEDUP log，便于审计 embed 耗时 / provider meta
+        # Emit a DEDUP log even with fewer than 2 comparable items, to audit embed latency / provider meta
         plan = await execute_dedup(
             items,
-            vector_store=None,                # 还没入库
+            vector_store=None,                # not stored yet
             cache=self._cache,
             trigger="extractor",
             request_id=req_id,
@@ -567,11 +567,11 @@ class MemoryWriter(WritePipeline):
     @staticmethod
     def _collect_intentions(extracted_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        从 extract 结果中收集 intentions（前瞻意图，存 L7_INTENTION）。
+        Collect intentions from the extract result (forward-looking, stored as L7_INTENTION).
 
-        每条 intention: {"content", "tags", "valid_until"}
-        valid_until 是 extractor 输出的 ISO 日期串（或 null）；这里解析为
-        datetime（当天 23:59:59，宽松到日末），解析失败/缺失 → None。
+        Each intention: {"content", "tags", "valid_until"}
+        valid_until is the ISO date string emitted by the extractor (or null); it is parsed here into
+        a datetime (23:59:59 of that day, lenient to end of day); parse failure or absence → None.
         """
         out: List[Dict[str, Any]] = []
         for item in (extracted_info.get("intentions") or []):
@@ -584,7 +584,7 @@ class MemoryWriter(WritePipeline):
             raw_vu = item.get("valid_until")
             if raw_vu and str(raw_vu).lower() not in ("null", "none", ""):
                 try:
-                    # 支持 "YYYY-MM-DD" 或完整 ISO；统一拉到当天日末
+                    # Accepts "YYYY-MM-DD" or a full ISO string; always normalized to end of day
                     d = datetime.fromisoformat(str(raw_vu).strip())
                     valid_until = d.replace(hour=23, minute=59, second=59, microsecond=0)
                 except (ValueError, TypeError):
@@ -605,25 +605,25 @@ class MemoryWriter(WritePipeline):
         req_id: str,
     ) -> List[str]:
         """
-        把 intentions 直接 upsert 为 L7_INTENTION 节点（不走 reconcile）。
+        Upsert intentions directly as L7_INTENTION nodes (bypassing reconcile).
 
-        意图是 point-in-time 信号，不与已有 fact 合并；过期后由 reader 惰性
-        转成 L2_FACT。返回新建节点 id 列表。
+        Intentions are point-in-time signals and are never merged into existing facts; once expired the reader lazily
+        converts them into L2_FACT. Returns the list of new node ids.
 
-        **批内 dedup（0805 修复）**：extractor 一次可能给出多条 cosine≥0.95
-        的近似意图（LLM 复读），本函数在 embed 之后 upsert 之前做批内互斥判重：
-            规则：同一天 valid_until（都为 None 或 date 相等）+ cosine ≥
-                  MEMORY_DEDUP_THRESHOLD（默认 0.95）→ 视为复本
-            （memory_at 同 request 天然相同，无需比对）
-            保留：列表内位置最靠前的一条（即 extractor 输出顺序里最先的）
-        不查 VDB、不做"新写入 vs 库里已有"的对比，避免给 VDB 增加读压力。
-        库内存量污染由 recall 侧异步删除逐步清理。best-effort：任何异常都
-        回退到"不判重、全写入"，绝不影响 upsert 主流程。
+        **In-batch dedup (0805 fix)**: one extractor run may return several near-duplicate intentions with cosine≥0.95
+        (LLM repetition), so this function does a mutually exclusive in-batch check after embedding and before upsert:
+            Rule: same valid_until day (both None or equal dates) plus cosine ≥
+                  MEMORY_DEDUP_THRESHOLD (default 0.95) → treated as duplicates
+            (memory_at is identical within one request, so it needs no comparison)
+            Retained: the earliest entry in the list (the first one in extractor output order)
+        No VDB reads and no "new write vs existing store" comparison, to avoid adding read load to the VDB.
+        Pollution already in the store is cleaned up gradually by async deletion on the recall side. Best-effort: any exception
+        falls back to "no dedup, store everything" and never affects the main upsert flow.
         """
         if not intentions:
             return []
 
-        # 批量 embed
+        # Batch embed
         contents = [it["content"] for it in intentions]
         embeddings: List[Optional[List[float]]] = [None] * len(contents)
         try:
@@ -633,7 +633,7 @@ class MemoryWriter(WritePipeline):
         except Exception as e:
             logger.warning(f"[intention] batch embed failed, falling back to sequential: {e}")
 
-        # 单条 embed 补漏（embed_batch 失败时按序补 embed）
+        # Fill embed gaps one by one in order (when embed_batch fails)
         for i, it in enumerate(intentions):
             if embeddings[i] is None:
                 try:
@@ -641,7 +641,7 @@ class MemoryWriter(WritePipeline):
                 except Exception as e:
                     logger.error(f"[intention] embed failed, skip: {e}")
 
-        # ============ 批内 dedup（不查 VDB，只对本批 intentions 互斥判重） ============
+        # ============ In-batch dedup (no VDB lookup, mutually exclusive check within this batch only) ============
         keep_mask: List[bool] = [True] * len(intentions)
         try:
             dropped = self._intention_batch_dedup(intentions, embeddings)
@@ -654,7 +654,7 @@ class MemoryWriter(WritePipeline):
                     f"{len(intentions)} extracted intentions"
                 )
         except Exception as e:
-            # 判重失败 → 回退到"全部 upsert"（保守）
+            # Dedup failed → fall back to "upsert everything" (conservative)
             logger.warning(f"[intention] batch dedup failed (skip, upsert all): {e}")
 
         stored: List[str] = []
@@ -689,8 +689,8 @@ class MemoryWriter(WritePipeline):
                     f"[intention] L7 upsert: {it['content'][:80]} → node_id={nid} "
                     f"valid_until={it.get('valid_until')}"
                 )
-                # INTENTION_UPSERT pipeline log（意图不走 reconcile，单独打点）+
-                # memory_operations 审计。带 memory_id 供线上按 request_id / memory_id 追查。
+                # INTENTION_UPSERT pipeline log (intentions skip reconcile, instrumented separately) +
+                # memory_operations audit. Carries memory_id so production can trace by request_id / memory_id.
                 await self._emit_intention_upsert(
                     request,
                     vector_store=vector_store,
@@ -723,17 +723,17 @@ class MemoryWriter(WritePipeline):
         intentions: List[Dict[str, Any]],
         embeddings: List[Optional[List[float]]],
     ) -> List[int]:
-        """批内 L7 意图去重（纯函数）。
+        """In-batch dedup for L7 intentions (pure function).
 
-        判重规则：
-          同一天 valid_until（都 None 或 date 相等）+ cosine≥MEMORY_DEDUP_THRESHOLD
-          → 视为复本。同组保留 index 最小者，其余进 drop_idx。
+        Duplicate rule:
+          Same valid_until day (both None or equal dates) + cosine≥MEMORY_DEDUP_THRESHOLD
+          → treated as duplicates. Within a group the smallest index is kept; the rest go to drop_idx.
 
-        memory_at 因为同属一次 write request，天然相同，此处不再比对。
-        本函数不 I/O、无 side-effect，测试友好。
+        memory_at belongs to the same write request and is therefore identical, so it is not compared here.
+        This function does no I/O and has no side effects, so it is test friendly.
 
         Returns:
-            List[int]：需要丢弃的 intentions index 列表（升序）。
+            List[int]: indices of the intentions to drop (ascending).
         """
         import os
 
@@ -743,7 +743,7 @@ class MemoryWriter(WritePipeline):
             threshold = 0.95
 
         def _vu_key(it: Dict[str, Any]) -> Any:
-            """valid_until 归一化到 date 键：None → None；datetime → date。"""
+            """Normalize valid_until into a date key: None → None; datetime → date."""
             vu = it.get("valid_until")
             if vu is None:
                 return None
@@ -765,7 +765,7 @@ class MemoryWriter(WritePipeline):
         if n < 2:
             return []
 
-        # 按 valid_until 分桶
+        # Bucket by valid_until
         buckets: Dict[Any, List[int]] = {}
         for i in range(n):
             if embeddings[i] is None:
@@ -776,7 +776,7 @@ class MemoryWriter(WritePipeline):
         for key, idx_list in buckets.items():
             if len(idx_list) < 2:
                 continue
-            # 桶内两两比 cosine，>=threshold → 后者被丢弃（保留 index 最小）
+            # Compare pairs inside the bucket by cosine; >= threshold drops the later one (smallest index kept)
             for a_pos in range(len(idx_list)):
                 ia = idx_list[a_pos]
                 if ia in drop_idx:
@@ -791,23 +791,23 @@ class MemoryWriter(WritePipeline):
         return sorted(drop_idx)
 
     # ================================================================
-    # Episode（内部会话）：把跨 write 批次的"一件事"归到同一个 episode_id
+    # Episode (internal session): group "one thing" spread across write batches under the same episode_id
     # ================================================================
     #
-    # 为什么需要它：一次讨论往往跨越好几次 `write()`（十几二十轮），从中抽出的 memory
-    # 属于同一件事。给它们打同一个 episode_id，读侧就能用它**框出一片候选**做加权。
+    # Why it is needed: one discussion usually spans several `write()` calls (a dozen or twenty turns), and the memories
+    # extracted from it belong to the same thing. Tagging them with one episode_id lets the read side **scope a candidate set** for weighting.
     #
-    # 为什么不建时间边：一天 20 条记忆两两相连是 190 条边、度数 19，一跳把当天全拉进来。
-    # 一个字段 + 一次过滤查询就能达到同样效果，而且**不依赖图**（graph 关掉也能用）。
+    # Why no temporal edges: 20 memories in a day fully linked is 190 edges and degree 19; one hop pulls in the whole day.
+    # One field plus one filtered query achieves the same, and it **does not depend on the graph** (it works with graph disabled).
     #
-    # 为什么不复用 session_id：那是调用方给的**业务隔离键**（进 isolation_key），
-    # 可能很长（整段会话）或干脆是 default_session，粒度对不上"一次讨论"。
+    # Why not reuse session_id: that is the caller's **business isolation key** (it goes into isolation_key),
+    # possibly very long (a whole conversation) or literally default_session, so its granularity does not match "one discussion".
     #
-    # 划分规则不用 LLM：距上次写入的间隔在 `episode_gap_seconds` 内算同一 episode，
-    # 超了开新的；条数超过 `episode_max_memories` 也强制滚动，避免长会话变成一个巨型 episode。
+    # Partitioning needs no LLM: a gap since the last write within `episode_gap_seconds` stays in the same episode,
+    # a longer gap starts a new one; exceeding `episode_max_memories` also forces a roll so a long session does not become one huge episode.
 
     async def _resolve_episode_id(self, request: WriteRequest, n_new: int) -> str:
-        """取本次写入应归属的 episode_id；cache 不可用时返回空串（功能自然降级）。"""
+        """Return the episode_id this write belongs to; an empty string when the cache is unavailable (feature degrades)."""
         if self._cache is None:
             return ""
         rcfg = getattr(self.config, "recall", None)
@@ -832,9 +832,9 @@ class MemoryWriter(WritePipeline):
                     episode_id = state["episode_id"]
                     count += n_new
                 else:
-                    # 上一个 episode 就此关闭 —— 它不会再有新内容进来，所以这是总结它的时机。
-                    # 只总结一次、无需把旧摘要喂回 LLM 做 merge（对比 rolling summary 的
-                    # 每 N 轮重写一遍）。
+                    # The previous episode closes here -- no new content will arrive for it, so this is the moment to summarize it.
+                    # It is summarized once, with no need to feed the old summary back to the LLM for a merge (unlike rolling summary,
+                    # which rewrites everything every N turns).
                     self._schedule_episode_summary(request, state["episode_id"])
                     episode_id, count = f"ep_{uuid.uuid4().hex[:16]}", n_new
             else:
@@ -868,10 +868,10 @@ class MemoryWriter(WritePipeline):
             return ""
 
     def _make_trace_sink(self, request: WriteRequest, step: str):
-        """给后台 summary 任务一个 `trace(prompt, response, parsed, elapsed_ms)` 回调。
+        """Give background summary tasks a `trace(prompt, response, parsed, elapsed_ms)` callback.
 
-        这些任务在 `agent/` 和 `_graph/` 里，本身不持有 cache/request 上下文；
-        传一个闭包比让它们各自拼一套埋点参数更不容易漏。
+        Those tasks live in `agent/` and `_graph/` and do not carry cache/request context themselves;
+        passing a closure is less error-prone than letting each of them assemble its own instrumentation arguments.
         """
         if not self._cache or not is_pipeline_trace_enabled():
             return None
@@ -921,11 +921,11 @@ class MemoryWriter(WritePipeline):
         gap: float,
         cap: int,
     ) -> None:
-        """episode 划分决策埋点。
+        """Instrumentation for the episode partitioning decision.
 
-        划分是后面一切的前提（读侧框选、摘要触发都跟着它走），所以**决策依据要能复盘**：
-        沿用还是新开、距上次多久、累计几条、阈值是多少。少了它线上只能看到"摘要没触发"
-        或"框出的候选不对"，无法归因到切分本身。
+        Partitioning gates everything downstream (read-side scoping and summary triggers follow it), so the **decision basis must be reviewable**:
+        reused or new, how long since the last write, how many accumulated, and the thresholds. Without it, production only shows "the summary did not fire"
+        or "the scoped candidates are wrong", with no way to attribute that to the split itself.
         """
         if not self._cache or not is_pipeline_trace_enabled():
             return
@@ -954,7 +954,7 @@ class MemoryWriter(WritePipeline):
             logger.debug(f"[episode] EPISODE trace failed: {e}")
 
     def _schedule_episode_summary(self, request: WriteRequest, episode_id: str) -> None:
-        """episode 关闭时后台总结它一次（fire-and-forget，不阻塞写入）。"""
+        """Summarize a closed episode once in the background (fire-and-forget, never blocking the write)."""
         rcfg = getattr(self.config, "recall", None)
         if not episode_id or rcfg is None:
             return
@@ -978,8 +978,8 @@ class MemoryWriter(WritePipeline):
                         min_memories=int(
                             getattr(rcfg, "episode_summary_min_memories", 3) or 3
                         ),
-                        # 这是一次 LLM 调用：prompt / 产出必须能在线上追到，
-                        # 否则 badcase 只能看到"摘要内容不对"却拿不到输入
+                        # This is an LLM call: its prompt and output must be traceable in production,
+                        # otherwise a badcase shows only "the summary content is wrong" without the input
                         trace=self._make_trace_sink(request, "EPISODE_SUMMARY"),
                     )
                     if nid:
@@ -994,7 +994,7 @@ class MemoryWriter(WritePipeline):
             logger.debug(f"[episode-summary] schedule failed: {e}")
 
     # ================================================================
-    # 记忆关系图（pro 模式，docs/pro_graph_design.md）
+    # Memory relationship graph (pro mode, docs/pro_graph_design.md)
     # ================================================================
 
     @staticmethod
@@ -1003,10 +1003,10 @@ class MemoryWriter(WritePipeline):
         *, memory_at: Any = _MEMORY_AT_UNSET,
         custom: Optional[Dict[str, Any]] = None,
     ) -> MemoryNode:
-        """给 UPDATE（原地改）造一个轻量 MemoryNode，供图投影使用。
+        """Build a lightweight MemoryNode for an in-place UPDATE so the graph projection can use it.
 
-        UPDATE 走的是 `update_payload`，手上没有 MemoryNode 对象；而图侧只需要
-        node_id / content / tags / layer / isolation_key，不需要 embedding。
+        UPDATE goes through `update_payload` and has no MemoryNode object at hand; the graph side only needs
+        node_id / content / tags / layer / isolation_key, not the embedding.
         """
         return MemoryNode(
             node_id=node_id,
@@ -1029,11 +1029,11 @@ class MemoryWriter(WritePipeline):
         candidate_scores: Dict[str, List[Tuple[str, float]]],
         request: Optional[WriteRequest] = None,
     ) -> None:
-        """尽早启动本次图投影；同步 write 返回前等待当前请求完成。
+        """Start this request's graph projection early; a synchronous write waits for it before returning.
 
-        Graph 与 Episode 可以重叠，但投影数受进程级 gate 限制。Kuzu 的
-        executor 只有一个 worker，因此 Kuzu 投影按 request 级串行，避免多个
-        projection 的细粒度 Cypher 调用交错成超长队列。
+        Graph and Episode work may overlap, but the number of projections is bounded by a process-level gate. Kuzu's
+        executor has a single worker, so Kuzu projections are serialized per request to keep several
+        projections' fine-grained Cypher calls from interleaving into one very long queue.
         """
         graph_store = getattr(self, "_graph_store", None)
         if graph_store is None or not graph_payload:
@@ -1049,13 +1049,13 @@ class MemoryWriter(WritePipeline):
                 )
 
                 nodes = [n for n, _op in graph_payload]
-                # op.related 里的 target_id 是 existing memory 的 id
+                # The target_id values in op.related are ids of existing memories
                 related_by_node = {
                     n.node_id: list(getattr(op, "related", None) or [])
                     for n, op in graph_payload
                     if getattr(op, "related", None)
                 }
-                # 候选池分数按 content 对齐到刚落库的 node_id
+                # Align candidate-pool scores to the just-persisted node_ids by content
                 neighbors_by_node = {}
                 for n, _op in graph_payload:
                     cands = (candidate_scores or {}).get(n.content or "")
@@ -1079,8 +1079,8 @@ class MemoryWriter(WritePipeline):
                 )
                 if superseded_old_ids:
                     await sync_graph_on_supersede(graph_store, superseded_old_ids)
-                # 图是异步 fire-and-forget 建的，失败只告警 —— 没有埋点就完全看不见
-                # 它到底建没建、建了多少（读侧"图没起作用"最常见的原因就是写侧没投影成功）
+                # The graph is built asynchronously fire-and-forget and failures only warn -- without instrumentation it is completely invisible
+                # whether it was built at all and how much (the usual reason the read side sees "no graph effect" is a failed write-side projection)
                 _sink = self._make_trace_sink(request, "GRAPH_PROJECT")
                 if _sink is not None:
                     _st = dict(_proj_stats or {})
@@ -1115,7 +1115,7 @@ class MemoryWriter(WritePipeline):
                 setattr(request, "_graph_projection_task", task)
             return task
         except RuntimeError:
-            # 没有 running loop（同步上下文）→ 直接跳过，不为图阻塞主流程
+            # No running loop (synchronous context) → skip outright; never block the main flow for the graph
             logger.debug("[graph] no running loop, projection skipped")
             return None
 
@@ -1145,10 +1145,10 @@ class MemoryWriter(WritePipeline):
     async def _maybe_topic_summaries(
         self, nodes: List[Any], request: Optional[WriteRequest] = None,
     ) -> None:
-        """按需刷新 Topic-scoped summary（按主题切摘要，而非按时间窗）。
+        """Refresh Topic-scoped summaries on demand (summarize per topic instead of per time window).
 
-        默认关（`MEMORY_TOPIC_SUMMARY_ENABLED`）—— 它要额外的 LLM 调用。
-        整段包在 try 里：摘要是附加产物，失败不影响记忆本体。
+        Off by default (`MEMORY_TOPIC_SUMMARY_ENABLED`) -- it costs extra LLM calls.
+        The whole block is wrapped in try: summaries are extra artifacts and failures do not affect the memories themselves.
         """
         gcfg = getattr(self.config, "graph_store", None)
         if gcfg is None or not getattr(gcfg, "topic_summary_enabled", False):
@@ -1161,7 +1161,7 @@ class MemoryWriter(WritePipeline):
 
             first = nodes[0]
             isolation_key = first.get_isolation_key()
-            # 本次写入触达了哪些 Topic：按 tag 名反查 topic_id
+            # Which topics this write touched: look up topic_id by tag name
             tag_names = {
                 str(t) for n in nodes for t in (getattr(n, "tags", None) or []) if t
             }
@@ -1231,25 +1231,25 @@ class MemoryWriter(WritePipeline):
         precomputed_embeddings: Optional[Dict[str, List[float]]] = None,
     ) -> Tuple[List[str], Optional[str], Dict[str, int], Dict[str, int]]:
         """
-        对新 memories 做 reconcile，执行 ADD（含 EVOLVE），写 WRITE_SUMMARY log。
+        Reconcile the new memories, execute ADD (including EVOLVE), and write the WRITE_SUMMARY log.
 
         Returns:
             (stored_ids, error_message, ops_counts, recon_tokens)
-            error_message=None 表示成功；ops_counts 含 add/supersede/update/total；
-            recon_tokens 含 prompt/completion/total（reconcile 链路 LLM 消耗）
+            error_message=None means success; ops_counts holds add/supersede/update/total;
+            recon_tokens holds prompt/completion/total (LLM usage of the reconcile pipeline)
         """
         stored_ids: List[str] = []
-        # Episode：本次写入归属的内部会话 id（跨 write 把"一件事"归到一起）。
-        # 只数 user 侧记忆（与 rolling summary 只数 pending_user_count 一致）——
-        # agent 侧记忆若参与计数会把 episode 提前撑到上限、切得过碎，白付摘要的 token。
+        # Episode: the internal session id this write belongs to (groups "one thing" across writes).
+        # Only user-side memories are counted (matching rolling summary counting only pending_user_count):
+        # letting agent-side memories count would fill the episode to its cap early, split too finely, and pay summary tokens for nothing.
         episode_id = await self._resolve_episode_id(
             request, _count_user_owned(new_memories_meta)
         )
         session_episode_id = self._session_episode_id(request)
         if session_episode_id:
             episode_id = session_episode_id
-        # 关系图用：收集本次落库的 (node, op)，供 graph 投影建边。
-        # 收 op 是为了拿 op.related（LLM 标注的 typed 关系）。
+        # For the graph: collect the (node, op) pairs persisted by this write so the projection can build edges.
+        # op is collected to get op.related (the typed relations annotated by the LLM).
         graph_payload: List[Tuple[Any, Any]] = []
         superseded_old_ids: List[str] = []
         tags_to_index: set[str] = set()
@@ -1275,7 +1275,7 @@ class MemoryWriter(WritePipeline):
         if not recon_result.success:
             return [], recon_result.error, {"add": 0, "supersede": 0, "update": 0, "total": 0}, {"prompt": 0, "completion": 0, "total": 0}
 
-        # 分类统计
+        # Counts by op type
         _op_counts = {}
         for op in recon_result.ops:
             _op_counts[op.op] = _op_counts.get(op.op, 0) + 1
@@ -1288,18 +1288,18 @@ class MemoryWriter(WritePipeline):
                if getattr(recon_result, "degraded", False) else "")
         )
         if getattr(recon_result, "degraded", False):
-            # 走了 ADD-all 兜底：内容保住了，但没做去重/演化判定。必须可观测，
-            # 否则线上只会看到"记忆变多了"而不知道为什么。
+            # Took the ADD-all fallback: content is preserved, but dedup/evolution judgements were skipped. This must be observable,
+            # otherwise production only shows "there are more memories" without saying why.
             logger.warning(
                 f"[write] reconcile degraded → ADD-all "
                 f"({recon_result.degraded_reason}), {len(recon_result.ops)} memories stored as-is"
             )
-        # 逐条 op 详情由 reconciler 的 "[reconciler] ops detail" 单条 JSON list 输出，
-        # 这里不再逐条打印（避免重复刷屏）。
+        # Per-op details are emitted by the reconciler as a single "[reconciler] ops detail" JSON list,
+        # so they are not printed one by one here (avoiding duplicate log spam).
 
-        # ── 批量 embed：收集所有需要 embed 的 content，一次性 batch 调用 ──
+        # ── Batch embed: collect every content that needs embedding and do one batch call ──
         contents_to_embed: List[str] = []
-        content_indices: List[int] = []  # 对应 ops 索引
+        content_indices: List[int] = []  # matching index into ops
         for i, op in enumerate(recon_result.ops):
             if op.op in ("SUPERSEDE", "UPDATE"):
                 if op.op == "UPDATE" and not op.content:
@@ -1312,13 +1312,13 @@ class MemoryWriter(WritePipeline):
                 contents_to_embed.append(op.content or "")
                 content_indices.append(i)
 
-        # 一次 batch embed（不逐个串行）
+        # One batch embed (no serial per-item calls)
         embeddings_map: Dict[int, List[float]] = {}
         reconciled_embeddings = getattr(
             recon_result, "new_memory_embeddings", None,
         ) or {}
-        # 仅复用 reconcile 输入原文的向量。LLM 若把内容改写成 UPDATE/SUPERSEDE，
-        # content 不同便不会命中，仍按新内容计算 embedding。
+        # Only reuse vectors for the exact reconcile input texts. If the LLM rewrites content into UPDATE/SUPERSEDE,
+        # the content differs and misses, so the embedding is still computed for the new content.
         for idx, content in zip(content_indices, contents_to_embed):
             emb = reconciled_embeddings.get(content)
             if emb:
@@ -1338,17 +1338,17 @@ class MemoryWriter(WritePipeline):
                     embeddings_map[idx] = emb
             except Exception as e:
                 logger.warning(f"[reconciler] batch embed failed, falling back to sequential: {e}")
-                # fallback: 逐个 embed
+                # fallback: embed one by one
                 for idx, content in missing_pairs:
                     try:
                         embeddings_map[idx] = await self.embed_service.embed_queued(content)
                     except Exception as e2:
                         logger.error(f"[reconciler] embed failed for op {idx}: {e2}")
 
-        # 统计
-        add_cnt = 0           # ADD（全新）
-        supersede_cnt = 0     # SUPERSEDE（矛盾演化）
-        update_cnt = 0        # UPDATE（合并精炼）
+        # Counters
+        add_cnt = 0           # ADD (brand new)
+        supersede_cnt = 0     # SUPERSEDE (contradictory evolution)
+        update_cnt = 0        # UPDATE (merged refinement)
 
         # A fresh-user reconcile commonly produces an ADD-only batch (PMV2
         # chunks often contain 7-15 facts).  Every vector-store backend already
@@ -1586,11 +1586,11 @@ class MemoryWriter(WritePipeline):
 
         for op_idx, op in ops_to_apply:
             # ------------------------------------------------
-            # SUPERSEDE / UPDATE：标记旧节点 → 创建新节点
-            # SUPERSEDE: 旧节点 status=SUPERSEDED（进演化链，仍可召回+展开），
-            #            新节点 supersedes=[old_id]
-            # UPDATE: 旧节点 status=SHADOW（逻辑删除，不召回），
-            #         新节点 supersedes=None（不进链）
+            # SUPERSEDE / UPDATE: mark the old node → create the new node
+            # SUPERSEDE: old node status=SUPERSEDED (joins the evolution chain, still recallable and expandable),
+            #            new node supersedes=[old_id]
+            # UPDATE: old node status=SHADOW (logical delete, not recalled),
+            #         new node supersedes=None (not in a chain)
             # ------------------------------------------------
             if op.op in ("SUPERSEDE", "UPDATE"):
                 target_id = op.memory_id
@@ -1623,10 +1623,10 @@ class MemoryWriter(WritePipeline):
                 content = op.content or ""
                 layer = MemoryLayer.from_string(op.layer) if op.layer else MemoryLayer.L2_FACT
 
-                # SUPERSEDE → 旧节点进演化链，status=SUPERSEDED（仍可被召回，
-                #   命中后双向展开整链）；新节点 supersedes=[old_id]。
-                # UPDATE → 旧节点不进链，status=SHADOW（等价逻辑删除，不召回）；
-                #   新节点 supersedes=None，独立。
+                # SUPERSEDE → the old node joins the evolution chain with status=SUPERSEDED (still recallable,
+                #   and the whole chain expands both ways after a hit); new node supersedes=[old_id].
+                # UPDATE → the old node stays out of the chain with status=SHADOW (a logical delete, not recalled);
+                #   new node supersedes=None and stands alone.
                 is_supersede = op.op == "SUPERSEDE"
                 old_status = (
                     MemoryStatus.SUPERSEDED.value if is_supersede
@@ -1634,17 +1634,17 @@ class MemoryWriter(WritePipeline):
                 )
 
                 # ------------------------------------------------
-                # 多节点链折叠（仅 SUPERSEDE）：
-                # op.memory_ids = [E0, E1, ...]（有序，旧→新）。把这些原本
-                # 未成链的旧节点先连成一条链（E0 ← E1 ← ...），再让新 head
-                # 节点 supersede 最新的那个（target_id = memory_ids[-1]）。
-                # 每条旧节点都被标 SUPERSEDED（仍可召回+展开）；只有 head（新节点）
-                # 保持 is_latest=True。
+                # Multi-node chain fold (SUPERSEDE only):
+                # op.memory_ids = [E0, E1, ...] (ordered, old → new). These previously
+                # unchained old nodes are first linked into one chain (E0 ← E1 ← ...), then the new head
+                # node supersedes the newest one (target_id = memory_ids[-1]).
+                # Every old node is marked SUPERSEDED (still recallable and expandable); only the head (the new node)
+                # keeps is_latest=True.
                 # ------------------------------------------------
                 chain_ids = list(getattr(op, "memory_ids", None) or [])
                 if is_supersede and len(chain_ids) > 1:
                     for _prev_id, _cur_id in zip(chain_ids, chain_ids[1:]):
-                        # _cur_id supersedes _prev_id：建立 supersedes / superseded_by 双向链
+                        # _cur_id supersedes _prev_id: build the supersedes / superseded_by two-way chain
                         try:
                             _cur_node = await vector_store.get_by_id(_cur_id)
                             if _cur_node is not None:
@@ -1680,17 +1680,17 @@ class MemoryWriter(WritePipeline):
                         f"(head target={target_id})"
                     )
 
-                # 标记链上最新的 target_id（新 head 直接取代它）：
-                # SUPERSEDE → SUPERSEDED（进链，可召回）；UPDATE → SHADOW（逻辑删除）
+                # Mark the newest target_id on the chain (the new head replaces it directly):
+                # SUPERSEDE → SUPERSEDED (in the chain, recallable); UPDATE → SHADOW (logical delete)
                 # ------------------------------------------------
-                # UPDATE（有 content，非 SUPERSEDE）：原地更新旧节点
+                # UPDATE (has content, not SUPERSEDE): update the old node in place
                 # ------------------------------------------------
-                # UPDATE 语义是「合并精炼同一主题」，本质是同一条记忆的延续，因此
-                # 原地更新 target_id：换 content + embedding + tags；保留原始
-                # logical memory_at。UPDATE 是同一 durable memory 的精炼或多次事件
-                # 聚合，不能把整条历史的时间覆盖成本次 write 时间。
-                # 天然保留 access_count / last_accessed_at（不打回冷启动），
-                # 也不产生 SHADOW 垃圾节点。SUPERSEDE 仍走下面的 shadow+建新链。
+                # UPDATE means "merge and refine the same topic"; it is essentially the continuation of one memory, so
+                # target_id is updated in place: content + embedding + tags are replaced while the original
+                # logical memory_at is kept. UPDATE is a refinement of the same durable memory or an aggregation of several events,
+                # so the time of the whole history must not be overwritten with this write's time.
+                # This naturally keeps access_count / last_accessed_at (no reset to cold start)
+                # and produces no SHADOW garbage nodes. SUPERSEDE still uses the shadow-plus-new-chain path below.
                 if not is_supersede:
                     new_emb = embeddings_map.get(op_idx) or await self.embed_service.embed_queued(content)
                     _old = None
@@ -1761,9 +1761,9 @@ class MemoryWriter(WritePipeline):
                         logger.warning(
                             f"[reconciler] merge source provenance on {target_id} failed: {e}"
                         )
-                    # merge 语义：UPDATE 原地改同一个节点，本次 meta 必须追加到旧
-                    # meta list 上。custom 是整体替换的，所以要先回读再写回。
-                    # 仅在本次带了 meta 时才多这一次读，否则维持原有单次写。
+                    # Merge semantics: UPDATE rewrites the same node in place, so this call's meta must be appended to the old
+                    # meta list. custom is replaced wholesale, so the node is read back before writing it.
+                    # The extra read happens only when this call carries meta; otherwise the original single write is kept.
                     if getattr(request, "client_meta", None):
                         try:
                             _merged = self._merge_client_meta(
@@ -1787,7 +1787,7 @@ class MemoryWriter(WritePipeline):
                             if _merged is not None:
                                 _updates["custom"] = _merged
                         except Exception as e:
-                            # meta 是附加负载，回读失败不该阻塞记忆本体更新
+                            # meta is extra payload; a read-back failure must not block the memory update itself
                             logger.warning(
                                 f"[reconciler] merge client meta on {target_id} failed: {e}"
                             )
@@ -1825,7 +1825,7 @@ class MemoryWriter(WritePipeline):
                         f"layer={layer.value} reason={op.reason}"
                     )
                     tags_to_index.update(t for t in (op.tags or []) if t)
-                    # 写 memory_operations 记录
+                    # Write the memory_operations record
                     if self._cache:
                         try:
                             await self._cache.store_memory_operation(
@@ -1843,7 +1843,7 @@ class MemoryWriter(WritePipeline):
                     continue
 
                 # ------------------------------------------------
-                # SUPERSEDE：shadow（SUPERSEDED）旧节点 + 建新链头节点
+                # SUPERSEDE: shadow (SUPERSEDED) the old node + create the new chain head
                 # ------------------------------------------------
                 try:
                     await vector_store.update_payload(
@@ -1864,7 +1864,7 @@ class MemoryWriter(WritePipeline):
                     logger.warning(f"[reconciler] failed to mark old node {target_id} ({op.op}): {e}")
                     continue
 
-                # 创建新 head 节点（此处只可能是 SUPERSEDE；UPDATE 已在上面原地更新并 continue）
+                # Create the new head node (only SUPERSEDE can reach here; UPDATE was updated in place above and continued)
                 new_node = MemoryNode(
                     user_id=request.user_id,
                     agent_id=request.agent_id or "default_agent",
@@ -1884,10 +1884,10 @@ class MemoryWriter(WritePipeline):
                     source_raw_memory_id=source_raw_memory_id or None,
                     tags=list(op.tags or []),
                     tag_ners=list(getattr(op, "tag_ners", None) or []),
-                    # SUPERSEDE 建的是新节点，只带本次 meta：meta 的语义是「该节点被
-                    # 写入时的上下文」，而被取代的旧节点仍在库里、其 meta 原样保留，
-                    # 沿演化链可查，不会丢。若改成继承整链 meta，每次取代都会累积，
-                    # 长链下极易撞 5KB 上限。
+                    # SUPERSEDE creates a new node carrying only this call's meta: meta means "the context when this
+                    # node was written", and the superseded old node stays in the store with its meta untouched,
+                    # queryable along the evolution chain, so nothing is lost. Inheriting the whole chain's meta would accumulate on every supersede,
+                    # which would easily hit the 5KB cap on long chains.
                     custom=self._fact_custom(op, req_id, request),
                 )
                 nid = await vector_store.upsert(new_node)
@@ -1909,7 +1909,7 @@ class MemoryWriter(WritePipeline):
                     f"layer={layer.value} supersedes=[{target_id}] reason={op.reason}"
                 )
 
-                # SUPERSEDE: 回写旧节点的 superseded_by（建立链关系）
+                # SUPERSEDE: write superseded_by back onto the old node (establishing the chain link)
                 try:
                     old_node = await vector_store.get_by_id(target_id)
                     existing_superseded_by = (old_node.superseded_by or []) if old_node else []
@@ -1924,7 +1924,7 @@ class MemoryWriter(WritePipeline):
 
                 tags_to_index.update(t for t in (new_node.tags or []) if t)
 
-                # 写 memory_operations 记录
+                # Write the memory_operations record
                 if self._cache:
                     try:
                         await self._cache.store_memory_operation(
@@ -1943,7 +1943,7 @@ class MemoryWriter(WritePipeline):
                 continue
 
             # ------------------------------------------------
-            # ADD op：纯新增节点
+            # ADD op: purely new node
             # ------------------------------------------------
             if op.op != "ADD":
                 logger.warning(f"[reconciler] unknown op '{op.op}', skipped")
@@ -2005,7 +2005,7 @@ class MemoryWriter(WritePipeline):
                 except Exception as e:
                     logger.warning(f"[reconciler] store_memory_operation failed: {e}")
 
-        # 长聚合 L2 的隐藏检索入口。alias 只存在辅助索引，命中后返回 parent L2。
+        # Hidden retrieval entry points for long aggregated L2 memories. Aliases live only in the auxiliary index and return the parent L2 on a hit.
         if graph_payload:
             try:
                 await sync_retrieval_clause_index(
@@ -2034,7 +2034,7 @@ class MemoryWriter(WritePipeline):
                     "[retrieval-clause] maintain failed (non-fatal): %s", e
                 )
 
-        # 一次 write 内跨所有 op 合并 tag，避免每条 memory 各自等待一轮 tag embedding。
+        # Merge tags across all ops of one write so each memory does not wait for its own tag embedding round.
         if tags_to_index:
             try:
                 await _tag_index_helper.ensure_tag_embeddings_for_node(
@@ -2075,8 +2075,8 @@ class MemoryWriter(WritePipeline):
             except Exception as e:
                 logger.warning(f"[write] store WRITE_SUMMARY failed: {e}")
 
-        # ── 关系图投影（pro 模式，enable_graph 才生效）──
-        # 异步 fire-and-forget：图是附加信号，不能进写入关键路径。
+        # ── Graph projection (pro mode, only takes effect with enable_graph) ──
+        # Asynchronous fire-and-forget: the graph is an extra signal and must not enter the write critical path.
         self._schedule_graph_projection(
             graph_payload=graph_payload,
             superseded_old_ids=superseded_old_ids,
@@ -2107,15 +2107,15 @@ class MemoryWriter(WritePipeline):
         precomputed_embeddings: Optional[Dict[str, List[float]]] = None,
     ) -> Tuple[List[str], Optional[str], Dict[str, int], Dict[str, int]]:
         """
-        跳过 reconcile，直接把 extractor 提取的 memories 插入 VDB。
+        Skip reconcile and insert the extractor's memories straight into the VDB.
 
-        通过 RECONCILE_ENABLED=false 激活。适用于 eval 场景：
-        不做去重/合并/演化，保留所有提取结果。
+        Activated by RECONCILE_ENABLED=false. Intended for eval scenarios:
+        no dedup, merge or evolution; every extraction result is kept.
         """
         stored_ids: List[str] = []
         session_episode_id = self._session_episode_id(request)
 
-        # 批量 embed
+        # Batch embed
         contents = [m.get("content", "") for m in new_memories_meta if m.get("content")]
         precomputed_embeddings = precomputed_embeddings or {}
         missing_contents = [c for c in contents if c not in precomputed_embeddings]
@@ -2219,7 +2219,7 @@ class MemoryWriter(WritePipeline):
         memory_ids: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
-        """环节级 log/trace（经 client hook：文件始终 + DB 可关）。"""
+        """Stage-level log/trace (via the client hook: file always, DB optional)."""
         if not self._cache:
             return
         parsed_str = (
@@ -2255,11 +2255,11 @@ class MemoryWriter(WritePipeline):
         content: str,
         supersedes: Optional[List[str]] = None,
     ) -> None:
-        """reconcile apply 级 pipeline log（RECONCILE_APPLY）。
+        """Reconcile apply pipeline log (RECONCILE_APPLY).
 
-        upsert/update_payload 之后立即回读校验该节点是否真落库，把结果写进
-        pipeline trace。用于定位「reconcile 决定 ADD、账也记了，但 VDB 里查不到」
-        这类问题——区分「没写」「写了没落库」「写后被删」。
+        Immediately after upsert/update_payload the node is read back to confirm it really persisted, and the result is written into
+        the pipeline trace. Used to pinpoint "reconcile decided ADD and the ledger recorded it, but the VDB has no such record",
+        distinguishing "never written" from "written but not persisted" and "deleted after writing".
         """
         # This read-after-write check is diagnostic, not part of the persistence
         # contract. Running it unconditionally made a normal multi-memory write
@@ -2311,11 +2311,11 @@ class MemoryWriter(WritePipeline):
         tags: Optional[List[str]] = None,
         valid_until=None,
     ) -> None:
-        """intention (L7) upsert 级 pipeline log（INTENTION_UPSERT）。
+        """Intention (L7) upsert pipeline log (INTENTION_UPSERT).
 
-        意图由 System 1 直接 upsert 到 VDB，不走 reconcile，因此不属于 RECONCILE_APPLY。
-        这里单独打点：upsert 之后回读校验节点是否真落库，带 memory_id 供线上按
-        request_id / memory_id 追查（区分「没写」「写了没落库」「写后被删」）。
+        Intentions are upserted straight into the VDB by System 1 without reconcile, so they are not part of RECONCILE_APPLY.
+        This is instrumented separately: the node is read back after upsert to confirm persistence, and memory_id is included so production can trace by
+        request_id / memory_id (distinguishing "never written", "written but not persisted" and "deleted after writing").
         """
         verify_enabled = _write_apply_verify_enabled()
         verified = None
@@ -2357,7 +2357,7 @@ class MemoryWriter(WritePipeline):
         request: WriteRequest,
         tracer: PipelineTracer,
     ) -> None:
-        """请求级 timeline 写入 Trace（SQLite），供 Inspector。"""
+        """Write the request-level timeline into the Trace store (SQLite) for the Inspector."""
         if not self._cache or not is_pipeline_trace_enabled():
             return
         try:
@@ -2376,7 +2376,7 @@ class MemoryWriter(WritePipeline):
             logger.debug(f"[write] WRITE_TIMELINE failed: {e}")
 
     # ================================================================
-    # 已抽取事实直写流程（跳过 extract，直接 reconcile）
+    # Direct write of already-extracted facts (skips extract, goes straight to reconcile)
     # ================================================================
 
     async def write_extracted(
@@ -2385,20 +2385,20 @@ class MemoryWriter(WritePipeline):
         ctx: Optional[PipelineContext] = None,
         tracer: Optional[PipelineTracer] = None,
     ) -> WriteResponse:
-        """写入「agent 已抽取好的」记忆：跳过 extract，直接进 reconcile。
+        """Write memories the agent has already extracted: skip extract and go straight to reconcile.
 
-        适用于调用方（如 openclaw memory_add tool）已经把对话抽象成一条/多条
-        结论性 memory content 的场景。跳过 LLM extract（省一次 LLM 调用），
-        但仍走完整 reconcile：与已有记忆判重 / 合并 / 矛盾演化，并落 L2_FACT。
+        For callers (such as the openclaw memory_add tool) that already abstract a conversation into one or more
+        conclusive memory contents. It skips LLM extract (saving one LLM call)
+        but still runs the full reconcile: dedup against existing memories / merge / contradiction evolution, then persists as L2_FACT.
 
-        与 write() 的区别：
-        - 不写 L1_RAW 原始节点（content 本身即事实，无原始对话可留档）。
-        - 不调 extractor（mem_agent.process_add）。
-        - 直接把 content 列表喂给 _reconcile_and_store（或 RECONCILE_ENABLED=false
-          时的 _direct_store）。
+        Differences from write():
+        - No L1_RAW source node is written (the content is itself the fact; there is no raw conversation to archive).
+        - No extractor call (mem_agent.process_add).
+        - The content list is fed directly to _reconcile_and_store (or to _direct_store when
+          RECONCILE_ENABLED=false).
 
-        输入约定：request.extra["extracted_contents"] = List[str]（每条一个事实）。
-        为空时回退到 request.content（单条）。layer 统一 L2_FACT。
+        Input contract: request.extra["extracted_contents"] = List[str] (one fact per entry).
+        When empty it falls back to request.content (a single entry). The layer is always L2_FACT.
         """
         start_time = datetime.now()
         response = WriteResponse()
@@ -2417,7 +2417,7 @@ class MemoryWriter(WritePipeline):
             )
 
         try:
-            # 收集已抽取事实：优先 extra["extracted_contents"]，否则回退 content
+            # Collect the extracted facts: prefer extra["extracted_contents"], otherwise fall back to content
             raw_contents = request.extra.get("extracted_contents")
             if not raw_contents:
                 raw_contents = [request.content] if request.content else []
@@ -2438,13 +2438,13 @@ class MemoryWriter(WritePipeline):
             _req_id = request.request_id or get_request_id()
             vector_store = await self._get_vector_store()
 
-            # 直接构造 reconcile 输入（跳过 extract）。layer 统一 L2_FACT。
+            # Build the reconcile input directly (extract skipped). The layer is always L2_FACT.
             new_memory_texts: List[str] = list(contents)
             new_memories_meta: List[Dict] = [
                 {"content": c, "layer": "L2_FACT", "tags": []} for c in contents
             ]
 
-            # 抽取好的多条之间互相判重；这里算出的向量继续透传给 reconcile / store。
+            # Dedup the already-extracted entries against each other; the vectors computed here are passed on to reconcile / store.
             precomputed_embeddings: Dict[str, List[float]] = {}
             if len(new_memory_texts) >= 2:
                 try:
@@ -2522,7 +2522,7 @@ class MemoryWriter(WritePipeline):
                 pass
 
     # ================================================================
-    # 主写入流程
+    # Main write flow
     # ================================================================
 
     async def write(
@@ -2531,13 +2531,13 @@ class MemoryWriter(WritePipeline):
         ctx: Optional[PipelineContext] = None,
         tracer: Optional[PipelineTracer] = None,
     ) -> WriteResponse:
-        """执行 Lite 写入流程。"""
+        """Execute the Lite write flow."""
         start_time = datetime.now()
         response = WriteResponse()
 
-        # request_id 归一化：优先用 client 显式透传的 request.request_id（contextvar-immune），
-        # 兜底用 contextvar（保护直接调用 write() 的测试 / 其它 caller）。
-        # 此后整条链路落库统一读 request.request_id，不再依赖 contextvar。
+        # request_id normalization: prefer the request.request_id explicitly passed by the client (contextvar-immune),
+        # and fall back to the contextvar (protecting tests / other callers that call write() directly).
+        # From here on the whole pipeline reads request.request_id for persistence and no longer relies on the contextvar.
         if not request.request_id:
             request.request_id = get_request_id()
 
@@ -2552,7 +2552,7 @@ class MemoryWriter(WritePipeline):
             )
 
         try:
-            # 参数校验
+            # Validate parameters
             content = request.content
             if not content and request.has_messages():
                 content = request.get_flat_content()
@@ -2567,13 +2567,13 @@ class MemoryWriter(WritePipeline):
                 response.error_message = "user_id is required"
                 return response
 
-            # ── 确保 memory_at 有值：未传则用接收到请求的时间 ──
+            # ── Ensure memory_at has a value: when absent, use the time the request was received ──
             if request.memory_at is None:
                 request.memory_at = start_time
 
             total_tokens = 0
 
-            # 1. Layer 分配
+            # 1. Layer assignment
             with tracer.span("layer_assign") as s:
                 layer_str = request.extra.get("layer", "")
                 if layer_str:
@@ -2586,17 +2586,17 @@ class MemoryWriter(WritePipeline):
             response.layer = suggested_layer
 
             # ── Timing: sys1_waiting_ms ──
-            # start_time 是进入 write() 的时间，现在开始实际 I/O
+            # start_time is when write() was entered; real I/O starts now
             _t_process_start = datetime.now()
             _sys1_waiting_ms = (_t_process_start - start_time).total_seconds() * 1000
             _req_id_perf = request.request_id or get_request_id()
             logger.info(f"TRACE_PERF [{_req_id_perf}] S1_START waiting={_sys1_waiting_ms:.0f}ms user={request.user_id}")
 
-            # Metrics: S1 开始
+            # Metrics: S1 start
             from ..metrics import MetricsCollector
             MetricsCollector.get().sys1_start()
 
-            # 2. 向量化 + 持久化（L1_RAW）
+            # 2. Vectorize + persist (L1_RAW)
             _t_embed = datetime.now()
             with tracer.span("embed") as s:
                 embedding, embed_meta = await self.embed_service.embed_queued_with_meta(
@@ -2616,7 +2616,7 @@ class MemoryWriter(WritePipeline):
                 elapsed_ms=_embed_ms,
             )
 
-            # 3. 持久化到向量库（L1_RAW）
+            # 3. Persist to the vector database (L1_RAW)
             _t_l1 = datetime.now()
             memory_id = ""
             _l1_error: Optional[str] = None
@@ -2651,7 +2651,7 @@ class MemoryWriter(WritePipeline):
                     s.set_error(_l1_error)
                     logger.error(f"V1 Write: Persist failed (non-fatal): {persist_err}", exc_info=True)
             _l1_ms = (datetime.now() - _t_l1).total_seconds() * 1000
-            # 后端是否启用了 sparse 全文索引。
+            # Whether the backend has sparse full-text indexing enabled.
             _sparse_enabled = bool(getattr(vector_store, "supports_fulltext", False))
             await self._emit_pipeline_step(
                 request,
@@ -2672,14 +2672,14 @@ class MemoryWriter(WritePipeline):
             _sys1_l1_process_ms = (datetime.now() - _t_process_start).total_seconds() * 1000
             logger.info(f"TRACE_PERF [{_req_id_perf}] S1_L1_DONE l1_ms={_sys1_l1_process_ms:.0f}ms")
 
-            # 4. MemAgent 处理（可选）
+            # 4. MemAgent processing (optional)
             agent_mode = request.extra.get("agent_mode", "disabled")
             response.extra["agent_mode"] = agent_mode
 
             _t_workflow = datetime.now()
             if (agent_mode == "full" and vector_store is not None
                     and mem_node is not None and memory_id):
-                # ── 获取历史上下文（最近 k 轮对话，供 extractor 使用；k 由 config 配置）──
+                # ── Fetch history context (the last k dialogue turns, for the extractor; k comes from config) ──
                 _history_context = ""
                 _recent_history_ms = 0.0
                 _recent_history_count = 0
@@ -2689,7 +2689,7 @@ class MemoryWriter(WritePipeline):
                     _history_context = await self._get_recent_history(
                         vector_store, request.user_id, request.agent_id,
                         exclude_memory_id=memory_id,
-                        max_turns=_hist_turns * 2,  # k 轮对话 = k*2 条 message
+                        max_turns=_hist_turns * 2,  # k dialogue turns = k*2 messages
                     )
                     _recent_history_ms = (_t_recent_history and (datetime.now() - _t_recent_history).total_seconds() * 1000) or 0.0
                     _recent_history_count = len([line for line in (_history_context or "").splitlines() if line.strip()])
@@ -2845,7 +2845,7 @@ class MemoryWriter(WritePipeline):
             _sys1_workflow_ms = (datetime.now() - _t_workflow).total_seconds() * 1000
             logger.info(f"TRACE_PERF [{_req_id_perf}] S1_WORKFLOW_DONE workflow_ms={_sys1_workflow_ms:.0f}ms")
 
-            # 5. 合并检测（可选）
+            # 5. Merge check (optional)
             enable_merge_check = request.extra.get("enable_merge_check", False)
             should_merge = response.extra.get("should_merge", False)
 
@@ -2869,7 +2869,7 @@ class MemoryWriter(WritePipeline):
             response.success = True
             response.tokens_used = total_tokens
 
-            # ── 汇总 sys1 timing ──
+            # ── Aggregate sys1 timing ──
             _ops_count = len(response.extra.get("agent_stored_ids", []))
             _ops_avg_ms = _sys1_workflow_ms / _ops_count if _ops_count > 0 else 0
             response.extra["timing"] = {
@@ -2879,7 +2879,7 @@ class MemoryWriter(WritePipeline):
                 "sys1_ops_avg_ms": round(_ops_avg_ms, 1),
             }
 
-            # Metrics: S1 完成 + VDB ops
+            # Metrics: S1 done + VDB ops
             _mc = MetricsCollector.get()
             _mc.sys1_end(response.extra["timing"], success=True)
             if _ops_count > 0:
@@ -2891,7 +2891,7 @@ class MemoryWriter(WritePipeline):
             response.error_code = 500
             response.error_message = str(e)
             tracer.set_error(str(e))
-            # Metrics: S1 失败
+            # Metrics: S1 failed
             try:
                 MetricsCollector.get().sys1_end({}, success=False)
             except Exception:
@@ -2932,21 +2932,21 @@ class MemoryWriter(WritePipeline):
         max_chars_assistant: int = 500,
     ) -> str:
         """
-        获取该用户最近的 L1_RAW 对话记录，按轮次拆分后拼成 history context。
+        Fetch this user's recent L1_RAW conversation records, split them by turn and assemble them into history context.
 
-        每条 L1_RAW 的 content 是多轮对话（[user]: ...\n[assistant]: ...）。
-        拆成单条 message 后，user 消息完整保留，assistant 消息截取前 max_chars_assistant 字符。
-        最终取最近 max_turns 条 message（注意单位是 message 条数，非对话轮数；
-        调用方按 k 轮 × 2 传入）。
+        Each L1_RAW content is a multi-turn dialogue ([user]: ...\n[assistant]: ...).
+        After splitting into single messages, user messages are kept in full and assistant messages are truncated to the first max_chars_assistant characters.
+        The result keeps the most recent max_turns messages (the unit is message count, not dialogue turns;
+        callers pass k turns × 2).
 
         Returns:
-            格式化的历史上下文字符串，空字符串表示无历史。
+            The formatted history context string; an empty string means no history.
         """
         try:
-            # 仅需 content/node_id/gmt_created 拼历史，不涉及 embedding。
-            # allow_raw_layer=True：向量库默认对所有查询排除 L1_RAW（对外读路径
-            # 不返回原始对话），而本处正是"内部管线读原始对话"的唯一场景，
-            # 不放行会拿不到历史、直接降低提取质量。
+            # Only content/node_id/gmt_created are needed to build history; embeddings are not involved.
+            # allow_raw_layer=True: the VDB excludes L1_RAW from every query by default (external read paths
+            # never return raw conversations), and this is the one place where the internal pipeline reads raw conversations,
+            # so without the override there would be no history at all and extraction quality would drop.
             nodes = await vector_store.list_by_user(
                 user_id=user_id,
                 agent_id=agent_id,
@@ -2959,31 +2959,31 @@ class MemoryWriter(WritePipeline):
             if not nodes:
                 return ""
 
-            # 排除当前正在处理的 memory（避免自引用）
+            # Exclude the memory currently being processed (avoid self-reference)
             nodes = [n for n in nodes if n.node_id != exclude_memory_id]
 
-            # 按 gmt_created 升序（时间正序）
+            # Sort by gmt_created ascending (chronological order)
             nodes.sort(key=lambda n: n.gmt_created or datetime.min)
 
-            # 拆分每条 L1_RAW 内容为单条 messages。
-            # L1_RAW content 格式: "[user]: xxx\n[assistant]: yyy\n[user]: zzz..."
-            # 多真人对话还会在**文首**多一行 "用户名叫Tim"（见 WriteRequest.get_flat_content）。
-            # 关键：单条 message 的 content 本身可能含换行（多行 user 输入），
-            # 因此必须按「[label]: 前缀」识别消息边界，无前缀的行视为上一条消息的续行
-            # 归属其下，而不是逐行当成独立 message——否则续行会被当成裸消息，且后续
-            # 按行数截断时可能从一条多行消息中间切开，导致前缀行丢失、续行裸露在开头。
+            # Split each L1_RAW content into single messages.
+            # L1_RAW content format: "[user]: xxx\n[assistant]: yyy\n[user]: zzz..."
+            # Multi-person conversations also add one line at the **very start**, "The user's name is Tim" (see WriteRequest.get_flat_content).
+            # Key: a single message's content may itself contain newlines (multi-line user input),
+            # so message boundaries must be detected by the "[label]: " prefix and unprefixed lines belong as continuations
+            # of the previous message rather than being independent messages -- otherwise continuations become bare messages and the later
+            # truncation by line count may cut through a multi-line message, losing the prefix line and leaving continuations at the start.
             #
-            # label 除了 4 个已知 role，还可能是对方真人的名字（[John]:）。名字长度设上限
-            # 避免把正文里形如 "[注]: xxx" 的普通文本误判成消息边界。
+            # Besides the 4 known roles, a label may also be the other real person's name ([John]:). A length cap keeps
+            # ordinary body text such as "[Note]: xxx" from being mistaken for a message boundary.
             import re as _re
             from .base import parse_user_name_line
             _KNOWN_ROLES = {"user", "assistant", "system", "tool"}
-            # 带方括号的任意 label（含对方真人名字）
+            # Any bracketed label (including the other real person's name)
             _labeled_prefix = _re.compile(r"^\[([^\]\n]{1,32})\]:\s?")
-            # 无方括号的已知 role（历史数据容错，沿用旧正则的 `\[?...\]?` 宽容度）
+            # Known roles without brackets (tolerant of legacy data, keeping the old regex's leniency `\[?...\]?`)
             _bare_role_prefix = _re.compile(r"^(user|assistant|system|tool):\s?")
 
-            # (label, content) 元组列表；label 为 role 或对方真人名字
+            # List of (label, content) tuples; label is a role or the other real person's name
             parsed: List[Tuple[str, str]] = []
             user_name: str = ""
             for node in nodes:
@@ -2995,29 +2995,29 @@ class MemoryWriter(WritePipeline):
                         body = line[m.end():]
                         parsed.append((label, body))
                         continue
-                    # 名字行只可能是每个 node content 的第一行（get_flat_content 插在文首）。
-                    # 逐 node 判断而非用 `not parsed`：parsed 跨 node 累积，第二个 node
-                    # 起就非空了，那样名字行会被误当成上一条消息的续行拼进去。
-                    # 剔除后在文首统一输出一次，避免占 max_turns 配额并重复刷屏。
+                    # A name line can only be the first line of each node content (get_flat_content inserts it at the start).
+                    # Decide per node rather than with `not parsed`: parsed accumulates across nodes, so from the second node
+                    # on it is already non-empty and the name line would be wrongly appended as a continuation of the previous message.
+                    # It is stripped here and emitted once at the start, avoiding max_turns quota use and repeated noise.
                     if _line_idx == 0:
                         _name = parse_user_name_line(line)
                         if _name:
                             user_name = _name
                             continue
                     if parsed:
-                        # 续行：拼回上一条 message（保留换行）
+                        # Continuation: append back onto the previous message (keeping the newline)
                         prev_label, prev_body = parsed[-1]
                         parsed[-1] = (prev_label, prev_body + "\n" + line)
                     else:
-                        # 开头就是无前缀行（异常/老数据）：当成 user 消息兜底
+                        # Content starting with an unprefixed line (malformed/legacy): fall back to treating it as a user message
                         parsed.append(("user", line))
 
-            # 取最近 max_turns 条 message（按 message 截断，绝不从消息中间切开）
+            # Take the most recent max_turns messages (truncated by message, never cut through the middle of one)
             recent = parsed[-max_turns:] if len(parsed) > max_turns else parsed
             if not recent:
                 return ""
 
-            # 格式化：非 user 侧整条截断（含对方真人），user 完整保留
+            # Formatting: everything not on the user side is truncated (including the other real person); user text is kept in full
             all_messages: List[str] = []
             if user_name:
                 from .base import render_user_name_line
@@ -3031,8 +3031,8 @@ class MemoryWriter(WritePipeline):
                     all_messages.append(_name_line)
             for label, body in recent:
                 body = body.strip()
-                # 截断口径：assistant + 对方真人（非已知 role 的 label）。
-                # user 完整保留；system / tool 沿用历史行为（不截断）。
+                # Truncation scope: assistant plus the other real person (any label that is not a known role).
+                # user is kept in full; system / tool keep the historical behavior (no truncation).
                 _truncate = label == "assistant" or label not in _KNOWN_ROLES
                 if _truncate and len(body) > max_chars_assistant:
                     body = body[:max_chars_assistant] + "..."
@@ -3116,11 +3116,11 @@ class MemoryWriter(WritePipeline):
         agent_id: Optional[str] = None,
     ) -> List[str]:
         """
-        收集该用户在 VDB 中已有的所有 tags（去重）。
+        Collect all tags this user already has in the VDB (deduplicated).
 
-        从 vector_store.list_by_user 的结果中提取所有 tags 字段，
-        合并为唯一集合，供 extract prompt 引导 LLM 优先复用已有标签。
-        失败静默返回空列表（不阻塞主流程）。
+        Extracts the tags field from every vector_store.list_by_user result,
+        merges them into a unique set, and lets the extract prompt steer the LLM to reuse existing tags first.
+        On failure it silently returns an empty list (never blocking the main flow).
         """
         key = (user_id or "", agent_id or "")
         try:
@@ -3203,8 +3203,8 @@ class MemoryWriter(WritePipeline):
         recent_history_count: int = 0,
     ) -> None:
         """
-        MemAgent 完整处理流程：extract → reconcile & store → summary。
-        结果写回 response.extra。
+        Full MemAgent processing: extract → reconcile & store → summary.
+        Results are written back into response.extra.
         """
         mode = ProcessMode.FULL
         existing_memories = []
@@ -3225,7 +3225,7 @@ class MemoryWriter(WritePipeline):
         }
 
         try:
-            # 收集该用户已有的所有 tags（供 extractor prompt 引导复用）
+            # Collect all tags this user already has (for the extractor prompt to steer reuse)
             _t_existing_tags = datetime.now()
             existing_tags = await self._collect_existing_tags(
                 vector_store, request.user_id, request.agent_id,
@@ -3235,9 +3235,9 @@ class MemoryWriter(WritePipeline):
             )
             extract_timing["existing_tags_count"] = len(existing_tags or [])
 
-            # 构建 extractor 输入内容：优先用原始 messages dump
-            # 带 name 时必须透传：多真人对话靠它区分「对方是另一个真人」还是 AI assistant
-            # （role=assistant + name → 真人），也是 basic_info.name 的权威来源。
+            # Build the extractor input: prefer the raw messages dump
+            # When name is present it must be passed through: multi-person dialogues rely on it to tell "the other party is another real person" from the AI assistant
+            # (role=assistant + name → real person), and it is also the authoritative source of basic_info.name.
             if request.messages:
                 import json as _json_msgs
                 _msgs_dump = []
@@ -3250,12 +3250,12 @@ class MemoryWriter(WritePipeline):
             else:
                 _extract_content = request.content
 
-            # 基础画像 schema 字段（{name: description}），由 extractor 渲染到 prompt
+            # Basic profile schema fields ({name: description}), rendered into the prompt by the extractor
             _basic_profile_fields = self.config.basic_profile.effective_fields()
 
-            # 本次有效 summary 开关（per-call > config）。summary 不再由 mem_agent 单次生成，
-            # 改由下方 rolling buffer 流程处理（仅 messages），因此这里给 mem_agent 传 False，
-            # 让老的「单次 add 即 summary」路径自然成为 no-op（零风险）。
+            # Effective summary switch for this call (per-call > config). Summaries are no longer produced in one mem_agent pass,
+            # they are handled by the rolling buffer flow below (messages only), so mem_agent gets False here
+            # and the old "summarize on every add" path naturally becomes a no-op (zero risk).
 
             _t_extract_total = datetime.now()
             agent_result = await self.mem_agent.process_add(
@@ -3286,7 +3286,7 @@ class MemoryWriter(WritePipeline):
             await self._handle_agent_failure(request, response, agent_result, tracer_span, extract_timing=extract_timing)
             return
 
-        # ── 提取成功 ──
+        # ── Extraction succeeded ──
         _perf_req_id = request.request_id or get_request_id()
         logger.info(
             f"TRACE_PERF [{_perf_req_id}] S1_EXTRACT_DONE "
@@ -3296,13 +3296,13 @@ class MemoryWriter(WritePipeline):
         )
 
         # ── basic_info: prompt-driven schema, no LLM function-calling ──
-        # extractor 把 basic_info dict 放进 extracted_info；writer 在此 upsert L0_BASIC_INFO
-        # 演化链。失败/无效都不抛错，落 tool_results_summary 走原 TOOL_CALLS pipeline log。
+        # The extractor puts the basic_info dict into extracted_info; the writer upserts the L0_BASIC_INFO
+        # evolution chain here. Failures and invalid input never raise; they land in tool_results_summary and the original TOOL_CALLS pipeline log.
         basic_info_raw = None
         if isinstance(agent_result.extracted_info, dict):
             basic_info_raw = agent_result.extracted_info.pop("basic_info", None)
 
-        tool_calls_raw = None  # v0.1.5.13+ 不再有真实 LLM tool_calls；保留字段做兼容
+        tool_calls_raw = None  # v0.1.5.13+ has no real LLM tool_calls anymore; the field is kept for compatibility
         tool_results_summary: List[Dict[str, Any]] = []
 
         if isinstance(basic_info_raw, dict) and basic_info_raw:
@@ -3315,15 +3315,15 @@ class MemoryWriter(WritePipeline):
                     allowed_fields=list(_basic_profile_fields.keys()),
                     client_meta=getattr(request, "client_meta", None),
                 )
-                # 把 upsert 结果包成原 tool_results 形态（向后兼容 pipeline log 解析）
+                # Wrap the upsert result into the original tool_results shape (backward-compatible pipeline log parsing)
                 tool_results_summary.append({
-                    "tool": "basic_profile_upsert",  # 不再是 LLM tool name
+                    "tool": "basic_profile_upsert",  # no longer an LLM tool name
                     "round": 1,
                     "success": _bp_result.success,
                     "data": _bp_result.to_dict(),
                     "error": _bp_result.error,
                 })
-                # input 侧记录 LLM 给出的 basic_info 原始值（trace 可追溯）
+                # The input side records the raw basic_info values produced by the LLM (traceable)
                 tool_calls_raw = [{
                     "function": {
                         "name": "basic_profile_upsert",
@@ -3343,7 +3343,7 @@ class MemoryWriter(WritePipeline):
         response.extra["extract_timing"] = extract_timing
         response.extra["tool_results"] = tool_results_summary
 
-        # 写 TOOL_CALLS pipeline log（可观测 tool 调用链路）
+        # Write the TOOL_CALLS pipeline log (observable tool invocation pipeline)
         if self._cache and (tool_calls_raw or tool_results_summary):
             try:
                 import json as _json_tc
@@ -3375,7 +3375,7 @@ class MemoryWriter(WritePipeline):
                 )
             except Exception as e:
                 logger.warning(f"[write] store TOOL_CALLS log failed: {e}")
-        # 过滤实体
+        # Filter entities
         _CATEGORY_BLACKLIST = {
             "locations", "location", "persons", "person",
             "organizations", "organization", "events", "event",
@@ -3410,14 +3410,14 @@ class MemoryWriter(WritePipeline):
         response.extra["should_merge"] = agent_result.should_merge
         response.extra["merge_target_id"] = agent_result.merge_target_id or ""
         response.extra["_agent_tokens"] = agent_result.tokens_used
-        # extract 链路 LLM token 消耗（prompt/completion/total），供 client 透传给调用方
+        # LLM token usage of the extract pipeline (prompt/completion/total), passed on to the caller by the client
         response.extra["extract_tokens"] = {
             "prompt": getattr(agent_result, "extract_prompt_tokens", 0) or 0,
             "completion": getattr(agent_result, "extract_completion_tokens", 0) or 0,
             "total": getattr(agent_result, "extract_tokens_used", 0) or 0,
         }
 
-        # 写 pipeline logs
+        # Write pipeline logs
         _req_id = request.request_id or get_request_id()
         await self._write_extract_log(
             request,
@@ -3438,8 +3438,8 @@ class MemoryWriter(WritePipeline):
                 agent_result.extracted_info or {}
             )
 
-            # extractor 结果去重：新提取的多条之间互相判重；向量继续透传给
-            # reconcile / store。还没入库，故 delete_from_store=False。
+            # Dedup extractor results: the newly extracted entries are compared with each other; the vectors keep flowing to
+            # reconcile / store. Nothing is stored yet, so delete_from_store=False.
             precomputed_embeddings: Dict[str, List[float]] = {}
             if len(new_memory_texts) >= 2:
                 try:
@@ -3486,8 +3486,8 @@ class MemoryWriter(WritePipeline):
                     logger.warning(f"[write] reconcile failed: {recon_error}")
                     return
 
-            # Intentions → L7（直接 upsert，不走 reconcile）
-            # MEMORY_ENABLE_INTENTION / LLMConfig.enable_intention 关闭时整段跳过
+            # Intentions → L7 (direct upsert, no reconcile)
+            # The whole block is skipped when MEMORY_ENABLE_INTENTION / LLMConfig.enable_intention is off
             if getattr(self.config.llm, "enable_intention", True):
                 intentions = self._collect_intentions(agent_result.extracted_info or {})
                 if intentions:
@@ -3520,19 +3520,19 @@ class MemoryWriter(WritePipeline):
 
             # L1_RAW → SHADOW
             #
-            # 条件是「agent 跑完且这个节点确实是 L1_RAW」，而**不看提取出几条**：
-            # extractor 判定「这段对话没有可提取的用户事实」（如纯技术问答）时
-            # 返回 memory=[]，这是**正常结论**而非失败，原始对话同样该退居备份层。
-            # 此前条件带 stored_ids，空提取时 stored_ids 为空 → 不降级且零埋点，
-            # L1_RAW 会长期停留在 ACTIVE 被 list/search/keyword_search 召回。
+            # The condition is "the agent finished and this node really is L1_RAW", and it **does not look at how many facts were extracted**:
+            # when the extractor concludes "this conversation holds no extractable user facts" (e.g. a pure technical Q&A)
+            # it returns memory=[], which is a **normal conclusion**, not a failure; the raw conversation should also step back to the backup layer.
+            # The condition used to include stored_ids, so an empty extraction left it un-downgraded with zero instrumentation,
+            # leaving L1_RAW in ACTIVE for a long time and recallable by list/search/keyword_search.
             #
-            # 提取失败不会走到这里：agent 抛异常、agent_result.success=False、
-            # reconcile 失败三条路径都在上方提前 return，故失败场景仍保留
-            # ACTIVE（数据可能还有救，留档待重试）。
+            # A failed extraction never reaches here: an agent exception, agent_result.success=False or
+            # a reconcile failure all return early above, so failure cases still keep
+            # ACTIVE (the data may still be salvageable and stays archived for a retry).
             #
-            # layer 守卫不可省：调用方可通过 metadata 传 extra["layer"] 显式指定
-            # 层级（见本文件 Layer 分配段），此时 mem_node 并非原始对话节点，
-            # 降级它等于逻辑删除调用方刚写入的数据。
+            # The layer guard is not optional: callers may pass extra["layer"] via metadata to explicitly specify
+            # the layer (see the Layer assignment block in this file); then mem_node is not a raw conversation node, and
+            # downgrading it would be a logical delete of data the caller just wrote.
             if memory_id and mem_node.layer == MemoryLayer.L1_RAW:
                 try:
                     mem_node.status = MemoryStatus.SHADOW
@@ -3564,7 +3564,7 @@ class MemoryWriter(WritePipeline):
         })
 
     def _extract_llm_diag(self, agent_result) -> Dict[str, Any]:
-        """提取 EXTRACT LLM 响应诊断字段，用于排查 EMPTY_RESPONSE / 长耗时空返回。"""
+        """Pull diagnostic fields from the EXTRACT LLM response to debug EMPTY_RESPONSE / long-latency empty returns."""
         _er = getattr(agent_result, "_extract_result", None) if agent_result is not None else None
         if _er is None:
             return {}
@@ -3605,7 +3605,7 @@ class MemoryWriter(WritePipeline):
         response.error_message = f"[{code}] {message}"
 
     async def _handle_agent_failure(self, request, response, agent_result, tracer_span, extract_timing: Optional[Dict[str, Any]] = None) -> None:
-        """处理 agent extract 失败的情况。"""
+        """Handle the case where agent extraction failed."""
         if agent_result is None:
             self._mark_agent_failure(
                 response,
@@ -3625,8 +3625,8 @@ class MemoryWriter(WritePipeline):
         logger.warning(f"[write] agent extract failed: code={_error_code} error={_error_msg}")
 
         _raw_resp = getattr(agent_result, "extract_raw_response", "") or ""
-        # 复原真实 prompt（[SYSTEM]/[USER]），与成功路径 _write_extract_log 一致，
-        # 使失败（EMPTY_RESPONSE / JSON_PARSE_FAILED / LLM_ERROR）的 EXTRACT log 也能看到实际输入。
+        # Rebuild the real prompt ([SYSTEM]/[USER]) the same way the success path _write_extract_log does,
+        # so EXTRACT logs for failures (EMPTY_RESPONSE / JSON_PARSE_FAILED / LLM_ERROR) also show the actual input.
         _extract_prompt = ""
         _attempts = []
         _er = getattr(agent_result, "_extract_result", None)
@@ -3642,7 +3642,7 @@ class MemoryWriter(WritePipeline):
         _parsed.update(self._extract_llm_diag(agent_result))
         _parsed["extract_llm_ms"] = round(getattr(agent_result, "extract_elapsed_ms", 0) or 0, 2)
         if _attempts:
-            # 每一次 LLM 重试的失败明细（类型/消息/HTTP 状态码等），供排障
+            # Failure detail for each LLM retry (type/message/HTTP status code and so on), for troubleshooting
             _parsed["attempts"] = _attempts
         await self._emit_pipeline_step(
             request,
@@ -3666,13 +3666,13 @@ class MemoryWriter(WritePipeline):
         tool_results: List[Dict[str, Any]] = None,
         extract_timing: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """写 EXTRACT pipeline log。"""
+        """Write the EXTRACT pipeline log."""
         if not self._cache:
             return
         try:
             import json as _json
 
-            # 使用 extractor 返回的真实 prompt（如果有的话）
+            # Use the real prompt returned by the extractor, when there is one
             _extract_prompt = ""
             _extract_result = getattr(agent_result, '_extract_result', None)
             if _extract_result and hasattr(_extract_result, '_actual_prompt') and _extract_result._actual_prompt:
@@ -3680,15 +3680,15 @@ class MemoryWriter(WritePipeline):
                 _usr = _extract_result._actual_prompt or ""
                 _extract_prompt = f"[SYSTEM]\n{_sys}\n\n[USER]\n{_usr}"
             else:
-                # fallback: 用旧方式构造近似 prompt（不完全准确）
+                # fallback: build an approximate prompt the old way (not fully accurate)
                 from ..agent.extractor import EXTRACT_PROMPT
                 _current_time = request.memory_at.isoformat(timespec="seconds") if request.memory_at else ""
                 _extract_prompt = EXTRACT_PROMPT.format(content=request.content, current_date="", memory_at=_current_time or "", existing_tags="(see actual prompt)", last_messages="")
 
-            # response 字段：优先用 raw_response（LLM 原始输出）
+            # response field: prefer raw_response (the LLM's raw output)
             _raw_resp = agent_result.extract_raw_response or ""
 
-            # parsed 字段：包含 extracted_info + tool_results 元信息
+            # parsed field: extracted_info plus tool_results metadata
             _parsed_data = dict(agent_result.extracted_info) if agent_result.extracted_info else {}
             if extract_timing:
                 _parsed_data.update(extract_timing)
@@ -3715,13 +3715,13 @@ class MemoryWriter(WritePipeline):
             logger.warning(f"[write] store EXTRACT log failed: {e}")
 
     async def _write_summary_log(self, request, agent_result, req_id: str) -> None:
-        """写 SUMMARY pipeline log（若有摘要）。"""
+        """Write the SUMMARY pipeline log (when there is a summary)."""
         if not self._cache or not agent_result.summary or not agent_result.summary_tokens_used:
             return
         try:
             import json as _json_s
 
-            # 使用 summarizer 返回的真实 prompt
+            # Use the real prompt returned by the summarizer
             _summary_result = getattr(agent_result, '_summary_result', None)
             if _summary_result and hasattr(_summary_result, '_actual_prompt') and _summary_result._actual_prompt:
                 _summary_prompt = _summary_result._actual_prompt

@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-scene="coding" —— coding 链路的软件工程变体。
+scene="coding" -- the software-engineering variant of the coding pipeline.
 
-与 scene="working" 的关系: 同一条链路(同一个 store / 表 / reconciler), 差别只有两处,
-本文件按这两处分组:
-  1. 抽取规范 —— EXTRACT_PROMPT_CODING(TestPromptSelection / TestPromptContent)
-  2. 版本演进链层 —— chain_store(TestChainObserve / TestChainDecorate)
+Relationship to scene="working": the same pipeline (same store / tables / reconciler); only two things differ,
+and this file groups its tests by those two:
+  1. The extraction spec -- EXTRACT_PROMPT_CODING (TestPromptSelection / TestPromptContent)
+  2. The version-evolution chain layer -- chain_store (TestChainObserve / TestChainDecorate)
 
-外加路由本身(TestSceneRouting)和"不传 scene 行为不变"的回归闸门(TestWorkingUnchanged)。
+Plus the routing itself (TestSceneRouting) and the regression gate for "no scene passed means unchanged behavior" (TestWorkingUnchanged).
 
-⚠️ 这里全部是零 LLM / 零 embedding 的测试。链层本身不调模型, 抽取规范只验"选了哪份
-prompt", 不验模型读了之后的行为 —— 那个要上 CodeMemoryBench 跑。
+⚠️ All of these are zero-LLM / zero-embedding tests. The chain layer itself does not call a model; the extraction spec is only checked for "which prompt
+is selected", not for what the model does after reading it -- that needs a CodeMemoryBench run.
 """
 import os
 import tempfile
@@ -27,7 +27,7 @@ from hy_memory.coding.extractor import (
 
 
 class _FakeMsg:
-    """最小 ChatMessage 替身 —— 只要 _chain_text 读的那几个字段。"""
+    """Minimal ChatMessage stand-in -- only the fields _chain_text reads."""
 
     def __init__(self, role, content, tool_name=None):
         self.role = role
@@ -45,10 +45,10 @@ class _FakeProvider:
 
 
 def _edit_msgs(said, old, new, path="qutebrowser/config/configtypes.py"):
-    """一轮"用户说要改 + agent 写文件"。
+    """One round of "user asks for a change + agent writes the file".
 
-    工具消息写成 `path=/old=/new=` 三段是刻意的: 链层在 git 反查落空时靠这个形态
-    合成 diff(_patch_from_edits)。线上大多数场景给不了本地仓路径, 走的就是这条。
+    Writing the tool message as three `path=/old=/new=` segments is deliberate: when the git lookup comes up empty, the chain layer uses this shape
+    to synthesise the diff (_patch_from_edits). Most production scenarios cannot supply a local repo path, so this is the path actually taken.
     """
     return [
         _FakeMsg("user", said),
@@ -61,14 +61,14 @@ def _edit_msgs(said, old, new, path="qutebrowser/config/configtypes.py"):
 
 
 # ════════════════════════════════════════════════════════════════════
-# 1. 路由
+# 1. Routing
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestSceneRouting:
     def test_coding_routes_to_coding_chain(self):
-        # "coding" 和 "working" 归一成同一个路由值 —— add()/search() 里所有
-        # `scene_forced == "coding"` 的判断对两者同时生效, 不必逐处加分支。
+        # "coding" and "working" normalise to the same route value -- every
+        # `scene_forced == "coding"` check in add()/search() applies to both at once, so no per-site branches are needed.
         assert HyMemoryClient._normalize_scene("coding") == "coding"
         assert HyMemoryClient._normalize_scene("working") == "coding"
 
@@ -85,12 +85,12 @@ class TestSceneRouting:
     def test_illegal_value_raises(self):
         with pytest.raises(ValueError) as ei:
             HyMemoryClient._normalize_scene("productivity")
-        # 报错要把三个合法值都列出来 —— 只说 'chat' or 'working' 会让人以为
-        # coding 不存在。
+        # The error must list all three legal values -- saying only 'chat' or 'working' would make people think
+        # that coding does not exist.
         assert "coding" in str(ei.value)
 
     def test_variant_is_orthogonal_to_route(self):
-        # 同一个路由值("coding")下两个变体; 变体只由 _scene_variant 决定。
+        # Two variants under the same route value ("coding"); the variant is decided only by _scene_variant.
         assert HyMemoryClient._scene_variant("coding") == "coding"
         assert HyMemoryClient._scene_variant("working") == "working"
         assert HyMemoryClient._scene_variant("chat") == "working"
@@ -98,14 +98,14 @@ class TestSceneRouting:
 
 
 # ════════════════════════════════════════════════════════════════════
-# 2. 抽取规范的选择
+# 2. Choosing the extraction spec
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestPromptSelection:
     def test_default_is_working(self):
-        # ★ 回归闸门: 不传 scene 必须还是 working 那份。已落盘的 working 评测
-        #   靠这条保证不被动。
+        # ★ Regression gate: with no scene passed it must still be the working one. Already-persisted working
+        #   evaluations rely on this to stay untouched.
         e = CodingMemoryExtractor(_FakeProvider())
         assert e.scene == "working"
         assert e._prompt_tmpl is EXTRACT_PROMPT
@@ -116,14 +116,14 @@ class TestPromptSelection:
         assert e._prompt_tmpl is EXTRACT_PROMPT_CODING
 
     def test_unknown_scene_falls_back_to_working(self):
-        # 不抛错: 抽取是一次性的, 这段轨迹不会再回来, 为一个拼错的参数把整段丢掉
-        # 不值得(同 extract() 里 LLM 失败走原文兜底的取舍)。
+        # No exception: extraction is one-shot and this trace never comes back, so dropping the whole segment
+        # over a misspelled argument is not worth it (same trade-off as the raw-source fallback on LLM failure in extract()).
         e = CodingMemoryExtractor(_FakeProvider(), scene="bogus")
         assert e.scene == "working"
         assert e._prompt_tmpl is EXTRACT_PROMPT
 
     def test_both_prompts_share_placeholders(self):
-        # 两份必须能被同一份 .format() 参数填 —— extract() 只有一处 format 调用。
+        # Both specs must be fillable by the same .format() arguments -- extract() has only one format call.
         kw = dict(workspace_present="true", branch_present="true",
                   conversation_block="x")
         assert EXTRACT_PROMPT.format(**kw)
@@ -131,13 +131,13 @@ class TestPromptSelection:
 
 
 class TestPromptContent:
-    """两份规范各自独有的段落。钉住的是**内容边界**, 不是措辞质量。"""
+    """Sections unique to each of the two specs. These pin the **content boundaries**, not wording quality."""
 
     def test_coding_has_hard_constraint_header(self):
-        # 前置覆盖后文任何"想要叙事"的措辞。
+        # It overrides, up front, any wording later on that "wants a narrative".
         assert "HARD CONSTRAINT" in EXTRACT_PROMPT_CODING
         assert "HARD CONSTRAINT" not in EXTRACT_PROMPT
-        # 三条核心要求
+        # Three core requirements
         assert "FUTURE AGENT needs in order to act" in EXTRACT_PROMPT_CODING
         assert "never \"the user\"" in EXTRACT_PROMPT_CODING
         assert "the session was completed" in EXTRACT_PROMPT_CODING
@@ -145,31 +145,31 @@ class TestPromptContent:
     def test_coding_has_code_work_section(self):
         assert "CODE WORK" in EXTRACT_PROMPT_CODING
         assert "CODE WORK" not in EXTRACT_PROMPT
-        # 四件未来 agent 无法从代码反推的东西
+        # Four things a future agent cannot reconstruct from the code alone
         assert "BRANCH / WORKING LOCATION" in EXTRACT_PROMPT_CODING
         assert "WHICH VERSION WON" in EXTRACT_PROMPT_CODING
         assert "EXACT COORDINATES, NOT PASTED CODE" in EXTRACT_PROMPT_CODING
         assert "VERIFIED vs MERELY WRITTEN" in EXTRACT_PROMPT_CODING
 
     def test_coding_marks_superseded_version_phrases(self):
-        # 用户改主意的语言标记 —— 链层那边也认同一批词。
+        # Language markers of the user changing their mind -- the chain layer recognises the same set of phrases.
         assert "scratch that" in EXTRACT_PROMPT_CODING
 
     def test_working_keeps_the_ask_user_exclusion(self):
-        # working 独有: 卡在向用户要参数时强制 experiences: []。
-        # coding 侧刻意不带 —— 那边的轨迹是 agent 自主执行, 不存在这种停顿。
+        # Unique to working: when stalled on asking the user for parameters, experiences: [] is forced.
+        # Deliberately absent on the coding side -- those traces are autonomous agent runs with no such stall.
         assert "ASKING THE USER" in EXTRACT_PROMPT
         assert "ASKING THE USER" not in EXTRACT_PROMPT_CODING
 
     def test_both_keep_evidence_fidelity(self):
-        # 这条是两份共有的底线: 只记真执行过的动作。任何一份丢了都是缺陷。
+        # This is the shared bottom line of both specs: only record actions actually executed. Losing it in either one is a defect.
         for p in (EXTRACT_PROMPT, EXTRACT_PROMPT_CODING):
             assert "only actions actually executed" in p
             assert "Never promote a partial search to" in p
 
 
 # ════════════════════════════════════════════════════════════════════
-# 3. 版本演进链层 —— 写
+# 3. Version-evolution chain layer -- write
 # ════════════════════════════════════════════════════════════════════
 
 
@@ -180,10 +180,10 @@ def chain():
 
 
 class TestChainText:
-    """client._chain_text: messages → 链层能读的纯文本。"""
+    """client._chain_text: messages -> plain text the chain layer can read."""
 
     def test_renders_lowercase_role_prefixes(self):
-        # 形态必须对齐链层的 _USER_LC / _DIFF_END 认的那套小写前缀。
+        # The shape must match the lowercase prefixes recognised by the chain layer's _USER_LC / _DIFF_END.
         t = HyMemoryClient._chain_text(
             [_FakeMsg("user", "hi"), _FakeMsg("assistant", "ok"),
              _FakeMsg("tool", "out", tool_name="bash")]
@@ -193,8 +193,8 @@ class TestChainText:
         assert "[tool:bash] out" in t
 
     def test_no_index_prefix(self):
-        # ⚠️ 不能复用 extractor._format_conversation —— 那个给每行加 `[i] ` 下标
-        # (给 LLM 读的), 而链层的正则锚在行首, 前缀一加全部匹配不上。
+        # ⚠️ Must not reuse extractor._format_conversation -- that one prefixes every line with an `[i] ` index
+        # (for the LLM to read), while the chain layer's regexes anchor at line starts; any prefix breaks every match.
         t = HyMemoryClient._chain_text([_FakeMsg("user", "hi")])
         assert not t.startswith("[0]")
 
@@ -211,8 +211,8 @@ class TestChainText:
 
 class TestChainObserve:
     def test_extracts_patch_from_dialog_without_git(self):
-        # 没有本地仓也要能存下来 —— git 反查落空时从对话里的 old/new 合成。
-        # agent 修改文件后不一定立即提交，因此不能只依赖 commit diff。
+        # Storage must work without a local repo -- when the git lookup misses, synthesise from the old/new in the conversation.
+        # An agent does not necessarily commit right after editing files, so commit diffs alone cannot be relied on.
         with tempfile.TemporaryDirectory() as d:
             H = HyCodeMem(os.path.join(d, "c"))   # repo_root=None
             n = H.observe(
@@ -225,7 +225,7 @@ class TestChainObserve:
             assert H.stats()["threads"] == 1
 
     def test_multiple_versions_land_on_one_thread(self, chain):
-        # ★ 这层存在的理由: 同一处代码被改了几版, 每版的原话 + 真实 patch 都留着。
+        # ★ The reason this layer exists: when one piece of code is edited several versions, each version's original words + the real patch are kept.
         for said, old, new in [
             ("On branch feat/q4, first pass: 255.0 everywhere.",
              "mult = 255.0\n", "mult = 360.0\n"),
@@ -235,7 +235,7 @@ class TestChainObserve:
             chain.observe(HyMemoryClient._chain_text(_edit_msgs(said, old, new)),
                           meta={"branch": "feat/q4"})
         st = chain.stats()
-        assert st["threads"] == 1, "同一符号的多版必须并到一条链, 否则版本序号会从 1 重数"
+        assert st["threads"] == 1, "multiple versions of the same symbol must merge into one chain, or version numbering recounts from 1"
         assert st["rounds"] == 2
         assert st["multi"] == 1
 
@@ -248,9 +248,9 @@ class TestChainObserve:
         assert chain.stats()["branches"] == 1
 
     def test_no_code_change_stores_nothing(self, chain):
-        # 纯对话没有可识别的改动 → 0。这是正常情况, 不是错误。
+        # Pure conversation with no identifiable change -> 0. This is a normal case, not an error.
         assert chain.observe(
-            HyMemoryClient._chain_text([_FakeMsg("user", "早上好")])) == 0
+            HyMemoryClient._chain_text([_FakeMsg("user", "Good morning")])) == 0
         assert chain.stats()["rounds"] == 0
 
     def test_empty_text_is_noop(self, chain):
@@ -259,7 +259,7 @@ class TestChainObserve:
 
 
 # ════════════════════════════════════════════════════════════════════
-# 4. 版本演进链层 —— 读
+# 4. Version-evolution chain layer -- read
 # ════════════════════════════════════════════════════════════════════
 
 
@@ -288,15 +288,15 @@ class TestChainDecorate:
         _seed_two_versions(chain)
         blk, used = chain.decorate([dict(_FACT)], instruction="which version won?")
         assert used == [0]
-        # 分支名必须在块里 —— agent 在错分支上改的代码会被静默丢掉。
+        # The branch name must be in the block -- code an agent changed on the wrong branch would be silently dropped.
         assert "feat/q4" in blk
-        # 两版都在, 不只留最后一版: 遇到被弃那版的代码要认得出来, 否则会"修"回去。
-        assert "第1版" in blk and "第2版" in blk
+        # Both versions stay, not just the last one: the discarded version's code must stay recognisable, or it gets "fixed" back.
+        assert "v1" in blk and "v2" in blk
         assert "255.0" in blk and "360.0" in blk
 
     def test_fact_without_branch_falls_back_to_files(self, chain):
-        # 事实层的 fact 可能没有 branch 字段。branch 认不出就按 files 退回，
-        # 不能直接放弃，否则 diff 块会始终为空。
+        # A fact-layer fact may lack a branch field. If the branch cannot be recognised, fall back to files;
+        # giving up outright would leave the diff block permanently empty.
         _seed_two_versions(chain)
         fa = {"statement": "the hue multiplier decision",
               "files": ["qutebrowser/config/configtypes.py"]}
@@ -316,8 +316,8 @@ class TestChainDecorate:
         assert chain.decorate([], instruction="x") == ("", [])
 
     def test_block_off_switch_disables_layer(self, chain):
-        # 消融开关: 让 coding 退化成"纯向量双层"(= working 的召回形态), 用来做
-        # 单变量 A/B。CodeMemoryBench 消融靠它: 去掉这层 77/216 → 45/216。
+        # Ablation switch: degrade coding to a "pure vector two-layer" (= working's retrieval shape) for
+        # single-variable A/B. CodeMemoryBench ablation relies on it: removing this layer gives 77/216 -> 45/216.
         _seed_two_versions(chain)
         os.environ["HCM_BLOCK_OFF"] = "1"
         try:
@@ -327,7 +327,7 @@ class TestChainDecorate:
 
 
 class TestDecorateGlue:
-    """client._decorate_with_chain —— 胶水层的 fail-safe。"""
+    """client._decorate_with_chain -- the fail-safe of the glue layer."""
 
     def test_returns_empty_when_chain_unavailable(self):
         import types
@@ -338,7 +338,7 @@ class TestDecorateGlue:
         assert HyMemoryClient._decorate_with_chain(ns, [dict(_FACT)]) == ("", [])
 
     def test_store_exception_degrades_not_raises(self):
-        # 这层是增量, 挂了要退回纯向量双层而不是把整次 search 拖失败。
+        # This layer is incremental; on failure it must fall back to the pure vector two-layer instead of failing the whole search.
         import types
 
         class _Boom:
@@ -369,46 +369,46 @@ class TestObserveGlue:
 
 
 # ════════════════════════════════════════════════════════════════════
-# 5. working 不受影响
+# 5. working is unaffected
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestWorkingUnchanged:
-    """★ 整个改动的前提: working 路一个字节都不动。"""
+    """★ The premise of the whole change: the working path is not touched by a single byte."""
 
     def test_working_prompt_byte_length_pinned(self):
-        # 钉住长度而不是内容: 内容有自己的断言(tests/coding/test_extractor.py 30+ 条),
-        # 这里防的是"改 coding 时手滑动了 working 那份"。
+        # Pin the length, not the content: content has its own assertions (30+ in tests/coding/test_extractor.py),
+        # and what this guards against is "slipping into the working spec while editing coding".
         #
-        # ⚠️ 这个数字必须用 `len(EXTRACT_PROMPT)` 实测得到, 不要从 diff / 正则抽取的
-        #    片段长度推 —— 正则取到的 body 不含尾换行等边界字符, 按它填会差几个字节,
-        #    于是这条断言在完全没改 working 的情况下也会红(我第一版就栽在这)。
-        assert len(EXTRACT_PROMPT) == 18517, (
-            "working 的抽取规范被改动了。它带着自己的实测结论(statement 长度三版对照, "
-            "见其正文), 动它要先复现那批 A/B。"
+        # ⚠️ This number must come from an actual len(EXTRACT_PROMPT) measurement; do not derive it from the length of
+        #    diff / regex-extracted fragments -- the regex body omits trailing newlines and other boundary characters, so filling it
+        #    that way is off by a few bytes, and this assertion would go red even when working was never touched (my first version tripped here).
+        assert len(EXTRACT_PROMPT) == 18697, (
+            "the working extraction spec was modified. It carries its own measured findings (the three-way"
+            "comparison of statement lengths, see its body); changing it requires re-running that A/B first."
         )
 
     def test_coding_prompt_is_separate_object(self):
         assert EXTRACT_PROMPT is not EXTRACT_PROMPT_CODING
 
     def test_working_variant_does_not_touch_chain(self):
-        # variant="working" 时写入侧不该调链层 —— 否则 working 的库里会多出
-        # hy_code_chain 目录, 且行为与改动前不一致。
+        # With variant="working" the write side must not call the chain layer -- otherwise a hy_code_chain
+        # directory would show up in the working store, and behavior would differ from before the change.
         assert HyMemoryClient._scene_variant("working") == "working"
         assert HyMemoryClient._scene_variant(None) == "working"
 
 
 # ════════════════════════════════════════════════════════════════════
-# 6. 两个变体的库分开
+# 6. Separate stores for the two variants
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestStoreSeparation:
-    """★ working 和 coding 读写**不同的库**。
+    """★ working and coding read and write **different stores**.
 
-    为什么必须分库而不是加一个 variant 列做过滤: 检索是**先**在向量集合里取 top-K、
-    **再**用 sqlite 过滤。两个变体的 fact 混在同一个集合里时, 向量那一步就已经混了 ——
-    后面加任何 SQL 条件都救不回来, 因为 top-K 的名额已经被另一个变体占掉了。
+    Why separate stores rather than a variant column with filtering: retrieval **first** takes top-K from the vector collection,
+    **then** filters with sqlite. Once both variants' facts share one collection, the vector step is already mixed --
+    no later SQL condition can save it, because the other variant already occupies the top-K slots.
     """
 
     def test_sqlite_path_diverges(self):
@@ -416,8 +416,8 @@ class TestStoreSeparation:
         assert _variant_db_path("/d/coding_memory.db", "_cv") == "/d/coding_memory_cv.db"
 
     def test_working_paths_byte_identical(self):
-        # ★ 回归闸门: working 的路径和集合名必须与加变体之前逐字相同, 否则已落盘的
-        #   库读不到(表现为"库空了")。
+        # ★ Regression gate: working's paths and collection names must be byte-identical to before variants existed, or already
+        #   persisted stores become unreadable (which shows up as "the store is empty").
         from hy_memory.coding.store import (
             _variant_db_path, _derive_fact_collection_name,
             _derive_coding_collection_name,
@@ -435,18 +435,18 @@ class TestStoreSeparation:
 
 
 # ════════════════════════════════════════════════════════════════════
-# 7. 链层的数据域隔离
+# 7. Chain-layer data-domain isolation
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestChainOwnerIsolation:
-    """★ thread 的键必须含 owner。
+    """★ The thread key must include the owner.
 
-    没有它时 thread 键只有 (branch, file, pkey) —— 用户 A 的 feat/q4 和用户 B 的
-    feat/q4 会并成同一条链, A 能在注入块里读到 B 的 diff。这是数据泄漏。
+    Without it the thread key is only (branch, file, pkey) -- user A's feat/q4 and user B's
+    feat/q4 would merge into one chain, and A could read B's diffs in the injected block. That is a data leak.
     """
 
-    _FACT = [{"statement": "On branch feat/q4, cfg.py 改了什么",
+    _FACT = [{"statement": "On branch feat/q4, what changed in cfg.py",
               "branch": "feat/q4", "files": ["cfg.py"]}]
 
     @staticmethod
@@ -460,7 +460,7 @@ class TestChainOwnerIsolation:
 
     def test_owner_key_shape(self):
         assert HyMemoryClient._chain_owner("u1", "repo1") == "u1|repo1"
-        # 两个都空 → ""，保持旧的单用户单仓数据兼容
+        # both empty -> "", keeping compatibility with old single-user single-repo data
         assert HyMemoryClient._chain_owner(None, None) == ""
         assert HyMemoryClient._chain_owner("", "") == ""
 
@@ -469,26 +469,26 @@ class TestChainOwnerIsolation:
             p = os.path.join(d, "ch")
             HA = HyCodeMem(p, owner="userA|repo1")
             HA.observe(HyMemoryClient._chain_text(
-                self._edit("On branch feat/q4, A 改的", "x = 1\n", "x = 2\n")),
+                self._edit("On branch feat/q4, edited by A", "x = 1\n", "x = 2\n")),
                 meta={"branch": "feat/q4"})
-            # 同一个库文件、同一个分支、同一个文件名
+            # same store file, same branch, same file name
             HB = HyCodeMem(p, owner="userB|repo1")
             HB.observe(HyMemoryClient._chain_text(
-                self._edit("On branch feat/q4, B 改的", "y = 1\n", "y = 2\n")),
+                self._edit("On branch feat/q4, edited by B", "y = 1\n", "y = 2\n")),
                 meta={"branch": "feat/q4"})
 
             blkA, _ = HA.decorate([dict(self._FACT[0])], instruction="q")
             blkB, _ = HB.decorate([dict(self._FACT[0])], instruction="q")
-            assert "x = 2" in blkA and "y = 2" not in blkA, "A 读到了 B 的 diff"
-            assert "y = 2" in blkB and "x = 2" not in blkB, "B 读到了 A 的 diff"
+            assert "x = 2" in blkA and "y = 2" not in blkA, "A read B's diff"
+            assert "y = 2" in blkB and "x = 2" not in blkB, "B read A's diff"
 
     def test_empty_owner_is_not_a_public_pool(self):
-        # 空 owner 只匹配空 owner，否则旧的空 owner 数据会错误读取所有新写入。
+        # An empty owner must only match an empty owner, otherwise old empty-owner data would wrongly read all new writes.
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "ch")
             H1 = HyCodeMem(p, owner="u1|r1")
             H1.observe(HyMemoryClient._chain_text(
-                self._edit("On branch feat/q4, u1 改的", "x = 1\n", "x = 2\n")),
+                self._edit("On branch feat/q4, edited by u1", "x = 1\n", "x = 2\n")),
                 meta={"branch": "feat/q4"})
             H0 = HyCodeMem(p)      # owner=''
             blk, used = H0.decorate([dict(self._FACT[0])], instruction="q")
@@ -503,20 +503,20 @@ class TestChainOwnerIsolation:
                     self._edit(f"On branch feat/q4, {o}", f"{var} = 1\n", f"{var} = 2\n")),
                     meta={"branch": "feat/q4"})
             H = HyCodeMem(p, owner="u1|r1")
-            # 默认只数自己的 —— 灌库自检靠这个数, 报全库会整体偏大
+            # By default only count one's own -- the ingestion self-check relies on this; reporting the whole store would overstate it
             assert H.stats()["threads"] == 1
             assert H.stats(all_owners=True)["threads"] == 2
 
 
 # ════════════════════════════════════════════════════════════════════
-# 8. 路径③ 的失败闸门
+# 8. Failure gate for path 3
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestEditFailureGate:
-    """从对话合成 diff 时, 失败的编辑不该进链。
+    """When synthesising diffs from conversation, failed edits must not enter the chain.
 
-    链是"哪一版赢了"的唯一依据 —— 掺一个没生效的版本进去, agent 可能照着它写。
+    The chain is the only record of "which version won" -- mixing in a version that never took effect could make an agent write it back.
     """
 
     _EDIT = ('path = "cfg.py"\n'
@@ -526,7 +526,7 @@ class TestEditFailureGate:
     def _observe(self, tmpdir, tail, tag):
         H = HyCodeMem(os.path.join(tmpdir, tag))
         t = HyMemoryClient._chain_text([
-            _FakeMsg("user", "On branch feat/q4, 改 mult"),
+            _FakeMsg("user", "On branch feat/q4, change mult"),
             _FakeMsg("tool", self._EDIT + "\n" + tail, tool_name="bash"),
         ])
         return H.observe(t, meta={"branch": "feat/q4"})
@@ -544,30 +544,30 @@ class TestEditFailureGate:
     @pytest.mark.parametrize("tail,tag", [
         ("OBSERVATION: <returncode>0</returncode>", "rc0"),
         ("REPLACED=1", "rp"),
-        ("", "none"),          # 没有任何结果标记 → 不拦(宁可收, 别漏真改动)
+        ("", "none"),          # no result marker at all -> do not block (prefer keeping, never miss a real change)
     ])
     def test_successful_and_unmarked_edits_kept(self, tail, tag):
         with tempfile.TemporaryDirectory() as d:
             assert self._observe(d, tail, tag) == 1
 
     def test_retry_after_error_is_kept(self):
-        """★ 失败词之后又有成功迹象 → 重试成功了, 不能拦。
+        """★ A success sign after a failure word -> the retry succeeded; must not block.
 
-        实测九仓 910 个路径③轮里有 9 轮命中失败词, 其中 **6 轮**后面紧跟
-        returncode>0 / REPLACED=1。只看失败词会把这 6 轮真改动误拦。
+        Measured: of 910 path-3 rounds across nine repos, 9 hit a failure word, and **6 of them** were immediately followed by
+        returncode>0 / REPLACED=1. Blocking on failure words alone would wrongly drop those 6 real changes.
         """
         with tempfile.TemporaryDirectory() as d:
-            assert self._observe(d, "AssertionError\n再试一次\nREPLACED=1", "rt") == 1
+            assert self._observe(d, "AssertionError\nTry again\nREPLACED=1", "rt") == 1
 
     def test_failure_patterns_are_case_sensitive(self):
-        """★ 判据不能用 re.I —— 会撞源码标识符。
+        """★ The matcher must not use re.I -- it would collide with source identifiers.
 
-        我第一版用 re.I 扫 `FAILED|...`, 在九仓上报出 50 轮失败, 其实 50 个全是
-        ansible 源码里的函数名 `v2_runner_on_failed` 被匹配到, 而那些轮
-        <returncode>0</returncode> 明明是成功的。
+        My first version scanned `FAILED|...` with re.I and reported 50 failed rounds across nine repos; all 50 were actually
+        matches on ansible source function names like `v2_runner_on_failed`, while those rounds'
+        <returncode>0</returncode> clearly indicated success.
         """
         from hy_memory.coding.chain_store import _EDIT_FAIL
         assert not _EDIT_FAIL.search("def v2_runner_on_failed(self, result):")
         assert not _EDIT_FAIL.search("    self._handle_failed_task()")
-        # 真的异常类名要抓到
+        # Real exception class names must be caught
         assert _EDIT_FAIL.search("\nAssertionError\n")

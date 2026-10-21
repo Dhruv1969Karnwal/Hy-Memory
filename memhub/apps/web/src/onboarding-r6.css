@@ -388,7 +388,7 @@
   font-size: 12px;
   color: #6a7988;
 }
-/* 143:2085 puts 导入历史包 first and the "没有本机历史？" sentence after it; the
+/* 143:2085 puts the Import history bundle first and the "No local history?" sentence after it; the
    markup keeps the sentence first so it stays the accessible label order for
    the control that follows. Reordering visually only, rather than moving the
    DOM, keeps that reading order intact. */
@@ -568,7 +568,7 @@
 }
 /* The step-1 heading carries tabindex="-1" only so the flow can move focus to
    it on mount for screen-reader announcement. It is not operable, and the
-   shared rule above drew a focus ring around 本机 AI 应用 on first paint. The
+   shared rule above drew a focus ring around Local AI apps on first paint. The
    focus move still happens; only the ring on a non-operable element is
    suppressed, and every real control keeps its ring. */
 .onboarding-r6 [tabindex="-1"]:focus-visible {
@@ -774,10 +774,10 @@
   }
 }
 
-/* 143:2126 is named "状态点 / 新发现呼吸" — the breathing dot is the one piece
+/* 143:2126 is named "Status dot / new discovery breathing" -- the breathing dot is the one piece
    of motion this step names outright, and it was not implemented. Scoped to
-   the found state, because that is what the source name says; a 未发现 or
-   无法访问 dot must stay still rather than imply activity. */
+   the found state, because that is what the source name says; a Not found or
+   Unreachable dot must stay still rather than imply activity. */
 .onboarding-r6-badge[data-found="true"] i {
   animation: onboarding-r6-dot-breath 2.2s ease-in-out infinite;
 }

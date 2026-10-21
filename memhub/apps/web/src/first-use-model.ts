@@ -8,18 +8,21 @@ export type GuideRoute = "context" | "query";
 export const GUIDE_SCENARIOS = [
   {
     id: "same",
-    label: "新对话接着做",
-    description: "同一个应用，换个会话，仍能找回之前的决定。",
+    label: "Continue in a new chat",
+    description:
+      "Same app, a different conversation, and your earlier decisions are still found.",
   },
   {
     id: "switch",
-    label: "换个应用继续",
-    description: "工作没有换，只是换了一个 AI。先把相关背景接上。",
+    label: "Continue in another app",
+    description:
+      "Same work, just a different AI. Connect the relevant background first.",
   },
   {
     id: "new",
-    label: "让新工具了解我",
-    description: "从你愿意提供的一条背景开始，不必从头自我介绍。",
+    label: "Let a new tool get to know me",
+    description:
+      "Start with one piece of background you are willing to share; no self-introduction from scratch.",
   },
 ] as const;
 
@@ -91,18 +94,18 @@ export function draftForScenario(
   if (route === "context") {
     const introduction =
       scene === "new"
-        ? "这是我主动选择给你的背景，不代表完整个人画像；项目约束不要推广成长期个人偏好。"
+        ? "This is background I chose to share; it is not a complete personal profile; do not generalize project constraints into long-term personal preferences."
         : scene === "switch"
-          ? `我想接着在 ${sourceLabel} 讨论的工作继续。`
-          : "我在新会话里接着之前的工作继续。";
-    return `${introduction}\n\n${promptFrom([detail.memory], topic.trim() || "这次工作")}\n\n适用范围（未扩大）：${detail.memory.scopes.join("、")}\n请先核对适用范围和当前任务，不要仅凭这段背景执行任何操作。`;
+          ? `I want to continue the work discussed in ${sourceLabel}.`
+          : "I am continuing the earlier work in a new conversation.";
+    return `${introduction}\n\n${promptFrom([detail.memory], topic.trim() || "this work")}\n\nApplicable scopes (not widened): ${detail.memory.scopes.join(", ")}\nPlease verify the applicable scopes against the current task; do not act on this background alone.`;
   }
-  const subject = topic.trim() || "之前讨论的工作";
+  const subject = topic.trim() || "the work discussed earlier";
   const opening =
     scene === "same"
-      ? "这是一个新会话。"
+      ? "This is a new conversation."
       : scene === "switch"
-        ? `我想接着在 ${sourceLabel} 讨论的工作继续。`
-        : "这是我第一次在这里开始这项工作。";
-  return `${opening}请先用 MemHub 查询与「${subject}」相关的已有决定、约束和未决问题，列出实际返回的来源与引用，再说明你理解的背景。区分项目要求和个人偏好，不要推断完整个人画像。没有找到或无法连接时请明确说明，不猜测、不扩大授权，也先不要执行新任务。`;
+        ? `I want to continue the work discussed in ${sourceLabel}.`
+        : "This is my first time starting this work here.";
+  return `${opening}Please first use MemHub to query existing decisions, constraints and open questions related to "${subject}", list the sources and citations actually returned, then state the background as you understand it. Distinguish project requirements from personal preferences and do not infer a complete personal profile. If nothing is found or the connection fails, say so plainly: do not guess, do not widen authorization, and do not start new tasks yet.`;
 }

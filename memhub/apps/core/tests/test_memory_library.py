@@ -145,7 +145,7 @@ def test_query_filters_before_expensive_freshness(database, monkeypatch) -> None
     assert time.perf_counter() - started < 1
 
 
-@pytest.mark.parametrize("query", ["%", "_", "\\", "50%_\\done", "' OR 1=1 --", "记忆"])
+@pytest.mark.parametrize("query", ["%", "_", "\\", "50%_\\done", "' OR 1=1 --", "memory"])
 def test_query_is_literal_substring_not_sql_or_like_pattern(database, query):
     with closing(sqlite3.connect(database)) as db, db:
         for index in range(1001):

@@ -1265,26 +1265,26 @@ class EvidenceStore:
         if not 1 <= limit <= 100_000:
             raise ValueError("limit must be between 1 and 100000")
         signals = (
-            "我是一名",
-            "我是一个",
-            "我叫",
-            "我姓",
-            "我喜欢",
-            "我偏好",
-            "我讨厌",
-            "我不喜欢",
-            "我习惯",
-            "我通常",
-            "我总是",
-            "我觉得",
-            "我的偏好",
-            "我的习惯",
-            "我的背景",
-            "请记住",
-            "记一下",
-            "以后",
-            "每次",
-            "默认",
+            "\u6211\u662f\u4e00\u540d",
+            "\u6211\u662f\u4e00\u4e2a",
+            "\u6211\u53eb",
+            "\u6211\u59d3",
+            "\u6211\u559c\u6b22",
+            "\u6211\u504f\u597d",
+            "\u6211\u8ba8\u538c",
+            "\u6211\u4e0d\u559c\u6b22",
+            "\u6211\u4e60\u60ef",
+            "\u6211\u901a\u5e38",
+            "\u6211\u603b\u662f",
+            "\u6211\u89c9\u5f97",
+            "\u6211\u7684\u504f\u597d",
+            "\u6211\u7684\u4e60\u60ef",
+            "\u6211\u7684\u80cc\u666f",
+            "\u8bf7\u8bb0\u4f4f",
+            "\u8bb0\u4e00\u4e0b",
+            "\u4ee5\u540e",
+            "\u6bcf\u6b21",
+            "\u9ed8\u8ba4",
             "i am a",
             "i'm a",
             "i like",
@@ -1320,13 +1320,13 @@ class EvidenceStore:
         if not 1 <= limit <= 100_000:
             raise ValueError("limit must be between 1 and 100000")
         signals = (
-            "这个可以记一下",
-            "这可以记一下",
-            "可以记录结论",
-            "结论可以记录",
-            "已经定稿",
-            "就这么定",
-            "最终确定",
+            "\u8fd9\u4e2a\u53ef\u4ee5\u8bb0\u4e00\u4e0b",
+            "\u8fd9\u53ef\u4ee5\u8bb0\u4e00\u4e0b",
+            "\u53ef\u4ee5\u8bb0\u5f55\u7ed3\u8bba",
+            "\u7ed3\u8bba\u53ef\u4ee5\u8bb0\u5f55",
+            "\u5df2\u7ecf\u5b9a\u7a3f",
+            "\u5c31\u8fd9\u4e48\u5b9a",
+            "\u6700\u7ec8\u786e\u5b9a",
         )
         predicates = " OR ".join("verbatim LIKE ?" for _ in signals)
         with self._connect() as connection:
@@ -1566,7 +1566,9 @@ class EvidenceStore:
                 conversation_id=str(row["conversation_id"]),
                 workspace=str(row["workspace"]) if row["workspace"] is not None else None,
                 project=str(row["project"]) if row["project"] is not None else None,
-                title=(str(row["title"]).strip()[:120] if row["title"] else "未命名对话"),
+                title=(
+                    str(row["title"]).strip()[:120] if row["title"] else "Untitled conversation"
+                ),
                 latest_at=datetime.fromisoformat(row["created_at"])
                 if row["created_at"]
                 else datetime.fromtimestamp(0, UTC),
@@ -1615,7 +1617,7 @@ class EvidenceStore:
         latest = max(
             rows, key=lambda record: (record.created_at or record.imported_at, record.evidence_id)
         )
-        title = users[0].verbatim.strip()[:120] if users else "未命名对话"
+        title = users[0].verbatim.strip()[:120] if users else "Untitled conversation"
         return ConversationSummaryRecord(
             evidence_id=latest.evidence_id,
             source_id=seed.source_id,

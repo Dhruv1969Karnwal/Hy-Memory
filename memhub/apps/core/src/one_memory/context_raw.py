@@ -83,12 +83,12 @@ def _terms(query: str) -> tuple[str, ...]:
 
 
 _HISTORICAL_REFERENCE = re.compile(
-    r"继续|接着|续接|接上|做到哪|下一步|未完成|上次|之前|以前|历史|过去|"
+    r"\u7ee7\u7eed|\u63a5\u7740|\u7eed\u63a5|\u63a5\u4e0a|\u505a\u5230\u54ea|\u4e0b\u4e00\u6b65|\u672a\u5b8c\u6210|\u4e0a\u6b21|\u4e4b\u524d|\u4ee5\u524d|\u5386\u53f2|\u8fc7\u53bb|"
     r"continue|resume|pick up|last time|before|history|earlier",
     re.I,
 )
 _FACT_STATEMENT = re.compile(
-    r"改为|更新为|定为|设定为|采用|决定|更正|旧值作废|记为|记录为|"
+    r"\u6539\u4e3a|\u66f4\u65b0\u4e3a|\u5b9a\u4e3a|\u8bbe\u5b9a\u4e3a|\u91c7\u7528|\u51b3\u5b9a|\u66f4\u6b63|\u65e7\u503c\u4f5c\u5e9f|\u8bb0\u4e3a|\u8bb0\u5f55\u4e3a|"
     r"changed to|updated to|set to|decided|corrected",
     re.I,
 )
@@ -191,8 +191,8 @@ def read_raw_context(
             match_values.append(f"%{_as_like_pattern(term)}%")
     coverage = " + ".join("(e.verbatim LIKE ? ESCAPE '\\')" for _ in terms)
     declarative = (
-        "CASE WHEN e.verbatim LIKE '%？%' OR e.verbatim LIKE '%?%' "
-        "OR e.verbatim LIKE '%只回答%' THEN 0 ELSE 1 END"
+        "CASE WHEN e.verbatim LIKE '%\uff1f%' OR e.verbatim LIKE '%?%' "
+        "OR e.verbatim LIKE '%\u53ea\u56de\u7b54%' THEN 0 ELSE 1 END"
         if _prefers_declared_facts(request.query)
         else "1"
     )
@@ -203,7 +203,7 @@ def read_raw_context(
         else "1"
     )
     echo_values: list[object] = (
-        [request.query.strip(), f"{request.query.strip()}。"]
+        [request.query.strip(), f"{request.query.strip()}\u3002"]
         if _prefers_declared_facts(request.query)
         else []
     )

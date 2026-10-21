@@ -1,6 +1,6 @@
 """Rule 15: the per-step HY trace is off unless the debug tier asks for it.
 
-hy memory app's lesson (§六) is that the step-level pipeline log is a
+hy memory app's lesson (section 6) is that the step-level pipeline log is a
 debugging instrument, not a product asset: left on, it grows without bound
 and every event is a write the product does not need. One Memory already has
 a master switch (`ONE_MEMORY_DIAGNOSTICS`), but the master switch answers a

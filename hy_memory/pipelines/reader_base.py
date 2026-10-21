@@ -10,8 +10,8 @@ Scoring:
   - VDB nodes (additive): final = sem
         + 𝟙[bm25>0] · w_bm25 · bm25_norm
         + 𝟙[ent>0] · w_tag · max(tag_cos, graph_entity_hit)
-    Defaults: w_bm25=0.2, w_tag=0.3, tag_cos thr=0.5 (env 可调)
-    Tag boost：LLM tag 上的实体；Graph Entity：正文 NER MENTIONS（均排除 PERSON）
+    Defaults: w_bm25=0.2, w_tag=0.3, tag_cos thr=0.5 (tunable via env)
+    Tag boost: entities on LLM tags; Graph Entity: NER MENTIONS from the content (both exclude PERSON)
   - Graph nodes: raw semantic for display; evidence_boost for intra-pool ranking
   - Graph quota guarantees schema/intention representation in results
 
@@ -128,19 +128,19 @@ from ._retrieval.trace import ReadTraceLogger
 
 logger = logging.getLogger(__name__)
 
-# Search 的 Schema 路只公开 L6。L0 仍可作为 owner gate / supplemental
-# proposition 的隐藏上下文使用，但只由 get_user_profile() 对外返回。
+# The Schema path of Search exposes only L6. L0 can still act as hidden context for the owner gate / supplemental
+# propositions, but is only exposed externally by get_user_profile().
 _HIDDEN_L0_LAYERS = [MemoryLayer.L0_BASIC_INFO]
 _VDB_HIDDEN_L0_LAYERS = [MemoryLayer.L0_BASIC_INFO]
 
-# L0 隐藏上下文召回候选上限（basic_info 是单条演化链，少量即可覆盖）。
+# Recall candidate cap for hidden L0 context (basic_info is a single evolution chain, a few candidates cover it).
 _HIDDEN_L0_RECALL_LIMIT = 10
 
-# 主 VDB 召回（语义 + BM25 关键词）覆盖的记忆层。
-# 覆盖 L2/L3/L4：fact / summary / identity。identity（L4）按 VDB 普通记忆处理，
-# 参与语义+BM25 融合排序，最终归入 normal 通道（不再算 profile）。
-# 与隐藏 L0 / Graph L6 通道互斥，杜绝双重召回。
-# 不含 L1_RAW（原始对话，append-only 不召回）、L5_KNOWLEDGE、L7（graph 专属通道）。
+# Memory layers covered by the main VDB recall (semantic + BM25 keyword).
+# Covers L2/L3/L4: fact / summary / identity. identity (L4) is handled as an ordinary VDB memory,
+# joins the semantic+BM25 fused ranking, and finally belongs to the normal channel (no longer counted as profile).
+# Mutually exclusive with the hidden L0 / Graph L6 channels, which rules out double retrieval.
+# Excludes L1_RAW (raw dialogue, append-only, never retrieved), L5_KNOWLEDGE and L7 (graph-dedicated channel).
 _VDB_RECALL_LAYERS = [
     MemoryLayer.L2_FACT,
     MemoryLayer.L3_SUMMARY,
@@ -352,7 +352,7 @@ class BaseReadPipeline(ReadPipeline):
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # 记忆关系图重排（用法 A / B / C，见 docs/pro_graph_design.md §3）
+    # Memory relation graph rerank (usages A / B / C, see docs/pro_graph_design.md §3)
     # ------------------------------------------------------------------
 
     def _graph_cfg(self):
@@ -367,7 +367,7 @@ class BaseReadPipeline(ReadPipeline):
         )
 
     def _episode_recall_on(self) -> bool:
-        """Episode 框选**不依赖图** —— 它只要 episode_id 字段 + 一次 VDB 过滤查询。"""
+        """Episode framing does **not depend on the graph** -- it only needs the episode_id field plus one filtered VDB query."""
         rcfg = getattr(self.config, "recall", None)
         return bool(rcfg is not None and getattr(rcfg, "episode_recall_enabled", False))
 
@@ -385,12 +385,12 @@ class BaseReadPipeline(ReadPipeline):
         dynamic_entity_tag_embed_enabled: bool = True,
         strict: bool = False,
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
-        """对**截断前**的召回池做图重排。
+        """Rerank the recall pool **before truncation**.
 
-        图是严格附加的：任何一步失败都原样返回入参，退化成"没有图"的行为。
+        The graph is strictly additive: any step failing returns the inputs unchanged, degrading to "no graph" behaviour.
 
         Returns:
-            (重排后的 hits（含用法 B 捞回的候选）, 关系路径, 观测统计)
+            (reranked hits (including candidates recovered by usage B), relation paths, observability statistics)
         """
         gcfg = self._graph_cfg()
         pool = {
@@ -410,8 +410,8 @@ class BaseReadPipeline(ReadPipeline):
                 temporal_affinity_factor,
             )
 
-            # 图边是可选的：episode 框选只要 episode_id 字段，graph 关掉时这里为空，
-            # 用法 A（池内传播）自然跳过，用法 B 仍能用 episode 候选跑起来。
+            # Graph edges are optional: episode framing only needs the episode_id field, so with graph off this is empty,
+            # usage A (in-pool propagation) is skipped naturally, and usage B still runs on episode candidates.
             edges = []
             if self._graph_rerank_on():
                 edges = await self._graph_store.get_related_edges(
@@ -434,7 +434,7 @@ class BaseReadPipeline(ReadPipeline):
             if adjacency:
                 hits = annotate_same_series_in_pool(hits, adjacency)
 
-            # ── 用法 A：池内支持度传播（不引入新候选）──
+            # ── Usage A: in-pool support propagation (introduces no new candidates) ──
             _moved = 0
             if adjacency:
                 new_scores, support = propagate_support(
@@ -458,19 +458,19 @@ class BaseReadPipeline(ReadPipeline):
                 "beta": getattr(gcfg, "propagate_beta", 0.15),
             }
 
-            # ── 用法 B：扩展 + 硬闸 + 多通道打分 +（可选）并进 seed ──
+            # ── Usage B: expansion + hard gate + multi-channel scoring + (optional) merge into seed ──
             #
-            # 扩展**无条件**发生（不做 query 意图 / scene judge），由打分决定谁浮上来。
+            # Expansion happens **unconditionally** (no query intent / scene judge); scoring decides what floats up.
             #
-            #   ① 度数归一化
-            #   ② k 跳 BFS + 多 seed 佐证
-            #   ②b episode 共属（有界叠加）
-            #   ③ 时间亲和（乘进 support）
-            #   ④ 类型配额 + 截 top-N
-            #   ⑤ 批量取向量算 sim
-            #   ⑥ 硬闸：sim ≥ seed_sim − δ
-            #   ⑦ 多通道分：语义 + BM25 + tag∩keyword + 时序 + co_occur/结构
-            #   ⑧ 通过闸的扩展按时间并进 seed（\\n\\n），不单独占坑
+            #   ① degree normalization
+            #   ② k-hop BFS + multi-seed corroboration
+            #   ②b episode co-membership (bounded additive)
+            #   ③ temporal affinity (multiplied into support)
+            #   ④ type quota + cut top-N
+            #   ⑤ batch fetch vectors and compute sim
+            #   ⑥ hard gate: sim ≥ seed_sim − δ
+            #   ⑦ multi-channel score: semantic + BM25 + tag∩keyword + temporal + co_occur/structure
+            #   ⑧ gate-passing expansions are merged into the seed in time order (\\n\\n), without occupying their own slot
             admitted_hits: List[Dict[str, Any]] = []
             gamma = getattr(gcfg, "relax_gamma", 0.3)
             if gamma > 0:
@@ -494,7 +494,7 @@ class BaseReadPipeline(ReadPipeline):
                 )
                 stats["reachable"] = len(reach)
 
-                # ②b Episode 共属
+                # ②b Episode co-membership
                 _ep = await self._episode_candidates(
                     vector_store, hits, new_scores, request, _seed_floor, _msb,
                     strict=strict,
@@ -523,7 +523,7 @@ class BaseReadPipeline(ReadPipeline):
                     cand_sims = await self._candidate_similarities(
                         vector_store, list(reach), query_embedding,
                     )
-                    # 通道特征：BM25(content) / tag∩keyword / 时序（相对 via_seed）
+                    # Channel features: BM25(content) / tag∩keyword / temporal (relative via_seed)
                     q_terms = tokenize_query_terms(request.query or "")
                     cand_nodes = await vector_store.get_by_ids(list(reach))
                     by_id = {
@@ -539,14 +539,14 @@ class BaseReadPipeline(ReadPipeline):
                         content = getattr(node, "content", "") if node else ""
                         tags = list(getattr(node, "tags", None) or []) if node else []
                         cand_bm25[cid] = keyword_content_overlap(q_terms, content)
-                        # 先写词面 overlap；下面批量用实体 tag 向量 cos 取 max 覆盖
+                        # Write the lexical overlap first; the batch below overwrites it with the entity tag vector cos, taking the max
                         cand_tag[cid] = tag_keyword_overlap(q_terms, tags)
                         cand_temporal[cid] = temporal_affinity_factor(
                             _times.get(cid), _times.get(via),
                             tau_days=_tau, floor=_tfloor,
                         )
 
-                    # expand tag 向量通道：实体 tags embed ↔ query embedding，与词面取 max
+                    # Expansion tag vector channel: entity tags embed <-> query embedding, taking the max with the lexical score
                     try:
                         ent_texts: List[str] = []
                         ent_owner: Dict[str, List[str]] = {}
@@ -630,9 +630,9 @@ class BaseReadPipeline(ReadPipeline):
                         stats["merged_seeds"] = sum(
                             1 for h in hits if h.get("graph_merged")
                         )
-                        admitted_hits = []  # 已并进 seed，不再追加独立 hit
+                        admitted_hits = []  # already merged into the seed, so no standalone hit is appended
 
-            # ── 用法 C：关系路径（独立通道）──
+            # ── Usage C: relation paths (independent channel) ──
             paths: List[Dict[str, Any]] = []
             if getattr(gcfg, "path_enabled", True):
                 paths = find_relation_paths(
@@ -662,12 +662,12 @@ class BaseReadPipeline(ReadPipeline):
         *,
         strict: bool = False,
     ) -> Dict[str, Tuple[float, str, str, int]]:
-        """用 episode_id 框出"同一次讨论"的候选，折算成结构支持度进同一漏斗。
+        """Frame the candidates of "the same discussion" with episode_id and turn them into structural support for the same funnel.
 
-        Episode 是 SDK 内部按写入时间间隔切出的一次讨论（跨 write 批次）。
-        同一 episode 的记忆彼此有真实关联但向量可能互不相似 —— 正是向量检索找不到的那部分。
-        用字段框选而不是建边：一个 episode 10-30 条，两两连边是 45-435 条；
-        也因此**不依赖图**，`MEMORY_ENABLE_GRAPH=false` 时同样可用。
+        An episode is one discussion the SDK cuts out internally by write time gaps (spanning write batches).
+        Memories in one episode are genuinely related yet their vectors may be mutually dissimilar -- exactly the part vector retrieval cannot find.
+        Framing by field instead of building edges: an episode holds 10-30 items, pairwise edges would be 45-435;
+        it therefore **does not depend on the graph** and works just as well with `MEMORY_ENABLE_GRAPH=false`.
         """
         rcfg = getattr(self.config, "recall", None)
         if rcfg is None or not getattr(rcfg, "episode_recall_enabled", False):
@@ -675,7 +675,7 @@ class BaseReadPipeline(ReadPipeline):
         try:
             from ._graph.rerank import episode_support
 
-            # 只从高分命中取 episode，避免从噪声里框候选
+            # Take episodes only from high-scoring hits, so candidates are not framed out of noise
             eps = {
                 (getattr(h.get("node"), "episode_id", "") or "")
                 for h in hits
@@ -702,7 +702,7 @@ class BaseReadPipeline(ReadPipeline):
             if not by_ep:
                 return {}
 
-            # 更新 hits 里的分数视图（传播后的分数），供 seed 选择使用
+            # Update the score view inside hits (post-propagation scores) for seed selection
             _hits_view = [
                 {**h, "score": scores.get(h.get("node_id"), h.get("score", 0.0))}
                 for h in hits
@@ -723,7 +723,7 @@ class BaseReadPipeline(ReadPipeline):
     async def _candidate_similarities(
         vector_store, cand_ids: List[str], query_embedding: List[float],
     ) -> Dict[str, float]:
-        """算候选与 query 的余弦。用库里存的向量，不重新 embed。"""
+        """Compute the cosine between candidates and the query, reusing the vectors stored in the database instead of re-embedding."""
         if not cand_ids or not query_embedding:
             return {}
         embs = await vector_store.get_embeddings(cand_ids)
@@ -969,7 +969,7 @@ class BaseReadPipeline(ReadPipeline):
     async def _materialize_admitted(
         vector_store, admitted: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """把用法 B 准入的候选补成标准 hit（回 VDB 取 node，顺带过滤已删/不可见的）。"""
+        """Complete usage-B admitted candidates into standard hits (fetching nodes back from the VDB and filtering deleted/invisible ones along the way)."""
         if not admitted:
             return []
         nodes = await vector_store.get_by_ids([a["node_id"] for a in admitted])
@@ -979,7 +979,7 @@ class BaseReadPipeline(ReadPipeline):
             node = by_id.get(a["node_id"])
             if node is None:
                 continue
-            # 图里可能还留着已被逻辑删除的节点，这里以 VDB 的 status 为准
+            # The graph may still hold logically deleted nodes; the VDB status is authoritative here
             if getattr(node, "status", None) is not None and \
                     getattr(node.status, "value", "") == MemoryStatus.SHADOW.value:
                 continue
@@ -999,7 +999,7 @@ class BaseReadPipeline(ReadPipeline):
     async def _decorate_paths(
         vector_store, paths: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """给关系路径补上节点内容 —— 路径要交给答案 LLM 读，光有 id 没用。"""
+        """Attach node content to the relation paths -- the paths go to the answer LLM, where ids alone are useless."""
         if not paths:
             return []
         all_ids = {nid for p in paths for nid in p.get("nodes", [])}
@@ -1017,7 +1017,7 @@ class BaseReadPipeline(ReadPipeline):
                 if i < len(p.get("relations", [])):
                     rel = p["relations"][i]
                     step = {"relation": rel.get("type")}
-                    # 有向边（temporal_next）带方向，否则"X 之后"和"之前"分不开
+                    # Directed edges (temporal_next) carry direction; otherwise "after X" and "before" cannot be told apart
                     if rel.get("direction"):
                         step["direction"] = rel["direction"]
                     steps.append(step)
@@ -1150,7 +1150,7 @@ class BaseReadPipeline(ReadPipeline):
                 return response
 
             # --- Load config ---
-            # Additive fusion（按条加成，不再全局 has_bm25 把无 BM25 的 sem×0.6）:
+            # Additive fusion (per-item bonus, no more global has_bm25 scaling BM25-less sem by 0.6):
             #   final = sem + 𝟙[bm25>0]·W_BM25·bm25 + 𝟙[tag_cos>0]·W_TAG·tag_cos
             W_BM25 = _float_env("MEMORY_HYBRID_V2_VDB_WEIGHT_BM25", 0.35)
             W_TAG = _float_env("MEMORY_HYBRID_V2_VDB_WEIGHT_TAG", 0.3)
@@ -1189,10 +1189,10 @@ class BaseReadPipeline(ReadPipeline):
             GEO_INTENT_PRIOR = _float_env("MEMORY_HYBRID_V2_GEO_INTENT_PRIOR", 0.6)
             EV_BOOST_MAX = _float_env("MEMORY_HYBRID_V2_EVIDENCE_BOOST_MAX", 0.3)
             EV_SATURATE = _int_env("MEMORY_HYBRID_V2_EVIDENCE_SATURATE", 5)
-            # keyword-only 命中：给虚 sem 底，避免 0.2·bm25 过不了 MIN_SCORE（P1）
+            # keyword-only hits: give a virtual sem floor so 0.2·bm25 does not fail MIN_SCORE (P1)
             KW_ONLY_SEM_FLOOR = _float_env("MEMORY_HYBRID_V2_KW_ONLY_SEM_FLOOR", 0.4)
             RRF_BLEND = _float_env("MEMORY_HYBRID_V2_RRF_BLEND", 0.4)
-            # Light-search temporal / diversity（零 LLM；env 可关）
+            # Light-search temporal / diversity (zero LLM; can be switched off via env)
             TEMPORAL_ADMIT = _float_env("MEMORY_HYBRID_V2_TEMPORAL_ADMIT_PRIOR", 0.55)
             TEMPORAL_BOOST = _float_env("MEMORY_HYBRID_V2_TEMPORAL_BOOST", 0.18)
             TEMPORAL_MONTH_BOOST = _float_env("MEMORY_HYBRID_V2_TEMPORAL_MONTH_BOOST", 0.08)
@@ -1533,13 +1533,13 @@ class BaseReadPipeline(ReadPipeline):
                 "exclude_sources": request.exclude_sources,
             }
 
-            # 定向召回：request.layers 指定时 normal 路只召回目标层级，否则无关层级
-            # 会挤占 limit 名额、导致目标层级召回不足（client 层的兜底过滤只能筛掉
-            # 多余的，补不回少召的）。此前本 reader 忽略 request.layers，是静默失效。
+            # Targeted recall: when request.layers is set, the normal path recalls only those layers, otherwise
+            # irrelevant layers occupy limit slots and the target layers end up under-recalled (the client-layer fallback filter can only drop
+            # the surplus, it cannot restore what was never recalled). This reader previously ignored request.layers, failing silently.
             #
-            # profile / graph 路仍按固定层级召回：其配额
-            # 独立于 normal，不存在互相挤占，多召回的部分由 client 层按 layers 筛掉。
-            # 三路的返回结果按固定下标 unpack，不能因跳过某路而改变任务顺序。
+            # The profile / graph paths still recall on their fixed layers: their quotas
+            # are independent of normal, so there is no mutual crowding, and the client layer filters the surplus by layers.
+            # The three paths are unpacked by fixed index, so the task order must not change because one path is skipped.
             _normal_layers = (
                 [MemoryLayer.from_string(layer) for layer in request.layers]
                 if request.layers else _VDB_RECALL_LAYERS
@@ -1567,10 +1567,10 @@ class BaseReadPipeline(ReadPipeline):
             )
 
             # Parallel recall tasks
-            # 召回池纳入 SUPERSEDED（被取代的旧节点）+ only_latest=False：
-            # 命中旧节点后由 expand_evolution_chains 从命中点双向展开整链；
-            # 同链多节点命中会在 expand 阶段去重为一条（以链头为代表）。
-            # SHADOW（逻辑删除）不纳入。隐藏 L0 上下文保持只 ACTIVE。
+            # The recall pool includes SUPERSEDED (superseded old nodes) with only_latest=False:
+            # once an old node is hit, expand_evolution_chains unfolds the whole chain bidirectionally from that point;
+            # several hits in the same chain are deduplicated into one during expansion (represented by the chain head).
+            # SHADOW (logical deletion) is not included. The hidden L0 context stays ACTIVE-only.
             _recall_status = [MemoryStatus.ACTIVE, MemoryStatus.SUPERSEDED]
             recall_tasks = [
                 # Channel 1: VDB Semantic (L0/L2/L3/L4)
@@ -1598,9 +1598,9 @@ class BaseReadPipeline(ReadPipeline):
                     include_sources=request.include_sources,
                     exclude_sources=request.exclude_sources,
                 ),
-                # Profile VDB recall：L0 是 user-level，只按 user_ids 搜索，不携带
-                # agent/session isolation。历史 agent-level 多链在结果解包后折叠为一条。
-                # 用固定索引解包，故无 user 范围时返回空协程而非跳过任务。
+                # Profile VDB recall: L0 is user-level, searched by user_ids only, without
+                # agent/session isolation. Historical agent-level multi-chains are folded into one after unpacking.
+                # Unpacking uses fixed indices, so with no user scope an empty coroutine is returned instead of skipping the task.
                 self._recall_user_level_l0(
                     vector_store, request,
                 ),
@@ -1669,7 +1669,7 @@ class BaseReadPipeline(ReadPipeline):
                     only_latest=True,
                 ))
 
-            # Channel 3: Graph 正路（only if graph_store available）
+            # Channel 3: Graph forward path (only if graph_store available)
             has_graph = self._graph_store is not None
             schema_search_on = has_graph and schema_limit != 0
             graph_user_id = request.user_id or (request.user_ids[0] if request.user_ids else "")
@@ -1677,7 +1677,7 @@ class BaseReadPipeline(ReadPipeline):
             if schema_search_on:
                 # Graph search: use user_id prefix match (not exact isolation_key)
                 # because isolation_key may have wrong agent/session when agent_ids list is used.
-                # L6 属于 schema 路，阈值用 schema_min_score，而非 MIN_SCORE。
+                # L6 belongs to the schema path, so the threshold is schema_min_score, not MIN_SCORE.
                 graph_idx = len(recall_tasks)
                 graph_recall_threshold = (
                     min(schema_min_score, explicit_state_min_score)
@@ -1720,7 +1720,7 @@ class BaseReadPipeline(ReadPipeline):
                     raise RuntimeError("Underflow recall channel failed") from failure
 
             # Unpack results (handle exceptions gracefully)
-            # 固定前 3 路: vdb_semantic, vdb_keyword, profile
+            # The first 3 fixed paths: vdb_semantic, vdb_keyword, profile
             vdb_semantic_hits = results[0] if not isinstance(results[0], Exception) else []
             vdb_keyword_hits = results[1] if not isinstance(results[1], Exception) else []
             # Dynamic L3 capsules are parent context, not global competitors. They
@@ -1829,8 +1829,8 @@ class BaseReadPipeline(ReadPipeline):
                         series_only=EPISODE_MEMBER_MODE == "series_direct",
                     )
 
-            # Proactive 路：intention（L7）从 VDB 召回（与 graph 解耦，全模式可用），
-            # 过期惰性转 L2_FACT。仅当 intention_limit > 0 时启用。
+            # Proactive path: intention (L7) recalled from the VDB (decoupled from the graph, available in all modes),
+            # expired ones lazily converted to L2_FACT. Enabled only when intention_limit > 0.
             graph_intention_hits: List[Dict[str, Any]] = []
             if request.intention_limit > 0:
                 _t_intent = datetime.now()
@@ -1895,11 +1895,11 @@ class BaseReadPipeline(ReadPipeline):
             # =========================================================
             # Stage 5: BM25 score normalization
             # =========================================================
-            # 后端的 keyword_search 分两类：
-            #   - keyword_score_normalized=True（后端已返回 [0,1] 分数）：
-            #     分已在 [0,1]，直接用，不能再过 normalize_bm25（那个 sigmoid 为
-            #     "经典 BM25 原始分 0~20" 标定，会把 ~1 的分压成 ~0.03）。
-            #   - False（经典 BM25 原始分）：用 sigmoid 归一化。
+            # Backend keyword_search falls into two categories:
+            #   - keyword_score_normalized=True (backend already returns [0,1] scores):
+            #     the scores are already in [0,1], use them directly and never run them through normalize_bm25 (that sigmoid is
+            #     calibrated for "classic BM25 raw scores 0~20" and would squash a score of ~1 down to ~0.03).
+            #   - False (classic BM25 raw scores): normalize with the sigmoid.
             kw_normalized = getattr(vector_store, "keyword_score_normalized", False)
             midpoint, steepness = get_bm25_params(request.query, query_lemmatized)
             keyword_scores: Dict[str, float] = {}
@@ -1983,15 +1983,15 @@ class BaseReadPipeline(ReadPipeline):
             response.extra["retrieval_clauses"] = retrieval_clause_info
 
             # =========================================================
-            # Stage 6: VDB fusion（按条加成）
+            # Stage 6: VDB fusion (per-item bonus)
             #   final = sem
             #         + 𝟙[bm25>0] · W_BM25 · bm25
             #         + 𝟙[ent>0] · W_TAG · max(tag_cos, graph_entity_hit)
-            # tag_cos = LLM tag 实体 embedding；graph_entity = 正文 NER MENTIONS
+            # tag_cos = embeddings of LLM tag entities; graph_entity = NER MENTIONS from the content
             # =========================================================
-            # for_boost=True：排除 PERSON 等不适类型，避免对话人名冲垮 top-k
+            # for_boost=True: exclude unsuitable types such as PERSON so person names from dialogue do not swamp top-k
             query_ents = extract_entities(request.query or "", for_boost=True)
-            # 批量 embed：query 实体 span + 候选实体 tags
+            # Batch embed: query entity spans + candidate entity tags
             emb_texts: List[str] = []
             for span, _lab in query_ents:
                 if span and span not in emb_texts:
@@ -2006,7 +2006,7 @@ class BaseReadPipeline(ReadPipeline):
                 "embedded_vector_count": 0,
             }
             if query_ents:
-                # 先收集候选节点上的实体 tags
+                # Collect the entity tags on candidate nodes first
                 cand_nodes_for_tag: List[Any] = []
                 for r in list(vdb_semantic_hits) + list(vdb_keyword_hits):
                     n = r.get("node")
@@ -2050,9 +2050,9 @@ class BaseReadPipeline(ReadPipeline):
                             tag_cos_by_id[nid] = cos
                             tag_pair_by_id[nid] = pair
 
-            # geo-intent prior：问句无 boostable 实体但仍在问地点时，
-            # 给候选 GPE/LOC/FAC tag 一个 modest prior（+ w_tag·prior），
-            # 并用问句月/年软约束，避免把蜜月/其他行程一起抬满。
+            # geo-intent prior: when the query has no boostable entity but still asks about a place,
+            # give candidate GPE/LOC/FAC tags a modest prior (+ w_tag·prior),
+            # and apply the soft month/year constraint from the query so honeymoons and other trips are not all boosted together.
             if GEO_INTENT_PRIOR > 0:
                 cand_nodes_geo: List[Any] = []
                 seen_geo = set()
@@ -2071,7 +2071,7 @@ class BaseReadPipeline(ReadPipeline):
                     prior=GEO_INTENT_PRIOR,
                 )
 
-            # Graph Entity MENTIONS：正文实体反查（tags 没有 Tokyo 时仍可 boost）
+            # Graph Entity MENTIONS: reverse lookup from body entities (boost still possible when tags lack Tokyo)
             entity_boost_by_id: Dict[str, float] = {}
             entity_hit_meta: Dict[str, Any] = {}
             if (
@@ -2148,7 +2148,7 @@ class BaseReadPipeline(ReadPipeline):
                 if nid not in seen_vdb:
                     bm25_score = keyword_scores.get(nid, 0.0)
                     fused = _fused_ent(nid)
-                    # 虚 sem 底：纯 keyword 命中否则 final≈w_bm25·bm25 常 < MIN_SCORE
+                    # Virtual sem floor: otherwise keyword-only hits give final≈w_bm25·bm25, usually < MIN_SCORE
                     _kw_sem = float(KW_ONLY_SEM_FLOOR) * float(bm25_score)
                     final = score_vdb_node_additive(
                         _kw_sem,
@@ -2173,7 +2173,7 @@ class BaseReadPipeline(ReadPipeline):
                             "_entity_hit": entity_hit_meta.get(nid),
                         })
 
-            # Entity 图命中但不在 sem/kw 池：从 VDB 补进（sem=0 + entity boost）
+            # Entity graph hits absent from the sem/kw pool: backfill from the VDB (sem=0 + entity boost)
             _missing_ent = [
                 nid for nid in entity_boost_by_id if nid not in seen_vdb
             ]
@@ -2216,8 +2216,8 @@ class BaseReadPipeline(ReadPipeline):
                 except Exception as e:
                     logger.debug("[%s] materialize entity hits failed: %s", self.VERSION, e)
 
-            # Memory Strength（默认关闭）：normal 通道 idle 衰减 × 频次（profile 层
-            # L0/L4 不参与），在 sort 前乘进 score。
+            # Memory Strength (disabled by default): idle decay x frequency on the normal channel (profile layers
+            # L0/L4 excluded), multiplied into score before sorting.
             if getattr(self.config.recall, "strength_enabled", False):
                 _tau = getattr(self.config.recall, "strength_tau", 180.0)
                 _hidden_l0_vals = {layer.value for layer in _HIDDEN_L0_LAYERS}
@@ -2226,8 +2226,8 @@ class BaseReadPipeline(ReadPipeline):
                     score_key="score", tau=_tau,
                 )
 
-            # P1：先 RRF blend，再做日级 temporal admit ——
-            # temporal_day 无 sem/bm25，若放在 RRF 之后会被 blend 压掉。
+            # P1: RRF blend first, then day-level temporal admit --
+            # temporal_day has no sem/bm25, so placing it after RRF would let the blend suppress it.
             if RRF_BLEND > 0 and len(vdb_scored) > 1:
                 vdb_scored = blend_rrf_into_scores(
                     vdb_scored, blend=RRF_BLEND, bm25_weight=1.25,
@@ -2238,9 +2238,9 @@ class BaseReadPipeline(ReadPipeline):
                     if it.get("node_id")
                 }
 
-            # ── Light temporal（正则抽日/月，无 LLM / 无 rewrite）──
-            # 日级：list_by_user 扫入同日记忆（解决 "9th December 2023" 语义池 miss）。
-            # 月级：仅对已在池内的候选软加分（避免整月灌池）。
+            # ── Light temporal (regex day/month extraction, no LLM / no rewrite) ──
+            # Day level: list_by_user scans in same-day memories (fixes "9th December 2023" misses in the semantic pool).
+            # Month level: soft bonus for candidates already in the pool (avoids flooding the pool with a whole month).
             _day_hints = query_day_hints(request.query or "")
             _month_hints = query_time_hints(request.query or "")
             if _day_hints and TEMPORAL_ADMIT > 0:
@@ -2268,7 +2268,7 @@ class BaseReadPipeline(ReadPipeline):
                             (float(x.get("score") or 0.0) for x in vdb_scored),
                             default=float(TEMPORAL_ADMIT),
                         )
-                        # 同日记忆要能挤进 top-k：对齐当前池顶附近，而不是固定低 prior。
+                        # Same-day memories must be able to push into top-k: align near the current pool head instead of a fixed low prior.
                         _admit_score = max(
                             float(TEMPORAL_ADMIT), float(_anchor) - 0.05
                         )
@@ -2340,10 +2340,10 @@ class BaseReadPipeline(ReadPipeline):
             )
 
             # =========================================================
-            # Stage 7: Profile 正路 —— graph L6 evidence boost
+            # Stage 7: Profile forward path -- graph L6 evidence boost
             # =========================================================
-            # 正路：graph vector_search 命中的 L6（已过 schema_min_score），按
-            # 证据数加成排序。每项 score = raw 语义分；_internal 仅用于正路内部排序。
+            # Forward path: L6 hit by graph vector_search (already past schema_min_score), ranked by
+            # evidence-count bonus. Each score = raw semantic score; _internal is only for ordering inside the forward path.
             forward_l6: List[Dict[str, Any]] = []
             if schema_search_on and graph_schema_hits:
                 for r in graph_schema_hits:
@@ -2373,9 +2373,9 @@ class BaseReadPipeline(ReadPipeline):
                 forward_l6.sort(key=lambda x: x["_internal"], reverse=True)
 
             # =========================================================
-            # Stage 8: Schema 反路 + RRF 融合
+            # Stage 8: Schema reverse path + RRF fusion
             # =========================================================
-            # 反路：从 normal 命中的 VDB 节点反查支撑它们的 L6（按支撑度排序，不卡阈值）。
+            # Reverse path: from the VDB nodes hit by normal, look up the L6 that supports them (ranked by support, no threshold cut).
             reverse_l6: List[Dict[str, Any]] = []
             if schema_search_on and vdb_scored:
                 reverse_l6 = await reverse_lookup_l6(
@@ -2390,13 +2390,13 @@ class BaseReadPipeline(ReadPipeline):
                     if hit.get("_schema_kind") != "balanced_persona_catalog"
                 ]
 
-            # 正反 RRF 融合（rank 级，规避正路语义分 vs 反路支撑度不可比）。
-            # RRF 输出只保留 node_id/node，content/layer 需从 node_id→item map 重新 hydrate。
+            # Forward/reverse RRF fusion (rank level, avoiding the incomparability of forward semantic scores vs reverse support).
+            # RRF output keeps only node_id/node, so content/layer must be rehydrated from the node_id→item map.
             fused_l6: List[Dict[str, Any]] = []
             if forward_l6 or reverse_l6:
                 _l6_by_id: Dict[str, Dict[str, Any]] = {}
                 for it in forward_l6 + reverse_l6:
-                    _l6_by_id.setdefault(it["node_id"], it)  # 正路优先保留（先填）
+                    _l6_by_id.setdefault(it["node_id"], it)  # forward entries win (filled first)
                 fused = rrf_fuse({"forward": forward_l6, "reverse": reverse_l6})
                 for f in fused:
                     src = _l6_by_id.get(f["node_id"], {})
@@ -2414,12 +2414,12 @@ class BaseReadPipeline(ReadPipeline):
                     })
 
             # =========================================================
-            # Stage 9: Intention（不占 limit 配额，末尾追加）
+            # Stage 9: Intention (does not consume the limit quota, appended at the end)
             # =========================================================
             intention_results = list(graph_intention_hits)
 
             # =========================================================
-            # Stage 10: 演化链展开（normal VDB + 隐藏 L0 上下文；均有 node 对象）
+            # Stage 10: evolution chain expansion (normal VDB + hidden L0 context; both have node objects)
             # =========================================================
             _t_evo = datetime.now()
             expandable = vdb_scored + list(hidden_l0_hits)
@@ -2431,8 +2431,8 @@ class BaseReadPipeline(ReadPipeline):
                 )
             else:
                 expanded = []
-            # 时间过滤末端兜底：keyword_search(BM25) / graph 通道不支持下推 created_after，
-            # 统一在这里按事件时间再过一遍（见 _retrieval/temporal.py）
+            # Final fallback for the time filter: keyword_search(BM25) / graph channels cannot push created_after down,
+            # so everything is filtered once more here by event time (see _retrieval/temporal.py)
             expanded = filter_hits_by_created_after(expanded, request.created_after)
             _evo_ms = (datetime.now() - _t_evo).total_seconds() * 1000
             await trace_log.log_evolution(
@@ -2442,7 +2442,7 @@ class BaseReadPipeline(ReadPipeline):
             )
 
             # =========================================================
-            # Stage 11: 组装 —— normal（截断 + 出口阈值）+ L6 schema
+            # Stage 11: assembly -- normal (truncation + exit threshold) + L6 schema
             # =========================================================
             _hidden_l0_layer_vals = {layer.value for layer in _HIDDEN_L0_LAYERS}
 
@@ -2450,14 +2450,14 @@ class BaseReadPipeline(ReadPipeline):
                 nd = item.get("node")
                 return nd.layer.value if (nd and getattr(nd, "layer", None)) else (item.get("layer") or "")
 
-            # normal：演化展开后的 VDB 项（排除隐藏 L0）
+            # normal: VDB items after evolution expansion (hidden L0 excluded)
             normal_results = [
                 it for it in expanded
                 if _layer_of(it) not in _hidden_l0_layer_vals
             ]
-            # ── Stage 11a: 记忆关系图重排（用法 A/B/C，见 docs/pro_graph_design.md）──
-            # **必须在截断之前**：A 的价值在于"从几十条扩池候选里重新决定哪 N 条进最终结果"，
-            # 只把已选出的 top-N 换个顺序收益很小。
+            # ── Stage 11a: memory relation graph rerank (usages A/B/C, see docs/pro_graph_design.md) ──
+            # **Must run before truncation**: the value of A is re-deciding "which N of the several dozen expanded candidates reach the final result";
+            # merely reordering an already selected top-N brings little.
             relation_paths: List[Dict[str, Any]] = []
             _graph_stats: Dict[str, Any] = {}
             if self._expansion_on():
@@ -2511,7 +2511,7 @@ class BaseReadPipeline(ReadPipeline):
                     fact_limit=_fact_slots,
                 )[:final_limit]
             response.extra["session_episode_context_applied"] = SESSION_EPISODE_CONTEXT_APPLIED
-            # P0 light diversity：社交模板 / 池 DF / 近重复降权 + MMR
+            # P0 light diversity: downweight social templates / pool DF / near-duplicates + MMR
             if DIVERSITY_ON and normal_results and not SESSION_EPISODE_CONTEXT_APPLIED:
                 if SOCIAL_BOILER_PENALTY > 0:
                     normal_results = social_boilerplate_demote(
@@ -3343,8 +3343,8 @@ class BaseReadPipeline(ReadPipeline):
                 )
                 response.extra["supplemental_propositions"] = supplement_info
 
-            # Search 的 schema 通道只公开 L6。L0 仍作为 owner gate 的隐藏上下文，
-            # 由 get_user_profile() 单独返回；promoted L2 回到 normal，不占 schema 配额。
+            # The schema channel of Search exposes only L6. L0 remains hidden context for the owner gate,
+            # returned separately by get_user_profile(); promoted L2 goes back to normal and does not take schema quota.
             normal_ids = {
                 str(member.get("node_id") or "")
                 for item in normal_results
@@ -3397,7 +3397,7 @@ class BaseReadPipeline(ReadPipeline):
                 final_limit=final_limit,
             )
 
-            # 最终结果：normal + L6 schema + intention。L0 不再进入 Search。
+            # Final result: normal + L6 schema + intention. L0 no longer enters Search.
             final_results = normal_results + schema_results
             if intention_results:
                 final_results = final_results + intention_results
@@ -3411,7 +3411,7 @@ class BaseReadPipeline(ReadPipeline):
                 is_evolved = bool(item.get("is_evolved"))
 
                 if node:
-                    # VDB node；图扩展并进 seed 后 item["content"] 为合成文本
+                    # VDB node; once graph expansion is merged into the seed, item["content"] holds synthetic text
                     content = item.get("content") or node.content
                     layer = node.layer.value
                     speculate = getattr(node, "speculate", None)
@@ -3466,8 +3466,8 @@ class BaseReadPipeline(ReadPipeline):
                         item.get("retrieval_source") or item.get("source") or ""
                     ),
                     "_schema_channel": bool(item.get("_schema_channel")),
-                    # 调用方自定义 meta（透传负载）。只透出 custom["meta"]，custom 里
-                    # 其余是内部字段（request_id / supersede_reason 等），不外泄。
+                    # Caller-defined meta (pass-through payload). Only custom["meta"] is exposed; the rest of custom
+                    # holds internal fields (request_id / supersede_reason, etc.) that must not leak.
                     "meta": list(((getattr(node, "custom", None) or {}) if node else {}).get("meta") or []),
                     # Private pipeline marker consumed by HyMemoryClient before
                     # returning the public response.  Canonical states have their
@@ -3498,8 +3498,8 @@ class BaseReadPipeline(ReadPipeline):
 
                 response.memories.append(mem_entry)
 
-            # 防泄漏兜底：主过滤必须已在 VDB / Graph 的 limit 前完成；这里只验证
-            # 图扩展、演化链等组合步骤没有把被排除来源重新带回来。
+            # Leak-prevention fallback: the main filter must already run before the VDB / Graph limit; this only verifies
+            # that composition steps such as graph expansion and evolution chains did not bring excluded sources back in.
             from ..utils.source_filter import source_allowed
             response.memories = [
                 memory for memory in response.memories
@@ -3552,8 +3552,8 @@ class BaseReadPipeline(ReadPipeline):
                 "multi_seed_bundle_enabled": MULTI_SEED_BUNDLE_ON,
                 "multi_seed_bundle_mode": MULTI_SEED_BUNDLE_MODE,
             }
-            # 用法 C：关系路径走**独立字段**，不参与主排序。
-            # 把路径节点混进平铺的召回列表会丢掉关系语义，答案 LLM 只看到几条互不相干的记忆。
+            # Usage C: relation paths travel in their **own field** and take no part in the main ranking.
+            # Mixing path nodes into the flat recall list would lose the relation semantics, leaving the answer LLM a few unrelated memories.
             if relation_paths:
                 response.extra["related_paths"] = relation_paths
             if _graph_stats:

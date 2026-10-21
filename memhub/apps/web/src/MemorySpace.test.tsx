@@ -313,8 +313,8 @@ describe("MemorySpace", () => {
     it("navigates the memory mode tabs with the arrow keys", async () => {
       const view = render(<MemorySpace />);
       void view;
-      const mapTab = screen.getByRole("tab", { name: "工作台" });
-      const libraryTab = screen.getByRole("tab", { name: "记忆库" });
+      const mapTab = screen.getByRole("tab", { name: "Workbench" });
+      const libraryTab = screen.getByRole("tab", { name: "Library" });
       // WAI-ARIA tabs pattern: one tabstop only, the selected one.
       expect(mapTab.tabIndex).toBe(0);
       expect(libraryTab.tabIndex).toBe(-1);
@@ -328,13 +328,13 @@ describe("MemorySpace", () => {
       expect(document.activeElement).toBe(mapTab);
       // Home/End jump to the ends of the tablist.
       await userEvent.keyboard("{End}");
-      const historyTab = screen.getByRole("tab", { name: "历史对话" });
+      const historyTab = screen.getByRole("tab", { name: "History" });
       expect(historyTab.getAttribute("aria-selected")).toBe("true");
       expect(document.activeElement).toBe(historyTab);
       await userEvent.keyboard("{Home}");
       expect(mapTab.getAttribute("aria-selected")).toBe("true");
       // Every tab points at a panel that exists.
-      for (const label of ["工作台", "记忆库", "问记忆", "历史对话"]) {
+      for (const label of ["Workbench", "Library", "Ask memories", "History"]) {
         const tab = screen.getByRole("tab", { name: label });
         const controls = tab.getAttribute("aria-controls");
         expect(controls).toBeTruthy();
@@ -344,9 +344,11 @@ describe("MemorySpace", () => {
 
     it("keeps the map DOM, selection, filters and question across every teaching view and route", async () => {
       const view = render(<MemorySpace />);
-      const map = await screen.findByRole("region", { name: "记忆工作台" });
+      const map = await screen.findByRole("region", {
+        name: "Memory workbench",
+      });
       await userEvent.type(
-        within(map).getByLabelText("筛选地图记忆"),
+        within(map).getByLabelText("Filter map memories"),
         "Initial",
       );
       await userEvent.click(
@@ -354,22 +356,24 @@ describe("MemorySpace", () => {
       );
       await within(map).findByText("Original words");
       await userEvent.type(
-        within(map).getByLabelText("向记忆提问"),
+        within(map).getByLabelText("Ask your memories"),
         "Unsent map question",
       );
-      await userEvent.click(within(map).getByRole("button", { name: "纠正" }));
-      fireEvent.change(within(map).getByLabelText("记忆内容"), {
+      await userEvent.click(
+        within(map).getByRole("button", { name: "Correct" }),
+      );
+      fireEvent.change(within(map).getByLabelText("Memory content"), {
         target: { value: "Unsent correction" },
       });
       const canvas = screen.getByTestId("memory-graph");
       // The teaching prop is gone; the invariant to keep is that switching
       // between the real tabs must not rebuild the map or drop its state.
       for (const [label, mode] of [
-        ["工作台", "map"],
-        ["记忆库", "library"],
-        ["问记忆", "ask"],
-        ["历史对话", "history"],
-        ["工作台", "map"],
+        ["Workbench", "map"],
+        ["Library", "library"],
+        ["Ask memories", "ask"],
+        ["History", "history"],
+        ["Workbench", "map"],
       ] as const) {
         await userEvent.click(screen.getByRole("tab", { name: label }));
         expect(view.container.querySelector(".core-memory-map")).toBe(map);
@@ -382,35 +386,39 @@ describe("MemorySpace", () => {
         ).toBe("true");
       }
       view.rerender(<MemorySpace active={false} />);
-      expect(screen.queryByRole("region", { name: "记忆空间" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Memory space" })).toBeNull();
       expect(map.hidden).toBe(true);
       view.rerender(<MemorySpace />);
       expect(
         screen
-          .getByRole("tab", { name: "工作台" })
+          .getByRole("tab", { name: "Workbench" })
           .getAttribute("aria-selected"),
       ).toBe("true");
       expect(screen.getByTestId("memory-graph")).toBe(canvas);
       expect(canvas.dataset.selected).toBe("memory:memory-1");
       expect(
-        (within(map).getByLabelText("筛选地图记忆") as HTMLInputElement).value,
+        (within(map).getByLabelText("Filter map memories") as HTMLInputElement)
+          .value,
       ).toBe("Initial");
       expect(
-        (within(map).getByLabelText("向记忆提问") as HTMLInputElement).value,
+        (within(map).getByLabelText("Ask your memories") as HTMLInputElement)
+          .value,
       ).toBe("Unsent map question");
       expect(
-        (within(map).getByLabelText("记忆内容") as HTMLTextAreaElement).value,
+        (within(map).getByLabelText("Memory content") as HTMLTextAreaElement)
+          .value,
       ).toBe("Unsent correction");
       expect(getMemory).toHaveBeenCalledTimes(1);
       expect(askMemoriesStream).not.toHaveBeenCalled();
       expect(searchConversations).not.toHaveBeenCalled();
-      for (const label of ["记忆库", "问记忆", "历史对话", "工作台"]) {
+      for (const label of ["Library", "Ask memories", "History", "Workbench"]) {
         await userEvent.click(screen.getByRole("tab", { name: label }));
         expect(screen.getByTestId("memory-graph")).toBe(canvas);
       }
       expect(canvas.dataset.selected).toBe("memory:memory-1");
       expect(
-        (within(map).getByLabelText("向记忆提问") as HTMLInputElement).value,
+        (within(map).getByLabelText("Ask your memories") as HTMLInputElement)
+          .value,
       ).toBe("Unsent map question");
       expectNoTeachingWrites();
     });
@@ -422,39 +430,45 @@ describe("MemorySpace", () => {
         getMemories.mockResolvedValue([target]);
         getMemory.mockResolvedValue({ ...detail, memory: target });
         const view = render(<MemorySpace />);
-        await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+        await userEvent.click(screen.getByRole("tab", { name: "Library" }));
         await userEvent.click(
           screen.getByRole("button", {
             name:
               status === "confirmed"
-                ? /已可用/
+                ? /Available/
                 : status === "superseded"
-                  ? /已被取代/
-                  : /已删除/,
+                  ? /Superseded/
+                  : /Deleted/,
           }),
         );
-        const query = screen.getByLabelText("搜索记忆库") as HTMLInputElement;
+        const query = screen.getByLabelText(
+          "Search the memory library",
+        ) as HTMLInputElement;
         await userEvent.type(query, "Unsubmitted library query");
         const checkbox = (await screen.findByRole("checkbox", {
-          name: "选择：Initial memory",
+          name: "Select: Initial memory",
         })) as HTMLInputElement;
         await userEvent.click(checkbox);
         await userEvent.click(
           screen.getByRole("button", { name: /^Initial memory/ }),
         );
         const inspector = await screen.findByRole("complementary", {
-          name: "记忆详情",
+          name: "Memory detail",
         });
         if (status === "confirmed")
-          fireEvent.change(within(inspector).getByLabelText("记忆内容"), {
+          fireEvent.change(within(inspector).getByLabelText("Memory content"), {
             target: { value: "Library correction draft" },
           });
         if (status === "confirmed") {
           await userEvent.click(
-            within(inspector).getByRole("button", { name: "调整召回范围" }),
+            within(inspector).getByRole("button", {
+              name: "Adjust recall scope",
+            }),
           );
           await userEvent.click(
-            within(inspector).getByRole("radio", { name: "停止外部记忆召回" }),
+            within(inspector).getByRole("radio", {
+              name: "Stop external memory recall",
+            }),
           );
         }
         // Tabs are the only way to change mode now, and a tab click clears the
@@ -465,24 +479,24 @@ describe("MemorySpace", () => {
         view.rerender(<MemorySpace />);
         expect(
           screen
-            .getByRole("tab", { name: "记忆库" })
+            .getByRole("tab", { name: "Library" })
             .getAttribute("aria-selected"),
         ).toBe("true");
-        expect(screen.getByLabelText("搜索记忆库")).toBe(query);
+        expect(screen.getByLabelText("Search the memory library")).toBe(query);
         expect(query.value).toBe("Unsubmitted library query");
         expect(
-          screen.getByRole("checkbox", { name: "选择：Initial memory" }),
+          screen.getByRole("checkbox", { name: "Select: Initial memory" }),
         ).toBe(checkbox);
         expect(checkbox.checked).toBe(true);
-        expect(screen.getByRole("complementary", { name: "记忆详情" })).toBe(
-          inspector,
-        );
+        expect(
+          screen.getByRole("complementary", { name: "Memory detail" }),
+        ).toBe(inspector);
         expect(within(inspector).getByText("Original words")).toBeTruthy();
         if (status === "confirmed")
           expect(
             (
               within(inspector).getByLabelText(
-                "记忆内容",
+                "Memory content",
               ) as HTMLTextAreaElement
             ).value,
           ).toBe("Library correction draft");
@@ -490,7 +504,7 @@ describe("MemorySpace", () => {
           expect(
             (
               within(inspector).getByRole("radio", {
-                name: "停止外部记忆召回",
+                name: "Stop external memory recall",
               }) as HTMLInputElement
             ).checked,
           ).toBe(true);
@@ -503,22 +517,24 @@ describe("MemorySpace", () => {
     it("keeps the real history owner and results without repeating searches on tour or ordinary tabs", async () => {
       const view = render(<MemorySpace />);
       expect(searchConversations).not.toHaveBeenCalled();
-      await userEvent.click(screen.getByRole("tab", { name: "历史对话" }));
-      const input = screen.getByLabelText("搜索历史对话") as HTMLInputElement;
+      await userEvent.click(screen.getByRole("tab", { name: "History" }));
+      const input = screen.getByLabelText(
+        "Search conversation history",
+      ) as HTMLInputElement;
       await userEvent.type(input, "History query");
-      await userEvent.click(screen.getByRole("button", { name: "搜索" }));
+      await userEvent.click(screen.getByRole("button", { name: "Search" }));
       await userEvent.click(
-        await screen.findByRole("button", { name: "查看原文" }),
+        await screen.findByRole("button", { name: "View source text" }),
       );
       const original = await screen.findByText("History original");
-      await userEvent.click(screen.getByRole("tab", { name: "工作台" }));
-      await userEvent.click(screen.getByRole("tab", { name: "历史对话" }));
-      expect(screen.getByLabelText("搜索历史对话")).toBe(input);
+      await userEvent.click(screen.getByRole("tab", { name: "Workbench" }));
+      await userEvent.click(screen.getByRole("tab", { name: "History" }));
+      expect(screen.getByLabelText("Search conversation history")).toBe(input);
       for (const [label, mode] of [
-        ["工作台", "map"],
-        ["问记忆", "ask"],
-        ["记忆库", "library"],
-        ["历史对话", "history"],
+        ["Workbench", "map"],
+        ["Ask memories", "ask"],
+        ["Library", "library"],
+        ["History", "history"],
       ] as const) {
         await userEvent.click(screen.getByRole("tab", { name: label }));
         expect(
@@ -531,10 +547,10 @@ describe("MemorySpace", () => {
       view.rerender(<MemorySpace />);
       expect(
         screen
-          .getByRole("tab", { name: "历史对话" })
+          .getByRole("tab", { name: "History" })
           .getAttribute("aria-selected"),
       ).toBe("true");
-      expect(screen.getByLabelText("搜索历史对话")).toBe(input);
+      expect(screen.getByLabelText("Search conversation history")).toBe(input);
       expect(input.value).toBe("History query");
       expect(screen.getByText("History original")).toBe(original);
       expect(searchConversations).toHaveBeenCalledExactlyOnceWith(
@@ -546,14 +562,17 @@ describe("MemorySpace", () => {
 
     it("preserves an existing answer and scope without asking again", async () => {
       const view = render(<MemorySpace />);
-      await userEvent.click(screen.getByRole("tab", { name: "问记忆" }));
-      await userEvent.selectOptions(screen.getByLabelText("问答记忆范围"), "*");
+      await userEvent.click(screen.getByRole("tab", { name: "Ask memories" }));
+      await userEvent.selectOptions(
+        screen.getByLabelText("Ask memory scope"),
+        "*",
+      );
       await userEvent.type(
-        screen.getByLabelText("向已确认记忆提问"),
+        screen.getByLabelText("Ask the confirmed memories"),
         "Question",
       );
       await userEvent.click(
-        screen.getByRole("button", { name: "根据记忆回答" }),
+        screen.getByRole("button", { name: "Answer from memories" }),
       );
       const answer = await screen.findByRole("heading", {
         name: "Grounded answer",
@@ -566,10 +585,14 @@ describe("MemorySpace", () => {
         answer,
       );
       expect(
-        (screen.getByLabelText("问答记忆范围") as HTMLSelectElement).value,
+        (screen.getByLabelText("Ask memory scope") as HTMLSelectElement).value,
       ).toBe("*");
       expect(
-        (screen.getByLabelText("向已确认记忆提问") as HTMLInputElement).value,
+        (
+          screen.getByLabelText(
+            "Ask the confirmed memories",
+          ) as HTMLInputElement
+        ).value,
       ).toBe("Question");
       // The trace id is the 4th argument: the SSE path uses raw `fetch`, so it
       // must carry the header itself for Core's kernel legs to join the
@@ -588,10 +611,10 @@ describe("MemorySpace", () => {
       await userEvent.click(
         await screen.findByRole("button", { name: /Initial memory/ }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "纠正" }));
-      const save = screen.getByRole("button", { name: "保存纠正" });
+      await userEvent.click(screen.getByRole("button", { name: "Correct" }));
+      const save = screen.getByRole("button", { name: "Save correction" });
       const correction = screen
-        .getByRole("textbox", { name: "记忆内容" })
+        .getByRole("textbox", { name: "Memory content" })
         .closest("form");
       if (!correction) throw new Error("Correction form missing");
       // Take the surface out of active use: nothing on it may still write.
@@ -621,7 +644,7 @@ describe("MemorySpace", () => {
       }>();
       getGraphWidth.mockReturnValue(width.promise);
       const view = render(<MemorySpace />);
-      await userEvent.click(screen.getByRole("tab", { name: "问记忆" }));
+      await userEvent.click(screen.getByRole("tab", { name: "Ask memories" }));
       await act(async () =>
         width.resolve({
           mismatch: {
@@ -633,11 +656,11 @@ describe("MemorySpace", () => {
         }),
       );
       const dialog = await screen.findByRole("dialog", {
-        name: "现有记忆库和内置模型对不上",
+        name: "The existing memory library does not match the built-in model",
       });
       expectNoTeachingWrites();
       await userEvent.click(
-        within(dialog).getByRole("button", { name: "就这么办" }),
+        within(dialog).getByRole("button", { name: "Do that" }),
       );
       expect(decideGraphWidth).toHaveBeenCalledExactlyOnceWith(
         "keep_existing",
@@ -647,15 +670,17 @@ describe("MemorySpace", () => {
       // Dismissing the dialog must not move the user off the tab they chose.
       expect(
         screen
-          .getByRole("tab", { name: "问记忆" })
+          .getByRole("tab", { name: "Ask memories" })
           .getAttribute("aria-selected"),
       ).toBe("true");
     });
 
     it("retains an unsaved composer draft while its inactive modal is suspended", async () => {
       const view = render(<MemorySpace />);
-      await userEvent.click(screen.getByRole("button", { name: "添加记忆" }));
-      const draft = screen.getByLabelText("记下这件事") as HTMLTextAreaElement;
+      await userEvent.click(screen.getByRole("button", { name: "Add memory" }));
+      const draft = screen.getByLabelText(
+        "Note this down",
+      ) as HTMLTextAreaElement;
       await userEvent.type(draft, "Unsent note");
       view.rerender(<MemorySpace active={false} />);
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -667,7 +692,7 @@ describe("MemorySpace", () => {
       document.dispatchEvent(event);
       expect(event.defaultPrevented).toBe(false);
       view.rerender(<MemorySpace />);
-      expect(screen.getByLabelText("记下这件事")).toBe(draft);
+      expect(screen.getByLabelText("Note this down")).toBe(draft);
       expect(draft.value).toBe("Unsent note");
       expectNoTeachingWrites();
     });
@@ -681,18 +706,18 @@ describe("MemorySpace", () => {
         total_memories: 0,
       });
       const view = render(<MemorySpace />);
-      expect(screen.getByText("正在读取记忆…")).toBeTruthy();
+      expect(screen.getByText("Reading memories...")).toBeTruthy();
       expect(
         view.container.querySelector('[data-tour-id="memory-map-canvas"]')
           ?.className,
       ).toBe("map-canvas");
-      await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+      await userEvent.click(screen.getByRole("tab", { name: "Library" }));
       expect(
         view.container.querySelector('[data-tour-id="memory-status-tabs"]')
           ?.tagName,
       ).toBe("NAV");
-      expect(screen.getByText("正在读取记忆库…")).toBeTruthy();
-      await userEvent.click(screen.getByRole("tab", { name: "问记忆" }));
+      expect(screen.getByText("Loading the memory library...")).toBeTruthy();
+      await userEvent.click(screen.getByRole("tab", { name: "Ask memories" }));
       expect(
         view.container.querySelector('[data-tour-id="memory-query-bar"]')
           ?.tagName,
@@ -700,15 +725,17 @@ describe("MemorySpace", () => {
       await act(async () => items.resolve([]));
       view.rerender(<MemorySpace />);
       // The arrival status belongs to the workbench surface, not the ask tab.
-      await userEvent.click(screen.getByRole("tab", { name: "工作台" }));
-      expect(screen.getByRole("region", { name: "记忆整理状态" })).toBeTruthy();
-      expect(screen.getByText("还没有保存的对话")).toBeTruthy();
+      await userEvent.click(screen.getByRole("tab", { name: "Workbench" }));
+      expect(
+        screen.getByRole("region", { name: "Memory organizing status" }),
+      ).toBeTruthy();
+      expect(screen.getByText("No conversations saved yet")).toBeTruthy();
       expect(screen.queryByTestId("memory-graph")).toBeNull();
       expectNoTeachingWrites();
     });
   });
 
-  describe("未配模型的常驻提示（RL-04）", () => {
+  describe("Persistent prompt when no model is configured (RL-04)", () => {
     function blockedOnModel(reason: string) {
       getMemoryProcessing.mockResolvedValue({
         pending: 0,
@@ -730,7 +757,7 @@ describe("MemorySpace", () => {
       });
     }
 
-    it("未配可用模型时提示常驻，并能直达配置", async () => {
+    it("keeps the prompt resident with no usable model and links straight to settings", async () => {
       const onConfigureModel = vi.fn();
       blockedOnModel("model_profile_not_active");
 
@@ -742,43 +769,55 @@ describe("MemorySpace", () => {
       );
 
       const prompt = await screen.findByRole("status", {
-        name: "记忆未在生成",
+        name: "Memories are not being generated",
       });
-      expect(prompt.textContent).toContain("还没有启用生成模型");
+      expect(prompt.textContent).toContain(
+        "No generation model is enabled yet",
+      );
 
-      // 常驻：切到别的模式不该把它带走。
-      await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
-      expect(screen.getByRole("status", { name: "记忆未在生成" })).toBeTruthy();
+      // Resident: switching to another mode must not take it away.
+      await userEvent.click(screen.getByRole("tab", { name: "Library" }));
+      expect(
+        screen.getByRole("status", {
+          name: "Memories are not being generated",
+        }),
+      ).toBeTruthy();
 
       await userEvent.click(
-        screen.getByRole("button", { name: "去配置生成模型" }),
+        screen.getByRole("button", { name: "Configure the generation model" }),
       );
       expect(onConfigureModel).toHaveBeenCalledTimes(1);
     });
 
-    it("提示文案走已有映射，不是写死一句", async () => {
+    it("uses the existing reason mapping rather than a hard-coded sentence", async () => {
       blockedOnModel("model_api_key_missing");
 
       render(<MemorySpace onConnect={() => {}} onConfigureModel={() => {}} />);
 
       const prompt = await screen.findByRole("status", {
-        name: "记忆未在生成",
+        name: "Memories are not being generated",
       });
-      expect(prompt.textContent).toContain("缺少生成模型 API Key");
-      expect(prompt.textContent).not.toContain("还没有启用生成模型");
+      expect(prompt.textContent).toContain("Generation model API key missing");
+      expect(prompt.textContent).not.toContain(
+        "No generation model is enabled yet",
+      );
     });
 
-    it("模型配好之后提示消失", async () => {
-      // 默认 mock 就是 blocked_stages 空、completed 1，即已在正常出记忆。
+    it("drops the prompt once a model is configured", async () => {
+      // The default mock has empty blocked_stages and completed 1, i.e. memories are coming out normally.
       render(<MemorySpace onConnect={() => {}} onConfigureModel={() => {}} />);
 
       await waitFor(() => {
         expect(screen.getByText("Initial memory", visibleText)).toBeTruthy();
       });
-      expect(screen.queryByRole("status", { name: "记忆未在生成" })).toBeNull();
+      expect(
+        screen.queryByRole("status", {
+          name: "Memories are not being generated",
+        }),
+      ).toBeNull();
     });
 
-    it("阻塞原因与模型无关时不冒充成模型问题", async () => {
+    it("does not pose as a model problem when the block reason is unrelated to the model", async () => {
       blockedOnModel("hy_memory_unavailable");
 
       render(<MemorySpace onConnect={() => {}} onConfigureModel={() => {}} />);
@@ -786,11 +825,15 @@ describe("MemorySpace", () => {
       await waitFor(() => {
         expect(screen.getByText("Initial memory", visibleText)).toBeTruthy();
       });
-      expect(screen.queryByRole("status", { name: "记忆未在生成" })).toBeNull();
+      expect(
+        screen.queryByRole("status", {
+          name: "Memories are not being generated",
+        }),
+      ).toBeNull();
     });
   });
 
-  describe("记忆库多选与批量操作（RL-27）", () => {
+  describe("Library multi-select and bulk actions (RL-27)", () => {
     const rows = [
       { ...memory, memory_id: "memory-1", content: "First", revision: 1 },
       { ...memory, memory_id: "memory-2", content: "Second", revision: 3 },
@@ -805,21 +848,23 @@ describe("MemorySpace", () => {
         return { ...target, status: "deleted", revision: target.revision + 1 };
       });
       render(<MemorySpace onConnect={() => {}} />);
-      await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+      await userEvent.click(screen.getByRole("tab", { name: "Library" }));
       await waitFor(() => {
         expect(
-          screen.getByRole("checkbox", { name: "选择：Second" }),
+          screen.getByRole("checkbox", { name: "Select: Second" }),
         ).toBeTruthy();
       });
     }
 
     async function confirmDeletion() {
-      await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Confirm Delete" }),
+      );
     }
 
     async function bulkDelete(count: number) {
       await userEvent.click(
-        screen.getByRole("button", { name: `删除所选 ${count} 条` }),
+        screen.getByRole("button", { name: `Delete ${count} selected` }),
       );
       await confirmDeletion();
     }
@@ -827,20 +872,22 @@ describe("MemorySpace", () => {
     async function select(...contents: string[]) {
       for (const content of contents) {
         await userEvent.click(
-          screen.getByRole("checkbox", { name: `选择：${content}` }),
+          screen.getByRole("checkbox", { name: `Select: ${content}` }),
         );
       }
     }
 
-    it("批量删除对每条各发一次请求，带各自的 revision", async () => {
+    it("sends one bulk delete request per item, each with its own revision", async () => {
       vi.spyOn(window, "confirm").mockReturnValue(true);
       await openLibrary();
       await select("First", "Second");
 
       await userEvent.click(
-        screen.getByRole("button", { name: "删除所选 2 条" }),
+        screen.getByRole("button", { name: "Delete 2 selected" }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Confirm Delete" }),
+      );
 
       await waitFor(() => {
         expect(mutateMemory).toHaveBeenCalledTimes(2);
@@ -855,63 +902,67 @@ describe("MemorySpace", () => {
       expect(calls.map((call) => call[0])).not.toContain("memory-3");
     });
 
-    it("批量删除要先确认，取消则一条都不发", async () => {
+    it("confirms a bulk delete first and sends nothing when it is cancelled", async () => {
       vi.spyOn(window, "confirm").mockReturnValue(false);
       await openLibrary();
       await select("First");
 
       await userEvent.click(
-        screen.getByRole("button", { name: "删除所选 1 条" }),
+        screen.getByRole("button", { name: "Delete 1 selected" }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "取消" }));
+      await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
       expect(mutateMemory).not.toHaveBeenCalled();
     });
 
-    it("没选中任何一条时不提供批量操作", async () => {
+    it("offers no bulk action when nothing is selected", async () => {
       await openLibrary();
 
-      expect(screen.queryByRole("button", { name: /删除所选/ })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Delete \d+ selected/ }),
+      ).toBeNull();
     });
 
-    it("记忆库没有待确认 / 已拒绝的筛选，也没有确认 / 拒绝操作", async () => {
+    it("has no pending-confirmation or rejected filter in the library, and no confirm or reject action", async () => {
       await openLibrary();
 
-      const tabs = screen.getByRole("navigation", { name: "记忆治理状态" });
+      const tabs = screen.getByRole("navigation", {
+        name: "Memory governance status",
+      });
       expect(
         within(tabs)
           .getAllByRole("button")
           .map((tab) => tab.textContent?.replace(/\s*\d*$/, "")),
-      ).toEqual(["已可用", "已被取代", "已删除"]);
+      ).toEqual(["Available", "Superseded", "Deleted"]);
 
       await select("First");
-      const bulk = screen.getByRole("group", { name: "批量操作" });
+      const bulk = screen.getByRole("group", { name: "Bulk actions" });
       expect(
         within(bulk)
           .getAllByRole("button")
           .map((button) => button.textContent),
-      ).toEqual(["删除所选 1 条", "取消选择"]);
+      ).toEqual(["Delete 1 selected", "Clear selection"]);
 
       getMemory.mockResolvedValue({ ...detail, memory: rows[0] });
       await userEvent.click(screen.getByRole("button", { name: /^First/ }));
       const inspector = await screen.findByRole("complementary", {
-        name: "记忆详情",
+        name: "Memory detail",
       });
       await within(inspector).findByText("Original words");
       expect(
-        within(inspector).getByRole("button", { name: "删除" }),
+        within(inspector).getByRole("button", { name: "Delete" }),
       ).toBeTruthy();
       expect(
-        within(inspector).queryByRole("button", { name: /确认|拒绝/ }),
+        within(inspector).queryByRole("button", { name: /Confirm|Reject/ }),
       ).toBeNull();
     });
 
     it("S1.3: changing status clears hidden targets from the next batch", async () => {
       await openLibrary();
       await select("First");
-      await userEvent.click(screen.getByRole("button", { name: /已被取代/ }));
-      expect(screen.queryByRole("group", { name: "批量操作" })).toBeNull();
-      await userEvent.click(screen.getByRole("button", { name: /已可用/ }));
+      await userEvent.click(screen.getByRole("button", { name: /Superseded/ }));
+      expect(screen.queryByRole("group", { name: "Bulk actions" })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: /Available/ }));
       await select("Second");
       await bulkDelete(1);
       await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(1));
@@ -925,8 +976,11 @@ describe("MemorySpace", () => {
     it("S1.3: changing the search clears selection before new results arrive", async () => {
       await openLibrary();
       await select("First", "Second");
-      await userEvent.type(screen.getByLabelText("搜索记忆库"), "Third");
-      expect(screen.queryByRole("group", { name: "批量操作" })).toBeNull();
+      await userEvent.type(
+        screen.getByLabelText("Search the memory library"),
+        "Third",
+      );
+      expect(screen.queryByRole("group", { name: "Bulk actions" })).toBeNull();
       expect(mutateMemory).not.toHaveBeenCalled();
     });
 
@@ -937,13 +991,13 @@ describe("MemorySpace", () => {
       // The library surface is refreshed through the shared scheduler now;
       // one call runs exactly one tick for it.
       await act(async () => pollNow("memory-library"));
-      expect(screen.queryByRole("group", { name: "批量操作" })).toBeNull();
+      expect(screen.queryByRole("group", { name: "Bulk actions" })).toBeNull();
       getMemories.mockResolvedValue(rows);
       await act(async () => pollNow("memory-library"));
       expect(
         (
           screen.getByRole("checkbox", {
-            name: "选择：First",
+            name: "Select: First",
           }) as HTMLInputElement
         ).checked,
       ).toBe(false);
@@ -954,7 +1008,7 @@ describe("MemorySpace", () => {
       await select("First");
       const pending = deferred<GovernedMemory>();
       mutateMemory.mockReturnValueOnce(pending.promise);
-      const remove = screen.getByRole("button", { name: "删除所选 1 条" });
+      const remove = screen.getByRole("button", { name: "Delete 1 selected" });
       try {
         act(() => {
           remove.click();
@@ -965,19 +1019,23 @@ describe("MemorySpace", () => {
         expect(
           (
             screen.getByRole("checkbox", {
-              name: "选择：Second",
+              name: "Select: Second",
             }) as HTMLInputElement
           ).disabled,
         ).toBe(true);
         expect(
           (
             screen.getByRole("button", {
-              name: "取消选择",
+              name: "Clear selection",
             }) as HTMLButtonElement
           ).disabled,
         ).toBe(true);
         expect(
-          (screen.getByLabelText("搜索记忆库") as HTMLInputElement).disabled,
+          (
+            screen.getByLabelText(
+              "Search the memory library",
+            ) as HTMLInputElement
+          ).disabled,
         ).toBe(true);
       } finally {
         await act(async () =>
@@ -993,7 +1051,7 @@ describe("MemorySpace", () => {
     it("S1.3: delete owns the batch lock before confirmation and cancellation releases it", async () => {
       await openLibrary();
       await select("First");
-      const remove = screen.getByRole("button", { name: "删除所选 1 条" });
+      const remove = screen.getByRole("button", { name: "Delete 1 selected" });
       act(() => {
         remove.click();
         remove.click();
@@ -1002,13 +1060,13 @@ describe("MemorySpace", () => {
         expect(
           (
             screen.getByRole("button", {
-              name: "删除所选 1 条",
+              name: "Delete 1 selected",
             }) as HTMLButtonElement
           ).disabled,
         ).toBe(true);
         expect(mutateMemory).not.toHaveBeenCalled();
       } finally {
-        await userEvent.click(screen.getByRole("button", { name: "取消" }));
+        await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
       }
       await bulkDelete(1);
       await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(1));
@@ -1029,37 +1087,40 @@ describe("MemorySpace", () => {
         await bulkDelete(2);
         await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(2));
         await userEvent.click(
-          screen.getByRole("checkbox", { name: "选择：Third" }),
+          screen.getByRole("checkbox", { name: "Select: Third" }),
         );
         await waitFor(() =>
           expect(
             (
               screen.getByRole("button", {
-                name: "删除所选 1 条",
+                name: "Delete 1 selected",
               }) as HTMLButtonElement
             ).disabled,
           ).toBe(false),
         );
         expect(
-          screen.getByRole("status", { name: "批量操作结果" }).textContent,
-        ).toContain("已删除 2 条");
+          screen.getByRole("status", { name: "Bulk action result" })
+            .textContent,
+        ).toContain("Bulk deletion: 2 succeeded");
         if (panel === "graph") {
           await waitFor(
             () => expect(getMemoryGraph.mock.calls.length).toBeGreaterThan(1),
             { timeout: 3500 },
           );
-          expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+          expect(
+            screen.queryByText(/Failed to load the memory graph/),
+          ).toBeNull();
         } else {
           expect(
             (await screen.findByRole("alert", {}, { timeout: 3500 }))
               .textContent,
-          ).toContain("列表刷新失败");
+          ).toContain("the list refresh failed");
         }
         expect(
-          screen.queryByRole("checkbox", { name: "选择：First" }),
+          screen.queryByRole("checkbox", { name: "Select: First" }),
         ).toBeNull();
         expect(
-          screen.queryByRole("checkbox", { name: "选择：Second" }),
+          screen.queryByRole("checkbox", { name: "Select: Second" }),
         ).toBeNull();
         expect(mutateMemory).toHaveBeenCalledTimes(2);
       },
@@ -1083,23 +1144,23 @@ describe("MemorySpace", () => {
       await select("First", "Second");
       await bulkDelete(2);
       const failure = await screen.findByRole("group", {
-        name: "处理失败：Second",
+        name: "Action failed: Second",
       });
-      expect(failure.textContent).toContain("本地记忆库正忙");
+      expect(failure.textContent).toContain("The local memory store is busy");
       expect(
-        screen.getByRole("status", { name: "批量操作结果" }).textContent,
-      ).toContain("已删除 1 条，1 条未完成");
+        screen.getByRole("status", { name: "Bulk action result" }).textContent,
+      ).toContain("Bulk deletion: 1 succeeded, 1 not completed");
       expect(
         (
           screen.getByRole("checkbox", {
-            name: "选择：Second",
+            name: "Select: Second",
           }) as HTMLInputElement
         ).checked,
       ).toBe(true);
       const failedCall = mutateMemory.mock.calls[1];
       await select("Third");
       await userEvent.click(
-        within(failure).getByRole("button", { name: "重试删除" }),
+        within(failure).getByRole("button", { name: "Retry deletion" }),
       );
       await confirmDeletion();
       await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(3));
@@ -1110,12 +1171,12 @@ describe("MemorySpace", () => {
       );
       expect(mutateMemory.mock.calls[2][4]).toEqual(expect.any(String));
       expect(
-        screen.queryByRole("group", { name: "处理失败：Second" }),
+        screen.queryByRole("group", { name: "Action failed: Second" }),
       ).toBeNull();
       expect(
         (
           screen.getByRole("checkbox", {
-            name: "选择：Third",
+            name: "Select: Third",
           }) as HTMLInputElement
         ).checked,
       ).toBe(true);
@@ -1137,25 +1198,27 @@ describe("MemorySpace", () => {
         reader.mockRejectedValueOnce(new Error("Refresh failed"));
         await bulkDelete(2);
         const retry = await screen.findByRole("button", {
-          name: "重试失败的 1 条",
+          name: "Retry 1 failed",
         });
         await waitFor(() =>
           expect((retry as HTMLButtonElement).disabled).toBe(false),
         );
         expect(
-          screen.getByRole("group", { name: "处理失败：Second" }),
+          screen.getByRole("group", { name: "Action failed: Second" }),
         ).toBeTruthy();
         if (panel === "graph") {
           await waitFor(
             () => expect(getMemoryGraph.mock.calls.length).toBeGreaterThan(1),
             { timeout: 3500 },
           );
-          expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+          expect(
+            screen.queryByText(/Failed to load the memory graph/),
+          ).toBeNull();
         } else {
           expect(
             (await screen.findByRole("alert", {}, { timeout: 3500 }))
               .textContent,
-          ).toContain("列表刷新失败");
+          ).toContain("the list refresh failed");
         }
         const failedCall = mutateMemory.mock.calls[1];
         await userEvent.click(retry);
@@ -1177,7 +1240,9 @@ describe("MemorySpace", () => {
         rows[2],
       ]);
       await bulkDelete(1);
-      const retry = await screen.findByRole("button", { name: "重试删除" });
+      const retry = await screen.findByRole("button", {
+        name: "Retry deletion",
+      });
       const failedCall = mutateMemory.mock.calls[0];
       await userEvent.click(retry);
       await confirmDeletion();
@@ -1194,11 +1259,13 @@ describe("MemorySpace", () => {
       await select("Second");
       mutateMemory.mockRejectedValueOnce(new Error("Response lost"));
       await bulkDelete(1);
-      const retry = await screen.findByRole("button", { name: "重试删除" });
+      const retry = await screen.findByRole("button", {
+        name: "Retry deletion",
+      });
       const failedCall = mutateMemory.mock.calls[0];
       await userEvent.click(screen.getByRole("button", { name: /^Second/ }));
       await userEvent.type(
-        await screen.findByRole("textbox", { name: "记忆内容" }),
+        await screen.findByRole("textbox", { name: "Memory content" }),
         " draft",
       );
       await userEvent.click(retry);
@@ -1220,7 +1287,9 @@ describe("MemorySpace", () => {
         rows[2],
       ]);
       await bulkDelete(1);
-      const retry = await screen.findByRole("button", { name: "重试删除" });
+      const retry = await screen.findByRole("button", {
+        name: "Retry deletion",
+      });
       mutateMemory.mockResolvedValueOnce({
         ...rows[1],
         status: "deleted",
@@ -1243,10 +1312,12 @@ describe("MemorySpace", () => {
       mutateMemory.mockRejectedValueOnce(new Error("Response lost"));
       await bulkDelete(1);
       const failure = await screen.findByRole("group", {
-        name: "处理失败：Second",
+        name: "Action failed: Second",
       });
-      expect(failure.textContent).toContain("未收到操作结果，请重试");
-      expect(failure.textContent).not.toContain("正在重试");
+      expect(failure.textContent).toContain(
+        "No result received for the operation",
+      );
+      expect(failure.textContent).not.toContain("being retried");
       expect(mutateMemory).toHaveBeenCalledTimes(1);
     });
 
@@ -1255,15 +1326,15 @@ describe("MemorySpace", () => {
       await select("First", "Second");
       mutateMemory.mockRejectedValue(new Error("Response lost"));
       await bulkDelete(2);
-      await screen.findByRole("button", { name: "重试失败的 2 条" });
+      await screen.findByRole("button", { name: "Retry 2 failed" });
       getMemories.mockResolvedValue([rows[1], rows[2]]);
       await act(async () => pollNow("memory-library"));
       expect(
-        screen.queryByRole("group", { name: "处理失败：First" }),
+        screen.queryByRole("group", { name: "Action failed: First" }),
       ).toBeNull();
       expect(screen.queryByText("First")).toBeNull();
       await userEvent.click(
-        screen.getByRole("button", { name: "重试失败的 1 条" }),
+        screen.getByRole("button", { name: "Retry 1 failed" }),
       );
       await confirmDeletion();
       await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(3));
@@ -1289,7 +1360,7 @@ describe("MemorySpace", () => {
         await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(2));
         await act(async () => pollResult.resolve(rows));
         expect(
-          screen.queryByRole("checkbox", { name: "选择：First" }),
+          screen.queryByRole("checkbox", { name: "Select: First" }),
         ).toBeNull();
       } finally {
         await act(async () => {
@@ -1319,12 +1390,12 @@ describe("MemorySpace", () => {
         await bulkDelete(3);
         await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(3));
         expect(
-          screen.getByRole("group", { name: "处理失败：First" }),
+          screen.getByRole("group", { name: "Action failed: First" }),
         ).toBeTruthy();
         expect(
           (
             screen.getByRole("checkbox", {
-              name: "选择：First",
+              name: "Select: First",
             }) as HTMLInputElement
           ).checked,
         ).toBe(true);
@@ -1352,10 +1423,15 @@ describe("MemorySpace", () => {
           mode: "generated",
         };
       });
-      await userEvent.click(screen.getByRole("tab", { name: "工作台" }));
-      await userEvent.type(screen.getByLabelText("向记忆提问"), "Question");
-      await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
-      await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+      await userEvent.click(screen.getByRole("tab", { name: "Workbench" }));
+      await userEvent.type(
+        screen.getByLabelText("Ask your memories"),
+        "Question",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Send question" }),
+      );
+      await userEvent.click(screen.getByRole("tab", { name: "Library" }));
       await select("First");
       mutateMemory.mockReturnValueOnce(pending.promise);
       try {
@@ -1364,7 +1440,7 @@ describe("MemorySpace", () => {
         expect(
           (
             screen.getByRole("button", {
-              name: "删除所选 1 条",
+              name: "Delete 1 selected",
             }) as HTMLButtonElement
           ).disabled,
         ).toBe(true);
@@ -1385,18 +1461,24 @@ describe("MemorySpace", () => {
       await select("Second");
       mutateMemory.mockRejectedValueOnce(new Error("Response lost"));
       await userEvent.click(
-        screen.getByRole("button", { name: "删除所选 1 条" }),
+        screen.getByRole("button", { name: "Delete 1 selected" }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
-      const retry = await screen.findByRole("button", { name: "重试删除" });
+      await userEvent.click(
+        screen.getByRole("button", { name: "Confirm Delete" }),
+      );
+      const retry = await screen.findByRole("button", {
+        name: "Retry deletion",
+      });
       await userEvent.click(retry);
       expect(mutateMemory).toHaveBeenCalledTimes(1);
-      await userEvent.click(screen.getByRole("button", { name: "取消" }));
+      await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
       expect(
-        screen.getByRole("group", { name: "处理失败：Second" }),
+        screen.getByRole("group", { name: "Action failed: Second" }),
       ).toBeTruthy();
       await userEvent.click(retry);
-      await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Confirm Delete" }),
+      );
       await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(2));
       expect(mutateMemory.mock.calls[1].slice(0, 4)).toEqual(
         mutateMemory.mock.calls[0].slice(0, 4),
@@ -1423,11 +1505,16 @@ describe("MemorySpace", () => {
             mode: "generated",
           };
         });
-        await userEvent.click(screen.getByRole("tab", { name: "工作台" }));
-        await userEvent.type(screen.getByLabelText("向记忆提问"), "Question");
-        await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
+        await userEvent.click(screen.getByRole("tab", { name: "Workbench" }));
+        await userEvent.type(
+          screen.getByLabelText("Ask your memories"),
+          "Question",
+        );
+        await userEvent.click(
+          screen.getByRole("button", { name: "Send question" }),
+        );
         await waitFor(() => expect(askMemoriesStream).toHaveBeenCalledTimes(1));
-        await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+        await userEvent.click(screen.getByRole("tab", { name: "Library" }));
         await select("First", "Second");
         mutateMemory
           .mockResolvedValueOnce({
@@ -1440,7 +1527,7 @@ describe("MemorySpace", () => {
         try {
           await bulkDelete(2);
           await waitFor(() => expect(mutateMemory).toHaveBeenCalledTimes(2));
-          await userEvent.click(screen.getByRole("tab", { name: "工作台" }));
+          await userEvent.click(screen.getByRole("tab", { name: "Workbench" }));
           expect(screen.queryByText("Old batch answer")).toBeNull();
           await act(async () => stream.resolve());
           expect(screen.queryByText("Late old batch answer")).toBeNull();
@@ -1468,10 +1555,12 @@ describe("MemorySpace", () => {
       .mockResolvedValue([{ ...memory, status: "confirmed" }]);
 
     render(<MemorySpace onConnect={() => {}} />);
-    await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Library" }));
 
     await waitFor(() => {
-      expect(screen.getByText("还没连上本地 Core，正在重试…")).toBeTruthy();
+      expect(
+        screen.getByText("Not connected to the local Core yet, retrying..."),
+      ).toBeTruthy();
     });
     // No refresh, no navigation: the memories arrive on their own.
     await waitFor(
@@ -1481,7 +1570,9 @@ describe("MemorySpace", () => {
       { timeout: 4_000 },
     );
     expect(getMemories.mock.calls.length).toBeGreaterThan(1);
-    expect(screen.queryByText("还没连上本地 Core，正在重试…")).toBeNull();
+    expect(
+      screen.queryByText("Not connected to the local Core yet, retrying..."),
+    ).toBeNull();
   });
 
   it("does not claim you have no memories while it is still reading", async () => {
@@ -1493,9 +1584,11 @@ describe("MemorySpace", () => {
     render(<MemorySpace onConnect={() => {}} />);
 
     await waitFor(() => {
-      expect(screen.getByText("正在读取记忆…")).toBeTruthy();
+      expect(screen.getByText("Reading memories...")).toBeTruthy();
     });
-    expect(screen.queryByText("还没有通过证据校验的记忆。")).toBeNull();
+    expect(
+      screen.queryByText("No memories have passed evidence validation yet."),
+    ).toBeNull();
   });
 
   it("shows the library when only the graph is unavailable", async () => {
@@ -1504,7 +1597,7 @@ describe("MemorySpace", () => {
     getMemoryGraph.mockRejectedValue(new Error("graph unavailable"));
 
     render(<MemorySpace onConnect={() => {}} />);
-    await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Library" }));
 
     await waitFor(() => {
       expect(screen.getByText("Initial memory", visibleText)).toBeTruthy();
@@ -1516,7 +1609,7 @@ describe("MemorySpace", () => {
     getMemories.mockResolvedValue([{ ...memory, status: "confirmed" }]);
     getMemoryGraph.mockReturnValue(stalled.promise);
     render(<MemorySpace />);
-    await userEvent.click(screen.getByRole("tab", { name: "记忆库" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Library" }));
     await waitFor(() =>
       expect(screen.getByText("Initial memory", visibleText)).toBeTruthy(),
     );
@@ -1535,7 +1628,7 @@ describe("MemorySpace", () => {
     getMemoryGraph.mockRejectedValueOnce(new Error("graph offline"));
     render(<MemorySpace />);
     await act(async () => {});
-    expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+    expect(screen.queryByText(/Failed to load the memory graph/)).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(getMemories).toHaveBeenCalledTimes(1);
     const pending = deferred<Awaited<ReturnType<typeof getMemoryGraph>>>();
@@ -1544,7 +1637,7 @@ describe("MemorySpace", () => {
     await act(async () => vi.advanceTimersByTimeAsync(LIBRARY_REFRESH_MS));
     expect(getMemoryGraph).toHaveBeenCalledTimes(2);
     expect(getMemories).toHaveBeenCalledTimes(2);
-    expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+    expect(screen.queryByText(/Failed to load the memory graph/)).toBeNull();
     await act(async () =>
       pending.resolve({
         nodes: [],
@@ -1564,8 +1657,8 @@ describe("MemorySpace", () => {
       vi.useFakeTimers();
       render(<MemorySpace />);
       await act(async () => {});
-      fireEvent.click(screen.getByRole("tab", { name: "记忆库" }));
-      fireEvent.change(screen.getByLabelText("搜索记忆库"), {
+      fireEvent.click(screen.getByRole("tab", { name: "Library" }));
+      fireEvent.change(screen.getByLabelText("Search the memory library"), {
         target: { value: "Initial" },
       });
       let resolve!: (value: unknown) => void;
@@ -1576,7 +1669,9 @@ describe("MemorySpace", () => {
           reject = fail;
         }),
       );
-      const form = screen.getByLabelText("搜索记忆库").closest("form");
+      const form = screen
+        .getByLabelText("Search the memory library")
+        .closest("form");
       expect(form).not.toBeNull();
       if (form) fireEvent.submit(form);
       await act(async () => {});
@@ -1584,14 +1679,14 @@ describe("MemorySpace", () => {
       expect(getMemoryGraph).toHaveBeenCalledTimes(2);
       // Search has finished even though its projection remains pending.
       expect(
-        (screen.getByRole("button", { name: "搜索" }) as HTMLButtonElement)
+        (screen.getByRole("button", { name: "Search" }) as HTMLButtonElement)
           .disabled,
       ).toBe(false);
       if (outcome === "success")
         getMemoryGraph.mockRejectedValueOnce(new Error("newer graph failure"));
       await act(async () => vi.advanceTimersByTimeAsync(LIBRARY_REFRESH_MS));
       expect(getMemoryGraph).toHaveBeenCalledTimes(3);
-      expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+      expect(screen.queryByText(/Failed to load the memory graph/)).toBeNull();
       expect(screen.queryByRole("alert")).toBeNull();
       await act(async () => {
         if (outcome === "success")
@@ -1603,7 +1698,7 @@ describe("MemorySpace", () => {
           });
         else reject(new Error("older graph failure"));
       });
-      expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+      expect(screen.queryByText(/Failed to load the memory graph/)).toBeNull();
       expect(screen.queryByRole("alert")).toBeNull();
       expect(mutateMemory).not.toHaveBeenCalled();
     },
@@ -1632,7 +1727,7 @@ describe("MemorySpace", () => {
     render(<MemorySpace />);
 
     expect(
-      await screen.findByText("1 处理中 · 历史积压 677 条（约 21 小时）"),
+      await screen.findByText("1 processing · 677 backlog items (~21 hours)"),
     ).toBeTruthy();
   });
 
@@ -1666,11 +1761,13 @@ describe("MemorySpace", () => {
     render(<MemorySpace />);
 
     expect(
-      await screen.findByText("有 17 段对话的整理结果不确定"),
+      await screen.findByText(
+        "An uncertain processing result for 17 conversations",
+      ),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "重新整理" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reprocess" }));
     expect(retryUnknownMemoryProcessing).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "重新整理" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reprocess" }));
     await waitFor(() =>
       expect(retryUnknownMemoryProcessing).toHaveBeenCalledOnce(),
     );
@@ -1704,7 +1801,7 @@ describe("MemorySpace", () => {
 
     expect(
       await screen.findByText(
-        "1 处理中 · 最新 3 条待处理 · 历史积压 672 条（约 21 小时）",
+        "1 processing · 3 new pending · 672 backlog items (~21 hours)",
       ),
     ).toBeTruthy();
   });
@@ -1731,9 +1828,9 @@ describe("MemorySpace", () => {
     });
     render(<MemorySpace />);
     expect(
-      await screen.findByText("1 处理中 · 最新 2 条待处理（约 2 分钟）"),
+      await screen.findByText("1 processing · 2 new pending (~2 min)"),
     ).toBeTruthy();
-    expect(screen.queryByText(/待派发 0/)).toBeNull();
+    expect(screen.queryByText(/0 queued/)).toBeNull();
   });
 
   it("names stranded running work instead of a healthy in-flight count", async () => {
@@ -1759,7 +1856,7 @@ describe("MemorySpace", () => {
     render(<MemorySpace />);
     expect(
       await screen.findByText(
-        "2 处理中 · 最新 2 条待处理 · 1 条任务状态异常，正在恢复（约 2 分钟）",
+        "2 processing · 2 new pending · 1 with stalled task status, recovering (~2 min)",
       ),
     ).toBeTruthy();
   });
@@ -1787,10 +1884,12 @@ describe("MemorySpace", () => {
 
     expect(
       await screen.findByText(
-        "2 处理中 · 最新 2 条待处理 · 2 条任务状态待核对（约 2 分钟）",
+        "2 processing · 2 new pending · 2 with unknown task status (~2 min)",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText(/任务状态异常，正在恢复/)).toBeNull();
+    expect(
+      screen.queryByText(/with stalled task status, recovering/),
+    ).toBeNull();
   });
 
   it("names the stuck pipeline stage instead of implying there is nothing", async () => {
@@ -1814,7 +1913,9 @@ describe("MemorySpace", () => {
     render(<MemorySpace />);
 
     expect(
-      await screen.findByText("记忆抽取卡在 还没有启用生成模型（4 条）"),
+      await screen.findByText(
+        "Memory extraction: No generation model is enabled yet (4)",
+      ),
     ).toBeTruthy();
   });
 
@@ -1849,15 +1950,18 @@ describe("MemorySpace", () => {
 
     // One calm sentence, and the two stalls summed into it rather than named.
     expect(
-      await screen.findByText("2 条这次没能整理成功，正在重试", {
-        exact: false,
-      }),
+      await screen.findByText(
+        "2 items: Failed to organize this round; retrying",
+        {
+          exact: false,
+        },
+      ),
     ).toBeTruthy();
-    // Neither an internal guard name nor the amber "整理需要处理" heading: the
+    // Neither an internal guard name nor the amber "Processing needs attention" heading: the
     // pipeline is handling these itself.
     expect(container.textContent).not.toContain("hy_memory_write_verification");
-    expect(screen.queryByText("整理需要处理")).toBeNull();
-    expect(screen.getByText("正在整理记忆")).toBeTruthy();
+    expect(screen.queryByText("Processing needs attention")).toBeNull();
+    expect(screen.getByText("Processing memories")).toBeTruthy();
   });
 
   it("shows recalled memories before the answer finishes streaming", async () => {
@@ -1879,14 +1983,18 @@ describe("MemorySpace", () => {
     });
     render(<MemorySpace />);
 
-    await user.click(await screen.findByRole("tab", { name: "问记忆" }));
+    await user.click(await screen.findByRole("tab", { name: "Ask memories" }));
     await user.type(
-      screen.getByLabelText("向已确认记忆提问"),
-      "我的原则是什么？",
+      screen.getByLabelText("Ask the confirmed memories"),
+      "What are my principles?",
     );
-    await user.click(screen.getByRole("button", { name: "根据记忆回答" }));
+    await user.click(
+      screen.getByRole("button", { name: "Answer from memories" }),
+    );
 
-    expect(await screen.findByText("正在生成", { exact: false })).toBeTruthy();
+    expect(
+      await screen.findByText("Generating", { exact: false }),
+    ).toBeTruthy();
     expect(screen.getByText("Grounded", visibleText)).toBeTruthy();
 
     releaseFinal();
@@ -1895,7 +2003,7 @@ describe("MemorySpace", () => {
       await screen.findByText("Grounded answer", visibleText),
     ).toBeTruthy();
     expect(
-      screen.getByText("模型综合", { ...visibleText, exact: false }),
+      screen.getByText("Model summary", { ...visibleText, exact: false }),
     ).toBeTruthy();
   });
 
@@ -1932,10 +2040,12 @@ describe("MemorySpace", () => {
     try {
       render(<MemorySpace />);
       await userEvent.type(
-        await screen.findByLabelText("向记忆提问"),
-        "项目要求是什么？",
+        await screen.findByLabelText("Ask your memories"),
+        "What are the project requirements?",
       );
-      await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Send question" }),
+      );
       await waitFor(() =>
         expect(emitted.filter((e) => e.phase === "result")).toHaveLength(1),
       );
@@ -1958,16 +2068,20 @@ describe("MemorySpace", () => {
     });
     render(<MemorySpace />);
     await userEvent.type(
-      await screen.findByLabelText("向记忆提问"),
-      "项目要求",
+      await screen.findByLabelText("Ask your memories"),
+      "Project requirements",
     );
-    await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send question" }),
+    );
     expect(
       await screen.findByText(
-        "记忆内容或使用权限已变化，回答已停止。请重新提问。",
+        "The memory content or its permissions changed, so the answer stopped. Ask again.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("还没连上本地 Core，正在重试…")).toBeNull();
+    expect(
+      screen.queryByText("Not connected to the local Core yet, retrying..."),
+    ).toBeNull();
   });
 
   it("opens original evidence without a confirm or reject step", async () => {
@@ -1978,23 +2092,25 @@ describe("MemorySpace", () => {
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
     expect(await screen.findByText("Original words", visibleText)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "纠正" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "确认" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
     expect(mutateMemory).not.toHaveBeenCalled();
   });
 
   it("asks across authorized project memories from the workbench", async () => {
     render(<MemorySpace />);
     await userEvent.type(
-      await screen.findByLabelText("向记忆提问"),
-      "项目要求是什么？",
+      await screen.findByLabelText("Ask your memories"),
+      "What are the project requirements?",
     );
-    await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send question" }),
+    );
     await waitFor(() =>
       // The trace id is the 4th argument (the SSE path carries its own header).
       expect(askMemoriesStream).toHaveBeenCalledWith(
-        "项目要求是什么？",
+        "What are the project requirements?",
         "*",
         undefined,
         expect.any(String),
@@ -2013,12 +2129,14 @@ describe("MemorySpace", () => {
     });
     render(<MemorySpace />);
     await userEvent.type(
-      await screen.findByLabelText("向记忆提问"),
-      "项目要求是什么？",
+      await screen.findByLabelText("Ask your memories"),
+      "What are the project requirements?",
     );
-    await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "存为记忆" }),
+      screen.getByRole("button", { name: "Send question" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Save as memory" }),
     );
 
     await waitFor(() =>
@@ -2051,8 +2169,10 @@ describe("MemorySpace", () => {
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
     await screen.findByText("Original words", visibleText);
-    await userEvent.type(screen.getByLabelText("向记忆提问"), "查询");
-    await userEvent.click(screen.getByRole("button", { name: "发送问题" }));
+    await userEvent.type(screen.getByLabelText("Ask your memories"), "Query");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Send question" }),
+    );
     await screen.findByText("Answer before deletion", visibleText);
     getMemories.mockRejectedValue(
       new Error("read failed after successful mutation"),
@@ -2062,11 +2182,15 @@ describe("MemorySpace", () => {
       status: "deleted",
       revision: 2,
     });
-    await userEvent.click(screen.getByRole("button", { name: "删除" }));
-    await userEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm Delete" }),
+    );
     await waitFor(() => expect(mutateMemory).toHaveBeenCalled());
     expect(screen.queryByText("Answer before deletion")).toBeNull();
-    expect(screen.queryByRole("button", { name: "带出回答与引用" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Show answer and citations" }),
+    ).toBeNull();
   });
 
   it.each([false, true])(
@@ -2090,11 +2214,14 @@ describe("MemorySpace", () => {
       try {
         render(<MemorySpace />);
         await userEvent.click(
-          await screen.findByRole("tab", { name: "问记忆" }),
+          await screen.findByRole("tab", { name: "Ask memories" }),
         );
-        await userEvent.type(screen.getByLabelText("向已确认记忆提问"), "查询");
+        await userEvent.type(
+          screen.getByLabelText("Ask the confirmed memories"),
+          "Query",
+        );
         await userEvent.click(
-          screen.getByRole("button", { name: "根据记忆回答" }),
+          screen.getByRole("button", { name: "Answer from memories" }),
         );
         expect(
           await screen.findByText(
@@ -2146,13 +2273,18 @@ describe("MemorySpace", () => {
       await screen.findByText("Second original", visibleText),
     ).toBeTruthy();
     await act(async () => resolveFirst(detail));
-    await userEvent.click(screen.getByRole("button", { name: "纠正" }));
+    await userEvent.click(screen.getByRole("button", { name: "Correct" }));
     expect(
-      screen.getByRole("textbox", { name: "记忆内容" }).getAttribute("name"),
+      screen
+        .getByRole("textbox", { name: "Memory content" })
+        .getAttribute("name"),
     ).toBe("memory-content");
     expect(
-      (screen.getByRole("textbox", { name: "记忆内容" }) as HTMLTextAreaElement)
-        .value,
+      (
+        screen.getByRole("textbox", {
+          name: "Memory content",
+        }) as HTMLTextAreaElement
+      ).value,
     ).toBe("Second memory");
     expect(screen.queryByText("Original words")).toBeNull();
   });
@@ -2164,11 +2296,13 @@ describe("MemorySpace", () => {
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
 
-    await user.click(await screen.findByRole("button", { name: "纠正" }));
-    const content = await screen.findByRole("textbox", { name: "记忆内容" });
+    await user.click(await screen.findByRole("button", { name: "Correct" }));
+    const content = await screen.findByRole("textbox", {
+      name: "Memory content",
+    });
     await user.clear(content);
     await user.type(content, "Corrected memory");
-    await user.click(screen.getByRole("button", { name: "保存纠正" }));
+    await user.click(screen.getByRole("button", { name: "Save correction" }));
 
     await waitFor(() =>
       expect(correctMemory).toHaveBeenCalledWith(
@@ -2188,17 +2322,23 @@ describe("MemorySpace", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "纠正" }));
-    await userEvent.clear(screen.getByRole("textbox", { name: "记忆内容" }));
+    await userEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await userEvent.clear(
+      screen.getByRole("textbox", { name: "Memory content" }),
+    );
     await userEvent.type(
-      screen.getByRole("textbox", { name: "记忆内容" }),
+      screen.getByRole("textbox", { name: "Memory content" }),
       "Unsaved wording",
     );
-    await userEvent.click(screen.getByRole("button", { name: "调整召回范围" }));
     await userEvent.click(
-      screen.getByRole("radio", { name: "停止外部记忆召回" }),
+      screen.getByRole("button", { name: "Adjust recall scope" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存召回范围" }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Stop external memory recall" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save recall scope" }),
+    );
     await waitFor(() =>
       expect(setMemoryScopes).toHaveBeenCalledWith(
         "memory-1",
@@ -2243,11 +2383,15 @@ describe("MemorySpace", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "调整召回范围" }));
     await userEvent.click(
-      screen.getByRole("radio", { name: "停止外部记忆召回" }),
+      screen.getByRole("button", { name: "Adjust recall scope" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "保存召回范围" }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Stop external memory recall" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save recall scope" }),
+    );
     await userEvent.click(
       screen.getByRole("button", { name: /Second memory/ }),
     );
@@ -2268,49 +2412,63 @@ describe("MemorySpace", () => {
       await userEvent.click(
         await screen.findByRole("button", { name: /Initial memory/ }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "纠正" }));
-      fireEvent.change(screen.getByRole("textbox", { name: "记忆内容" }), {
-        target: { value: "Unsaved wording" },
-      });
-      await userEvent.click(
-        screen.getByRole("button", { name: "调整召回范围" }),
+      await userEvent.click(screen.getByRole("button", { name: "Correct" }));
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "Memory content" }),
+        {
+          target: { value: "Unsaved wording" },
+        },
       );
       await userEvent.click(
-        screen.getByRole("radio", { name: "停止外部记忆召回" }),
+        screen.getByRole("button", { name: "Adjust recall scope" }),
+      );
+      await userEvent.click(
+        screen.getByRole("radio", { name: "Stop external memory recall" }),
       );
       const reader = panel === "graph" ? getMemoryGraph : getMemories;
       reader.mockRejectedValueOnce(new Error("refresh unavailable"));
       await userEvent.click(
-        screen.getByRole("button", { name: "保存召回范围" }),
+        screen.getByRole("button", { name: "Save recall scope" }),
       );
       if (panel === "graph") {
         await waitFor(
           () => expect(getMemoryGraph.mock.calls.length).toBeGreaterThan(1),
           { timeout: 3500 },
         );
-        expect(screen.queryByText(/记忆图谱读取失败/)).toBeNull();
+        expect(
+          screen.queryByText(/Failed to load the memory graph/),
+        ).toBeNull();
       } else {
         expect(
           (await screen.findByRole("alert", {}, { timeout: 3500 })).textContent,
-        ).toContain("召回范围已保存，但列表刷新失败。请稍后重新打开记忆页。");
+        ).toContain(
+          "Recall scopes were saved, but the list refresh failed. Reopen the memory page later.",
+        );
       }
       expect(
         (
           screen.getByRole("textbox", {
-            name: "记忆内容",
+            name: "Memory content",
           }) as HTMLTextAreaElement
         ).value,
       ).toBe("Unsaved wording");
       expect(
-        (screen.getByRole("button", { name: "保存纠正" }) as HTMLButtonElement)
-          .disabled,
+        (
+          screen.getByRole("button", {
+            name: "Save correction",
+          }) as HTMLButtonElement
+        ).disabled,
       ).toBe(false);
       expect(setMemoryScopes).toHaveBeenCalledTimes(1);
       expect(correctMemory).not.toHaveBeenCalled();
       expect(mutateMemory).not.toHaveBeenCalled();
       expect(screen.getByText("Original words", visibleText)).toBeTruthy();
-      expect(screen.getByText("已停止外部记忆召回", visibleText)).toBeTruthy();
-      expect(screen.queryByText("保存结果尚未确认，请重试。")).toBeNull();
+      expect(
+        screen.getByText("External memory recall is stopped", visibleText),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText("The save result is unconfirmed. Try again."),
+      ).toBeNull();
     },
   );
 
@@ -2319,10 +2477,12 @@ describe("MemorySpace", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "纠正" }));
-    await userEvent.click(screen.getByRole("button", { name: "调整召回范围" }));
+    await userEvent.click(screen.getByRole("button", { name: "Correct" }));
     await userEvent.click(
-      screen.getByRole("radio", { name: "停止外部记忆召回" }),
+      screen.getByRole("button", { name: "Adjust recall scope" }),
+    );
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Stop external memory recall" }),
     );
     await userEvent.keyboard("{Enter}");
     expect(correctMemory).not.toHaveBeenCalled();
@@ -2350,12 +2510,15 @@ describe("MemorySpace", () => {
     );
 
     expect(
-      await screen.findByText(/搜索里还是改之前那句话/, visibleText),
+      await screen.findByText(
+        /Search still shows the wording before your edit/,
+        visibleText,
+      ),
     ).toBeTruthy();
     expect(
-      screen.getAllByText(/同步尝试 1 次 · 状态更新于/).length,
+      screen.getAllByText(/Sync attempted 1 time - Status updated at/).length,
     ).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: "重试同步" }));
+    await user.click(screen.getByRole("button", { name: "Retry sync" }));
 
     await waitFor(() =>
       expect(syncMemoryIndex).toHaveBeenCalledWith(
@@ -2385,9 +2548,9 @@ describe("MemorySpace", () => {
     );
 
     expect(
-      screen.getAllByText(/HY Memory 里没有这条记忆/).length,
+      screen.getAllByText(/HY Memory has no such memory/).length,
     ).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "重试同步" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry sync" })).toBeNull();
   });
 
   it("does not call a 200 pending index response a successful sync", async () => {
@@ -2413,7 +2576,7 @@ describe("MemorySpace", () => {
       await screen.findByRole("button", { name: /Initial memory/ }),
     );
     await userEvent.click(
-      await screen.findByRole("button", { name: "重试同步" }),
+      await screen.findByRole("button", { name: "Retry sync" }),
     );
     await waitFor(() =>
       expect(syncMemoryIndex).toHaveBeenCalledWith(
@@ -2423,7 +2586,9 @@ describe("MemorySpace", () => {
     );
     expect(syncMemoryIndex.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/);
     await waitFor(() =>
-      expect(screen.getAllByText(/同步尝试 2 次/).length).toBeGreaterThan(0),
+      expect(
+        screen.getAllByText(/Sync attempted 2 times/).length,
+      ).toBeGreaterThan(0),
     );
   });
 
@@ -2437,12 +2602,14 @@ describe("MemorySpace", () => {
     );
 
     expect(await screen.findByText("Original words", visibleText)).toBeTruthy();
-    expect(screen.queryByText(/搜索里还是改之前那句话/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "重试同步" })).toBeNull();
+    expect(
+      screen.queryByText(/Search still shows the wording before your edit/),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry sync" })).toBeNull();
   });
 
-  describe("宽度不一致的三选一（A-33）", () => {
-    it("记忆空间一打开就把选择摆出来，不等抽取先失败一轮", async () => {
+  describe("The three-way choice on a width mismatch (A-33)", () => {
+    it("offers the choice as soon as the memory space opens, without waiting for a failed extraction round", async () => {
       getGraphWidth.mockResolvedValue({
         mismatch: {
           stored_width: 768,
@@ -2456,12 +2623,12 @@ describe("MemorySpace", () => {
 
       expect(
         await screen.findByRole("dialog", {
-          name: "现有记忆库和内置模型对不上",
+          name: "The existing memory library does not match the built-in model",
         }),
       ).toBeTruthy();
     });
 
-    it("宽度一致时不摆这个对话框", async () => {
+    it("does not show this dialog when the widths match", async () => {
       render(<MemorySpace />);
 
       await waitFor(() => {
@@ -2471,7 +2638,7 @@ describe("MemorySpace", () => {
     });
   });
 
-  describe("抽取窗口与三态（M-21）", () => {
+  describe("Extraction window and its three states (M-21)", () => {
     function withDeferred(outside: number, extra: object = {}) {
       getMemoryProcessing.mockResolvedValue({
         pending: 3,
@@ -2494,17 +2661,19 @@ describe("MemorySpace", () => {
       });
     }
 
-    it("窗口外的条数单独说，并讲明原文还搜得到", async () => {
+    it("names the outside-window count separately and says the source text stays searchable", async () => {
       withDeferred(672);
 
       render(<MemorySpace />);
 
       expect(
-        await screen.findByText(/672 条在窗口外（原文可搜）/),
+        await screen.findByText(
+          /672 outside the window \(source text still searchable\)/,
+        ),
       ).toBeTruthy();
     });
 
-    it("手动提炼的批次进度按已规划 N 批 当前第 M 批显示", async () => {
+    it("shows manual extraction progress as planned batches and the current batch", async () => {
       withDeferred(647, {
         manual_extract_batches_planned: 27,
         manual_extract_batches_current: 2,
@@ -2514,16 +2683,18 @@ describe("MemorySpace", () => {
 
       render(<MemorySpace />);
 
-      expect(await screen.findByText(/已规划 27 批，当前第 2 批/)).toBeTruthy();
+      expect(
+        await screen.findByText(/27 batches planned, currently on batch 2/),
+      ).toBeTruthy();
     });
 
-    it("切换档位把选择送到后端", async () => {
+    it("sends the chosen preset to the backend when it changes", async () => {
       const user = userEvent.setup();
       withDeferred(672);
 
       render(<MemorySpace />);
 
-      const select = await screen.findByLabelText("自动提炼范围");
+      const select = await screen.findByLabelText("Automatic extraction range");
       await user.selectOptions(select, "1y");
 
       await waitFor(() => {
@@ -2534,35 +2705,39 @@ describe("MemorySpace", () => {
       });
     });
 
-    it("手动提炼一次只要一批，不是把窗口外全塞进去", async () => {
+    it("asks for one batch per manual extraction instead of the whole outside window", async () => {
       const user = userEvent.setup();
       withDeferred(672);
 
       render(<MemorySpace />);
 
       await user.click(
-        await screen.findByRole("button", { name: "手动提炼下一批" }),
+        await screen.findByRole("button", {
+          name: "Manually extract the next batch",
+        }),
       );
 
       await waitFor(() => {
         expect(manualExtract).toHaveBeenCalledTimes(1);
       });
-      // 不带 id 就是「下一批」：批量大小由 Core 定，界面不负责一次塞完。
+      // No ids means "the next batch": Core picks the batch size, the UI never pushes everything in at once.
       expect(manualExtract).toHaveBeenCalledWith([], expect.any(String));
     });
 
-    it("没有窗口外的条目时不摆一个提炼不动的按钮", async () => {
+    it("does not offer a button that cannot extract anything when the window is clear", async () => {
       withDeferred(0);
 
       render(<MemorySpace />);
 
-      await screen.findByLabelText("自动提炼范围");
+      await screen.findByLabelText("Automatic extraction range");
       expect(
-        screen.queryByRole("button", { name: "手动提炼下一批" }),
+        screen.queryByRole("button", {
+          name: "Manually extract the next batch",
+        }),
       ).toBeNull();
     });
 
-    it("原话标出窗口外，已提炼的不加多余标签", async () => {
+    it("marks a source quote as outside the window and leaves extracted ones unlabelled", async () => {
       const user = userEvent.setup();
       getMemory.mockResolvedValue({
         ...detail,
@@ -2583,19 +2758,22 @@ describe("MemorySpace", () => {
       );
 
       expect(
-        await screen.findByText("未提炼 · 在窗口外", visibleText),
+        await screen.findByText(
+          "Not extracted · outside the window",
+          visibleText,
+        ),
       ).toBeTruthy();
       expect(screen.getByText("Extracted words", visibleText)).toBeTruthy();
-      expect(screen.queryByText("已提炼")).toBeNull();
+      expect(screen.queryByText("Extracted")).toBeNull();
     });
   });
 
-  describe("没有生成模型时的落点", () => {
-    it("没有活跃档案也落在工作台，不再绕道历史对话", async () => {
-      // 原来这里会跳去历史对话，理由是「地图、问答、记忆库此刻都是空的」。
-      // 工作台把这个前提拿掉了：一条记忆都没有时它照样画出已导入的来源、
-      // 列出事项、说清楚抽取卡在哪。绕过去反而让人错过唯一解释这个 App
-      // 是干什么的那一屏。
+  describe("Where the page lands with no generation model", () => {
+    it("still lands on the workbench without an active profile instead of detouring to history", async () => {
+      // This used to jump to the history view, arguing that the map, the ask panel and
+      // the library are all empty right now. The workbench removes that premise: with no
+      // memory at all it still draws the imported sources, lists what is pending and says
+      // where extraction is stuck. Detouring hides the one screen that explains this app.
       getModelProfiles.mockResolvedValue([
         { profile_id: "profile-1", is_active: false },
       ]);
@@ -2603,26 +2781,26 @@ describe("MemorySpace", () => {
       render(<MemorySpace />);
 
       expect(
-        (await screen.findByRole("tab", { name: "工作台" })).getAttribute(
+        (await screen.findByRole("tab", { name: "Workbench" })).getAttribute(
           "aria-selected",
         ),
       ).toBe("true");
       expect(
-        screen.queryByRole("textbox", { name: "搜索历史对话" }),
+        screen.queryByRole("textbox", { name: "Search conversation history" }),
       ).toBeNull();
     });
 
-    it("历史对话仍旧一点就到", async () => {
+    it("keeps the history dialogue one click away", async () => {
       const user = userEvent.setup();
       getModelProfiles.mockResolvedValue([
         { profile_id: "profile-1", is_active: false },
       ]);
       render(<MemorySpace />);
 
-      await user.click(await screen.findByRole("tab", { name: "历史对话" }));
+      await user.click(await screen.findByRole("tab", { name: "History" }));
 
       expect(
-        screen.getByRole("textbox", { name: "搜索历史对话" }),
+        screen.getByRole("textbox", { name: "Search conversation history" }),
       ).toBeTruthy();
     });
   });

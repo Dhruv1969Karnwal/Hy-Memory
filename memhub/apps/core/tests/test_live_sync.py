@@ -844,7 +844,7 @@ def test_live_sync_rebases_large_same_file_backlog_and_demotes_pending_dispatch(
             message_id="old-1",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="旧内容不应继续占实时通道",
+            verbatim="stale content must not keep occupying the live channel",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -1249,8 +1249,8 @@ def test_triggering_a_sync_leaves_the_loop_free_to_answer(tmp_path) -> None:
 
     longest, ticks = asyncio.run(scenario())
 
-    assert ticks > 1, "心跳没有真的在跑"
-    assert longest < delay * 2, f"触发同步期间循环被堵住 {longest:.3f}s"
+    assert ticks > 1, "the heartbeat never really ran"
+    assert longest < delay * 2, f"loop blocked for {longest:.3f}s while triggering sync"
 
 
 def test_live_sync_diagnostics_only_emit_state_changes(tmp_path, monkeypatch):

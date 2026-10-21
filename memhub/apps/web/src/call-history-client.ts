@@ -4,6 +4,7 @@ import {
   getCallHistoryRequest,
   getCallReferencesRequest,
 } from "./api";
+import { countLabel } from "./count-label";
 
 export interface CallReference {
   kind: "raw" | "memory";
@@ -48,10 +49,10 @@ export interface CallHistoryPage {
   max_events: number | null;
 }
 export const CALL_TOOLS: Record<CallEvent["tool"], string> = {
-  om_recall: "查记忆",
-  om_conversations: "查记忆",
-  om_ask: "查记忆",
-  om_matters: "查记忆",
+  om_recall: "Memory lookup",
+  om_conversations: "Memory lookup",
+  om_ask: "Memory lookup",
+  om_matters: "Memory lookup",
 };
 export const CALL_HOSTS: Record<string, string> = {
   cursor: "Cursor",
@@ -65,18 +66,21 @@ export const CALL_HOSTS: Record<string, string> = {
   "deepseek-harness": "DeepSeek Harness",
 };
 export function callHostName(id: string | null) {
-  return id === null ? "直接调用（诊断）" : (CALL_HOSTS[id] ?? id);
+  return id === null ? "Direct call (diagnostics)" : (CALL_HOSTS[id] ?? id);
 }
 export function callEventHeadline(
   item: CallEvent,
   host = callHostName(item.host_id),
 ) {
   const count = item.raw_count + item.memory_count;
-  if (item.state === "timed_out") return `${host} 这次没来得及查到记忆`;
-  if (item.state === "unavailable") return `${host} 暂时无法查记忆`;
-  if (item.state === "denied") return `${host} 未获准查记忆`;
-  if (item.state === "empty") return `${host} 没有查到相关记忆`;
-  return `${host} 查到 ${count} 条相关内容`;
+  if (item.state === "timed_out")
+    return `${host} did not get memory in time this time`;
+  if (item.state === "unavailable")
+    return `${host} cannot look up memory right now`;
+  if (item.state === "denied")
+    return `${host} was not allowed to look up memory`;
+  if (item.state === "empty") return `${host} found no related memory`;
+  return `${host} found ${countLabel(count, "related item")}`;
 }
 export function callRowHeadline(item: CallEvent) {
   return callEventHeadline(item);
@@ -84,18 +88,21 @@ export function callRowHeadline(item: CallEvent) {
 export function callRowDetail(item: CallEvent) {
   const host = callHostName(item.host_id);
   if (item.state === "timed_out")
-    return "后台正在整理记忆，查询超时，这次回答没有带上记忆";
+    return "The background is still organizing memory; the query timed out, so this answer did not include memory";
   if (item.state === "unavailable")
-    return "One Memory 暂时不可用，这次回答没有带上记忆";
-  if (item.state === "denied") return "当前授权不允许这次查询";
+    return "One Memory is unavailable right now; this answer did not include memory";
+  if (item.state === "denied")
+    return "The current authorization does not allow this query";
   if (item.state === "partial") {
     return item.delivery === "delivered"
-      ? `已提供给 ${host} · 部分内容还在整理中`
-      : "部分内容还在整理中";
+      ? `Provided to ${host} · some content is still being organized`
+      : "Some content is still being organized";
   }
-  if (item.delivery === "delivered") return `已提供给 ${host}`;
-  if (item.delivery === "not_delivered") return "没有提供给应用";
-  return item.state === "empty" ? "这次没有找到相关记忆" : "查询成功";
+  if (item.delivery === "delivered") return `Provided to ${host}`;
+  if (item.delivery === "not_delivered") return "Not provided to the app";
+  return item.state === "empty"
+    ? "No related memory was found this time"
+    : "Query succeeded";
 }
 export function callDetailHeadline(
   item: CallEvent,
@@ -105,19 +112,19 @@ export function callDetailHeadline(
 }
 export function callDeliveryLabel(item: CallEvent) {
   if (item.delivery === "delivered")
-    return `已提供给 ${callHostName(item.host_id)}`;
-  if (item.delivery === "not_delivered") return "没有提供给应用";
+    return `Provided to ${callHostName(item.host_id)}`;
+  if (item.delivery === "not_delivered") return "Not provided to the app";
   return "";
 }
 export function callReturnDeliveryLabel(item: CallEvent) {
   const host = callHostName(item.host_id);
   if (item.state === "timed_out")
-    return `One Memory 正在导入和整理你的记忆，这次没能及时查完，所以 ${host} 这次是在没有记忆的情况下回答的。整理完成后会恢复正常。`;
+    return `One Memory was still importing and organizing your memories and could not finish the lookup in time, so ${host} answered this time without memory. It returns to normal once organizing finishes.`;
   if (item.state === "unavailable")
-    return "One Memory 暂时不可用，这次回答没有带上记忆。";
+    return "One Memory is unavailable right now; this answer did not include memory.";
   if (item.state === "denied")
-    return "当前授权不允许这次查询，没有向应用提供记忆。";
-  if (item.state === "partial") return "部分内容还在整理中。";
+    return "The current authorization does not allow this query; no memory was provided to the app.";
+  if (item.state === "partial") return "Some content is still being organized.";
   return "";
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

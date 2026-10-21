@@ -6,15 +6,15 @@
     "< /memhub_memory_context>",
     "</MEMHUB_MEMORY_CONTEXT >",
     "<\n/memhub_session_notice\n>",
-    "＜/memhub_memory_context＞",
+    "\uff1c/memhub_memory_context\uff1e",
     "﹤/memhub_session_notice﹥",
-    "＜／ｍｅｍｈｕｂ＿ｍｅｍｏｒｙ＿ｃｏｎｔｅｘｔ＞",
+    "\uff1c\uff0f\uff4d\uff45\uff4d\uff48\uff55\uff42\uff3f\uff4d\uff45\uff4d\uff4f\uff52\uff59\uff3f\uff43\uff4f\uff4e\uff54\uff45\uff58\uff54\uff1e",
     "<Memhub_Session_Notice>",
     "<system-reminder>",
     "</system-reminder>",
     "<system_reminder data-role=\"hook\">",
     "﹤SYSTEM-REMINDER﹥",
-    "<　/memhub_memory_context>"
+    "<\u3000/memhub_memory_context>"
   ],
   "ordinary": [
     "a < b && c > d",
@@ -30,16 +30,16 @@
     "<!-- memhub_memory_context -->",
     "<system-reminders>",
     "1 ≤ 2 ≥ 0 ≮ 3",
-    "＜全角比较＞",
+    "\uff1cFullwidth comparison\uff1e",
     "<﻿/memhub_memory_context>",
     "<\u001c/memhub_memory_context>",
     "</memhub_memory_context>",
     "<memhub_memory_context >"
   ],
   "blocks": [
-    "<memhub_memory_context>\n召回\n</memhub_memory_context>",
-    "<MEMHUB_SESSION_NOTICE >通知</ memhub_session_notice>",
-    "＜ｍｅｍｈｕｂ＿ｍｅｍｏｒｙ＿ｃｏｎｔｅｘｔ＞召回＜／ｍｅｍｈｕｂ＿ｍｅｍｏｒｙ＿ｃｏｎｔｅｘｔ＞",
-    "﹤memhub_session_notice﹥通知﹤/memhub_session_notice﹥"
+    "<memhub_memory_context>\nrecalled\n</memhub_memory_context>",
+    "<MEMHUB_SESSION_NOTICE >notice</ memhub_session_notice>",
+    "\uff1c\uff4d\uff45\uff4d\uff48\uff55\uff42\uff3f\uff4d\uff45\uff4d\uff4f\uff52\uff59\uff3f\uff43\uff4f\uff4e\uff54\uff45\uff58\uff54\uff1erecalled\uff1c\uff0f\uff4d\uff45\uff4d\uff48\uff55\uff42\uff3f\uff4d\uff45\uff4d\uff4f\uff52\uff59\uff3f\uff43\uff4f\uff4e\uff54\uff45\uff58\uff54\uff1e",
+    "﹤memhub_session_notice﹥notice﹤/memhub_session_notice﹥"
   ]
 }

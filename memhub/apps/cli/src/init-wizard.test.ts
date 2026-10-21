@@ -63,7 +63,7 @@ describe("init wizard yes/no parsing", () => {
 
   it("accepts English and Chinese, rejects nonsense", () => {
     expect(parseYesNo("y", false)).toBe(true);
-    expect(parseYesNo("否", true)).toBe(false);
+    expect(parseYesNo("\u5426", true)).toBe(false);
     expect(parseYesNo("maybe", true)).toBeNull();
   });
 });
@@ -110,6 +110,8 @@ describe("init wizard flow", () => {
     expect(outcome.state).toBe("answered");
     if (outcome.state !== "answered") return;
     expect(outcome.answers.sourceIds).toEqual(["codex"]);
-    expect(prompter.wrote.some((line) => line.includes("无法识别"))).toBe(true);
+    expect(
+      prompter.wrote.some((line) => line.includes("Unrecognized input")),
+    ).toBe(true);
   });
 });

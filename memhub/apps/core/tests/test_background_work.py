@@ -49,7 +49,9 @@ def test_a_request_does_not_wait_behind_a_catch_up() -> None:
     finally:
         shutdown_bulk_pool()
 
-    assert waited < 0.5, f"请求为拿到一个线程等了 {waited:.3f}s，排在批量工作后面"
+    assert waited < 0.5, (
+        f"the request waited {waited:.3f}s to get a thread, queued behind the bulk work"
+    )
 
 
 def test_bulk_work_is_kept_to_a_few_threads_at_a_time() -> None:

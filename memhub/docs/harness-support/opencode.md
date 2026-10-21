@@ -1,45 +1,45 @@
-# OpenCode 一键插入支持
+# OpenCode one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-OpenCode 已开放一键插入。它安装 **OpenCode MCP 配置 + 实时 Capture Plugin**，不安装 Skill。
+OpenCode ships with one-click insert. It installs **the OpenCode MCP config + a live Capture Plugin** and no Skill.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | OpenCode 当前实现 |
+| Item | OpenCode current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| OpenCode 查询 MemHub | MCP Server |
-| 告诉模型何时查询 | 无 Skill；依赖 MCP Tool Description |
-| Prompt 前自动 Prefetch | 没有 |
-| OpenCode 新会话实时送入 MemHub | `one-memory-capture.js` Plugin |
-| 传统 Plugin | Capture 是本地 JS Plugin；Recall 本身仍是 MCP |
+| One-click insert status | Available |
+| How OpenCode queries MemHub | MCP Server |
+| How the model knows when to query | No Skill; relies on the MCP Tool Description |
+| Automatic Prefetch before prompts | None |
+| New OpenCode sessions into MemHub in real time | `one-memory-capture.js` Plugin |
+| Traditional Plugin | Capture is a local JS Plugin; Recall itself is still MCP |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-写入 `mcp.one-memory`、安装 Capture Plugin、创建 Credential 并授权。OpenCode 模型需要主动调用 MCP 才会 Recall；Capture Plugin 不会向 Prompt 注入记忆。
+It writes `mcp.one-memory`, installs the Capture Plugin, creates the Credential and grants it. The OpenCode model has to call MCP on its own to Recall anything; the Capture Plugin never injects memories into prompts.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤权，再恢复或删除 MCP、Capture Plugin 和 Journal；不修改同步开关。
+Revoke first, then restore or delete the MCP, the Capture Plugin and the Journal; the Sync toggle is left untouched.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 扫描 OpenCode 数据库、恢复 history Job，并允许 Capture Plugin 实时事件进入 Evidence。
+Core scans the OpenCode database, resumes history Jobs and allows live Capture Plugin events into Evidence.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core 停止数据库扫描和 pending Job claim，Capture Plugin 后续调用被 Core 拒绝；running Job可完成，已有 Memory 保留。OpenCode 的 MCP 若仍安装，可以继续查询已有 Memory。
+Core stops database scanning and pending Job claims, and later Capture Plugin calls are refused by Core; running Jobs may finish and existing Memory is kept. If OpenCode's MCP is still installed, it can keep querying existing Memory.
 
-### 组合效果
+### Combined effect
 
-两个开关都开时，OpenCode 同时拥有主动 MCP Recall 和两条会话入库路径（数据库扫描、Capture Plugin）。当前没有自动 Prefetch。
+With both toggles on, OpenCode has active MCP Recall plus two session intake paths (database scan and Capture Plugin). There is no automatic Prefetch today.
 
-## 实际安装
+## What gets installed
 
 ```text
 ~/.config/opencode/opencode.json
@@ -50,7 +50,7 @@ Core 停止数据库扫描和 pending Job claim，Capture Plugin 后续调用被
 ~/.config/opencode/.one-memory/recall-install.json
 ```
 
-MCP 配置形态：
+The MCP config shape:
 
 ```json
 {
@@ -67,33 +67,33 @@ MCP 配置形态：
 }
 ```
 
-OpenCode 没有安装器认可的 Skill 机制，`skillPath=null`；使用指导依赖 MCP Tool Description。
+OpenCode has no Skill mechanism the installer accepts, so `skillPath=null`; usage guidance relies on the MCP Tool Description.
 
 ## Capture Plugin
 
-`one-memory-capture.js` 监听消息 part 更新与 session idle，将文本通过：
+`one-memory-capture.js` listens for message part updates and session idle, and passes the text through:
 
 ```text
 one-memory capture opencode
 ```
 
-送给 Core。Plugin 超时和异常不会阻断 OpenCode。
+to Core. Plugin timeouts and exceptions never block OpenCode.
 
-这意味着 OpenCode 有两条会话进入 MemHub 的路径：
+This means OpenCode has two paths for sessions to reach MemHub:
 
-1. Core Adapter 扫描 OpenCode 数据库；
-2. Capture Plugin 实时推送。
+1. the Core Adapter scanning the OpenCode database;
+2. the Capture Plugin pushing in real time.
 
-同步开关仍应是最终接收和处理门禁，但两条路径存在职责重叠。
+The Sync toggle is still meant to be the final gate for accepting and processing, but the two paths overlap in responsibility.
 
-## 权限、重复打开与关闭
+## Permissions, re-opening and closing
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:opencode`。
-- 已安装且 `approved`：不重装，只修复命令并 Probe。
-- 关闭：先撤权，再恢复或删除 `mcp.one-memory`、Capture Plugin 和 Journal。
-- 配置或 Plugin 被用户修改时不强删，撤权后提示人工处理。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:opencode`.
+- Already installed and `approved`: no reinstall; only repair the command and Probe.
+- Closing: revoke first, then restore or delete `mcp.one-memory`, the Capture Plugin and the Journal.
+- Config or Plugin modified by the user is not force-deleted; the grant is revoked and manual handling is requested.
 
-## 生效与重启
+## Taking effect and restart
 
-MemHub 的 Probe 不代表正在运行的 OpenCode 已热加载配置和 Plugin。建议完全退出 OpenCode、重新打开并新建会话。
+MemHub's Probe does not mean a running OpenCode has hot-loaded the config and the Plugin. Quit OpenCode fully, re-open and start a new session.

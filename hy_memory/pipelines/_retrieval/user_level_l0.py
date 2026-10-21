@@ -82,9 +82,9 @@ def collapse_user_level_l0_hits(hits: Iterable[Dict[str, Any]]) -> List[Dict[str
         max_score = max(float(h.get("score", 0.0) or 0.0) for h in user_hits)
         best = {**best, "score": max_score}
 
-        # 历史 agent-level 多链可能各自保存不同字段。仅挑一条会丢画像字段，
-        # 因此在读侧合并 KV 并生成一个临时 user-level 节点；下一次写入会把它们
-        # 惰性迁移为真实的 canonical 链头。
+        # Legacy agent-level chains may each store different fields. Picking just one loses profile fields,
+        # so the read side merges the KV pairs and produces a transient user-level node; the next write lazily
+        # migrates them into a real canonical chain head.
         if len(user_hits) > 1 and best.get("node") is not None:
             merged_kv: Dict[str, Any] = {}
             ordered = sorted(

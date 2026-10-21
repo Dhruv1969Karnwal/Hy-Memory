@@ -6,6 +6,7 @@ import type {
 import { FileText, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getConversation, getSourceImportReceipt } from "./api";
+import { groupedCountLabel } from "./count-label";
 
 export function SourceImportReceipt({ source }: { source: SourceResponse }) {
   return source.authorized ? (
@@ -50,7 +51,9 @@ function ReceiptBody({ source }: { source: SourceResponse }) {
       setReceipt(result);
     } catch {
       if (generation.current === current)
-        setError("暂时无法读取已保存内容，旧回执已收起。请检查授权或重试。");
+        setError(
+          "Saved content cannot be read right now and the old receipt was collapsed. Check the authorization or retry.",
+        );
     } finally {
       if (generation.current === current) setLoading(false);
     }
@@ -73,7 +76,9 @@ function ReceiptBody({ source }: { source: SourceResponse }) {
     } catch {
       if (conversationGeneration.current === current) {
         setReceipt(null);
-        setReadError("这段原文暂不可读，可能已被撤回授权。请刷新回执。");
+        setReadError(
+          "This source text cannot be read; its authorization may have been revoked. Refresh the receipt.",
+        );
       }
     } finally {
       if (conversationGeneration.current === current) setReading(false);
@@ -97,78 +102,80 @@ function ReceiptBody({ source }: { source: SourceResponse }) {
         }
       }}
     >
-      <summary>查看已读内容</summary>
+      <summary>View read content</summary>
       {opened && (
         <div className="source-receipt-body">
           <header>
-            <span>已保存原文 · {source.display_name}</span>
+            <span>Saved source text · {source.display_name}</span>
             <button
               type="button"
               className="quiet"
-              title="刷新已读内容"
-              aria-label="刷新已读内容"
+              title="Refresh read content"
+              aria-label="Refresh read content"
               disabled={loading}
               onClick={() => void load()}
             >
               <RefreshCw size={15} />
             </button>
           </header>
-          {loading && <p role="status">正在核对本机已保存记录…</p>}
+          {loading && <p role="status">Checking locally saved records...</p>}
           {error && <p role="alert">{error}</p>}
           {receipt && (
             <>
               <dl className="source-receipt-counts">
                 <div>
-                  <dt>原始消息</dt>
+                  <dt>Original messages</dt>
                   <dd>{receipt.messages.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt>会话</dt>
+                  <dt>Conversations</dt>
                   <dd>{receipt.conversations.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt>用户发言</dt>
+                  <dt>User messages</dt>
                   <dd>{receipt.person_messages.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt>Agent 发言</dt>
+                  <dt>Agent messages</dt>
                   <dd>{receipt.agent_messages.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt>作者未知</dt>
+                  <dt>Unknown author</dt>
                   <dd>{receipt.unknown_author_messages.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt>原始时间未知</dt>
+                  <dt>Unknown original time</dt>
                   <dd>{receipt.unknown_time_messages.toLocaleString()}</dd>
                 </div>
                 {receipt.tool_messages > 0 && (
                   <div>
-                    <dt>工具记录</dt>
+                    <dt>Tool records</dt>
                     <dd>{receipt.tool_messages.toLocaleString()}</dd>
                   </div>
                 )}
               </dl>
               <p className="source-receipt-note">
                 {receipt.unknown_time_messages > 0
-                  ? `${receipt.unknown_time_messages.toLocaleString()} 条记录没有原始时间，未用导入时间代替。`
-                  : "原始时间来自已保存记录。"}{" "}
-                作者数量按当前记录分类统计，不代表记忆抽取已完成或语义已核实。
+                  ? `${groupedCountLabel(receipt.unknown_time_messages, "record")} have no original time, the import time was not substituted.`
+                  : "Original times come from the saved records."}{" "}
+                Author counts are classified from the current records; they do
+                not mean extraction finished or that meaning was verified.
               </p>
               <p className="source-receipt-meta">
-                统计于 {time(receipt.measured_at)}
+                Measured at {time(receipt.measured_at)}
                 {receipt.messages !== source.imported_messages
-                  ? " · 导入数量仍在更新，可刷新核对"
+                  ? " · import counts are still updating, refresh to check"
                   : ""}
               </p>
               {receipt.examples.length > 0 ? (
                 <section
                   className="source-receipt-examples"
-                  aria-label="已保存的原文样例"
+                  aria-label="Samples of saved source text"
                 >
-                  <h3>已保存的原文样例</h3>
+                  <h3>Samples of saved source text</h3>
                   <p className="source-receipt-meta">
-                    最多展示 3 段，不代表全部历史或推荐记忆。
+                    At most 3 samples are shown; they are not the whole history
+                    or a recommended memory.
                   </p>
                   {receipt.examples.map((example) => (
                     <article key={example.evidence_id}>
@@ -183,35 +190,38 @@ function ReceiptBody({ source }: { source: SourceResponse }) {
                           onClick={() => void read(example.evidence_id)}
                         >
                           <FileText size={14} aria-hidden="true" />
-                          查看完整对话
+                          View full conversation
                         </button>
                       </header>
                       <p className="source-receipt-quote">{example.excerpt}</p>
                       {example.truncated && (
-                        <small>原文较长，此处仅展示前 600 个字符。</small>
+                        <small>
+                          The source text is long; only the first 600 characters
+                          are shown here.
+                        </small>
                       )}
                     </article>
                   ))}
                 </section>
               ) : (
-                <p>这个来源还没有保存原文。</p>
+                <p>This source has no saved source text yet.</p>
               )}
             </>
           )}
-          {reading && <p role="status">正在读取完整对话…</p>}
+          {reading && <p role="status">Reading the full conversation...</p>}
           {readError && <p role="alert">{readError}</p>}
           {transcript && (
             <section
               className="source-receipt-conversation"
-              aria-label="完整对话"
+              aria-label="Full conversation"
             >
               <header>
-                <h3>完整对话</h3>
+                <h3>Full conversation</h3>
                 <button
                   type="button"
                   className="quiet"
-                  title="关闭完整对话"
-                  aria-label="关闭完整对话"
+                  title="Close the full conversation"
+                  aria-label="Close the full conversation"
                   onClick={() => {
                     conversationGeneration.current++;
                     setTranscript(null);
@@ -240,15 +250,15 @@ function ReceiptBody({ source }: { source: SourceResponse }) {
 
 function author(value: string) {
   return value === "person"
-    ? "用户"
+    ? "User"
     : value === "agent"
       ? "Agent"
       : value === "tool"
-        ? "工具"
-        : "作者未知";
+        ? "Tool"
+        : "Unknown author";
 }
 function time(value: string | null) {
   return value && Number.isFinite(Date.parse(value))
     ? new Date(value).toLocaleString()
-    : "时间未知";
+    : "Unknown time";
 }

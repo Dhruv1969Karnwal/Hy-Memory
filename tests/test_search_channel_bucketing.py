@@ -11,8 +11,8 @@ from hy_memory.client import _search_memory_channel
 
 def _extract_search_chat_layer_constants() -> tuple[set[str], set[str]]:
     """
-    从 client.py 源码里抽出 _SCHEMA_LAYERS / _PROACTIVE_LAYERS
-    常量集合（避免端到端跑整个 search，需要真实 client + embed + VDB）。
+    Pulls the _SCHEMA_LAYERS / _PROACTIVE_LAYERS constant sets out of the client.py
+    source (avoiding an end-to-end search run, which would need a real client + embed + VDB).
     """
     from hy_memory import client as client_mod
     src = inspect.getsource(client_mod)
@@ -29,7 +29,7 @@ def _extract_search_chat_layer_constants() -> tuple[set[str], set[str]]:
     assert proactive_match, "could not locate _PROACTIVE_LAYERS in client.py"
 
     def _parse(set_body: str) -> set[str]:
-        # set_body 形如 "\"l0_basic_info\", \"l4_identity\", ..."
+        # set_body looks like "\"l0_basic_info\", \"l4_identity\", ..."
         return set(re.findall(r'"([^"]+)"', set_body))
 
     return _parse(schema_match.group(1)), _parse(proactive_match.group(1))

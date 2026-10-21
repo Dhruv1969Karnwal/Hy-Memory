@@ -37,7 +37,8 @@ async function discovery(status: "running" | "stopped") {
 
 const HIT = {
   memory_id: "m1",
-  content: "用户要求统一用 axios 封装，不用 fetch 裸调",
+  content:
+    "The user asked to wrap requests with axios instead of calling fetch directly",
   kind: "chat" as const,
   scopes: ["workspace:v1:abc"],
   evidence_ids: ["e1"],
@@ -49,7 +50,7 @@ describe("recall cli", () => {
   it("writes the memories as prose a model can just read", async () => {
     recallThroughBroker.mockResolvedValue({
       state: "grounded",
-      query: "代码风格偏好",
+      query: "code style preference",
       scope: "all-apps",
       hits: [HIT],
       used_characters: 40,
@@ -57,7 +58,7 @@ describe("recall cli", () => {
     });
 
     const result = await runRecallCli(
-      ["代码风格偏好"],
+      ["code style preference"],
       await discovery("running"),
       "/Users/someone",
       "/Users/someone/work/api-service",
@@ -66,22 +67,26 @@ describe("recall cli", () => {
     expect(result.exitCode).toBe(0);
     // Says which project was included; the receipt's own `scope` is the one
     // that was asked for, which would read "all-apps" over project memories.
-    expect(result.stdout).toContain("含当前工程 api-service");
     expect(result.stdout).toContain(
-      "1. 用户要求统一用 axios 封装，不用 fetch 裸调",
+      "including the current project api-service",
+    );
+    expect(result.stdout).toContain(
+      "1. The user asked to wrap requests with axios instead of calling fetch directly",
     );
     // Recalled memory arrives in the same channel as instructions, so the text
     // states the boundary rather than leaving the model to assume it.
-    expect(result.stdout).toContain("当前用户的请求优先");
+    expect(result.stdout).toContain(
+      "The current user request takes precedence",
+    );
   });
 
   it("does not append governance updated_at to SDK-formatted memory", async () => {
     const formatted =
-      "Memory: 用户要求统一用 axios 封装，不用 fetch 裸调\n" +
+      "Memory: The user asked to wrap requests with axios instead of calling fetch directly\n" +
       "When: 2026-08-08 03:16:40 UTC";
     recallThroughBroker.mockResolvedValue({
       state: "grounded",
-      query: "代码风格偏好",
+      query: "code style preference",
       scope: "all-apps",
       hits: [{ ...HIT, content: formatted, content_format: "hy-sdk" }],
       used_characters: formatted.length,
@@ -89,14 +94,14 @@ describe("recall cli", () => {
     });
 
     const result = await runRecallCli(
-      ["代码风格偏好"],
+      ["code style preference"],
       await discovery("running"),
       "/Users/someone",
       "/Users/someone/work/api-service",
     );
 
     expect(result.stdout).toContain(formatted);
-    expect(result.stdout).not.toContain("更新于 2026-08-08");
+    expect(result.stdout).not.toContain("Updated on 2026-08-08");
   });
 
   it("takes an unquoted sentence as one query", async () => {
@@ -110,7 +115,7 @@ describe("recall cli", () => {
     });
 
     await runRecallCli(
-      ["我", "对", "请求库", "的", "偏好"],
+      ["my", "preference", "for", "request", "libraries"],
       await discovery("running"),
       "/Users/someone",
       "/Users/someone",
@@ -119,7 +124,7 @@ describe("recall cli", () => {
     // A shell-command skill interpolates the user's sentence, so dropping
     // everything after the first word would silently narrow the query.
     expect(recallThroughBroker.mock.calls[0][1]).toEqual({
-      query: "我 对 请求库 的 偏好",
+      query: "my preference for request libraries",
     });
   });
 
@@ -140,12 +145,14 @@ describe("recall cli", () => {
     // lookup is a completed lookup. "No related memories" reads to a model as
     // evidence about the user — that they have no preferences — which is
     // exactly what it must not invent.
-    expect(result.stdout).toContain("已完成MemHub的记忆查询。");
+    expect(result.stdout).toContain("MemHub memory search completed.");
     // Saying so is not enough; a model told only "nothing found" will often
     // fill the gap itself.
-    expect(result.stdout).toContain("不要凭空编造");
+    expect(result.stdout).toContain("don't invent");
     // And it must not fall back to the older "found nothing" phrasing.
-    expect(result.stdout).not.toContain("没有与这个问题相关的已确认记忆");
+    expect(result.stdout).not.toContain(
+      "There are no confirmed memories related to this question",
+    );
   });
 
   it("treats a closed app as ordinary and never calls the broker", async () => {
@@ -154,7 +161,7 @@ describe("recall cli", () => {
     // The app is not always open. A host that abandons the turn on a nonzero
     // exit would turn that into a broken conversation.
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("没有在运行");
+    expect(result.stdout).toContain("isn't running");
     expect(recallThroughBroker).not.toHaveBeenCalled();
   });
 
@@ -165,7 +172,7 @@ describe("recall cli", () => {
 
     // This one is a real fault: the discovery file says the app is up.
     expect(result.exitCode).toBe(4);
-    expect(result.stdout).toContain("无法连接");
+    expect(result.stdout).toContain("Can't connect");
   });
 
   it("treats a missing discovery file as a closed app", async () => {
@@ -178,7 +185,7 @@ describe("recall cli", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("没有在运行");
+    expect(result.stdout).toContain("isn't running");
   });
 
   it("gives scripts the fields instead of the prose", async () => {
@@ -272,7 +279,7 @@ describe("recall cli", () => {
     );
 
     // Core may omit truncated_by on older receipts; do not invent a cause.
-    expect(result.stdout).toContain("还有更多相关记忆未列出");
+    expect(result.stdout).toContain("More related memories aren't listed");
   });
 
   it("names the budget when Core says which one fired", async () => {
@@ -294,8 +301,8 @@ describe("recall cli", () => {
       "/Users/someone",
     );
 
-    expect(result.stdout).toContain("另有 3 条相关记忆未检视");
-    expect(result.stdout).toContain("字符预算");
+    expect(result.stdout).toContain("3 related memories weren't examined");
+    expect(result.stdout).toContain("character budget");
   });
 });
 

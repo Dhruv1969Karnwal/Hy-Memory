@@ -25,9 +25,9 @@ from tests.source_consent import authorized_request, thaw_source
 
 TOKEN = "raw-search-no-model"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
-LICENCE = "我们最后决定 One Memory 用 MIT 协议发布，不再考虑 GPL。"
-BACKUP = "备份先写到本地磁盘，再同步到对象存储。"
-SYNONYM = "开源软件的授权条款最后怎么挑的"
+LICENCE = "We finally decided One Memory ships under the MIT license, GPL is off the table."
+BACKUP = "Backups go to the local disk first, then sync to object storage."
+SYNONYM = "how did we end up picking the open source software terms"
 
 pytestmark = [
     pytest.mark.integration,
@@ -139,7 +139,7 @@ def test_shared_words_are_found_without_any_model_or_index(tmp_path):
             ) as client,
         ):
             await imported(app, client)
-            body = await search(client, "MIT 协议")
+            body = await search(client, "MIT license")
             assert body["state"] == "grounded"
             assert any(LICENCE in text for text in texts(body))
 
@@ -174,7 +174,7 @@ def test_a_semantic_only_candidate_is_not_released_without_confirmation(tmp_path
             assert body["paths"]["raw"]["reason"] == "lexical_only", body
             assert not texts(body), "a semantic-only candidate must not release original text"
             assert not lexical_only(app, SYNONYM), "lexical alone answers this; nothing is proven"
-            assert any(LICENCE in text for text in texts(await search(client, "MIT 协议"))), (
+            assert any(LICENCE in text for text in texts(await search(client, "MIT license"))), (
                 "the index must not cost the lexical lane its own hits"
             )
 

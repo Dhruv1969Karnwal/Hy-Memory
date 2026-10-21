@@ -295,7 +295,9 @@ describe("CLI-19 progress and issue reads", () => {
     } finally {
       streams.restore();
     }
-    expect(streams.stdout()).toContain("累计导入：3 个会话 · 20 条消息");
+    expect(streams.stdout()).toContain(
+      "Imported so far: 3 conversations - 20 messages",
+    );
   });
 
   it("reads one import job and its bounded issues by explicit ID", async () => {
@@ -464,7 +466,7 @@ describe("CLI-19 progress and issue reads", () => {
     }
     const output = streams.stdout();
     expect(output).toContain(
-      "每 1 秒刷新一次，按 Ctrl-C 退出观察，后台不会停止\n",
+      "Refreshing every 1 second; press Ctrl-C to leave the watch, the background does not stop\n",
     );
     expect(output).toContain("[15:04:05.067] progress #1");
     expect(output).toContain("[15:04:05.067] progress #2");
@@ -491,7 +493,7 @@ describe("CLI-19 progress and issue reads", () => {
       streams.restore();
     }
     const output = streams.stdout();
-    expect(output).not.toContain("按 Ctrl-C");
+    expect(output).not.toContain("press Ctrl-C");
     expect(output).not.toContain("\x1b[");
     expect(output).toContain("[15:04:05.067] progress #1");
     expect(output).toContain("[15:04:05.067] progress #2");

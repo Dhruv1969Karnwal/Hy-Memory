@@ -312,8 +312,10 @@ describe("setSourceSync", () => {
     } as const;
 
     expect(sourceSyncExitCode(committed)).toBe(0);
-    expect(renderSourceSyncText(committed)).toContain("已暂停");
+    expect(renderSourceSyncText(committed)).toContain("Paused");
     expect(sourceSyncExitCode(invalid)).toBe(2);
-    expect(renderSourceSyncText(invalid)).toBe("未变更：invalid_source_id\n");
+    expect(renderSourceSyncText(invalid)).toBe(
+      "Unchanged: invalid_source_id\n",
+    );
   });
 });

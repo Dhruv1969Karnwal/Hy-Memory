@@ -39,7 +39,7 @@ describe("init import attempt fence", () => {
 // QA-CLI R3 F1: the interactive wizard passed a CWD-relative singleton
 // (`init` or `<journalDir>/init`) to `claimPlanAttempt`. A stale
 // `init.one-memory-attempt` in the working directory then made every later
-// `memhub init` fail with "交互计划无效 / exit 2".
+// `memhub init` fail with "invalid interactive plan / exit 2".
 describe("interactive init attempt fence", () => {
   it("lives under the data dir and is unique per operation", () => {
     const fence = interactiveInitAttemptPath(

@@ -111,7 +111,9 @@ def test_the_stored_conclusion_matches_the_exact_check(library):
     """
     database, evidence, tasks, governance, profile = library
     memories = [
-        _memory(evidence, governance, tasks, f"第 {index} 条真实对话内容。", "cursor", index)[0]
+        _memory(
+            evidence, governance, tasks, f"Real conversation content {index}.", "cursor", index
+        )[0]
         for index in range(4)
     ]
 
@@ -137,7 +139,9 @@ def test_the_stored_conclusion_matches_the_exact_check(library):
 def test_a_write_marks_the_affected_memory_dirty(library):
     """Triggers rather than calls at each site: a write cannot be missed."""
     database, evidence, tasks, governance, profile = library
-    memory, record = _memory(evidence, governance, tasks, "一条真实对话内容。", "cursor", 0)
+    memory, record = _memory(
+        evidence, governance, tasks, "One real conversation content.", "cursor", 0
+    )
 
     with main_database_write(database) as db:
         ensure_tables(db)
@@ -153,7 +157,7 @@ def test_a_write_marks_the_affected_memory_dirty(library):
             correlation_id="m-0",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="一条真实对话内容（改过了）。",
+            verbatim="One real conversation content (edited).",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     )
@@ -183,7 +187,9 @@ def test_a_read_uses_the_stored_conclusion_without_rechecking(library):
     """
     database, evidence, tasks, governance, profile = library
     memories = [
-        _memory(evidence, governance, tasks, f"第 {index} 条真实对话内容。", "cursor", index)[0]
+        _memory(
+            evidence, governance, tasks, f"Real conversation content {index}.", "cursor", index
+        )[0]
         for index in range(4)
     ]
 
@@ -211,7 +217,9 @@ def test_a_read_uses_the_stored_conclusion_without_rechecking(library):
 def test_a_memory_without_a_conclusion_is_still_checked_exactly(library):
     """A half-filled cache must not be read as "everything is hidden"."""
     database, evidence, tasks, governance, profile = library
-    memory, _record = _memory(evidence, governance, tasks, "一条真实对话内容。", "cursor", 0)
+    memory, _record = _memory(
+        evidence, governance, tasks, "One real conversation content.", "cursor", 0
+    )
 
     with main_database_write(database) as db:
         ensure_tables(db)
@@ -233,7 +241,9 @@ def test_a_known_conclusion_is_not_checked_again(library, monkeypatch):
 
     database, evidence, tasks, governance, profile = library
     memories = [
-        _memory(evidence, governance, tasks, f"第 {index} 条真实对话内容。", "cursor", index)[0]
+        _memory(
+            evidence, governance, tasks, f"Real conversation content {index}.", "cursor", index
+        )[0]
         for index in range(4)
     ]
 
@@ -266,7 +276,9 @@ def test_a_batch_computes_what_is_missing_then_what_went_dirty(library):
 
     database, evidence, tasks, governance, profile = library
     memories = [
-        _memory(evidence, governance, tasks, f"第 {index} 条真实对话内容。", "cursor", index)[0]
+        _memory(
+            evidence, governance, tasks, f"Real conversation content {index}.", "cursor", index
+        )[0]
         for index in range(3)
     ]
 
@@ -296,7 +308,7 @@ def test_a_batch_computes_what_is_missing_then_what_went_dirty(library):
             correlation_id="m-0",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="第 0 条真实对话内容（改过了）。",
+            verbatim="Real conversation content 0 (edited).",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     )
@@ -347,7 +359,9 @@ def test_the_audit_notices_a_conclusion_that_no_longer_holds(library):
 
     database, evidence, tasks, governance, profile = library
     memories = [
-        _memory(evidence, governance, tasks, f"第 {index} 条真实对话内容。", "cursor", index)[0]
+        _memory(
+            evidence, governance, tasks, f"Real conversation content {index}.", "cursor", index
+        )[0]
         for index in range(3)
     ]
 
@@ -382,7 +396,9 @@ def test_granting_a_source_repeatedly_does_not_raise(library):
     stopped working — which two existing tests caught.
     """
     database, evidence, tasks, governance, profile = library
-    memory, _record = _memory(evidence, governance, tasks, "一条真实对话内容。", "cursor", 0)
+    memory, _record = _memory(
+        evidence, governance, tasks, "One real conversation content.", "cursor", 0
+    )
 
     with main_database_write(database) as db:
         ensure_tables(db)

@@ -170,7 +170,7 @@ it("enforces inclusive 512 UTF-8 bytes before JSON parsing", () => {
   const exact = raw + " ".repeat(512 - new TextEncoder().encode(raw).length);
   expect(readPendingModelProbe(store(exact))).toEqual(value);
   expect(() => readPendingModelProbe(store(`${exact} `))).toThrowError(ERROR);
-  const multibyte = encode({ ...value, extra: "界".repeat(130) });
+  const multibyte = encode({ ...value, extra: "\u754c".repeat(130) });
   expect(multibyte.length).toBeLessThan(512);
   expect(new TextEncoder().encode(multibyte).length).toBeGreaterThan(512);
   expect(() => readPendingModelProbe(store(multibyte))).toThrowError(ERROR);

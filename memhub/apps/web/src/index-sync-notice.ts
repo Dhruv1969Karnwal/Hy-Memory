@@ -1,4 +1,5 @@
 import type { MemoryIndexSync } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 export type IndexSyncAction = "retry" | "configure" | "refresh" | "none";
 
@@ -18,13 +19,14 @@ export function indexSyncPresentation(
   updatedAt: string,
 ): IndexSyncPresentation {
   const attempted = sync.attempts > 0;
-  const attemptedLine = `${attempted ? `同步尝试 ${sync.attempts} 次` : "尚未尝试同步"} · 状态更新于 ${updatedAt}`;
+  const attemptedLine = `${attempted ? `Sync attempted ${countLabel(sync.attempts, "time")}` : "Sync has not been attempted"} - Status updated at ${updatedAt}`;
   const reason = sync.last_error_code;
 
   if (reason === "hy_memory_update_rejected") {
     return {
       attemptedLine,
-      explanation: "HY Memory 当前没有这条记忆，仅重试同步不能补齐。",
+      explanation:
+        "HY Memory does not have this memory right now; retrying the sync alone cannot fill it in.",
       action: "none",
     };
   }
@@ -36,7 +38,8 @@ export function indexSyncPresentation(
   ) {
     return {
       attemptedLine,
-      explanation: "同步需要可用的本机整理模型或本地嵌入授权。",
+      explanation:
+        "Sync needs an available on-device organization model or local embedding authorization.",
       action: "configure",
     };
   }
@@ -47,27 +50,30 @@ export function indexSyncPresentation(
   ) {
     return {
       attemptedLine,
-      explanation: "这条记忆或模型版本已经变化，先刷新核对再决定下一步。",
+      explanation:
+        "This memory or the model version has changed, so refresh and verify before the next step.",
       action: "refresh",
     };
   }
   if (!attempted) {
     return {
       attemptedLine,
-      explanation: "这条记忆已改，搜索索引还没开始同步。",
+      explanation:
+        "This memory changed and the search index has not started syncing yet.",
       action: "retry",
     };
   }
   if (reason) {
     return {
       attemptedLine,
-      explanation: "最近一次同步未成功；可以先重试，结果仍不确定时再刷新核对。",
+      explanation:
+        "The last sync did not succeed; retry first, then refresh to verify if the result is still unknown.",
       action: "retry",
     };
   }
   return {
     attemptedLine,
-    explanation: "这条记忆已改，搜索索引还没跟上。",
+    explanation: "This memory changed and the search index has not caught up.",
     action: "retry",
   };
 }

@@ -15,7 +15,7 @@ from tests.source_consent import connection_request
 
 def test_existing_memory_preview_keeps_unknown_author_and_exact_original(tmp_path):
     files = FileImportStore(tmp_path / "imports")
-    text = "  可能只适合这个项目，预算<5，不是>5。\n原始讨论未提供。\n"
+    text = "  May only fit this project, budget <5, not >5.\nOriginal discussion not provided.\n"
     receipt = files.prepare(text.encode(), "report.md", input_kind="memory_content")
     assert receipt.source_id == "memory-content-export"
     assert receipt.content_kind == "memory_content"
@@ -105,8 +105,12 @@ def test_memory_content_normal_api_import_preserves_kind_and_dedup_revoke(tmp_pa
             value = {
                 "format": "one-memory-content-v1",
                 "memories": [
-                    {"content": "Agent提议，尚未确认。", "author": "agent", "time": None},
-                    {"content": "预算<5，原始聊天未提供。"},
+                    {
+                        "content": "Agent proposal, not yet confirmed.",
+                        "author": "agent",
+                        "time": None,
+                    },
+                    {"content": "Budget <5, original chat not provided."},
                 ],
             }
             uploaded = await client.post(
@@ -135,7 +139,7 @@ def test_memory_content_normal_api_import_preserves_kind_and_dedup_revoke(tmp_pa
             )
             assert source["sync_completeness"] == "one_time_snapshot"
             found = (
-                await client.get("/api/v1/conversations/search", params={"query": "原始聊天"})
+                await client.get("/api/v1/conversations/search", params={"query": "original chat"})
             ).json()
             evidence = app.state.evidence_store.get(found["hits"][0]["evidence_id"])
             assert evidence.content_kind is EvidenceContentKind.MEMORY_CONTENT

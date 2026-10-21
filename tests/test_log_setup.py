@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Logging stream split 测试 — 验证 INFO/DEBUG 走 stdout，WARNING/ERROR/CRITICAL 走 stderr。
+Logging stream split tests -- verify INFO/DEBUG go to stdout and WARNING/ERROR/CRITICAL go to stderr.
 
-修复 issue: 之前所有级别都走单 StreamHandler 默认 stderr，OpenClaw 等监控
-平台会把整个 stderr 标 WARN，导致 INFO 日志被误标为告警。
+Fixes an issue: every level used to flow through a single StreamHandler defaulting to stderr, and monitoring
+platforms such as OpenClaw flagged the whole stderr as WARN, mislabeling INFO logs as alerts.
 """
 
 import io
@@ -17,16 +17,16 @@ from hy_memory.utils.log_setup import _StdoutLevelFilter
 
 @pytest.fixture(autouse=True)
 def _reset_logging_state(tmp_path, monkeypatch):
-    """每个 case 把 hy_memory logger 和 _logging_configured 全部重置"""
-    # 重置 module-level guard
+    """Reset the hy_memory logger and _logging_configured before each case"""
+    # reset the module-level guard
     monkeypatch.setattr(log_setup, "_logging_configured", False)
-    # 清掉已有 handlers
+    # clear existing handlers
     hy_logger = logging.getLogger("hy_memory")
     old_handlers = hy_logger.handlers[:]
     old_propagate = hy_logger.propagate
     hy_logger.handlers.clear()
 
-    # 重定向日志目录到 tmp（避免污染 ~/.hy_memory）
+    # redirect the log directory to tmp (avoid polluting ~/.hy_memory)
     monkeypatch.setenv("MEMORY_LOG_DIR", str(tmp_path / "logs"))
 
     yield
@@ -39,7 +39,7 @@ def _reset_logging_state(tmp_path, monkeypatch):
 
 
 class TestStdoutLevelFilter:
-    """直接验证 filter 类的行为"""
+    """Verify the filter class behavior directly"""
 
     def test_passes_debug(self):
         f = _StdoutLevelFilter()
@@ -68,7 +68,7 @@ class TestStdoutLevelFilter:
 
 
 class TestSetupLoggingHandlerRouting:
-    """验证 setup_logging 配出的 handlers 是 stdout/stderr split 结构"""
+    """Verify setup_logging configures a stdout/stderr split handler set"""
 
     def test_two_stream_handlers_present(self):
         log_setup.setup_logging(level=logging.DEBUG)
@@ -78,7 +78,7 @@ class TestSetupLoggingHandlerRouting:
             and not isinstance(h, logging.FileHandler)
             and getattr(h, "stream", None) in {sys.stdout, sys.stderr}
         ]
-        # stdout + stderr = 2 个 stream handler
+        # stdout + stderr = 2 stream handlers
         assert len(stream_handlers) == 2, f"expected 2 stream handlers, got {len(stream_handlers)}"
 
         targets = {h.stream for h in stream_handlers}
@@ -94,12 +94,12 @@ class TestSetupLoggingHandlerRouting:
             and not isinstance(h, logging.FileHandler)
             and h.stream is sys.stdout
         )
-        # 必须有 _StdoutLevelFilter
+        # must carry _StdoutLevelFilter
         has_filter = any(isinstance(f, _StdoutLevelFilter) for f in stdout_handler.filters)
         assert has_filter, "stdout handler must have _StdoutLevelFilter"
 
     def test_stderr_handler_level_warning(self):
-        log_setup.setup_logging(level=logging.DEBUG)  # 即使全局 DEBUG
+        log_setup.setup_logging(level=logging.DEBUG)  # even with a global DEBUG level
         hy_logger = logging.getLogger("hy_memory")
         stderr_handler = next(
             h for h in hy_logger.handlers
@@ -107,12 +107,12 @@ class TestSetupLoggingHandlerRouting:
             and not isinstance(h, logging.FileHandler)
             and h.stream is sys.stderr
         )
-        # stderr handler 永远 WARNING+
+        # the stderr handler is always WARNING+
         assert stderr_handler.level == logging.WARNING
 
 
 class TestEndToEndStreamRouting:
-    """端到端：把 stdout/stderr 重定向到 buffer，验证 record 真的去对了地方"""
+    """End to end: redirect stdout/stderr to buffers and verify records really land in the right place"""
 
     def _setup_with_redirected_streams(self, monkeypatch):
         out_buf = io.StringIO()
@@ -168,7 +168,7 @@ class TestEndToEndStreamRouting:
         assert "CRITICAL_LINE_TOKEN" in err_buf.getvalue()
 
     def test_no_duplicate_emission_per_line(self, monkeypatch):
-        """同一条 log 不应同时出现在 stdout 和 stderr"""
+        """One log line must not appear on both stdout and stderr"""
         out_buf, err_buf = self._setup_with_redirected_streams(monkeypatch)
         log = logging.getLogger("hy_memory.test_dup")
         log.info("UNIQUE_INFO_TOKEN")
@@ -178,16 +178,16 @@ class TestEndToEndStreamRouting:
 
         out = out_buf.getvalue()
         err = err_buf.getvalue()
-        # INFO 在 stdout，不在 stderr
+        # INFO on stdout, not on stderr
         assert out.count("UNIQUE_INFO_TOKEN") == 1
         assert err.count("UNIQUE_INFO_TOKEN") == 0
-        # WARN 在 stderr，不在 stdout
+        # WARN on stderr, not on stdout
         assert out.count("UNIQUE_WARN_TOKEN") == 0
         assert err.count("UNIQUE_WARN_TOKEN") == 1
 
 
 class TestSingleLineAndJsonFormat:
-    """换行不应截断日志行；JSON 模式输出合法 JSON。"""
+    """Newlines must not truncate log lines; JSON mode emits valid JSON."""
 
     def _record(self, msg):
         rec = logging.LogRecord(
@@ -200,7 +200,7 @@ class TestSingleLineAndJsonFormat:
         monkeypatch.setenv("MEMORY_LOG_FORMAT", "text")
         fmt = log_setup._make_formatter()
         out = fmt.format(self._record("query='a\nb\rc'"))
-        # 单行：渲染结果不含真实换行/回车
+        # single line: the rendered output contains no raw newline/carriage return
         assert "\n" not in out and "\r" not in out
         assert "\\n" in out and "\\r" in out
         assert "req-xyz" in out
@@ -211,11 +211,11 @@ class TestSingleLineAndJsonFormat:
         fmt = log_setup._make_formatter()
         out = fmt.format(self._record("query='a\nb\rc'"))
         assert "\n" not in out and "\r" not in out
-        obj = _json.loads(out)  # 必须是合法 JSON
+        obj = _json.loads(out)  # must be valid JSON
         assert obj["request_id"] == "req-xyz"
         assert obj["level"] == "INFO"
         assert obj["logger"] == "hy_memory.test"
-        # 原始换行保留在字段值里（被 JSON 转义后存储，不截断行）
+        # raw newlines stay inside the field value (stored JSON-escaped, without truncating the line)
         assert obj["msg"] == "query='a\nb\rc'"
 
     def test_default_is_text(self, monkeypatch):

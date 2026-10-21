@@ -431,9 +431,7 @@ class HyMemoryBridge:
         guards = getattr(client, "_one_memory_write_guards", ())
         from one_memory.hy_response_guard import HyReconcileGuard
 
-        reconcile_guards = tuple(
-            guard for guard in guards if isinstance(guard, HyReconcileGuard)
-        )
+        reconcile_guards = tuple(guard for guard in guards if isinstance(guard, HyReconcileGuard))
         for guard in reconcile_guards:
             guard.begin_write()
         before = [len(guard.failures) for guard in guards]
@@ -1110,7 +1108,7 @@ class HyMemoryBridge:
                                 self.profile,
                                 api_key=self.api_key,
                                 data_dir=self.data_dir,
-                        http_transport_factory=self._http_transport_factory,
+                                http_transport_factory=self._http_transport_factory,
                             )
 
                     await _joined_thread(initialize)
@@ -1328,9 +1326,7 @@ async def _with_native_mutation_delta(
     """
 
     retired = set(result.retired_memory_ids)
-    superseded = {
-        key: tuple(values) for key, values in result.superseded_memory_ids.items()
-    }
+    superseded = {key: tuple(values) for key, values in result.superseded_memory_ids.items()}
     chat_targets = {
         key
         for guard in reconcile_guards
@@ -1367,9 +1363,7 @@ async def _with_native_mutation_delta(
         if isinstance(replacement, str) and replacement:
             superseded[key] = (replacement,)
         elif isinstance(replacement, list):
-            values = tuple(
-                value for value in replacement if isinstance(value, str) and value
-            )
+            values = tuple(value for value in replacement if isinstance(value, str) and value)
             if values:
                 superseded[key] = values
 
@@ -1716,24 +1710,54 @@ def build_hy_memory_config(
 #: The one rule in HY's extraction system prompts that hands the language of
 #: someone's memories to whatever they happened to paste in. Both language
 #: variants carry it, with this exact wording in the Chinese one.
-_HY_FOLLOWS_THE_INPUT_LANGUAGE = "* 输出语言必须与输入语言一致"
+_HY_FOLLOWS_THE_INPUT_LANGUAGE = (
+    # HY <= 2.0.3 Chinese prompt, kept as escapes so the value stays byte-identical.
+    "* \u8f93\u51fa\u8bed\u8a00\u5fc5\u987b\u4e0e\u8f93\u5165\u8bed\u8a00\u4e00\u81f4",
+    # The same rule as worded in the English-only SDK prompt.
+    "* The output language must match the input language",
+)
 
 _ALWAYS_CHINESE = (
-    "* 输出语言必须始终是简体中文，即使输入是英文、代码或报错信息\n"
-    "* 记忆语言是用户属性，不随单条输入的语言变化"
+    "* The output language must always be Simplified Chinese, even when the input is "
+    "English, code or an error message\n"
+    "* The memory language is a property of the user and does not follow the language of one input"
 )
 
 #: HY's extraction principle reads only the user's messages, although its own
 #: OWNER and subject rules already say how to keep an AI assistant's words
 #: apart from the person's. MemHub records both speakers, so only this line
 #: changes; who said what stays with HY's rules.
-_HY_READS_ONLY_THE_USER = "只提取 NEW user messages 中首次出现的新信息。"
+_HY_READS_ONLY_THE_USER = (
+    # HY <= 2.0.3 Chinese prompt, kept as escapes so the value stays byte-identical.
+    "\u53ea\u63d0\u53d6 NEW user messages "
+    "\u4e2d\u9996\u6b21\u51fa\u73b0\u7684\u65b0\u4fe1\u606f\u3002",
+    # The same principle as worded in the English-only SDK prompt.
+    "Extract only new information that appears for the first time in the NEW user messages.",
+)
 
 _BOTH_SPEAKERS = (
-    "只提取 NEW messages 中首次出现的新信息：既提取用户说的，"
-    "也提取 AI 助手提供的有长期价值的信息（推荐、确认、查到的资料、方案与结论），"
-    "按下方主体规则与 OWNER 标明是谁说的。"
+    "Extract only the new information appearing for the first time in the NEW messages: "
+    "take in what the user says "
+    "and also the information of lasting value the AI assistant provides (recommendations, "
+    "confirmations, findings, designs and conclusions), "
+    "and mark who said it with the subject rules and OWNER below."
 )
+
+
+def _replace_first(
+    text: str, needles: tuple[str, ...], replacement: str, notice: str, heading: str
+) -> str:
+    """Swap HY's own rule line for MemHub's, whichever language variant shipped it.
+
+    A wording HY never prints again still has to match, because an installed
+    SDK older than this repository carries the Chinese line; none of the
+    variants matching is the case that gets logged and appended instead.
+    """
+    for needle in needles:
+        if needle in text:
+            return text.replace(needle, replacement)
+    logging.getLogger(__name__).warning(notice)
+    return f"{text}\n\n{heading}\n\n{replacement}\n"
 
 
 def _write_memories_in_chinese(llm_config: Any) -> None:
@@ -1754,7 +1778,7 @@ def _write_memories_in_chinese(llm_config: Any) -> None:
     applies where nothing was wrong. The branch that actually runs reads
     `extract_system_prompt_en` (`extractor.py:922-930`).
 
-    And HY's own Chinese prompt says "输出语言必须与输入语言一致", so serving
+    And HY's own Chinese prompt hands the output language back to the input language, so serving
     it verbatim would leave the model following the input language anyway —
     a Chinese prompt producing an English memory. So HY's text is kept for
     everything it defines (schema, owner rules, tags, and the rules that
@@ -1776,16 +1800,20 @@ def _write_memories_in_chinese(llm_config: Any) -> None:
     except ModuleNotFoundError as error:  # pragma: no cover - SDK guaranteed above
         raise HyMemoryBridgeError("hy_memory_sdk_unavailable") from error
     hy_prompt = prompts_zh.EXTRACT_SYSTEM_PROMPT_ZH
-    if _HY_FOLLOWS_THE_INPUT_LANGUAGE in hy_prompt:
-        prompt = hy_prompt.replace(_HY_FOLLOWS_THE_INPUT_LANGUAGE, _ALWAYS_CHINESE)
-    else:
-        logging.getLogger(__name__).warning("hy_language_rule_not_found_appending_override")
-        prompt = f"{hy_prompt}\n\n# 语言规则（MemHub）\n\n{_ALWAYS_CHINESE}\n"
-    if _HY_READS_ONLY_THE_USER in prompt:
-        prompt = prompt.replace(_HY_READS_ONLY_THE_USER, _BOTH_SPEAKERS)
-    else:
-        logging.getLogger(__name__).warning("hy_extraction_scope_rule_not_found_appending_override")
-        prompt = f"{prompt}\n\n# 提取范围（MemHub）\n\n{_BOTH_SPEAKERS}\n"
+    prompt = _replace_first(
+        hy_prompt,
+        _HY_FOLLOWS_THE_INPUT_LANGUAGE,
+        _ALWAYS_CHINESE,
+        "hy_language_rule_not_found_appending_override",
+        "# Language rules (MemHub)",
+    )
+    prompt = _replace_first(
+        prompt,
+        _HY_READS_ONLY_THE_USER,
+        _BOTH_SPEAKERS,
+        "hy_extraction_scope_rule_not_found_appending_override",
+        "# Extraction scope (MemHub)",
+    )
     llm_config.extract_system_prompt_en = prompt
     llm_config.extract_system_prompt_zh = prompt
 

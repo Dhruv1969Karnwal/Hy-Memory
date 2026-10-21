@@ -43,16 +43,18 @@ def _library(tmp_path, *, filler: int):
                 message_id="m",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim="我的花名是麒麟。",
+                verbatim="My nickname is Qilin.",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )
         )
         .record
     )
     governance = MemoryGovernanceStore(database)
-    target = _confirmed(governance, evidence.evidence_id, content="用户的花名是麒麟")
+    target = _confirmed(governance, evidence.evidence_id, content="The user's nickname is Qilin")
     for index in range(filler):
-        _confirmed(governance, evidence.evidence_id, content=f"无关记忆条目 filler{index}")
+        _confirmed(
+            governance, evidence.evidence_id, content=f"unrelated memory entry filler{index}"
+        )
     return governance, target
 
 
@@ -71,7 +73,7 @@ def test_recall_reaches_a_memory_that_is_not_among_the_newest_500(tmp_path) -> N
     """
     governance, target = _library(tmp_path, filler=500)
 
-    receipt = GovernedRecallTarget(governance).recall(RecallRequest(query="花名"))
+    receipt = GovernedRecallTarget(governance).recall(RecallRequest(query="nickname"))
 
     assert receipt.state is RecallState.GROUNDED
     assert target.memory_id in {hit.memory_id for hit in receipt.hits}
@@ -95,7 +97,7 @@ async def test_semantic_recall_reaches_a_memory_outside_the_newest_500(tmp_path)
     receipt = await GovernedRecallTarget(
         governance,
         semantic_search=semantic_search,
-    ).recall_async(RecallRequest(query="这个人平时都怎么被称呼"))
+    ).recall_async(RecallRequest(query="what is this person usually called"))
 
     assert receipt.state is RecallState.GROUNDED
     assert target.memory_id in {hit.memory_id for hit in receipt.hits}
@@ -109,7 +111,7 @@ def test_recall_still_works_just_below_the_boundary(tmp_path) -> None:
     """
     governance, target = _library(tmp_path, filler=499)
 
-    receipt = GovernedRecallTarget(governance).recall(RecallRequest(query="花名"))
+    receipt = GovernedRecallTarget(governance).recall(RecallRequest(query="nickname"))
 
     assert receipt.state is RecallState.GROUNDED
     assert target.memory_id in {hit.memory_id for hit in receipt.hits}
@@ -123,7 +125,7 @@ def test_recall_reaches_a_memory_in_a_5000_library(tmp_path) -> None:
     governance, target = _library(tmp_path, filler=0)
     _bulk_filler(governance, count=5_000)
 
-    receipt = GovernedRecallTarget(governance).recall(RecallRequest(query="花名"))
+    receipt = GovernedRecallTarget(governance).recall(RecallRequest(query="nickname"))
 
     assert receipt.state is RecallState.GROUNDED
     assert target.memory_id in {hit.memory_id for hit in receipt.hits}
@@ -136,11 +138,12 @@ def test_character_budget_names_the_budget_that_fired(tmp_path) -> None:
     _confirmed(
         governance,
         evidence_id,
-        content="花名" + ("详" * 300),
+        # The space is load-bearing: "nickname" + "xxx" concatenates into one English token
+        content="nickname " + ("x" * 300),
     )
 
     receipt = GovernedRecallTarget(governance).recall(
-        RecallRequest(query="花名", character_budget=200)
+        RecallRequest(query="nickname", character_budget=200)
     )
 
     assert receipt.state is RecallState.GROUNDED
@@ -158,7 +161,7 @@ def _bulk_filler(governance: MemoryGovernanceStore, *, count: int) -> None:
             "local",
             "chat",
             "confirmed",
-            f"无关记忆条目 filler{index}",
+            f"unrelated memory entry filler{index}",
             '["all-apps"]',
             1,
             now,

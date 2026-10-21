@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Judge 模块测试"""
+"""Judge module tests"""
 
 import pytest
 
@@ -30,7 +30,7 @@ class TestParseIsCodingJSON:
     def test_garbage(self):
         assert _parse_is_coding_json("garbage") is None
         assert _parse_is_coding_json("") is None
-        assert _parse_is_coding_json("{}") is None  # 缺 is_coding 字段
+        assert _parse_is_coding_json("{}") is None  # missing the is_coding field
 
     def test_markdown_fence(self):
         out = _parse_is_coding_json('```json\n{"is_coding": true}\n```')
@@ -41,7 +41,7 @@ class TestParseIsCodingJSON:
 class TestClassifyMessages:
     async def test_three_way_coding(self):
         msgs = [
-            ChatMessage(role="user", content="写 Python 脚本生成季度财务报表"),
+            ChatMessage(role="user", content="Write a Python script to generate a quarterly financial report"),
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Edit", arguments={"path": "report.py"}),
             ]),
@@ -51,7 +51,7 @@ class TestClassifyMessages:
 
     async def test_three_way_working(self):
         msgs = [
-            ChatMessage(role="user", content="整理季度财务数据并生成 PPT 汇报"),
+            ChatMessage(role="user", content="Organize the quarterly financial data and make a PPT report"),
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Spreadsheet", arguments={}),
                 ToolCall(id="2", name="Slides", arguments={}),
@@ -62,11 +62,11 @@ class TestClassifyMessages:
 
     async def test_search_tool_smalltalk_stays_chat(self):
         msgs = [
-            ChatMessage(role="user", content="搜一下上海今天天气，咱们随便聊聊穿什么"),
+            ChatMessage(role="user", content="Search Shanghai's weather today, and let's casually chat about what to wear"),
             ChatMessage(role="assistant", content="", tool_calls=[
-                ToolCall(id="1", name="web_search", arguments={"query": "上海天气"}),
+                ToolCall(id="1", name="web_search", arguments={"query": "Shanghai weather"}),
             ]),
-            ChatMessage(role="tool", content="晴，25 度", tool_name="web_search"),
+            ChatMessage(role="tool", content="Sunny, 25 degrees", tool_name="web_search"),
         ]
         llm = MockLLMProvider('{"scene":"chat","reason":"incidental lookup"}')
         assert await classify_messages_scene(msgs, llm) == "chat"
@@ -75,7 +75,7 @@ class TestClassifyMessages:
 
     async def test_coding_path(self):
         msgs = [
-            ChatMessage(role="user", content="重构 auth 用 JWT"),
+            ChatMessage(role="user", content="Refactor auth to use JWT"),
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Read", arguments={"path": "a"}),
             ]),
@@ -86,7 +86,7 @@ class TestClassifyMessages:
         assert result is True
 
     async def test_chat_path(self):
-        msgs = [ChatMessage(role="user", content="你好")]
+        msgs = [ChatMessage(role="user", content="Hello")]
         llm = MockLLMProvider('{"is_coding": false}')
         result = await classify_messages_is_coding(msgs, llm)
         assert result is False
@@ -108,7 +108,7 @@ class TestClassifyMessages:
 
     async def test_prompt_contains_turn_summary(self):
         msgs = [
-            ChatMessage(role="user", content="重构 auth"),
+            ChatMessage(role="user", content="Refactor auth"),
             ChatMessage(role="assistant", content="", tool_calls=[
                 ToolCall(id="1", name="Read", arguments={"path": "a"}),
             ]),
@@ -117,28 +117,28 @@ class TestClassifyMessages:
         await classify_messages_is_coding(msgs, llm)
         last_prompt = llm.calls[-1]["prompt"]
         assert "Read" in last_prompt
-        assert "重构 auth" in last_prompt or "user=" in last_prompt
+        assert "Refactor auth" in last_prompt or "user=" in last_prompt
 
 
 @pytest.mark.asyncio
 class TestClassifyQueries:
     async def test_three_way_query_scene(self):
         llm = MockLLMProvider('{"scene":"coding"}')
-        assert await classify_queries_scene(["帮我修复这个 Python traceback"], llm) == "coding"
+        assert await classify_queries_scene(["Help me fix this Python traceback"], llm) == "coding"
 
     async def test_target_is_last(self):
         llm = MockLLMProvider('{"is_coding": true}')
         result = await classify_queries_is_coding(
-            ["凭证在哪", "上次发布命令", "为什么慢"], llm
+            ["Where are the credentials", "last release command", "why is it slow"], llm
         )
         assert result is True
         prompt = llm.calls[-1]["prompt"]
-        assert "为什么慢" in prompt
+        assert "why is it slow" in prompt
         assert "target" in prompt
 
     async def test_single_query(self):
         llm = MockLLMProvider('{"is_coding": false}')
-        result = await classify_queries_is_coding(["用户喜欢什么"], llm)
+        result = await classify_queries_is_coding(["What does the user like"], llm)
         assert result is False
 
     async def test_empty(self):

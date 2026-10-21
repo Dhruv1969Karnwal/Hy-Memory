@@ -132,10 +132,10 @@ def restore(options: Sequence[str], stream: TextIO) -> int:
             as_json = True
             index += 1
             continue
-        stream.write(f"one-memory: 参数无效：{option}\n")
+        stream.write(f"one-memory: invalid argument: {option}\n")
         return 2
     if source is None:
-        stream.write("one-memory: restore 需要 --source <managed-backup>\n")
+        stream.write("one-memory: restore requires --source <managed-backup>\n")
         return 2
 
     settings = load_settings()
@@ -149,7 +149,12 @@ def restore(options: Sequence[str], stream: TextIO) -> int:
             "code": "backup_restore_runtime_running",
             "runtime_state": status.state,
         }
-        _write_restore(stream, as_json, document, "Runtime 仍在运行；先停止 Runtime 再恢复。")
+        _write_restore(
+            stream,
+            as_json,
+            document,
+            "The Runtime is still running; stop the Runtime before restoring.",
+        )
         return 4
     if not confirmed:
         document = {
@@ -158,7 +163,12 @@ def restore(options: Sequence[str], stream: TextIO) -> int:
             "source": source,
             "requires_confirmation": True,
         }
-        _write_restore(stream, as_json, document, "预览通过；加 --yes 才会覆盖当前数据库。")
+        _write_restore(
+            stream,
+            as_json,
+            document,
+            "Preview passed; add --yes to overwrite the current database.",
+        )
         return 4
     try:
         result = restore_managed_backup(data_dir=settings.data_dir, source=source)
@@ -168,7 +178,7 @@ def restore(options: Sequence[str], stream: TextIO) -> int:
             "state": "failed",
             "code": error.code,
         }
-        _write_restore(stream, as_json, document, f"恢复失败：{error.code}")
+        _write_restore(stream, as_json, document, f"Restore failed: {error.code}")
         return 1
     document = {
         "schema_version": 1,
@@ -181,7 +191,7 @@ def restore(options: Sequence[str], stream: TextIO) -> int:
         stream,
         as_json,
         document,
-        f"已恢复：{result.previous_backup_path} 为保护性备份。",
+        f"Restored; {result.previous_backup_path} is the protective backup.",
     )
     return 0
 
@@ -201,13 +211,13 @@ def _write_restore(
 def _status_text(command: str, status: RuntimeStatus) -> str:
     if status.state == "running":
         location = f"{status.host}:{status.port}"
-        version = f"，版本 {status.version}" if status.version else ""
-        return f"MemHub Runtime 正在运行（{location}{version}）。"
+        version = f", version {status.version}" if status.version else ""
+        return f"MemHub Runtime is running ({location}{version})."
     if status.state == "stopped":
-        return "MemHub Runtime 未运行。"
+        return "MemHub Runtime is not running."
     if command == "doctor":
-        return f"MemHub Runtime 检查失败：{status.code}。"
-    return f"MemHub Runtime 状态不可验证：{status.code}。"
+        return f"MemHub Runtime check failed: {status.code}."
+    return f"MemHub Runtime status could not be verified: {status.code}."
 
 
 def _reserve_reader_port(host: str, port: int) -> int:

@@ -1,15 +1,15 @@
-"""LLM 生成参数必须统一走用户配置，任何调用点都不许写死。
+"""LLM generation parameters must all go through user config; no call site may hardcode them.
 
-背景：Opus 5 网关只接受 `temperature=1` 或**干脆不传**，传 0 / 0.1 / 0.3 / 0.6 都会 400。
-而 SDK 里此前有三类绕过用户配置的写法：
+Background: the Opus 5 gateway only accepts `temperature=1` or **nothing at all**; passing 0 / 0.1 / 0.3 / 0.6 all return 400.
+The SDK previously had three kinds of writes that bypassed user config:
 
-1. 调用点写死数值（abstractor 0.3/0.4/0.2、reflector 0.1/0.3、merger 0.3）
-2. 子配置 dataclass 默认值写死（emotion_analyzer 0.1、intention_detector 0.2/0.1、
-   topic_summary 0.3、episode_summary 0.3）
-3. provider 入口默认值 0.7 —— 调用方不传就落到 0.7，与用户配置完全无关
+1. Hardcoded values at call sites (abstractor 0.3/0.4/0.2, reflector 0.1/0.3, merger 0.3)
+2. Hardcoded dataclass defaults in sub-configs (emotion_analyzer 0.1, intention_detector 0.2/0.1,
+   topic_summary 0.3, episode_summary 0.3)
+3. provider entry default 0.7 -- if the caller passes nothing it falls to 0.7, fully unrelated to user config
 
-结果是 `MEMORY_LLM_TEMPERATURE` 只对少数几条路径生效，换网关时其余路径全挂。
-这些测试锁死"唯一收敛点在 provider"这条不变量。
+As a result `MEMORY_LLM_TEMPERATURE` only took effect on a few paths, and switching gateways broke all the rest.
+These tests lock in the invariant that "the single convergence point is the provider".
 """
 
 import inspect
@@ -25,29 +25,29 @@ _SRC = Path(__file__).resolve().parent.parent / "hy_memory"
 
 
 # ======================================================================
-# 静态守卫：不允许再出现写死的 temperature
+# Static guard: no hardcoded temperature may reappear
 # ======================================================================
 
 class TestNoHardcodedTemperature:
     def test_no_numeric_temperature_at_call_sites(self):
-        """`temperature=0.3` 这类字面量一律不允许。"""
+        """Literals like `temperature=0.3` are never allowed."""
         offenders = []
         for py in _SRC.rglob("*.py"):
             for i, line in enumerate(py.read_text().splitlines(), 1):
                 stripped = line.strip()
                 if stripped.startswith("#"):
                     continue
-                # 只查实参/默认值里的数字字面量
+                # only inspect numeric literals in arguments/defaults
                 if "temperature=" in stripped:
                     after = stripped.split("temperature=", 1)[1][:6]
                     if after and after[0].isdigit():
                         offenders.append(f"{py.relative_to(_SRC)}:{i}: {stripped}")
         assert not offenders, (
-            "这些调用点写死了 temperature，会绕过用户配置：\n" + "\n".join(offenders)
+            "these call sites hardcode temperature and would bypass user config:\n" + "\n".join(offenders)
         )
 
     def test_no_float_annotated_temperature_defaults(self):
-        """子配置里 `temperature: float = 0.3` 也是绕过配置的写法。"""
+        """In sub-configs, `temperature: float = 0.3` is also a config-bypassing write."""
         offenders = []
         for py in _SRC.rglob("*.py"):
             for i, line in enumerate(py.read_text().splitlines(), 1):
@@ -60,22 +60,22 @@ class TestNoHardcodedTemperature:
                     if val and val[0].isdigit():
                         offenders.append(f"{py.relative_to(_SRC)}:{i}: {s}")
         assert not offenders, (
-            "这些默认值写死了 temperature：\n" + "\n".join(offenders)
+            "these defaults hardcode temperature:\n" + "\n".join(offenders)
         )
 
     def test_provider_entrypoints_default_to_none(self):
-        """provider 的入口默认值必须是 None（= 跟配置走），不能是 0.7。"""
+        """The provider entry defaults must be None (= follow config), not 0.7."""
         for name in ("complete", "complete_messages", "chat",
                      "_call_llm", "_chat_completions"):
             param = inspect.signature(getattr(LLMProvider, name)).parameters["temperature"]
             assert param.default is None, (
-                f"LLMProvider.{name} 的 temperature 默认值是 {param.default!r}，"
-                "调用方不传时会绕过用户配置"
+                f"LLMProvider.{name}'s temperature default is {param.default!r}; "
+                "callers that pass nothing would bypass user config"
             )
 
 
 # ======================================================================
-# 配置解析
+# Config resolution
 # ======================================================================
 
 class TestTemperatureResolution:
@@ -93,7 +93,7 @@ class TestTemperatureResolution:
         assert p._resolve_temperature(None) == 1.0
 
     def test_explicit_call_site_value_wins(self):
-        """少数确实需要特定温度的场景仍可显式指定。"""
+        """The few cases that genuinely need a specific temperature can still specify it explicitly."""
         p = self._provider(temperature=1.0)
         assert p._resolve_temperature(0.2) == 0.2
 
@@ -102,7 +102,7 @@ class TestTemperatureResolution:
         assert p._resolve_temperature(None) is None
 
     def test_zero_is_not_treated_as_unset(self):
-        """0.0 是合法温度，不能被 falsy 判断吞掉。"""
+        """0.0 is a valid temperature and must not be swallowed by a falsy check."""
         p = self._provider(temperature=1.0)
         assert p._resolve_temperature(0.0) == 0.0
 
@@ -123,7 +123,7 @@ class TestConfigEnv:
         assert LLMConfig().omit_temperature is True
 
     def test_default_unchanged(self, monkeypatch):
-        """默认行为不变（0.1、照常发送），避免静默改变现有部署。"""
+        """Default behavior is unchanged (0.1, still sent), avoiding silently altering existing deployments."""
         monkeypatch.delenv("MEMORY_LLM_TEMPERATURE", raising=False)
         monkeypatch.delenv("MEMORY_LLM_OMIT_TEMPERATURE", raising=False)
         cfg = LLMConfig()
@@ -131,11 +131,11 @@ class TestConfigEnv:
 
 
 # ======================================================================
-# 落到真实请求 payload
+# Landing in the real request payload
 # ======================================================================
 
 class TestRequestPayload:
-    """最终判据：请求体里到底带没带、带的是什么。"""
+    """Final criterion: whether the request body carries it at all, and with what value."""
 
     def _capture(self):
         seen = []
@@ -183,7 +183,7 @@ class TestRequestPayload:
 
     @pytest.mark.asyncio
     async def test_omit_removes_key_entirely(self):
-        """Opus 5 的诉求：参数**整个不出现**，而不是发个默认值。"""
+        """Opus 5's requirement: the parameter is **entirely absent**, not sent with a default value."""
         payload = await self._run(omit=True)
         assert "temperature" not in payload
 
@@ -194,18 +194,18 @@ class TestRequestPayload:
 
     @pytest.mark.asyncio
     async def test_max_tokens_still_sent(self):
-        """省略 temperature 不能顺手把别的参数弄丢。"""
+        """Omitting temperature must not accidentally drop other parameters."""
         payload = await self._run(omit=True)
         assert payload["max_tokens"] == 10
         assert payload["model"] == "opus-5"
 
 
 # ======================================================================
-# coding 路径的独立解析器
+# Independent resolvers on the coding path
 # ======================================================================
 
 class TestCodingPathsRespectConfig:
-    """coding 下三个模块此前各自 `getattr(..., 0.1)` 兜底，会绕过 omit。"""
+    """The three modules under coding previously each fell back via `getattr(..., 0.1)`, bypassing omit."""
 
     class _Provider:
         def __init__(self, temperature, omit):
@@ -223,7 +223,7 @@ class TestCodingPathsRespectConfig:
 
         mod = importlib.import_module(module_path)
         fn = mod._resolve_configured_temperature
-        assert fn(self._Provider(0.1, True)) is None, "omit 时必须返回 None"
+        assert fn(self._Provider(0.1, True)) is None, "must return None when omit is set"
         assert fn(self._Provider(1.0, False)) == 1.0
 
     def test_judge_resolver_honors_omit(self):

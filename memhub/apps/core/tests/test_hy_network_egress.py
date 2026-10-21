@@ -181,7 +181,7 @@ async def _search(
 ) -> None:
     bridge = HyMemoryBridge(profile=profile, api_key=api_key, data_dir=data_dir)
     try:
-        await bridge.search_ids("长期偏好", user_id="local", agent_id="*")
+        await bridge.search_ids("long-term preference", user_id="local", agent_id="*")
     finally:
         await bridge.close()
 

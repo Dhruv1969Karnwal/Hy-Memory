@@ -205,7 +205,7 @@ describe("a failed disconnect keeps its real reason", () => {
     const { outcome } = await disconnectHost("cursor");
     expect(outcome).toMatchObject({
       state: "failed",
-      reason: "应用控制通道暂不可用",
+      reason: "The app control channel is unavailable",
       rereadFailed: false,
     });
   });

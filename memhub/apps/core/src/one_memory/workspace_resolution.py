@@ -1,7 +1,7 @@
 """Name a workspace from the directory a caller is sitting in.
 
 Workspace-scoped memories were reachable only by a caller that could state
-the scope string, and the design says exactly that: "调用方必须显式传入
+the scope string, and the design says exactly that: "callers must explicitly pass the
 workspace scope" (docs/mvp/2026-09-03-workspace-memory.md). But a scope is
 `workspace:v1:<sha256>` over an identity a host chose, so nothing outside
 Core could ever produce one. Meanwhile the HY-native routing change made

@@ -245,7 +245,7 @@ async function readRuntimeReceipt(
     host: typeof value.host === "string" ? value.host : undefined,
     port: typeof value.port === "number" ? value.port : undefined,
     startedAt:
-      typeof value.started_at === "string" ? value.started_at : "未知时间",
+      typeof value.started_at === "string" ? value.started_at : "unknown time",
   };
 }
 

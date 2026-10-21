@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Neo4j 向量检索隔离性和多用户场景的测试
+Tests for Neo4j vector search isolation and multi-user scenarios
 
-测试迭代式多轮获取策略确保：
-1. 不同 isolation_key 的结果不会交叉泄露
-2. 稀疏用户能获得期望的召回率
-3. 迭代搜索开销 < 10%（正常情况下）
+The iterative multi-round fetch strategy is verified to guarantee:
+1. Results for different isolation_key values never leak into each other
+2. Sparse users still reach the expected recall
+3. Iterative search overhead < 10% (under normal conditions)
 
-NOTE: 这些测试需要运行的 Neo4j 实例和已初始化的图模式。
-标记为 @pytest.mark.integration 的测试在集成环境中运行。
+NOTE: these tests need a running Neo4j instance with the graph schema initialized.
+Tests marked @pytest.mark.integration run in the integration environment.
 """
 
 import asyncio
@@ -16,76 +16,76 @@ import pytest
 from typing import List, Dict, Any
 import time
 
-# 假设已导入必要的类
+# Assume the required classes are imported
 # from hy_memory.data.graph_store_neo4j import Neo4jGraphStore
 # from hy_memory.models.memory import MemoryNode, MemoryLayer, MemoryStatus
 
 
 @pytest.mark.integration
 class TestVectorSearchIsolation:
-    """向量检索隔离性测试"""
+    """Vector search isolation tests"""
 
     @pytest.mark.slow
     async def test_vector_search_no_cross_user_leakage(self, graph_store_neo4j_fixture):
         """
-        测试：两个用户的向量搜索结果不会交叉泄露
+        Test: vector search results for two users never leak into each other
         
         Setup:
-        - User A: 创建 5 个关于"编程"的记忆节点
-        - User B: 创建 10 个关于"美食"的记忆节点
+        - User A: create 5 memory nodes about "programming"
+        - User B: create 10 memory nodes about "food"
         
         Query:
-        - User A 搜索"编程"相关向量，isolation_key=user_a_ik
+        - User A searches vectors related to "programming", isolation_key=user_a_ik
         
         Expected:
-        - 返回结果仅包含 User A 的记忆（via isolation_key 检查）
-        - 不包含 User B 的任何记忆
+        - Results contain only User A memories (checked via isolation_key)
+        - None of User B's memories are included
         """
-        # 创建两个 isolation_key
+        # Create the two isolation_key values
         ik_a = "user_a::default"
         ik_b = "user_b::default"
         
-        # 生成模拟向量（1536 维，符合 text-embedding-3-large）
+        # Generate mock vectors (1536 dims, matching text-embedding-3-large)
         def make_embedding(seed: int) -> List[float]:
             import random
             random.seed(seed)
             return [random.gauss(0, 1) for _ in range(1536)]
         
-        # User A: 编程相关记忆
+        # User A: programming-related memories
         user_a_memories = [
             {
                 "node_id": f"user_a_prog_{i}",
-                "content": f"编程相关的记忆 {i}",
+                "content": f"Programming-related memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": ik_a,
-                "embedding": make_embedding(100 + i),  # 一致的向量
+                "embedding": make_embedding(100 + i),  # consistent vectors
                 "confidence": 0.9,
                 "custom_json": {"topic": "programming"}
             }
             for i in range(5)
         ]
         
-        # User B: 美食相关记忆
+        # User B: food-related memories
         user_b_memories = [
             {
                 "node_id": f"user_b_food_{i}",
-                "content": f"美食相关的记忆 {i}",
+                "content": f"Food-related memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": ik_b,
-                "embedding": make_embedding(200 + i),  # 不同的向量
+                "embedding": make_embedding(200 + i),  # different vectors
                 "confidence": 0.9,
                 "custom_json": {"topic": "food"}
             }
             for i in range(10)
         ]
         
-        # 使用 graph_store_neo4j_fixture 的方法创建节点
-        # （假设 graph_store 有某种批量创建方法）
-        # 实际测试中这需要正确的实现
+        # Create the nodes through graph_store_neo4j_fixture
+        # (assuming graph_store has some batch creation method)
+        # A real test needs a correct implementation here
         
-        # 用 User A 的向量进行搜索
+        # Search with User A's vector
         query_embedding = user_a_memories[0]["embedding"]
         results = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
@@ -93,7 +93,7 @@ class TestVectorSearchIsolation:
             limit=10,
         )
         
-        # 验证隔离性
+        # Verify isolation
         for result in results:
             assert result["node_id"].startswith("user_a_"), \
                 f"Expected all results for user_a, but got {result['node_id']}"
@@ -103,19 +103,19 @@ class TestVectorSearchIsolation:
     @pytest.mark.slow
     async def test_vector_search_returns_results_for_sparse_user(self, graph_store_neo4j_fixture):
         """
-        测试：稀疏用户（结果不在全局 top-K）仍能获得结果
+        Test: a sparse user (results outside the global top-K) still gets results
         
         Setup:
-        - User A (sparse): 5 个记忆
-        - User B (dense): 100 个相似度更高的记忆
+        - User A (sparse): 5 memories
+        - User B (dense): 100 memories with higher similarity
         
         Query:
-        - User A 搜索，limit=10
-        - 全局 top-30（迭代初值）可能被 User B 的记忆填满
+        - User A searches, limit=10
+        - The global top-30 (initial iteration value) may be filled up by User B memories
         
         Expected:
-        - 迭代搜索通过增加 K 倍数，最终返回 User A 的结果
-        - 不会因为全局 top-K 被其他用户填满就放弃
+        - Iterative search grows K by multiples and eventually returns User A results
+        - It does not give up just because the global top-K is full of other users
         """
         ik_a = "sparse_user::default"
         ik_b = "dense_user::default"
@@ -125,11 +125,11 @@ class TestVectorSearchIsolation:
             random.seed(seed)
             return [random.gauss(0, 1) for _ in range(1536)]
         
-        # Sparse user: 5 个记忆
+        # Sparse user: 5 memories
         sparse_memories = [
             {
                 "node_id": f"sparse_{i}",
-                "content": f"稀疏用户记忆 {i}",
+                "content": f"Sparse user memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": ik_a,
@@ -139,21 +139,21 @@ class TestVectorSearchIsolation:
             for i in range(5)
         ]
         
-        # Dense user: 100 个高相似度的记忆（可能填满全局 top-30）
+        # Dense user: 100 highly similar memories (may fill the global top-30)
         dense_memories = [
             {
                 "node_id": f"dense_{i}",
-                "content": f"密集用户记忆 {i}",
+                "content": f"Dense user memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": ik_b,
-                "embedding": make_embedding(400),  # 都使用相同的种子（高相似性）
+                "embedding": make_embedding(400),  # all share the same seed (high similarity)
                 "confidence": 0.95,
             }
             for i in range(100)
         ]
         
-        # 搜索 sparse user 的结果
+        # Search for the sparse user's results
         query_embedding = sparse_memories[0]["embedding"]
         results = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
@@ -161,7 +161,7 @@ class TestVectorSearchIsolation:
             limit=5,
         )
         
-        # 验证即使有 100 个密集用户的竞争，仍能获得稀疏用户的结果
+        # Verify the sparse user still gets results despite 100 competing dense-user memories
         assert len(results) > 0, "Sparse user should get results despite dense competition"
         assert all(r["node_id"].startswith("sparse_") for r in results), \
             "All results should be from sparse user"
@@ -171,30 +171,30 @@ class TestVectorSearchIsolation:
     @pytest.mark.slow
     async def test_vector_search_multi_user_prefix(self, graph_store_neo4j_fixture):
         """
-        测试：跨 user_id 搜索（指定 user_id 但不指定 agent_id）
+        Test: search across user_id (user_id given, agent_id omitted)
         
         Setup:
-        - User X::agent_1: 3 个记忆
-        - User X::agent_2: 3 个记忆
-        - User Y::agent_1: 3 个记忆
+        - User X::agent_1: 3 memories
+        - User X::agent_2: 3 memories
+        - User Y::agent_1: 3 memories
         
         Query:
-        - 用 user_id="User X"（不指定 agent_id）搜索
+        - Search with user_id="User X" (no agent_id given)
         
         Expected:
-        - 返回 User X::agent_1 和 User X::agent_2 的结果
-        - 不包含 User Y 的结果
+        - Returns results for User X::agent_1 and User X::agent_2
+        - Results for User Y are not included
         """
         def make_embedding(seed: int) -> List[float]:
             import random
             random.seed(seed)
             return [random.gauss(0, 1) for _ in range(1536)]
         
-        # 创建多个 agent 下的记忆
+        # Create memories under several agents
         memories_x_agent_1 = [
             {
                 "node_id": f"x_a1_{i}",
-                "content": f"User X Agent 1 记忆 {i}",
+                "content": f"User X Agent 1 memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": "user_x::agent_1",
@@ -207,7 +207,7 @@ class TestVectorSearchIsolation:
         memories_x_agent_2 = [
             {
                 "node_id": f"x_a2_{i}",
-                "content": f"User X Agent 2 记忆 {i}",
+                "content": f"User X Agent 2 memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": "user_x::agent_2",
@@ -220,7 +220,7 @@ class TestVectorSearchIsolation:
         memories_y_agent_1 = [
             {
                 "node_id": f"y_a1_{i}",
-                "content": f"User Y Agent 1 记忆 {i}",
+                "content": f"User Y Agent 1 memory {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": "user_y::agent_1",
@@ -230,20 +230,20 @@ class TestVectorSearchIsolation:
             for i in range(3)
         ]
         
-        # 跨 agent 搜索
+        # Search across agents
         query_embedding = memories_x_agent_1[0]["embedding"]
         results = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
-            isolation_key="",  # 空隔离键
-            user_id="user_x",  # 指定 user_id（会转为 user_x::）
+            isolation_key="",  # empty isolation key
+            user_id="user_x",  # user_id given (becomes user_x::)
             limit=10,
         )
         
-        # 验证
+        # Verify
         result_ids = [r["node_id"] for r in results]
-        # 应包含来自 user_x 的结果
+        # Should include results from user_x
         has_x_results = any(id.startswith("x_a1_") or id.startswith("x_a2_") for id in result_ids)
-        # 不应包含来自 user_y 的结果
+        # Should not include results from user_y
         has_y_results = any(id.startswith("y_a1_") for id in result_ids)
         
         assert has_x_results, "Should include results from user_x"
@@ -254,20 +254,20 @@ class TestVectorSearchIsolation:
 
 @pytest.mark.integration
 class TestVectorSearchPerformance:
-    """向量检索性能测试"""
+    """Vector search performance tests"""
 
     @pytest.mark.slow
     async def test_vector_search_iteration_overhead(self, graph_store_neo4j_fixture):
         """
-        测试：迭代搜索的性能开销 < 10%
+        Test: iterative search adds less than 10% overhead
         
         Measure:
-        - 单轮查询耗时（limit*3 获取）
-        - 多轮迭代查询耗时
+        - Single-round query latency (fetching limit*3)
+        - Multi-round iterative query latency
         
         Expected:
-        - 多轮迭代开销（相对于单轮）< 10%
-        - 在正常情况下，90%+ 的结果在首轮获得（无需迭代）
+        - Multi-round overhead (relative to a single round) < 10%
+        - Under normal conditions 90%+ of results come from the first round (no iteration needed)
         """
         ik = "test_perf::default"
         
@@ -276,14 +276,14 @@ class TestVectorSearchPerformance:
             random.seed(seed)
             return [random.gauss(0, 1) for _ in range(1536)]
         
-        # 创建足够的节点以测试性能
+        # Create enough nodes for the performance test to mean anything
         for i in range(100):
-            # 模拟创建节点
+            # Simulate node creation
             pass
         
         query_embedding = make_embedding(1000)
         
-        # 测量搜索耗时
+        # Measure search latency
         start = time.time()
         results = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
@@ -292,9 +292,9 @@ class TestVectorSearchPerformance:
         )
         elapsed = time.time() - start
         
-        # 日志中应该能看到迭代次数
-        # 如果结果充足且在首轮获得，elapsed 应该接近单轮查询时间
-        # 如果需要多轮，elapsed 会相应增加，但不应超过单轮的 1.1 倍
+        # The logs should show how many iterations ran
+        # With enough results from the first round, elapsed should stay close to single-round latency
+        # With several rounds elapsed grows accordingly, but should not exceed 1.1x a single round
         
         print(f"✓ Performance test: vector_search took {elapsed:.3f}s for {len(results)} results")
         assert elapsed < 5.0, "Vector search should complete within 5 seconds"
@@ -302,9 +302,9 @@ class TestVectorSearchPerformance:
     @pytest.mark.slow
     async def test_beh_vector_search_isolation(self, graph_store_neo4j_fixture):
         """
-        测试：行为向量搜索（beh_vector_search）也遵守隔离策略
+        Test: behavior vector search (beh_vector_search) also honors the isolation policy
         
-        验证 beh_vector_search 使用相同的迭代式多轮获取，确保隔离性
+        Verifies beh_vector_search uses the same iterative multi-round fetch, so isolation holds
         """
         ik_a = "user_a_beh::default"
         ik_b = "user_b_beh::default"
@@ -314,11 +314,11 @@ class TestVectorSearchPerformance:
             random.seed(seed)
             return [random.gauss(0, 1) for _ in range(512)]
         
-        # 创建 L6 schema 行为节点
+        # Create L6 schema behavior nodes
         beh_nodes_a = [
             {
                 "node_id": f"beh_a_{i}",
-                "content": f"User A 行为 {i}",
+                "content": f"User A behavior {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": ik_a,
@@ -330,7 +330,7 @@ class TestVectorSearchPerformance:
         beh_nodes_b = [
             {
                 "node_id": f"beh_b_{i}",
-                "content": f"User B 行为 {i}",
+                "content": f"User B behavior {i}",
                 "layer": "l6_schema",
                 "status": "active",
                 "isolation_key": ik_b,
@@ -339,7 +339,7 @@ class TestVectorSearchPerformance:
             for i in range(10)
         ]
         
-        # 行为向量搜索
+        # Behavior vector search
         query_beh_embedding = beh_nodes_a[0]["beh_embedding"]
         results = await graph_store_neo4j_fixture.beh_vector_search(
             query_beh_embedding=query_beh_embedding,
@@ -347,7 +347,7 @@ class TestVectorSearchPerformance:
             limit=5,
         )
         
-        # 验证隔离性
+        # Verify isolation
         for result in results:
             assert result["node_id"].startswith("beh_a_"), \
                 f"beh_vector_search should isolate by isolation_key, got {result['node_id']}"
@@ -360,21 +360,21 @@ class TestVectorSearchPerformance:
 @pytest.fixture
 async def graph_store_neo4j_fixture():
     """
-    返回一个配置好的 Neo4j GraphStore 实例
+    Return a configured Neo4j GraphStore instance
     
-    NOTE: 这是一个占位符，实际使用需要：
-    1. 从配置文件读取 Neo4j 连接信息
-    2. 初始化 GraphStore
-    3. 在测试后清理
+    NOTE: this is a placeholder; real usage needs to:
+    1. Read the Neo4j connection details from the config file
+    2. Initialize the GraphStore
+    3. Clean up after the test
     """
-    # 这里假设测试环境已配置 NEO4J_URI 等环境变量
+    # Assumes the test environment already sets NEO4J_URI and the other env vars
     from hy_memory.config import MemoryConfig
     from hy_memory.data.graph_store_neo4j import Neo4jGraphStore
     
     config = MemoryConfig(
-        # 从环境变量读取
+        # Read from environment variables
         embedding_dims=1536,
-        neo4j_uri="neo4j://localhost:7687",  # 需要从 .env 覆盖
+        neo4j_uri="neo4j://localhost:7687",  # needs overriding from .env
         neo4j_user="neo4j",
         neo4j_password="password",
     )
@@ -384,6 +384,6 @@ async def graph_store_neo4j_fixture():
     
     yield store
     
-    # 清理
+    # Cleanup
     await store.close()
 

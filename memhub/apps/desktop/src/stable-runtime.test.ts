@@ -261,17 +261,17 @@ describe("startup install errors", () => {
     const conflict = stableRuntimeUserMessage(
       new Error("installed_version_conflict"),
     );
-    expect(conflict).toContain("记忆数据");
+    expect(conflict).toContain("memory data");
     expect(conflict).not.toContain("installed_version_conflict");
     expect(
       stableRuntimeUserMessage(new Error("distribution_downgrade_refused")),
-    ).toContain("更新");
+    ).toContain("newer");
     // An unrecognised failure still gets a sentence, never a raw code.
     expect(
       stableRuntimeUserMessage(new Error("something_unexpected")),
-    ).toContain("MemHub 启动失败");
+    ).toContain("MemHub failed to start");
     expect(stableRuntimeUserMessage("not an error")).toContain(
-      "MemHub 启动失败",
+      "MemHub failed to start",
     );
   });
 });

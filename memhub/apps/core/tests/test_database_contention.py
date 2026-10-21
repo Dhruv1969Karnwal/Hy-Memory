@@ -119,14 +119,18 @@ def test_no_store_writes_from_a_transaction_it_opened_by_reading(store_class, tm
     no snapshot to be refused an upgrade from.
     """
     if not _keeps_a_transaction_open_between_statements(store_class, tmp_path):
-        pytest.skip(f"{store_class.__name__} 不跨语句持有事务，不受此问题影响")
+        pytest.skip(
+            f"{store_class.__name__} does not hold a transaction across statements and cannot hit"
+            f" this problem"
+        )
 
     unprotected = _write_methods_that_read_first(store_class)
 
     assert unprotected == [], (
-        f"{store_class.__name__}.{', '.join(unprotected)} 先读后写，"
-        "另一个写者提交后会被 SQLite 当场拒绝而不是等待；"
-        "改用 self._connect(writing=True)"
+        f"{store_class.__name__}.{', '.join(unprotected)} read before writing, "
+        "once another writer has committed they are refused on the spot by SQLite instead of"
+        " waiting; "
+        "use self._connect(writing=True)"
     )
 
 

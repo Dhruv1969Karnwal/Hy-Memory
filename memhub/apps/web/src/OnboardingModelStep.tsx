@@ -5,6 +5,7 @@ import { OptionMenu } from "./OptionMenu";
 import { R6ColdStartFrame } from "./R6ColdStartFrame";
 import { R6Button } from "./R6Controls";
 import "./onboarding-model-r6.css";
+import { countLabel } from "./count-label";
 
 /** Strings preserve partial numeric edits. The owner validates and maps to API payloads. */
 export interface OnboardingModelDraft {
@@ -104,7 +105,7 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
   );
   const canEnable =
     (props.probe?.state === "passed" ||
-      props.enableActionLabel === "核对提交状态") &&
+      props.enableActionLabel === "Verify submission status") &&
     props.capability.saveAndEnable &&
     props.canSaveAndEnable === true &&
     !!props.generationRecipient.trim() &&
@@ -113,7 +114,7 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
   const sourceSummary =
     props.sourceNames.length <= 3
       ? props.sourceNames.join(" · ")
-      : `${props.sourceNames.slice(0, 3).join(" · ")} 等 ${props.sourceNames.length} 个应用`;
+      : `${props.sourceNames.slice(0, 3).join(" · ")} and ${countLabel(props.sourceNames.length, "app")} in total`;
   async function run(action: Action) {
     if (flight.current || locked) return;
     if (action === "save-and-enable" && !canEnable) return;
@@ -195,14 +196,14 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
             : "idle";
   const connectionFailed = props.probe?.state === "failed";
   const pageTitle = advancedOpen
-    ? "配置详情，按需要调整"
+    ? "Configuration details, adjust as needed"
     : connectionFailed
-      ? "连接未通过，配置已保留"
-      : "选好模型，让记忆开始沉淀";
-  const connectionReceipt = props.connectionSummary?.includes("已启用")
-    ? "连接设置已保存\n成功项保留，不重复执行。"
-    : props.connectionSummary === "持续同步 · 一键接入"
-      ? "已选择：持续同步 · 一键接入"
+      ? "Connection failed; the configuration is kept"
+      : "Pick the model and start distilling memories";
+  const connectionReceipt = props.connectionSummary?.includes("enabled")
+    ? "Connection settings saved\nSuccessful items are kept and not repeated."
+    : props.connectionSummary === "Continuous sync · One-click connect"
+      ? "Selected: Continuous sync · One-click connect"
       : props.connectionSummary;
   return (
     <div
@@ -215,16 +216,16 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
     >
       <R6ColdStartFrame
         step={3}
-        eyebrow="沉淀记忆 · 使用你选择的模型"
+        eyebrow="Distill memories · Use the model you chose"
         title={pageTitle}
         footer={
           <>
             <p className="onboarding-model-footer-note">
               {!props.capability.saveAndEnable
-                ? "当前无法启用模型，已填写内容保留。"
+                ? "A model cannot be enabled right now; your entries are kept."
                 : props.probe?.state === "passed"
-                  ? "模型连接测试通过，可以启用并开始沉淀记忆。"
-                  : "先测试模型连通性；测试通过后再启用。"}
+                  ? "The model connection test passed; you can enable it and start distilling memories."
+                  : "Test the model connection first; enable it once the test passes."}
             </p>
             <div className="onboarding-model-footer-actions">
               <R6Button
@@ -234,15 +235,15 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                     (props.onSkip ?? props.onBack)();
                 }}
               >
-                跳过，先进入应用
+                Skip and go to the app
               </R6Button>
               <R6Button
                 disabled={locked || !props.canTest}
                 onClick={() => void run("test")}
               >
                 {displayedPhase === "testing"
-                  ? "正在测试模型…"
-                  : (props.testActionLabel ?? "测试模型连通性")}
+                  ? "Testing the model..."
+                  : (props.testActionLabel ?? "Test the model connection")}
               </R6Button>
               <R6Button
                 variant="primary"
@@ -250,8 +251,8 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                 onClick={() => void run("save-and-enable")}
               >
                 {displayedPhase === "enabling"
-                  ? "正在启用…"
-                  : (props.enableActionLabel ?? "确认启用")}
+                  ? "Enabling..."
+                  : (props.enableActionLabel ?? "Confirm and enable")}
               </R6Button>
             </div>
           </>
@@ -260,27 +261,28 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
         <div className="onboarding-model-layout">
           <section
             className="onboarding-model-form"
-            aria-label="模型配置"
+            aria-label="Model configuration"
             data-advanced={advancedOpen}
           >
             <section
               ref={fields}
               id={`${id}-fields`}
               className="onboarding-model-fields"
-              aria-label="模型参数"
+              aria-label="Model parameters"
               // biome-ignore lint/a11y/noNoninteractiveTabindex: The parameter pane needs keyboard scrolling.
               tabIndex={0}
             >
               {!advancedOpen ? (
                 <>
                   <p className="onboarding-model-intro">
-                    选择服务商，填入 API Key。核对已有配置后再继续。
+                    Pick a provider and enter the API Key. Check the existing
+                    configuration before continuing.
                   </p>
                   <label
                     className="onboarding-model-field onboarding-model-provider"
                     htmlFor={`${id}-provider`}
                   >
-                    <span id={`${id}-provider-label`}>模型服务商</span>
+                    <span id={`${id}-provider-label`}>Model provider</span>
                     <OptionMenu
                       id={`${id}-provider`}
                       labelledBy={`${id}-provider-label`}
@@ -288,7 +290,7 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                       disabled={fieldsLocked}
                       options={[
                         ...(!provider
-                          ? [{ value: "", label: "选择服务商" }]
+                          ? [{ value: "", label: "Choose a provider" }]
                           : []),
                         ...props.providers.map((item) => ({
                           value: item.id,
@@ -309,8 +311,8 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                         provider?.keyRequired &&
                         !props.profile?.has_configured_api_key,
                       placeholder: props.profile?.has_configured_api_key
-                        ? "已安全保存，留空保留"
-                        : "输入服务商提供的 API Key",
+                        ? "Saved securely; leave blank to keep it"
+                        : "Enter the API Key from your provider",
                     })}
                   </div>
                   <p
@@ -318,12 +320,12 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                     data-state={connectionFailed ? "failed" : "idle"}
                   >
                     {connectionFailed
-                      ? "连接未通过，请检查 API Key、模型与接口地址后重试。配置已保留。"
+                      ? "The connection failed. Check the API Key, model and endpoint and retry. Your configuration is kept."
                       : props.profile?.credential_state === "unavailable"
-                        ? "需要允许 MemHub 访问钥匙串。系统询问时请选择“始终允许”。"
+                        ? "MemHub needs permission to access the keychain. Choose 'Always allow' when the system asks."
                         : props.profile?.has_configured_api_key
-                          ? "留空保留已保存密钥；填写新密钥后需重新测试。"
-                          : "密钥保存在系统安全存储中，不写入对话或日志。"}
+                          ? "Leave blank to keep the saved key; a new key needs a new test."
+                          : "The key is kept in the system secure store and never written into conversations or logs."}
                   </p>
                   <button
                     ref={advancedToggle}
@@ -334,24 +336,31 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                     disabled={fieldsLocked}
                     onClick={() => changeAdvanced(true)}
                   >
-                    配置详情与高级设置{" "}
+                    Configuration details and advanced settings{" "}
                     <ChevronDown size={16} aria-hidden="true" />
                   </button>
                   <p className="onboarding-model-profile">
-                    {provider?.label ?? "服务商待选择"} ·{" "}
-                    {draft.model || "模型待填写"}
+                    {provider?.label ?? "Provider not chosen"} ·{" "}
+                    {draft.model || "Model not filled in"}
                     <br />
                     {safeEndpoint(draft.base_url)} ·{" "}
                     {draft.embedding_mode === "local"
-                      ? "本地向量模型"
-                      : draft.embedding_model || "向量模型待填写"}{" "}
-                    · {draft.disable_thinking ? "思考已关闭" : "思考未关闭"}
+                      ? "Local embedding model"
+                      : draft.embedding_model ||
+                        "Embedding model not filled in"}{" "}
+                    ·{" "}
+                    {draft.disable_thinking
+                      ? "Thinking off"
+                      : "Thinking not off"}
                   </p>
                 </>
               ) : (
                 <>
                   <div className="onboarding-model-advanced-head">
-                    <p>预设已填好，只有自定义服务或特殊需求才需要修改。</p>
+                    <p>
+                      The presets are filled in; only custom services or special
+                      needs require changes.
+                    </p>
                     <button
                       ref={advancedToggle}
                       type="button"
@@ -361,12 +370,13 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                       disabled={fieldsLocked}
                       onClick={() => changeAdvanced(false)}
                     >
-                      返回服务商选择 <ChevronUp size={16} aria-hidden="true" />
+                      Back to provider selection{" "}
+                      <ChevronUp size={16} aria-hidden="true" />
                     </button>
                   </div>
                   <div className="onboarding-model-advanced-grid">
-                    {field("name", "配置名称", { maxLength: 128 })}
-                    {field("model", "模型名称", {
+                    {field("name", "Configuration name", { maxLength: 128 })}
+                    {field("model", "Model name", {
                       required: true,
                       maxLength: 256,
                     })}
@@ -383,22 +393,22 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                           provider?.keyRequired &&
                           !props.profile?.has_configured_api_key,
                         placeholder: props.profile?.has_configured_api_key
-                          ? "已安全保存，留空保留"
-                          : "输入服务商提供的 API Key",
+                          ? "Saved securely; leave blank to keep it"
+                          : "Enter the API Key from your provider",
                       })}
                       <p
                         className="onboarding-model-key-note"
                         data-state={connectionFailed ? "failed" : "idle"}
                       >
                         {props.profile?.has_configured_api_key
-                          ? "留空保留已保存密钥；填写新密钥后需重新测试。"
-                          : "密钥保存在系统安全存储中，不写入对话或日志。"}
+                          ? "Leave blank to keep the saved key; a new key needs a new test."
+                          : "The key is kept in the system secure store and never written into conversations or logs."}
                       </p>
                     </div>
                     <label className="onboarding-model-field">
-                      <span>协议</span>
+                      <span>Protocol</span>
                       <select
-                        aria-label="协议"
+                        aria-label="Protocol"
                         value={draft.provider_kind}
                         disabled={fieldsLocked}
                         onChange={(e) => {
@@ -413,17 +423,17 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                         </option>
                         <option value="ollama">Ollama</option>
                         <option value="anthropic" disabled>
-                          Anthropic（暂不支持）
+                          Anthropic (not supported yet)
                         </option>
                         <option value="hy_default" disabled>
-                          HY 托管（当前不可用）
+                          HY hosted (currently unavailable)
                         </option>
                       </select>
                     </label>
                     <label className="onboarding-model-field">
-                      <span>向量模型</span>
+                      <span>Embedding model</span>
                       <select
-                        aria-label="向量模型"
+                        aria-label="Embedding model"
                         value={draft.embedding_mode}
                         disabled={fieldsLocked}
                         onChange={(e) => {
@@ -435,26 +445,26 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                             });
                         }}
                       >
-                        <option value="local">本地 ONNX · 内置</option>
-                        <option value="custom">自定义向量</option>
+                        <option value="local">Local ONNX · built-in</option>
+                        <option value="custom">Custom embedding</option>
                       </select>
                     </label>
                     <div className="onboarding-model-numbers">
-                      {field("timeout_seconds", "超时（秒）", {
+                      {field("timeout_seconds", "Timeout (seconds)", {
                         type: "number",
                         min: 1,
                         max: 600,
                       })}
-                      {field("max_concurrency", "最大并发", {
+                      {field("max_concurrency", "Max concurrency", {
                         type: "number",
                         min: 1,
                         max: 32,
                       })}
-                      {field("context_window", "上下文窗口", {
+                      {field("context_window", "Context window", {
                         type: "number",
                         min: 1024,
                         max: 10000000,
-                        placeholder: "自动 / 可选",
+                        placeholder: "Automatic / optional",
                       })}
                     </div>
                     <label className="onboarding-model-thinking">
@@ -469,23 +479,25 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                             });
                         }}
                       />
-                      关闭思考模式
+                      Turn off thinking mode
                     </label>
                     <p className="onboarding-model-vector-note">
-                      自定义向量配置可展开；远程向量服务须遵守凭据边界。
+                      A custom embedding configuration can be expanded; a remote
+                      embedding service must respect the credential boundary.
                       <br />
-                      切换服务商或模型后，需要重新测试并启用。
+                      After switching provider or model you have to test and
+                      enable again.
                     </p>
                     {draft.embedding_mode === "custom" && (
                       <>
-                        {field("embedding_model", "向量模型名称", {
+                        {field("embedding_model", "Embedding model name", {
                           required: true,
                           maxLength: 256,
                         })}
                         <label className="onboarding-model-field">
-                          <span>向量协议</span>
+                          <span>Embedding protocol</span>
                           <select
-                            aria-label="向量协议"
+                            aria-label="Embedding protocol"
                             value={draft.embedding_provider_kind}
                             disabled={fieldsLocked}
                             onChange={(e) => {
@@ -498,18 +510,20 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                             }}
                           >
                             <option value="openai_compatible">
-                              同源 OpenAI-compatible（共用 Key）
+                              Same-origin OpenAI-compatible (shared Key)
                             </option>
-                            <option value="ollama">本机 Ollama</option>
+                            <option value="ollama">Local Ollama</option>
                           </select>
                         </label>
                         <div className="onboarding-model-wide">
-                          {field("embedding_base_url", "向量 Base URL", {
+                          {field("embedding_base_url", "Embedding Base URL", {
                             type: "url",
                             required: true,
                           })}
                           <small>
-                            远程向量地址须与生成服务同源；本机地址仍需校验。
+                            The remote embedding address must share the
+                            generation service origin; local addresses are still
+                            validated.
                           </small>
                         </div>
                       </>
@@ -524,7 +538,7 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                   disabled={locked}
                   onClick={() => void props.onRecoverCreation?.()}
                 >
-                  核对创建结果
+                  Verify the creation result
                 </R6Button>
               )}
               {props.onDiscardMissingCreation && (
@@ -533,17 +547,17 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                   disabled={locked}
                   onClick={() => void props.onDiscardMissingCreation?.()}
                 >
-                  放弃旧记录，重新配置
+                  Drop the old record and reconfigure
                 </R6Button>
               )}
             </div>
             <div className="onboarding-model-feedback" tabIndex={-1}>
               {(displayedPhase === "testing" ||
                 displayedPhase === "enabling") && (
-                <p role="status" aria-label="模型提交状态">
+                <p role="status" aria-label="Model submission status">
                   {displayedPhase === "testing"
-                    ? "正在测试连接…"
-                    : "正在提交保存与启用，请等待回执…"}
+                    ? "Testing the connection..."
+                    : "Submitting the save and enable; waiting for the receipt..."}
                 </p>
               )}
               {props.probe && (
@@ -558,28 +572,33 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
               {(props.error || callbackFailed) && (
                 <p className="onboarding-model-error" role="alert">
                   {props.error ||
-                    "操作结果未确认，已填写内容保留，请核对后重试。"}
+                    "The operation result is unconfirmed; your entries are kept. Check and retry."}
                 </p>
               )}
             </div>
           </section>
           <aside
             className="onboarding-model-summary"
-            aria-label="本次沉淀"
+            aria-label="This distillation"
             data-full-height={advancedOpen || connectionFailed}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll the full permission disclosure.
             tabIndex={0}
           >
             <div className="onboarding-model-summary-heading">
-              <p>本次沉淀</p>
-              <h2>让记忆从这里开始</h2>
+              <p>This distillation</p>
+              <h2>Memories start here</h2>
             </div>
             <div className="onboarding-model-connections">
-              <p>对话来源</p>
-              <strong>{sourceSummary || "尚无已选来源"}</strong>
+              <p>Conversation sources</p>
+              <strong>{sourceSummary || "No sources selected yet"}</strong>
               <small>
-                已导入 {props.importedConversationCount ?? 0}{" "}
-                条对话；来源开关继续控制之后同步到本机的内容。
+                Imported{" "}
+                {countLabel(
+                  props.importedConversationCount ?? 0,
+                  "conversation",
+                )}
+                ; the source switches keep controlling what syncs to this
+                machine later.
               </small>
             </div>
             <div className="onboarding-model-summary-status">
@@ -589,17 +608,19 @@ export function OnboardingModelStep(props: OnboardingModelStepProps) {
                 </small>
               )}
               <small>
-                处理服务：{provider?.label ?? "待选择"}
+                Processing service: {provider?.label ?? "Not chosen"}
                 <br />
-                相关对话会发送给所选服务商。
+                The relevant conversations are sent to the selected provider.
               </small>
               <small>
-                测试连接只发送测试内容。启用后会使用此模型整理已导入和之后同步的会话。
+                Testing the connection only sends test content. Once enabled,
+                this model organizes imported and later synced conversations.
               </small>
             </div>
             {!props.capability.saveAndEnable && (
               <p role="status">
-                {props.capability.reason || "当前不能在此启用模型。"}
+                {props.capability.reason ||
+                  "A model cannot be enabled here right now."}
               </p>
             )}
           </aside>
@@ -619,9 +640,9 @@ function safeEndpoint(value: string): string {
       url.search ||
       url.hash
     )
-      return "接口地址待核对";
+      return "Endpoint pending verification";
     return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
   } catch {
-    return "接口地址待核对";
+    return "Endpoint pending verification";
   }
 }

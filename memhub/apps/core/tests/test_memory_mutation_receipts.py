@@ -450,7 +450,8 @@ def test_authenticated_api_create_lookup_and_external_denial(tmp_path):
 
 
 def test_v1_receipts_stored_before_the_upgrade_read_as_v2_after_migration(env):
-    """旧库的回执由当时的台账现算：新建=candidate、confirm、reject 都要能继续读。"""
+    """Receipts an old library stored are recomputed on the fly from the ledger of the time: \
+create=candidate, confirm and reject must all still read."""
     from tests.test_memory_no_candidate import LEGACY_HISTORIES, _legacy_memory
 
     database, _, _, _, memory = env
@@ -567,7 +568,8 @@ FIXTURE_REQUESTS = {
 
 
 def test_the_cli_receipt_fixture_is_what_core_actually_returns(tmp_path):
-    """CLI 的契约测试读这份样例；样例一旦和 Core 的真实回执不一致，这里先红。"""
+    """The CLI's contract test reads this sample; the moment the sample drifts from Core's real \
+receipts, this goes red first."""
     import json
 
     from one_memory.api import create_app

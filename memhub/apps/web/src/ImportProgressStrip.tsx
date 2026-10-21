@@ -21,6 +21,7 @@ import {
   validReceipt,
 } from "./SourceJobActions";
 import "./import-progress-strip.css";
+import { groupedCountLabel, groupedNumber } from "./count-label";
 
 const RUNNING = new Set(["running"]);
 const PAUSABLE = new Set(["pending", "running"]);
@@ -38,13 +39,13 @@ type JobFailure = {
  * A reader looking at their own import does not need the pipeline's enum; they
  * need to know whether it finished. */
 const JOB_STATUS_LABELS: Record<string, string> = {
-  pending: "等待中",
-  running: "进行中",
-  completed: "已完成",
-  failed: "失败",
-  paused: "已暂停",
-  interrupted: "已中断",
-  cancelled: "已停止",
+  pending: "Waiting",
+  running: "In progress",
+  completed: "Completed",
+  failed: "Failed",
+  paused: "Paused",
+  interrupted: "Interrupted",
+  cancelled: "Stopped",
 };
 
 export function jobStatusLabel(status: string): string {
@@ -129,10 +130,10 @@ export function ImportProgressStrip({
       if (mounted.current && snapshot.current.epoch === epoch) {
         setRefreshError({
           epoch,
-          message: `核对失败，状态仍待核对。${
+          message: `Verification failed; status still pending verification.${
             reason instanceof Error && reason.message.trim()
               ? reason.message
-              : "请稍后重试。"
+              : "Try again later."
           }`,
         });
       }
@@ -153,16 +154,16 @@ export function ImportProgressStrip({
       try {
         const result = await onJobAction(target.job_id, action);
         if (!validReceipt(result, target))
-          throw new Error("未收到此任务的有效回执。");
+          throw new Error("No valid receipt received for this job.");
         if (!settledAction(action, result))
-          throw new Error("后台尚未确认此操作完成。");
+          throw new Error("The backend has not confirmed this operation yet.");
       } catch (reason) {
         failures.push({
           job: target,
           message:
             reason instanceof Error && reason.message.trim()
               ? reason.message
-              : "未能确认操作结果。",
+              : "The operation result could not be confirmed.",
         });
       }
     }
@@ -252,10 +253,10 @@ export function ImportProgressStrip({
       0,
     );
     const message = firstImport
-      ? `正在导入你的历史对话，已导入 ${imported.toLocaleString("zh-CN")} 个会话。记忆会陆续生成，你可以先正常使用。`
+      ? `Importing your conversation history, ${groupedCountLabel(imported, "conversation")} imported so far. Memories will appear gradually; you can keep using the app.`
       : currentArrival?.phase === "model-required"
-        ? "模型还没有配置好，新的对话暂时不会整理成记忆。"
-        : "有些内容没有处理完成，请前往设置查看。";
+        ? "The model is not set up yet; new conversations will not be organized into memories for now."
+        : "Some content failed to process; check Settings for details.";
     return (
       <div
         className="import-strip"
@@ -277,7 +278,7 @@ export function ImportProgressStrip({
               onClick={onConfigureModel}
             >
               <Settings2 size={15} aria-hidden="true" />
-              去设置
+              Go to settings
             </button>
           )}
         </div>
@@ -318,21 +319,21 @@ export function ImportProgressStrip({
   const updating = stale ? refreshing : currentArrival?.refreshing === true;
   const title = stale
     ? updating
-      ? "已保存内容保留，正在核对进度"
-      : "进度待更新"
+      ? "Saved content is kept; verifying progress"
+      : "Progress needs updating"
     : currentArrival && needsAction
       ? currentArrival.phase === "model-required"
-        ? "待继续"
+        ? "Waiting to resume"
         : memoryArrivalTitle(currentArrival)
       : generating
-        ? "正在沉淀记忆"
+        ? "Memories are taking shape"
         : importing || currentArrival?.phase === "importing"
           ? running.length > 0 && running.every(isSyncJob)
-            ? "正在检查新增对话"
-            : "正在导入对话"
+            ? "Checking for new conversations"
+            : "Importing conversations"
           : backfilling
-            ? "正在准备整理"
-            : "待继续";
+            ? "Preparing to organize"
+            : "Waiting to resume";
 
   return (
     <div
@@ -352,12 +353,12 @@ export function ImportProgressStrip({
           {canShowCounts && (
             <span className="import-strip-counts">
               {confirmedMessages > 0
-                ? `已保存 ${confirmedMessages.toLocaleString("zh-CN")} 条原文 · ${confirmedConversations.toLocaleString("zh-CN")} 个会话`
-                : `本次已保存 ${savedInLatestJobs.toLocaleString("zh-CN")} 条原文`}
+                ? `Saved ${groupedCountLabel(confirmedMessages, "original")} · ${groupedCountLabel(confirmedConversations, "conversation")}`
+                : `${groupedCountLabel(savedInLatestJobs, "original")} saved this run`}
               {currentArrival?.memoryCount !== undefined &&
               Number.isFinite(currentArrival.memoryCount) &&
               currentArrival.memoryCount >= 0
-                ? ` · ${currentArrival.memoryCount.toLocaleString("zh-CN")} 条记忆`
+                ? ` · ${groupedCountLabel(currentArrival.memoryCount, "memory")}`
                 : ""}
             </span>
           )}
@@ -366,37 +367,37 @@ export function ImportProgressStrip({
           {stale ||
           currentArrival?.phase === "unavailable" ||
           currentArrival?.phase === "checking"
-            ? "已保存内容保留。"
+            ? "Saved content is kept."
             : currentArrival?.phase === "model-required"
-              ? "请核对整理模型，已保存原文保留在本机。"
+              ? "Check the organizing model; saved originals are kept on this device."
               : importPaused
-                ? "导入已暂停，已保存内容保留，随时可以继续。"
+                ? "Import paused; saved content is kept; continue anytime."
                 : generating
-                  ? "先整理近期对话，更多记忆会陆续出现"
+                  ? "Recent conversations are being organized first; more memories will appear soon"
                   : currentArrival?.phase === "failed" ||
                       currentArrival?.phase === "stopped"
                     ? importing
-                      ? "原文仍在导入，记忆整理待继续；已保存内容保留。"
-                      : "已保存内容保留，可继续整理。"
+                      ? "Originals are still importing; memory organizing is pending; saved content is kept."
+                      : "Saved content is kept; organizing can continue."
                     : importing || currentArrival?.phase === "importing"
-                      ? "正在保存原文；导入进度不代表记忆生成进度。"
+                      ? "Saving originals; import progress does not reflect memory generation progress."
                       : backfilling
-                        ? "正在准备已授权的对话，尚未确认有运行中的生成任务。"
-                        : "已保存内容保留。"}
+                        ? "Preparing authorized conversations; no running generation job confirmed yet."
+                        : "Saved content is kept."}
         </span>
       </div>
 
       {showProgressDetails && (
         <details className="memory-feedback-details import-strip-details">
-          <summary>查看进度与详情</summary>
+          <summary>View progress and details</summary>
           <div className="import-strip-body">
             {stale && (
               <div className="import-strip-snapshot">
-                <strong>来源状态待核对</strong>
+                <strong>Source status pending verification</strong>
                 {hasConfirmedTime ? (
                   <>
                     <span className="import-strip-confirmed-time">
-                      上次确认来源状态：
+                      Last confirmed source status:&#32;
                       <time dateTime={confirmedAt}>
                         {new Date(confirmedAt as string).toLocaleString(
                           "zh-CN",
@@ -408,31 +409,33 @@ export function ImportProgressStrip({
                     </span>
                     {knownSources.length > 0 && (
                       <span>
-                        上次确认来源：
+                        Last confirmed sources:&#32;
                         {knownSources
                           .map(
                             (item) =>
-                              `${item.display_name} ${item.imported_messages.toLocaleString("zh-CN")} 条原文 · ${item.imported_conversations.toLocaleString("zh-CN")} 个会话`,
+                              `${item.display_name} ${groupedCountLabel(item.imported_messages, "original")} · ${groupedCountLabel(item.imported_conversations, "conversation")}`,
                           )
-                          .join("；")}
+                          .join("; ")}
                       </span>
                     )}
                     {latest.length > 0 && (
                       <span>
-                        任务回执：
+                        Job receipts:&#32;
                         {latest
                           .map(
                             (item) =>
-                              `${nameOf(item.source_id)} ${isSyncJob(item) ? "新增同步" : "历史导入"}，已扫描 ${item.discovered.toLocaleString("zh-CN")} 条记录，${jobSummary(item, isSyncJob(item))}`,
+                              `${nameOf(item.source_id)} ${isSyncJob(item) ? "New-item sync" : "History import"}, scanned ${groupedCountLabel(item.discovered, "record")}, ${jobSummary(item, isSyncJob(item))}`,
                           )
-                          .join("；")}
+                          .join("; ")}
                       </span>
                     )}
                   </>
                 ) : (
-                  <span>尚无已确认的来源状态，请刷新核对。</span>
+                  <span>
+                    No confirmed source status yet; refresh to verify.
+                  </span>
                 )}
-                {refreshing && <span>正在核对来源状态…</span>}
+                {refreshing && <span>Checking source status...</span>}
                 {visibleError && (
                   <span className="import-strip-refresh-error">
                     {visibleError}
@@ -467,13 +470,13 @@ export function ImportProgressStrip({
                     key={sync ? "sync" : "history"}
                   >
                     <span>
-                      {sync ? "正在检查 " : "正在导入 "}
-                      {group.map((item) => nameOf(item.source_id)).join("、")}
-                      {sync ? " 的新增对话" : " 的历史"}
+                      {sync ? "Checking " : "Importing "}
+                      {group.map((item) => nameOf(item.source_id)).join(", ")}
+                      {sync ? " for new conversations" : " history"}
                       {totals.discovered > 0
-                        ? `，已扫描 ${totals.discovered.toLocaleString("zh-CN")} 条记录`
+                        ? `, scanned ${groupedCountLabel(totals.discovered, "record")}`
                         : ""}
-                      。
+                      .
                     </span>
                     <span>{jobSummary(totals, sync)}</span>
                   </span>
@@ -481,71 +484,82 @@ export function ImportProgressStrip({
               })}
 
             {!stale && !importing && backfilling && (
-              <span>正在准备已授权对话的整理任务。</span>
+              <span>
+                Preparing organizing jobs for authorized conversations.
+              </span>
             )}
 
             {!stale &&
               pending.map((item) => (
                 <span key={item.job_id}>
                   {nameOf(item.source_id)}
-                  {isSyncJob(item) ? " 新增同步等待检查" : " 历史等待导入"}
+                  {isSyncJob(item)
+                    ? " new-item sync waiting to check"
+                    : " history waiting to import"}
                   {" · "}
                   {jobSummary(item, isSyncJob(item))}
                 </span>
               ))}
 
             {generating && (currentArrival?.backlogPending ?? 0) > 0 && (
-              <span>存量数据较大，为保证质量，正在后台分批整理</span>
+              <span>
+                Large backlog; organizing in background batches to preserve
+                quality
+              </span>
             )}
 
             {failed.map((item) => (
               <span className="import-strip-failed" key={item.source_id}>
-                {stale ? "上次任务回执：" : ""}
+                {stale ? "Last job receipt: " : ""}
                 {nameOf(item.source_id)}
-                {isSyncJob(item) ? " 新增同步失败" : " 没能读完历史"}。
-                {!stale && jobSummary(item, isSyncJob(item))}
+                {isSyncJob(item)
+                  ? " new-item sync failed"
+                  : " failed to read through history"}
+                .{!stale && jobSummary(item, isSyncJob(item))}
               </span>
             ))}
 
             {paused.map((item) => (
               <span className="import-strip-failed" key={item.source_id}>
-                {stale ? "上次任务回执：" : ""}
+                {stale ? "Last job receipt: " : ""}
                 {nameOf(item.source_id)}
                 {item.status === "cancelled"
-                  ? " 已停止，"
+                  ? " stopped, "
                   : isSyncJob(item)
                     ? item.status === "paused"
-                      ? " 新增同步已暂停，"
-                      : " 新增同步已中断，"
-                    : " 尚未导完历史，"}
+                      ? " new-item sync paused, "
+                      : " new-item sync interrupted, "
+                    : " history import not finished,"}
                 {stale
-                  ? "请前往来源核对。"
+                  ? "Go to Sources to verify."
                   : isSyncJob(item)
-                    ? "可继续检查新增。"
-                    : "可继续导入。"}
+                    ? "New-item checks can continue."
+                    : "Import can continue."}
                 {!stale && jobSummary(item, isSyncJob(item))}
               </span>
             ))}
 
             {completedWithErrors.map((item) => (
               <span className="import-strip-failed" key={item.source_id}>
-                {stale ? "上次任务回执：" : ""}
+                {stale ? "Last job receipt: " : ""}
                 {nameOf(item.source_id)}
-                {isSyncJob(item) ? " 本次新增检查" : " 本次历史检查"}
-                已完成，仍有读取异常
-                {stale ? "。" : `；${jobSummary(item, isSyncJob(item))}。`}
+                {isSyncJob(item)
+                  ? " this new-item check "
+                  : " this history check "}
+                finished, but read issues remain
+                {stale ? "." : `; ${jobSummary(item, isSyncJob(item))}.`}
               </span>
             ))}
 
             {!stale && knownSources.length > 0 && (
               <span className="import-strip-total">
-                累计已保存：
+                Total saved:&#32;
                 {knownSources
                   .map(
                     (item) =>
-                      `${item.display_name} ${item.imported_messages.toLocaleString("zh-CN")} 条原文 · ${item.imported_conversations.toLocaleString("zh-CN")} 个会话`,
+                      `${item.display_name} ${groupedCountLabel(item.imported_messages, "original")} · ${groupedCountLabel(item.imported_conversations, "conversation")}`,
                   )
-                  .join("；")}
+                  .join("; ")}
               </span>
             )}
 
@@ -553,7 +567,7 @@ export function ImportProgressStrip({
               <ul className="import-strip-receipts">
                 {(issues ?? []).map((issue) => (
                   <li key={`${issue.job_id}:${issue.issue_id}`}>
-                    {issue.kind === "error" ? "读取异常" : "跳过记录"}
+                    {issue.kind === "error" ? "read issue" : "skipped record"}
                     {" · "}
                     {importIssueLabel(issue.reason)}
                   </li>
@@ -567,18 +581,21 @@ export function ImportProgressStrip({
                   <li key={`${block.kind}:${block.reason}`}>
                     {taskKindLabel(block.kind)} ·{" "}
                     {blockReasonLabel(block.reason)} ·{" "}
-                    {block.count.toLocaleString("zh-CN")} 项
+                    {groupedCountLabel(block.count, "item")}
                   </li>
                 ))}
               </ul>
             )}
 
             {jobs.length > 0 && (
-              <ul className="import-strip-receipts" aria-label="完整任务回执">
+              <ul
+                className="import-strip-receipts"
+                aria-label="Full job receipts"
+              >
                 {jobs.map((item) => (
                   <li key={item.job_id}>
                     {nameOf(item.source_id)} ·{" "}
-                    {isSyncJob(item) ? "新增同步" : "历史导入"} ·{" "}
+                    {isSyncJob(item) ? "New-item sync" : "History import"} ·{" "}
                     {jobStatusLabel(item.status)} ·{" "}
                     {jobSummary(item, isSyncJob(item))}
                   </li>
@@ -597,9 +614,9 @@ export function ImportProgressStrip({
           {jobFailure.failures
             .map(
               ({ job: failed, message }) =>
-                `${nameOf(failed.source_id)} 未能${jobFailure.action === "pause" ? "暂停" : "继续"}：${message}`,
+                `${nameOf(failed.source_id)} could not ${jobFailure.action === "pause" ? "pause" : "resume"}: ${message}`,
             )
-            .join("；")}
+            .join("; ")}
         </p>
       )}
       <div className="import-strip-actions">
@@ -624,12 +641,12 @@ export function ImportProgressStrip({
               <Play size={16} aria-hidden="true" />
             )}
             {jobFlight === "pause"
-              ? "暂停中…"
+              ? "Pausing..."
               : jobFlight === "resume"
-                ? "继续中…"
+                ? "Resuming..."
                 : jobAction === "pause"
-                  ? "全部暂停"
-                  : "全部继续"}
+                  ? "Pause all"
+                  : "Continue all"}
           </button>
         )}
         {!stale && !jobFlight && jobFailure && retryTargets.length > 0 && (
@@ -639,7 +656,7 @@ export function ImportProgressStrip({
             onClick={() => void changeJobs(jobFailure.action, retryTargets)}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            {jobFailure.action === "pause" ? "重试暂停" : "重试继续"}
+            {jobFailure.action === "pause" ? "Retry pause" : "Retry resume"}
           </button>
         )}
         {!stale &&
@@ -647,7 +664,7 @@ export function ImportProgressStrip({
           onConfigureModel && (
             <button type="button" className="quiet" onClick={onConfigureModel}>
               <Settings2 size={16} aria-hidden="true" />
-              设置模型
+              Set up model
             </button>
           )}
         {!stale &&
@@ -656,24 +673,24 @@ export function ImportProgressStrip({
           onConfigureModel && (
             <button type="button" className="quiet" onClick={onConfigureModel}>
               <Settings2 size={16} aria-hidden="true" />
-              继续整理
+              Continue organizing
             </button>
           )}
         {stale && onRefresh && (
           <button
             type="button"
             className="quiet import-strip-refresh"
-            title="刷新核对"
+            title="Refresh and verify"
             disabled={refreshing}
             onClick={() => void refresh()}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            刷新核对
+            Refresh and verify
           </button>
         )}
         {showSourceLink && (
           <button type="button" className="quiet" onClick={onOpenSources}>
-            查看来源
+            View sources
           </button>
         )}
       </div>
@@ -719,5 +736,5 @@ function jobSummary(
   },
   sync = false,
 ) {
-  return `${sync ? `本次新增 ${totals.stored.toLocaleString("zh-CN")} 条原文` : `${totals.stored.toLocaleString("zh-CN")} 条原文已保存`}${totals.merged > 0 ? ` · ${totals.merged.toLocaleString("zh-CN")} 条已存在` : ""}${totals.skipped > 0 ? ` · ${totals.skipped.toLocaleString("zh-CN")} 条跳过` : ""}${totals.errors > 0 ? ` · ${totals.errors.toLocaleString("zh-CN")} 条异常` : ""}`;
+  return `${sync ? `${groupedCountLabel(totals.stored, "new original")} this run` : `${groupedCountLabel(totals.stored, "original")} saved`}${totals.merged > 0 ? ` · ${groupedNumber(totals.merged)} already existed` : ""}${totals.skipped > 0 ? ` · ${groupedNumber(totals.skipped)} skipped` : ""}${totals.errors > 0 ? ` · ${groupedCountLabel(totals.errors, "issue")}` : ""}`;
 }

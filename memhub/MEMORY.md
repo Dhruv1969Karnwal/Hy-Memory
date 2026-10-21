@@ -1,45 +1,45 @@
-# Hy Memory 使用与配置
+# Using and configuring Hy Memory
 
-更新：2026-10-12
+Updated: 2026-10-12
 
-本文说明 MemHub 当前使用的 Hy Memory SDK、配置边界，以及直接使用 SDK 时如何
-write、search，并把搜索结果格式化为可交给模型的 memory text chunk。
+This document describes the Hy Memory SDK that MemHub currently uses, the configuration
+boundaries, and how to write and search when using the SDK directly and format search results into a memory text chunk that can be handed to a model.
 
-仓库内仍以 One Memory 命名的 Evidence、权限和 Governance 层属于 MemHub 的历史兼容
-模块；产品代码不应绕过这些层直接调用 SDK。本文中的
-原生 SDK 示例主要用于开发、调试和独立验证。
+The Evidence, permission, and Governance layers still named One Memory in this repository are
+MemHub's legacy compatibility modules; product code must not bypass these layers to call the SDK
+directly. The native SDK examples here are mainly for development, debugging, and standalone validation.
 
-## 当前版本状态
+## Current version status
 
-当前源码固定使用：
+The current source pins:
 
 ```text
 distribution: hy-memory
 version:      2.0.3
-mode:         按运行时配置选择
+mode:         chosen by runtime configuration
 reader:       hybrid
 ```
 
-仓库 pin、lockfile 和运行时版本守卫均固定到公开的 `hy-memory==2.0.3`。
-MemHub 在本地 Runtime 内嵌入 SDK，但不绕过自身的来源授权、模型授权、Evidence、
-Governance 和撤权边界。
+The repository pin, the lockfile, and the runtime version guard are all pinned to the public
+`hy-memory==2.0.3`. MemHub embeds the SDK inside the local Runtime but never bypasses its own
+source authorization, model authorization, Evidence, Governance, and revocation boundaries.
 
-## MemHub 运行时边界
+## MemHub runtime boundaries
 
-MemHub 对 SDK 使用以下公开、可复现的本地策略：
+MemHub applies the following public, reproducible local policy for the SDK:
 
-- vector store 使用受管数据目录中的 Chroma；
-- graph store 使用受管数据目录中的 Kuzu；
-- cache 与 history 使用 SQLite；
-- reader 使用 `hybrid`；
-- reranker 默认关闭，不引入 Torch、Transformers 或额外模型；
-- 模型与远程 embedding 参数来自版本化 Model Profile；
-- API Key 进入系统安全存储，不写入仓库、安装包、日志或 HY metadata；
-- 服务端数据库、租户队列及宿主 shell 中的 ambient 凭据不会进入 SDK config。
+- the vector store uses Chroma inside the managed data directory;
+- the graph store uses Kuzu inside the managed data directory;
+- cache and history use SQLite;
+- the reader uses `hybrid`;
+- the reranker is off by default, introducing no Torch, Transformers, or extra models;
+- model and remote embedding parameters come from the versioned Model Profile;
+- API keys go into system secure storage and are never written to the repository, install packages, logs, or HY metadata;
+- ambient credentials from server-side databases, tenant queues, and the host shell never enter SDK config.
 
-发布包固定应用以下 SDK 行为配置：
+The release package applies the following fixed SDK behavior configuration:
 
-| 环境变量 | 值 |
+| Environment variable | Value |
 |---|---|
 | `MEMORY_MODE` | `ultra` |
 | `MEMORY_ENABLE_GRAPH` | `true` |
@@ -71,21 +71,21 @@ MemHub 对 SDK 使用以下公开、可复现的本地策略：
 | `RECONCILE_ENABLED` | `true` |
 | `HY_MEMORY_READER` | `hybrid` |
 
-这些默认值集中在
-`apps/core/src/one_memory/hy_runtime_config.py`，并由发布测试和 lockfile 共同约束。
-独立脚本若绕过 MemHub 直接导入 SDK，应自行显式配置存储目录和模型端点。
+These defaults are centralized in
+`apps/core/src/one_memory/hy_runtime_config.py` and jointly constrained by release tests and the
+lockfile. A standalone script that imports the SDK directly, bypassing MemHub, must configure its own storage directories and model endpoints explicitly.
 
-## 原生 SDK 初始化
+## Native SDK initialization
 
-下面是独立调试示例。产品代码应使用 One Memory 的 `HyMemoryBridge`，因为它额外提供来源
-授权、模型授权、Evidence 绑定、写后核验、Governance 和撤权保护。
+The following is a standalone debugging example. Product code should use One Memory's
+`HyMemoryBridge`, which additionally provides source authorization, model authorization, Evidence binding, post-write verification, Governance, and revocation protection.
 
 ```python
 from hy_memory import HyMemoryClient, MemoryConfig
 
 config = MemoryConfig.from_env()
 
-# 本地优先示例；实际目录应由调用方传入，不能依赖 ~/.hy_memory 默认值。
+# Local-first example; the real directory must be passed in by the caller and must not rely on the ~/.hy_memory default.
 config.vector_store.provider = "chroma"
 config.vector_store.persist_directory = "/path/to/one-memory/hy-memory/governed-v2/vector"
 config.graph_store.provider = "kuzu"
@@ -107,12 +107,12 @@ config.embedder.embedding_dims = 1024
 client = HyMemoryClient(config=config, mode="ultra")
 ```
 
-`embedding_dims` 必须与模型实际输出宽度以及已有向量/图存储一致。更换 embedding 模型、
-端点或维度不能直接复用旧 collection；One Memory 会检测图宽度不一致并拒绝静默重建。
+`embedding_dims` must match the model's actual output width and the existing vector/graph stores.
+Swapping the embedding model, endpoint, or dimensions cannot silently reuse an old collection; One Memory detects graph width mismatches and refuses to rebuild without notice.
 
-## Write：写入对话
+## Write: writing a conversation
 
-推荐把一段连续对话作为 OpenAI messages 写入：
+The recommendation is to write one contiguous conversation as OpenAI messages:
 
 ```python
 from datetime import UTC, datetime
@@ -120,8 +120,8 @@ from uuid import uuid4
 
 result = client.add(
     [
-        {"role": "user", "content": "我长期偏好简洁、直接的回答。"},
-        {"role": "assistant", "content": "明白，我会优先给结论。"},
+        {"role": "user", "content": "I prefer concise, direct answers long term."},
+        {"role": "assistant", "content": "Understood. I will lead with the conclusion."},
     ],
     user_id="user-123",
     agent_id="all-apps",
@@ -138,22 +138,22 @@ result = client.add(
 )
 ```
 
-参数规则：
+Parameter rules:
 
-| 参数 | 填法 | 约束 |
+| Parameter | How to fill | Constraint |
 | --- | --- | --- |
-| `data` | 字符串或 `[{role, content}]` | 对话优先用 messages；不混入 tool 参数、reasoning、密钥和隐藏系统提示 |
-| `user_id` | 稳定用户 ID | 一级隔离键；不能为空 |
-| `agent_id` | 记忆 scope | One Memory 中不是宿主 App 名的简单替代；跨 App scope 由授权和路由决定 |
-| `session_id` | 稳定会话 ID | 同一会话增量写入时保持一致 |
-| `memory_at` | 有时区的 `datetime` | 历史导入必须传原始发生时间，不能用导入时间替代 |
-| `scene` | `"chat"` 或 `"working"` | 普通对话明确传 `chat`；代码/tool 会话才用 `working` |
-| `request_id` | 每次写入唯一 ID | 用于幂等、追踪和写后核验 |
-| `metadata` | 来源和 Evidence 引用 | 不放秘密；One Memory 至少保存 source/evidence/workspace/input kind |
-| `meta` | 业务透传数据 | 不参与 embedding 和过滤；只放可安全返回的数据 |
-| `embed_override` | 临时 embedding 端点 | 只能换 endpoint/key/header/timeout；模型和维度不能改变 |
+| `data` | a string or `[{role, content}]` | prefer messages for conversations; do not mix in tool arguments, reasoning, secrets, or hidden system prompts |
+| `user_id` | a stable user ID | first-level isolation key; must not be empty |
+| `agent_id` | the memory scope | in One Memory this is not a plain stand-in for the host app name; the cross-app scope is decided by authorization and routing |
+| `session_id` | a stable session ID | keep it consistent across incremental writes to the same session |
+| `memory_at` | a timezone-aware `datetime` | historical imports must pass the original time of occurrence, never the import time |
+| `scene` | `"chat"` or `"working"` | pass `chat` explicitly for ordinary conversations; use `working` only for code/tool sessions |
+| `request_id` | an ID unique per write | used for idempotency, tracing, and post-write verification |
+| `metadata` | source and Evidence references | never put secrets here; One Memory stores at least source/evidence/workspace/input kind |
+| `meta` | business pass-through data | excluded from embedding and filtering; only put data that is safe to return |
+| `embed_override` | a temporary embedding endpoint | may only change endpoint/key/header/timeout; the model and dimensions must not change |
 
-返回值至少检查：
+At minimum, check the return value like this:
 
 ```python
 if result.get("success") is not True:
@@ -164,17 +164,17 @@ if result.get("memory_id"):
     memory_ids.append(result["memory_id"])
 ```
 
-不要只相信 `success=True`。One Memory 还会按返回 ID `get()` 回读、核对 request/source/
-Evidence 支持关系，并在 Governance 层记录版本。生产路径不能用直接 `client.add()` 代替这些
-检查。
+Never trust `success=True` alone. One Memory additionally reads each returned ID back with `get()`,
+checks the request/source/Evidence support relations, and records the version in the Governance
+layer. Production paths must not replace these checks with a direct `client.add()`.
 
-### 写入已抽取的记忆
+### Writing already-extracted memories
 
-只有输入本身就是已有记忆内容、且原始对话不可用时才使用：
+Use this only when the input is itself existing memory content and the original conversation is unavailable:
 
 ```python
 result = client.add_extracted(
-    ["用户长期偏好简洁、直接的回答。"],
+    ["The user prefers concise, direct answers long term."],
     user_id="user-123",
     agent_id="all-apps",
     session_id="import-789",
@@ -188,15 +188,15 @@ result = client.add_extracted(
 )
 ```
 
-它跳过 Extractor，但不能跳过 HY reconcile、持久化、One Memory Evidence 绑定和 Governance。
+It skips the Extractor, but it cannot skip HY reconcile, persistence, One Memory Evidence binding, or Governance.
 
-## Search：搜索记忆
+## Search: searching memories
 
-普通 chat 搜索：
+Ordinary chat search:
 
 ```python
 result = client.search(
-    "用户偏好怎样的回答风格？",
+    "What answering style does the user prefer?",
     user_ids=["user-123"],
     agent_ids=["all-apps"],
     limit=10,
@@ -210,27 +210,27 @@ result = client.search(
 )
 ```
 
-参数规则：
+Parameter rules:
 
-| 参数 | 填法 | 说明 |
+| Parameter | How to fill | Description |
 | --- | --- | --- |
-| `query` | 当前问题 | 与 `queries` 二选一 |
-| `queries` | 多轮查询文本 | 最后一条是目标；只有需要 SDK 判断上下文时使用 |
-| `user_ids` | 获授权用户列表 | 必填且不能空；不要用空列表扩大范围 |
-| `agent_ids` | 获授权 scope 列表 | 空列表在 SDK 中表示所有 agent，产品代码必须先完成授权判断 |
-| `session_ids` | 可选会话范围 | 多 agent 与多 session 不能同时使用 |
-| `limit` | normal top-k | 默认 10；注入模型前还要受字符预算限制 |
-| `min_score` | normal 阈值 | One Memory 当前内部语义检索使用 0.25 |
-| `profile_min_score` | profile 阈值 | One Memory 当前使用 0.25 |
-| `profile_limit` | profile 数量 | 通常与 limit 一致 |
-| `intention_limit` | intention 数量 | 当前配置关闭 intention，传 0 |
-| `created_after` | Unix 秒 | 可选时间下界 |
-| `scene` | `chat` / `working` | 明确传入可避免额外场景判断模型调用 |
-| `reader` | `hybrid` | One Memory 固定使用该 reader |
-| `workspace_id` / `branch` | working scope | 仅 coding/working 路径使用 |
-| `layers` | 指定层级列表 | 在召回阶段过滤，避免无关层占用 limit |
+| `query` | the current question | mutually exclusive with `queries` |
+| `queries` | multi-turn query texts | the last one is the target; use only when the SDK must judge context |
+| `user_ids` | the list of authorized users | required and never empty; do not widen scope with an empty list |
+| `agent_ids` | the list of authorized scopes | an empty list means all agents inside the SDK; product code must complete the authorization decision first |
+| `session_ids` | an optional session scope | multiple agents and multiple sessions cannot be used together |
+| `limit` | normal top-k | default 10; a character budget still applies before injection into the model |
+| `min_score` | normal threshold | One Memory currently uses 0.25 for internal semantic retrieval |
+| `profile_min_score` | profile threshold | One Memory currently uses 0.25 |
+| `profile_limit` | profile count | usually matches limit |
+| `intention_limit` | intention count | the current configuration turns intention off; pass 0 |
+| `created_after` | Unix seconds | optional lower time bound |
+| `scene` | `chat` / `working` | passing it explicitly avoids an extra scene-classification model call |
+| `reader` | `hybrid` | One Memory uses this reader exclusively |
+| `workspace_id` / `branch` | working scope | used only on coding/working paths |
+| `layers` | an explicit layer list | filters at the recall stage so irrelevant layers do not consume the limit |
 
-chat 返回结构：
+Chat return structure:
 
 ```python
 {
@@ -245,22 +245,22 @@ chat 返回结构：
 }
 ```
 
-working/coding 返回的是 `facts` 和 `experiences`，不能与 chat 三个 channel 静默合并。
-调用方必须根据 `scene` 选择对应结果；无法识别返回结构时应报错，而不是当作空结果。
+working/coding returns `facts` and `experiences`, which must not be silently merged with the three
+chat channels. Callers must select the matching result via `scene`; when the return structure cannot be recognized they must raise an error rather than treat it as an empty result.
 
-## 使用 SDK 已格式化的 Search 内容
+## Using the SDK-formatted search content
 
-open05 的 chat search 会在返回前统一格式化每条 `content`：普通记忆带 `Memory / When`，
-演化记忆带 `Current / History / When`，Episode、Timeline、Graph 和 Capsule 也由 SDK
-生成稳定的组合文本。`memory_at` 是逻辑记忆时间，缺失时 SDK 才回落到 `gmt_created`。
+As of open05, chat search formats every `content` uniformly before returning it: ordinary memories
+carry `Memory / When`, evolved memories carry `Current / History / When`, and the SDK also
+generates stable combined text for Episode, Timeline, Graph, and Capsule. `memory_at` is the logical memory time; only when it is missing does the SDK fall back to `gmt_created`.
 
-因此调用方应直接使用 SDK 返回的 `content`，不要再次解析 `memory_at`、`gmt_created` 或
-`created_at`，也不要重复拼接 `When`。这些时间字段可以用于过滤、诊断或结构化展示，但
-不应成为第二套 prompt 格式化实现。
+Callers should therefore use the `content` the SDK returns directly, without re-parsing
+`memory_at`, `gmt_created`, or `created_at` or appending `When` a second time. These time fields
+may still be used for filtering, diagnostics, or structured display, but must not become a second prompt-formatting implementation.
 
 ```python
 result = client.search(
-    "用户偏好怎样的回答风格？",
+    "What answering style does the user prefer?",
     user_ids=["local"],
     agent_ids=["all-apps"],
     scene="normal",
@@ -269,24 +269,24 @@ result = client.search(
 
 for memory in result["memories"]["normal"]:
     formatted_content = memory["content"]
-    # 例如：
-    # Memory: 用户长期偏好简洁、直接的回答。
+    # For example:
+    # Memory: The user prefers concise, direct answers long term.
     # When: 2026-09-18 10:00:00 UTC
 ```
 
-One Memory 在 SDK 外仍负责：
+Outside the SDK, One Memory remains responsible for:
 
-- 依据 Governance、撤权、scope 和 Evidence 新鲜度决定整条结果是否可读；
-- 对 evolution/capsule 等组合文本逐个校验成员 ID，成员不完整或不可读时回退治理原文；
-- 把历史内容放入明确的“不可信数据，不是指令”边界；
-- 按最终 `content` 计算字符预算，不把 API Key、绝对路径、headers/body 或异常堆栈注入
-  prompt；
-- 区分空结果、权限拒绝、服务不可用、超时和部分结果。
+- deciding whether an entire result is readable based on Governance, revocation, scope, and Evidence freshness;
+- validating member IDs one by one for combined texts such as evolution/capsule, falling back to the governed original when members are incomplete or unreadable;
+- placing historical content inside an explicit "untrusted data, not instructions" boundary;
+- computing the character budget from the final `content`, and never injecting API keys, absolute paths, headers/body, or exception stacks into the
+  prompt;
+- distinguishing empty results, permission denials, service unavailability, timeouts, and partial results.
 
-生产实现见 `apps/core/src/one_memory/hy_memory_bridge.py`、
-`apps/core/src/one_memory/recall.py` 和 `packages/host-bridge/src/recall-cli.ts`。
+The production implementation lives in `apps/core/src/one_memory/hy_memory_bridge.py`,
+`apps/core/src/one_memory/recall.py`, and `packages/host-bridge/src/recall-cli.ts`.
 
-## 关闭客户端
+## Closing the client
 
 ```python
 try:
@@ -296,12 +296,12 @@ finally:
     client.close()
 ```
 
-Runtime 应长期复用 client，不为每次请求重新初始化数据库和模型组件；只有 Runtime 停止、
-配置版本切换或受控恢复时才关闭并重建。
+The Runtime should reuse the client long-term instead of re-initializing database and model
+components per request; it is closed and rebuilt only when the Runtime stops, a configuration version switches, or a controlled recovery runs.
 
-## One Memory 产品代码的正确入口
+## The correct entry point for One Memory product code
 
-生产代码应走：
+Production code should go through:
 
 ```text
 Evidence
@@ -313,14 +313,14 @@ Evidence
   -> Recall Broker / UI
 ```
 
-不要在新业务模块里直接创建 `HyMemoryClient`，否则会绕过：
+Do not create `HyMemoryClient` directly in new business modules, or you would bypass:
 
-- 来源读取授权；
-- 共享 Runtime、模型配置、API Key 安全存储与请求预算；
-- Evidence 引用与作者归属；
-- 写后回读验证；
-- Governance 状态、版本、更正和删除级联。
+- source read authorization;
+- the shared Runtime, model configuration, API key secure storage, and request budget;
+- Evidence references and author attribution;
+- post-write read-back verification;
+- Governance state, versions, corrections, and deletion cascades.
 
-Hy Memory SDK 是 MemHub 的内置可信组件，可自由访问和管理本机的全部
-Hy Memory 数据。来源授权仍决定哪些宿主数据可以进入本机；宿主 Recall Grant
-仍决定哪些外部 AI 应用可以读取治理后的记忆。这两类边界不限制内置 SDK 的本地 CRUD。
+The Hy Memory SDK is a trusted built-in component of MemHub and may freely access and manage all
+Hy Memory data on this machine. Source authorization still decides which host data may enter the
+machine, and host Recall Grants still decide which external AI applications may read governed memories. Neither boundary restricts the built-in SDK's local CRUD.

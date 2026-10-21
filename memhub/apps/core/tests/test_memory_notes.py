@@ -41,7 +41,7 @@ def test_empty_library_can_save_a_note_without_a_matter_or_configured_model(tmp_
             assert app.state.evidence_store.count() == 0
             note = {
                 "request_id": str(uuid4()),
-                "text": "请记住：项目周会不排在周五。",
+                "text": "Please remember: do not put the project weekly meeting on Fridays.",
                 "scope": "all-apps",
             }
             response = await client.post("/api/v1/memory-notes", json=note)
@@ -107,7 +107,7 @@ def test_saved_note_evidence_returns_raw_and_consent_reference_from_same_record(
     async def scenario():
         app = application(tmp_path)
         async with app.router.lifespan_context(app), client_for(app) as client:
-            text = "Original  spacing\n预算<5，不能改为>5。"
+            text = "Original  spacing\nBudget<5, it must not become >5."
             saved = (
                 await client.post(
                     "/api/v1/memory-notes",

@@ -9,7 +9,7 @@ from typing import TextIO, cast
 from pydantic import JsonValue
 
 from one_memory.database_access import main_database
-from one_memory.derived_echo import PREFACE, strip_injected_memory
+from one_memory.derived_echo import is_preface_line, strip_injected_memory
 from one_memory.imports.access import opaque_workspace_id, safe_project_label
 from one_memory.imports.models import (
     EvidenceInput,
@@ -253,7 +253,7 @@ def _plain(value: str) -> str | None:
     kept = [
         line
         for line in value.splitlines()
-        if line.strip() and line.strip() != PREFACE and "om-derived:" not in line
+        if line.strip() and not is_preface_line(line.strip()) and "om-derived:" not in line
     ]
     text = "\n".join(kept).strip()
     return text or None

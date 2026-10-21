@@ -117,11 +117,13 @@ it("does not promise continued processing for stale or queued-only state", () =>
     ...base,
     processing: { ...processing, pending: 50 },
   });
-  expect(memoryArrivalTitle(idle)).not.toContain("正在");
-  expect(memoryArrivalTitle({ ...idle, phase: "checking" })).toBe("进度待更新");
+  expect(memoryArrivalTitle(idle)).not.toContain("Settling");
+  expect(memoryArrivalTitle({ ...idle, phase: "checking" })).toBe(
+    "Progress needs refreshing",
+  );
   expect(
     memoryArrivalTitle({ ...idle, phase: "checking", refreshing: true }),
-  ).toBe("已保存内容保留，正在核对进度");
+  ).toBe("Saved content kept; checking progress");
 });
 
 it.each([
@@ -167,7 +169,7 @@ it("keeps recoverable failures in details while confirmed processing continues",
   expect(result.phase).toBe("processing");
   expect(result.blockedStages).toEqual(blocks);
   expect(result.backlogPending).toBe(12);
-  expect(memoryArrivalTitle(result)).toBe("正在沉淀记忆");
+  expect(memoryArrivalTitle(result)).toBe("Settling memories");
 });
 
 it("does not ask anyone to look at a failure Core is already retrying", () => {
@@ -188,7 +190,7 @@ it("does not ask anyone to look at a failure Core is already retrying", () => {
     processing: { ...processing, failed: 2, blocked_stages: blocks },
   });
 
-  // "failed" shows "请先核对失败原因，再决定是否重试" and a repair button.
+  // "failed" shows "Check the failure reason first, then decide whether to retry" and a repair button.
   // "idle" does not, and with memories already on screen the arrival panel
   // takes itself off the page entirely.
   expect(result.phase).toBe("idle");
@@ -218,7 +220,7 @@ it.each([0, 134])(
     expect(result.importing).toBe(true);
     expect(result.memoryCount).toBe(0);
     expect(result.blockedStages).toEqual(blocks);
-    expect(memoryArrivalTitle(result)).toBe("待继续");
+    expect(memoryArrivalTitle(result)).toBe("Waiting to resume");
   },
 );
 
@@ -281,5 +283,5 @@ it("raw import alone has an import title, without a generated-memory promise", (
     },
   });
   expect(result.phase).toBe("importing");
-  expect(memoryArrivalTitle(result)).toBe("正在导入对话");
+  expect(memoryArrivalTitle(result)).toBe("Importing conversations");
 });

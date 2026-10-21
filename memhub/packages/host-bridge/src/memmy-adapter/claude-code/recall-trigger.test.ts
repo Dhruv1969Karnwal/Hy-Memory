@@ -24,7 +24,7 @@ function fixture() {
       hits: [
         {
           memory_id: "memory-1",
-          content: "上次定的部署窗口是周四晚上。",
+          content: "The deployment window we agreed on is Thursday evening.",
           kind: "chat",
           scopes: ["all-apps"],
           evidence_ids: ["e-1"],
@@ -67,32 +67,42 @@ describe("when an authorized turn is worth a recall", () => {
   it("asks for a turn that cannot be answered without history", async () => {
     const f = fixture();
 
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
 
     expect(f.recall).toHaveBeenCalledOnce();
-    expect(f.notices).toEqual(["正在使用 MemHub 查询记忆"]);
+    expect(f.notices).toEqual(["Using MemHub to query memories"]);
   });
 
-  it.each(["你好", "hi", "谢谢！", "thanks", "ok", "好的"])(
-    "leaves a greeting alone: %j",
-    async (text) => {
-      const f = fixture();
+  it.each([
+    "\u4f60\u597d",
+    "hi",
+    "\u8c22\u8c22\uff01",
+    "thanks",
+    "ok",
+    "\u597d\u7684",
+  ])("leaves a greeting alone: %j", async (text) => {
+    const f = fixture();
 
-      const result = await f.adapter.handle(prompt("s1", text));
+    const result = await f.adapter.handle(prompt("s1", text));
 
-      expect(f.recall).not.toHaveBeenCalled();
-      // Silence is the point. A notice here is the user being told their memory
-      // was read to answer "hi".
-      expect(f.notices).toEqual([]);
-      expect(result.output.hookSpecificOutput).toBeUndefined();
-    },
-  );
+    expect(f.recall).not.toHaveBeenCalled();
+    // Silence is the point. A notice here is the user being told their memory
+    // was read to answer "hi".
+    expect(f.notices).toEqual([]);
+    expect(result.output.hookSpecificOutput).toBeUndefined();
+  });
 
   it("does not fetch the same question twice in one session", async () => {
     const f = fixture();
 
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？  "));
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?  "),
+    );
 
     expect(f.recall).toHaveBeenCalledOnce();
   });
@@ -100,8 +110,12 @@ describe("when an authorized turn is worth a recall", () => {
   it("still fetches that question for a different session", async () => {
     const f = fixture();
 
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
-    await f.adapter.handle(prompt("s2", "我们之前定的部署窗口是哪天？"));
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
+    await f.adapter.handle(
+      prompt("s2", "Which day did we set as the deployment window?"),
+    );
 
     expect(f.recall).toHaveBeenCalledTimes(2);
   });
@@ -109,8 +123,12 @@ describe("when an authorized turn is worth a recall", () => {
   it("keeps fetching a question that only looks like the last one", async () => {
     const f = fixture();
 
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
-    await f.adapter.handle(prompt("s1", "我们之前定的发布窗口是哪天？"));
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the release window?"),
+    );
 
     expect(f.recall).toHaveBeenCalledTimes(2);
   });
@@ -121,15 +139,19 @@ describe("when an authorized turn is worth a recall", () => {
     const f = fixture();
     f.recall.mockResolvedValueOnce({
       state: "empty",
-      query: "我们之前定的部署窗口是哪天？",
+      query: "Which day did we set as the deployment window?",
       scope: "all-apps",
       hits: [],
       used_characters: 0,
       truncated: false,
     });
 
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
 
     expect(f.recall).toHaveBeenCalledTimes(2);
   });
@@ -141,9 +163,11 @@ describe("when an authorized turn is worth a recall", () => {
     );
 
     const denied = await f.adapter.handle(
-      prompt("s1", "我们之前定的部署窗口是哪天？"),
+      prompt("s1", "Which day did we set as the deployment window?"),
     );
-    await f.adapter.handle(prompt("s1", "我们之前定的部署窗口是哪天？"));
+    await f.adapter.handle(
+      prompt("s1", "Which day did we set as the deployment window?"),
+    );
 
     expect(denied.state).toBe("denied");
     expect(f.recall).toHaveBeenCalledTimes(2);
@@ -184,7 +208,11 @@ describe("when an authorized turn is worth a recall", () => {
     );
 
     expect(
-      (await adapter.handle(prompt("s1", "之前那版是怎么定的？"))).state,
+      (
+        await adapter.handle(
+          prompt("s1", "How was the previous version decided?"),
+        )
+      ).state,
     ).toBe("empty");
     expect(recall).toHaveBeenCalledOnce();
   });

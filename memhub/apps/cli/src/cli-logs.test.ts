@@ -72,7 +72,7 @@ it("exports one support zip to the requested downloads directory", async () => {
     command: "logs export",
     state: "exported",
   });
-  expect(receipt.path).toMatch(/MemHub-日志-3800-\d{8}-\d{4}\.zip$/);
+  expect(receipt.path).toMatch(/MemHub-logs-3800-\d{8}-\d{4}\.zip$/);
   expect(await readdir(downloads)).toEqual([path.basename(receipt.path)]);
 });
 

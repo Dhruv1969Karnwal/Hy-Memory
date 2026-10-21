@@ -22,8 +22,11 @@ from one_memory.config import Settings
 
 def _seed(data_dir) -> tuple[str, str]:
     """One evidence row and one governed memory; return their verbatim/content."""
-    verbatim = "帮我总结一下 SQLite 的写锁调优方法"
-    memory = "用户偏好：数据库调优时优先看写入批处理和读池容量，不要一上来就换引擎。"
+    verbatim = "Summarize the database tuning approach for SQLite write locks"
+    memory = (
+        "User preference: when tuning databases, check write batching and read pool "
+        "capacity first; do not switch engines right away."
+    )
 
     connection = sqlite3.connect(data_dir / "one-memory.sqlite3")
     try:
@@ -145,7 +148,7 @@ async def test_memory_path_returns_governed_memory_and_leaves_raw_unrequested(tm
         response = await client.post(
             "/api/v1/context/search",
             json={
-                "query": "数据库调优偏好",
+                "query": "database tuning preference",
                 "kinds": ["memory"],
                 "limit": 5,
                 "character_budget": 2000,

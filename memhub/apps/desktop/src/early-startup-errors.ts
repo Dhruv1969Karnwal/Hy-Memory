@@ -56,7 +56,10 @@ export function installEarlyStartupErrorHandler(
       // The dialog is the only part of this a person ever reads, so it gets the
       // explanation, not the code. The code stays in the diagnostic event,
       // where support can still match it against a known failure.
-      options.showError("MemHub 无法启动", stableRuntimeUserMessage(error));
+      options.showError(
+        "MemHub could not start",
+        stableRuntimeUserMessage(error),
+      );
       options.exit(1);
     }
   };

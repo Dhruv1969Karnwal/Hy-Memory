@@ -30,12 +30,14 @@ afterEach(() => {
 });
 
 it("names the three association states used by app detail", () => {
-  expect(associationStatus({ probing: true, approved: false })).toBe("检测中");
+  expect(associationStatus({ probing: true, approved: false })).toBe(
+    "Checking",
+  );
   expect(associationStatus({ probing: false, approved: true })).toBe(
-    "成功关联",
+    "Association successful",
   );
   expect(associationStatus({ probing: false, approved: false })).toBe(
-    "未开启关联",
+    "Association off",
   );
   expect(
     associationStatus({
@@ -43,7 +45,7 @@ it("names the three association states used by app detail", () => {
       approved: false,
       intended: true,
     }),
-  ).toBe("检测中");
+  ).toBe("Checking");
 });
 
 it("writes a remembered WorkBuddy sync when the server flag is still off", async () => {
@@ -171,7 +173,9 @@ it("submits a remembered sync once and leaves a failure for the user instead of 
     sync_enabled: false,
   } as SourceResponse;
   const setSync = vi.fn(async () => {
-    throw Error("此应用的持续同步设置未能确认，其他应用不受影响。");
+    throw Error(
+      "This app's processing switch result is unconfirmed. Other apps are unaffected.",
+    );
   });
   const refresh = vi.fn(async () => ({ sources: [source] }));
   const failures = await autoReconcile({ sources: [source], setSync, refresh });
@@ -182,7 +186,8 @@ it("submits a remembered sync once and leaves a failure for the user instead of 
     {
       kind: "sync",
       sourceId: "workbuddy",
-      reason: "此应用的持续同步设置未能确认，其他应用不受影响。",
+      reason:
+        "This app's processing switch result is unconfirmed. Other apps are unaffected.",
     },
   ]);
   await autoReconcile({ sources: [source], setSync, refresh });

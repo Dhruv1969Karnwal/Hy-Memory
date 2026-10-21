@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""extractor DEDUP 路径：多条 memory embed 必须并行，并记录 embed 耗时 / meta。"""
+"""extractor DEDUP path: embedding multiple memories must run in parallel and record embed latency / meta."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class _FakeCache:
 
 class TestDedupExtractedParallelEmbed:
     def test_dedup_extracted_uses_write_batch_queue(self):
-        """N 条文本并发进入 write batch queue，并把向量交给后续阶段。"""
+        """N texts concurrently enter the write batch queue and hand their vectors to the next stage."""
 
         async def _test():
             delay = 0.08

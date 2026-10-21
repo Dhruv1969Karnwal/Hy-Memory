@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
-"""reconcile 候选检索是 user 维度，不按 agent 收窄。
+"""Candidate retrieval for reconcile is scoped to the user, never narrowed by agent.
 
-背景：候选检索此前写死 `agent_ids=[agent_id]`，而 writer 传下来的 agent_id
-永不为空（`request.agent_id or "default_agent"`）。于是 reconcile 只能看到本
-agent 的历史 —— 后果不只是去重失效，而是整个 reconcile 失效：
+Background: candidate retrieval used to hardcode `agent_ids=[agent_id]`, while the agent_id the writer
+passes down is never empty (`request.agent_id or "default_agent"`). So reconcile only ever saw the current
+agent's history -- which breaks more than deduplication, it breaks reconcile entirely:
 
-  用户在 agent_a 说"我是素食主义者" → 之后在 agent_b 说"我现在吃鱼了"
-  → agent_b 这次搜不到 agent_a 那条 → LLM 拿不到候选 → 判 ADD 而非 SUPERSEDE
-  → 库里两条矛盾的 user 记忆同时 ACTIVE
+  The user says "I am a vegetarian" on agent_a, later says "I eat fish now" on agent_b
+  -> this search on agent_b misses the record on agent_a -> the LLM gets no candidates -> ADD instead of SUPERSEDE
+  -> two contradictory user memories sit in the store ACTIVE at the same time
 
-owner 和 agent_id 是两个正交维度：owner='user' 的记忆照样被打上写入时的
-agent_id，所以"按 agent 隔离"对用户侧事实是多余且有害的。
+owner and agent_id are two orthogonal dimensions: an owner='user' memory is still stamped with the agent_id
+it was written under, so "isolating by agent" is redundant and harmful for user-side facts.
 
-向后兼容不靠"保持按 agent 过滤"，而是靠演化链的双向追溯：跨 agent SUPERSEDE
-后新节点挂在 agent_b 名下，但 agent_a 的用户搜索仍能命中留在 agent_a 的旧节点
-（status=SUPERSEDED 也在召回范围），再由 _trace_full_chain 沿 superseded_by
-找到 agent_b 的链头并返回整链 —— 见 test_cross_agent_chain_still_recallable。
+Backward compatibility rests not on "keeping the agent filter" but on two-way evolution-chain tracing: after a
+cross-agent SUPERSEDE the new node belongs to agent_b, yet a user search on agent_a still hits the old node left
+on agent_a (status=SUPERSEDED is also within recall range), and _trace_full_chain then follows superseded_by to
+the chain head on agent_b and returns the whole chain -- see test_cross_agent_chain_still_recallable.
 """
 
 import asyncio
@@ -65,7 +65,7 @@ def store(config):
 
 
 class _CaptureLLM:
-    """捕获 reconcile prompt，用于断言候选是否进了 prompt。"""
+    """Captures the reconcile prompt so assertions can check whether a candidate made it into the prompt."""
 
     def __init__(self):
         self.last_prompt = ""
@@ -122,42 +122,42 @@ def _reconcile(config, store, *, agent_id, new_memories, emb):
 
 class TestCandidateScopeIsUser:
     def test_other_agent_user_memory_enters_candidates(self, config, store):
-        """agent_a 写的 owner=user 记忆，必须出现在 agent_b 的 reconcile 候选里。"""
+        """An owner=user memory written on agent_a must show up in agent_b's reconcile candidates."""
         shared = _emb()
-        _l2(store, content="用户是素食主义者", agent_id="agent_a", emb=shared)
+        _l2(store, content="The user is a vegetarian", agent_id="agent_a", emb=shared)
 
         llm = _reconcile(
             config, store, agent_id="agent_b",
-            new_memories=["用户现在开始吃鱼了"], emb=shared,
+            new_memories=["The user has started eating fish"], emb=shared,
         )
-        assert "素食主义者" in llm.last_prompt, (
-            "跨 agent 的 owner=user 候选未进 prompt —— reconcile 仍被 agent 隔离"
+        assert "vegetarian" in llm.last_prompt, (
+            "the cross-agent owner=user candidate never reached the prompt -- reconcile is still isolated by agent"
         )
 
     def test_other_agent_agent_owned_memory_also_recalled(self, config, store):
-        """owner=agent 的跨 agent 记忆也会进候选（不在候选侧过滤）。
+        """Cross-agent memories owned by the agent also become candidates (no filtering on the candidate side).
 
-        跨 owner 的约束由 RECONCILE_PROMPT 的
-        "NEVER merge or supersede across different owners" 保证；
-        去重侧则由 group_items_by_owner 按 agent 隔离。
-        候选侧不做 owner 过滤 —— 这是明确的设计选择，锁在这里防止被"顺手优化"掉。
+        The cross-owner constraint is guaranteed by RECONCILE_PROMPT's
+        "NEVER merge or supersede across different owners";
+        on the deduplication side, group_items_by_owner isolates per agent.
+        The candidate side does no owner filtering -- a deliberate design choice, pinned here against "drive-by optimization".
         """
         shared = _emb()
-        _l2(store, content="助手为用户推荐了京都的一家旅馆",
+        _l2(store, content="The assistant recommended a ryokan in Kyoto to the user",
             agent_id="agent_a", owner="agent", emb=shared)
 
         llm = _reconcile(
             config, store, agent_id="agent_b",
-            new_memories=["助手为用户推荐了大阪的一家旅馆"], emb=shared,
+            new_memories=["The assistant recommended a ryokan in Osaka to the user"], emb=shared,
         )
-        assert "京都" in llm.last_prompt
+        assert "Kyoto" in llm.last_prompt
 
     def test_other_user_memory_never_enters_candidates(self, config, store):
-        """放宽的是 agent 维度，user 隔离必须仍然严格。"""
+        """What gets relaxed is the agent dimension; user isolation must stay strict."""
         shared = _emb()
         n = MemoryNode(
             user_id="u_other", agent_id="agent_a", session_id="s1",
-            layer=MemoryLayer.L2_FACT, content="另一个用户的秘密",
+            layer=MemoryLayer.L2_FACT, content="Another user's secret",
             owner="user", status=MemoryStatus.ACTIVE, is_latest=True,
         )
         n.memory_at = datetime.now()
@@ -167,42 +167,42 @@ class TestCandidateScopeIsUser:
 
         llm = _reconcile(
             config, store, agent_id="agent_b",
-            new_memories=["用户喜欢打篮球"], emb=shared,
+            new_memories=["The user likes playing basketball"], emb=shared,
         )
-        assert "另一个用户的秘密" not in llm.last_prompt, "绝不能跨 user 召回候选"
+        assert "Another user's secret" not in llm.last_prompt, "candidates must never be recalled across users"
 
     def test_same_agent_candidate_still_works(self, config, store):
-        """本 agent 的候选照常召回（防止放宽后误伤原有路径）。"""
+        """Candidates from the same agent are still recalled (the relaxation must not break the original path)."""
         shared = _emb()
-        _l2(store, content="用户喜欢打篮球", agent_id="agent_b", emb=shared)
+        _l2(store, content="The user likes playing basketball", agent_id="agent_b", emb=shared)
 
         llm = _reconcile(
             config, store, agent_id="agent_b",
-            new_memories=["用户爱打篮球"], emb=shared,
+            new_memories=["The user loves playing basketball"], emb=shared,
         )
-        assert "打篮球" in llm.last_prompt
+        assert "basketball" in llm.last_prompt
 
 
 class TestBackwardCompatibility:
     def test_cross_agent_chain_still_recallable(self, store):
-        """跨 agent SUPERSEDE 后，按 agent_a 搜索仍能拿到演化后的最新值。
+        """After a cross-agent SUPERSEDE, searching as agent_a still yields the evolved latest value.
 
-        这是"新节点 agent_id 记当前 agent"这个决定的兼容性依据：
-          - VDB filter 按 agent_a 只捞到留在 agent_a 的旧节点（SUPERSEDED）
-          - _trace_full_chain 沿 superseded_by 双向追溯到 agent_b 的链头
-          - 返回链头为代表 + 完整 evolution_chain
+        This is the compatibility basis for the decision "new nodes record the current agent in agent_id":
+          - The VDB filter on agent_a only picks up the old node left on agent_a (SUPERSEDED)
+          - _trace_full_chain traces both ways along superseded_by to the chain head on agent_b
+          - The chain head is returned as representative, plus the full evolution_chain
         """
         from hy_memory.pipelines._retrieval.evolution import expand_evolution_chains
 
         shared = _emb()
-        old_id = _l2(store, content="用户是素食主义者", agent_id="agent_a",
+        old_id = _l2(store, content="The user is a vegetarian", agent_id="agent_a",
                      emb=shared, days=30,
                      status=MemoryStatus.SUPERSEDED, is_latest=False)
-        new_id = _l2(store, content="用户现在吃鱼", agent_id="agent_b",
+        new_id = _l2(store, content="The user now eats fish", agent_id="agent_b",
                      emb=shared, days=1, supersedes=[old_id])
         run(store.update_payload(old_id, {"superseded_by": [new_id]}))
 
-        # 按 agent_a 搜索（业务显式传 agent_ids=['agent_a']）
+        # Search as agent_a (the caller explicitly passes agent_ids=['agent_a'])
         hits = run(store.search(
             query_embedding=shared, user_id="u1", agent_ids=["agent_a"],
             layers=[MemoryLayer.L2_FACT], limit=10, score_threshold=0.0,
@@ -210,17 +210,17 @@ class TestBackwardCompatibility:
             only_latest=False,
         ))
         assert [h["node"].node_id for h in hits] == [old_id], \
-            "agent_a 的 filter 只应命中 agent_a 的节点"
+            "the agent_a filter should only hit nodes belonging to agent_a"
 
         expanded = run(expand_evolution_chains(
             store, [h for h in hits if h.get("node")]
         ))
         assert len(expanded) == 1
         rep = expanded[0]["node"]
-        # 代表节点是 agent_b 的链头 —— 拿到的是演化后的正确值
+        # The representative node is the chain head on agent_b -- the evolved, correct value
         assert rep.node_id == new_id
         assert rep.agent_id == "agent_b"
-        assert rep.content == "用户现在吃鱼"
-        # 整条链都返回，历史可见
+        assert rep.content == "The user now eats fish"
+        # The whole chain comes back, so history stays visible
         contents = [c["content"] for c in expanded[0]["evolution_chain"]]
-        assert contents == ["用户现在吃鱼", "用户是素食主义者"]
+        assert contents == ["The user now eats fish", "The user is a vegetarian"]

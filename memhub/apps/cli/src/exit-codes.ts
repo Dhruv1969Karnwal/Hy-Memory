@@ -11,25 +11,27 @@ export type ExitCode = {
 };
 
 export const EXIT_CODES: readonly ExitCode[] = [
-  { code: EXIT_OK, name: "ok", summary: "命令按请求完成。" },
+  { code: EXIT_OK, name: "ok", summary: "The command completed as requested." },
   {
     code: EXIT_FAILED,
     name: "failed",
-    summary: "命令执行失败或状态无法确认；结果未知时不要重放写操作。",
+    summary:
+      "The command failed or its state couldn't be confirmed; don't replay write operations when the result is unknown.",
   },
   {
     code: EXIT_USAGE,
     name: "usage",
-    summary: "参数或命令无效，没有执行任何操作。",
+    summary: "Invalid arguments or command; nothing was done.",
   },
   {
     code: EXIT_RUNTIME_STOPPED,
     name: "runtime_stopped",
-    summary: "查询成功，本机 Runtime 未在运行。",
+    summary: "The query succeeded, but the local Runtime isn't running.",
   },
   {
     code: EXIT_PLAN_BLOCKED,
     name: "plan_blocked",
-    summary: "计划生成成功但当前平台或环境不允许执行，未做改动。",
+    summary:
+      "The plan was generated, but the current platform or environment doesn't allow it to run; no changes were made.",
   },
 ];

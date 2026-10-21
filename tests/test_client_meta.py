@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-R2：调用方自定义 meta 的透传与 merge 追加。
+R2: pass-through of caller-supplied meta, plus append-on-merge.
 
-需求口径（CTX）：
-- meta 为 list，一个记忆节点可挂多份，每份代表「该次 write 时刻」的上下文
-- add（新增记忆）：直接用本次传入的 meta；一次 write 产生多条新增时各条都带同一份
-- merge（合并到已有记忆）：追加到旧节点的 meta list 上，**保留旧 meta，不覆盖**
-- meta 不 embed、不参与召回、不作过滤条件
+Requirements (CTX):
+- meta is a list; one memory node may carry several, each holding the context "at the moment of that write"
+- add (new memory): use the meta passed in for this call; when one write yields several new memories they all carry the same one
+- merge (merged into an existing memory): append to the old node's meta list, **keeping the old meta, never overwriting**
+- meta is never embedded, takes no part in retrieval, and is never a filter condition
 
-本文件锁死上述语义，以及「不传 meta 时与改动前逐字一致」这条向后兼容契约。
+This file locks those semantics and the backward-compatibility contract: "with no meta passed, byte-identical to before".
 """
 
 import asyncio
@@ -34,7 +34,7 @@ def _req(meta=None):
 
 
 class _Op:
-    """够用的 reconcile op 替身：_build_custom 只碰 supersede_reason。"""
+    """Reconcile op stand-in good enough here: _build_custom only touches supersede_reason."""
 
     def __init__(self, supersede_reason=None):
         self.supersede_reason = supersede_reason
@@ -49,7 +49,7 @@ class TestWriteRequestField:
         assert WriteRequest(content="x").client_meta is None
 
     def test_client_meta_is_separate_from_extra(self):
-        """extra 混放 SDK 控制键（agent_mode / mode / layer），合用会互相覆盖。"""
+        """extra holds SDK control keys (agent_mode / mode / layer); sharing one dict would let them overwrite each other."""
         req = WriteRequest(content="x", extra={"mode": "pro"}, client_meta={"mode": "biz"})
         assert req.extra == {"mode": "pro"}
         assert req.client_meta == {"mode": "biz"}
@@ -68,14 +68,14 @@ class TestAddEntrypoint:
 
 
 class TestBuildCustomOnNewNode:
-    """新建节点（ADD / SUPERSEDE / 直写 / summary / intention）只带本次 meta。"""
+    """A new node (ADD / SUPERSEDE / direct write / summary / intention) carries only the meta of this call."""
 
     def test_meta_wrapped_in_list(self):
         custom = MemoryWriter._build_custom(_Op(), "rid-1", _req(META1))
-        assert custom["meta"] == [META1], "单份 meta 也必须是 list，读侧才不用分支"
+        assert custom["meta"] == [META1], "even a single meta must be a list, so the read side needs no branching"
 
     def test_no_meta_key_when_not_provided(self):
-        """不传 meta 时 custom 必须与改动前逐字一致，不能多出空键。"""
+        """With no meta passed, custom must be byte-identical to before, with no extra empty keys."""
         custom = MemoryWriter._build_custom(_Op(), "rid-1", _req(None))
         assert custom == {"request_id": "rid-1"}
 
@@ -94,24 +94,24 @@ class TestBuildCustomOnNewNode:
         }
 
     def test_meta_is_copied_not_referenced(self):
-        """存进 custom 后再改原 dict 不应影响已落库内容。"""
+        """Mutating the source dict after it lands in custom must not affect what was already persisted."""
         src = dict(META1)
         custom = MemoryWriter._build_custom(_Op(), "rid-1", _req(src))
         src["scene"] = "mutated"
         assert custom["meta"][0]["scene"] == "chat"
 
     def test_op_may_be_none(self):
-        """summary / intention 等路径没有 reconcile op。"""
+        """Paths such as summary / intention have no reconcile op."""
         custom = MemoryWriter._build_custom(None, "rid-1", _req(META1))
         assert custom["meta"] == [META1]
 
 
 class TestMergeAppendSemantics:
-    """UPDATE 原地改同一节点，旧 meta 必须保留——这是 R2 的核心契约。"""
+    """UPDATE rewrites the same node in place, so the old meta must survive -- the core contract of R2."""
 
     def test_appends_to_existing_chain(self):
         merged = MemoryWriter._merge_client_meta({"meta": [META1]}, _req(META2))
-        assert merged["meta"] == [META1, META2], "旧 meta 必须保留在前，新的追加在后"
+        assert merged["meta"] == [META1, META2], "the old meta stays in front, the new one is appended after"
 
     def test_accumulates_across_multiple_writes(self):
         custom = {"meta": [META1]}
@@ -124,7 +124,7 @@ class TestMergeAppendSemantics:
         assert merged["meta"] == [META1]
 
     def test_preserves_other_custom_keys(self):
-        """custom 是整体替换写回的，内部字段不能被 meta 合并冲掉。"""
+        """custom is written back as a whole replacement, so internal fields must not be washed away by the meta merge."""
         merged = MemoryWriter._merge_client_meta(
             {"request_id": "old-rid", "basic_info_kv": {"name": "ivan"}, "meta": [META1]},
             _req(META2),
@@ -134,28 +134,28 @@ class TestMergeAppendSemantics:
         assert merged["meta"] == [META1, META2]
 
     def test_returns_none_when_no_meta_passed(self):
-        """返回 None 是「无需回读与写回」的信号，保证未用该功能者零额外开销。"""
+        """Returning None is the signal "no read-back or write-back needed", so callers not using this feature pay nothing."""
         assert MemoryWriter._merge_client_meta({"meta": [META1]}, _req(None)) is None
 
     def test_handles_missing_old_custom(self):
         assert MemoryWriter._merge_client_meta(None, _req(META1))["meta"] == [META1]
 
     def test_non_list_legacy_meta_is_not_dropped(self):
-        """历史数据里 meta 可能是裸 dict；降级成首元素，不能静默丢。"""
+        """In legacy data meta may be a bare dict; degrade it to the first element instead of dropping it silently."""
         merged = MemoryWriter._merge_client_meta({"meta": META1}, _req(META2))
         assert merged["meta"] == [META1, META2]
 
     def test_does_not_mutate_input(self):
         old = {"meta": [META1]}
         MemoryWriter._merge_client_meta(old, _req(META2))
-        assert old == {"meta": [META1]}, "回读到的旧 custom 不应被就地改写"
+        assert old == {"meta": [META1]}, "the old custom read back must not be rewritten in place"
 
 
 class TestUpdateAppendsThroughStore:
-    """端到端走一遍存储：UPDATE 分支必须真的把追加后的 meta 写回节点。
+    """One end-to-end pass through the store: the UPDATE branch must really write the appended meta back to the node.
 
-    上面的用例只覆盖纯函数，无法证明 writer 调用了它、也无法证明 custom 被写进
-    update_payload。R2 的核心风险恰恰在这里——漏写回就会静默丢掉旧 meta。
+    The cases above only cover the pure function; they prove neither that the writer calls it nor that custom reaches
+    update_payload. That is precisely R2's core risk -- a missing write-back silently loses the old meta.
     """
 
     DIMS = 32
@@ -216,7 +216,7 @@ class TestUpdateAppendsThroughStore:
 
         node = MemoryNode(
             node_id=str(_uuid.uuid4()), user_id="u1", agent_id="default_agent",
-            session_id="s1", content="用户用 React。", layer=MemoryLayer.L2_FACT,
+            session_id="s1", content="The user uses React.", layer=MemoryLayer.L2_FACT,
             status=MemoryStatus.ACTIVE, is_latest=True, owner="user",
             custom=custom,
         )
@@ -224,7 +224,7 @@ class TestUpdateAppendsThroughStore:
         _run(store.upsert(node))
         return node
 
-    def _update_op(self, node_id, content="用户用 React 18 + TS。"):
+    def _update_op(self, node_id, content="The user uses React 18 + TS."):
         from hy_memory.agent.reconciler import ReconcileOp
 
         return ReconcileOp(
@@ -236,8 +236,8 @@ class TestUpdateAppendsThroughStore:
         req = WriteRequest(content="x", user_id="u1", agent_id="default_agent",
                            client_meta=meta)
         _run(writer._reconcile_and_store(
-            new_memory_texts=["用户用 React 18 + TS。"],
-            new_memories_meta=[{"content": "用户用 React 18 + TS。", "layer": "L2_FACT",
+            new_memory_texts=["The user uses React 18 + TS."],
+            new_memories_meta=[{"content": "The user uses React 18 + TS.", "layer": "L2_FACT",
                                 "tags": [], "owner": "user"}],
             request=req, vector_store=store, req_id="rid-new",
         ))
@@ -251,12 +251,12 @@ class TestUpdateAppendsThroughStore:
 
         got = _run(store.get_by_id(node.node_id))
         assert got.custom.get("meta") == [META1, META2], (
-            f"旧 meta 必须保留并追加新的，实际 {got.custom.get('meta')}"
+            f"old meta must be kept with the new one appended, got {got.custom.get('meta')}"
         )
-        assert got.content == "用户用 React 18 + TS。", "记忆本体仍需正常更新"
+        assert got.content == "The user uses React 18 + TS.", "the memory itself must still be updated properly"
 
     def test_update_without_meta_leaves_custom_untouched(self, tmp_path):
-        """不传 meta 时不得触碰 custom——这是对存量写入路径的零影响保证。"""
+        """With no meta passed, custom must not be touched at all -- the zero-impact guarantee for existing write paths."""
         cfg, store = self._store(tmp_path)
         node = self._seed(store, {"request_id": "rid-old", "meta": [META1]})
         writer = self._writer(cfg, store, [self._update_op(node.node_id)])
@@ -264,7 +264,7 @@ class TestUpdateAppendsThroughStore:
         self._write(writer, store, None, None)
 
         got = _run(store.get_by_id(node.node_id))
-        assert got.custom.get("meta") == [META1], "没传 meta 却改动了已有 meta"
+        assert got.custom.get("meta") == [META1], "existing meta changed even though no meta was passed"
         assert got.custom.get("request_id") == "rid-old"
 
     def test_update_on_node_without_meta(self, tmp_path):
@@ -276,26 +276,26 @@ class TestUpdateAppendsThroughStore:
 
         got = _run(store.get_by_id(node.node_id))
         assert got.custom.get("meta") == [META1]
-        assert got.custom.get("request_id") == "rid-old", "内部字段不能被合并冲掉"
+        assert got.custom.get("request_id") == "rid-old", "internal fields must not be washed away by the merge"
 
     def test_add_carries_single_meta(self, tmp_path):
         from hy_memory.agent.reconciler import ReconcileOp
 
         cfg, store = self._store(tmp_path)
-        op = ReconcileOp(op="ADD", content="用户用 Vue。", owner="user",
+        op = ReconcileOp(op="ADD", content="The user uses Vue.", owner="user",
                          tags=[], layer="L2_FACT")
         writer = self._writer(cfg, store, [op])
 
         self._write(writer, store, None, META1)
 
         nodes = _run(store.list_by_user(user_id="u1"))
-        added = [n for n in nodes if n.content == "用户用 Vue。"]
+        added = [n for n in nodes if n.content == "The user uses Vue."]
         assert len(added) == 1
         assert added[0].custom.get("meta") == [META1]
 
 
 class TestReadPathsExposeMeta:
-    """list / search / get 三处都要在顶层给 meta，读侧才不用为不同接口写两套。"""
+    """list / search / get must all expose meta at the top level, so the read side needs no two implementations."""
 
     def test_list_item_exposes_meta(self):
         from hy_memory.models.memory import MemoryNode, MemoryLayer
@@ -314,14 +314,14 @@ class TestReadPathsExposeMeta:
         assert HyMemoryClient._memory_node_to_list_item(node)["meta"] == []
 
     def test_readers_expose_meta_from_custom(self):
-        """两个 reader 的共享主流程必须透出 meta。"""
+        """The shared main flow of both readers must surface meta."""
         import hy_memory.pipelines.reader_base as reader_base
 
         src = inspect.getsource(reader_base)
         assert '"meta"' in src and 'get("meta")' in src
 
     def test_readers_do_not_leak_whole_custom(self):
-        """custom 含 request_id 等内部字段，不能整份塞进 search 返回项。"""
+        """custom holds internal fields such as request_id and must not be dumped into search result items wholesale."""
         import hy_memory.pipelines.reader_base as reader_base
 
         src = inspect.getsource(reader_base)

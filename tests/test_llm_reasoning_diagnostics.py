@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-推理模型（hy3 / kimi-k2.5 / deepseek-v4）的 reasoning 诊断字段。
+Reasoning diagnostics fields for reasoning models (hy3 / kimi-k2.5 / deepseek-v4).
 
-背景：推理模型的思维链（reasoning_content）与正文（content）共用 max_tokens。
-思维链写满额度后 content 返回空字符串，EXTRACT 报 EMPTY_RESPONSE 并静默丢弃
-记忆，而日志里看不出原因。这里覆盖 LLMResponse 的 reasoning 字段提取，确保
-排查时能直接从日志判定「是思维链吃光了输出配额」。
+Background: a reasoning model shares max_tokens between its chain of thought (reasoning_content) and
+its answer (content). Once the chain of thought exhausts the budget, content comes back as an empty
+string, EXTRACT reports EMPTY_RESPONSE and silently drops the memory, and the logs give no hint why.
+This covers reasoning field extraction on LLMResponse so triage can read straight from the logs that the chain of thought ate the whole output budget.
 """
 
 from hy_memory.agent.llm_provider import LLMProvider, LLMResponse
@@ -37,29 +37,29 @@ class _Msg:
 
 
 def test_reasoning_from_message_field():
-    """hy3 / kimi 标准位置：message.reasoning_content。"""
-    msg = _Msg(content="", reasoning_content="让我想想……")
+    """Standard position for hy3 / kimi: message.reasoning_content."""
+    msg = _Msg(content="", reasoning_content="Let me think about this...")
     usage = _Usage(reasoning_tokens=2000)
 
     rc, rt = LLMProvider._extract_reasoning(msg, usage)
 
-    assert rc == "让我想想……"
+    assert rc == "Let me think about this..."
     assert rt == 2000
 
 
 def test_reasoning_from_provider_specific_fields():
-    """部分网关只在 provider_specific_fields 里回传思维链。"""
-    msg = _Msg(content="", provider_specific_fields={"reasoning_content": "思考过程"})
+    """Some gateways only return the chain of thought inside provider_specific_fields."""
+    msg = _Msg(content="", provider_specific_fields={"reasoning_content": "reasoning process"})
     usage = _Usage(reasoning_tokens=123)
 
     rc, rt = LLMProvider._extract_reasoning(msg, usage)
 
-    assert rc == "思考过程"
+    assert rc == "reasoning process"
     assert rt == 123
 
 
 def test_reasoning_tokens_flattened_on_usage():
-    """LiteLLM 网关把 reasoning_tokens 平铺在 usage 上，而非 details 里。"""
+    """LiteLLM gateways flatten reasoning_tokens onto usage instead of into details."""
     msg = _Msg(content="")
     usage = _Usage(flat_reasoning_tokens=888)
 
@@ -69,7 +69,7 @@ def test_reasoning_tokens_flattened_on_usage():
 
 
 def test_no_reasoning_is_zero():
-    """非推理模型 / no_think 模式：两个字段都为空，不应报错。"""
+    """Non-reasoning models / no_think mode: both fields are empty and nothing should raise."""
     msg = _Msg(content="ok")
     usage = _Usage()
 
@@ -80,7 +80,7 @@ def test_no_reasoning_is_zero():
 
 
 def test_missing_usage_is_tolerated():
-    """usage 缺失（部分错误响应）时不应抛异常。"""
+    """Missing usage (some error responses) must not raise."""
     rc, rt = LLMProvider._extract_reasoning(_Msg(content="ok"), None)
 
     assert rc == ""
@@ -88,7 +88,7 @@ def test_missing_usage_is_tolerated():
 
 
 def test_llm_response_defaults():
-    """新字段有默认值，旧调用方构造 LLMResponse 不受影响。"""
+    """The new fields carry defaults, so existing LLMResponse call sites are unaffected."""
     resp = LLMResponse(content="ok")
 
     assert resp.reasoning_content == ""

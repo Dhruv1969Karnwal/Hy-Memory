@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-reconcile 候选演化链合并（chroma 后端 + fake LLM）。
+Evolution-chain merging for reconcile candidates (chroma backend + fake LLM).
 
-回归保护（master 修复）：
-- 候选搜索纳入 SUPERSEDED 旧节点（之前只 ACTIVE）；
-- 命中链上任意节点（链头/链身）→ _trace_full_chain 补全整链，
-  以链头去重为一个候选；
-- existing_memories 只暴露链头 head（memory_id + content），
-  **不含 history_versions**（防 LLM 误操作旧节点）。
+Regression coverage (master fix):
+- candidate search now includes SUPERSEDED nodes (previously ACTIVE only);
+- a hit on any node of the chain (head or body) makes _trace_full_chain complete the chain and
+  deduplicate it into a single candidate keyed on the head;
+- existing_memories exposes only the chain head (memory_id + content),
+  **never history_versions** (so the LLM cannot act on stale nodes).
 """
 
 import asyncio
@@ -60,7 +60,7 @@ def store(config):
 
 
 class _CaptureLLM:
-    """记录 reconcile 真实 prompt；返回空操作数组（不影响候选构造）。"""
+    """Records the real reconcile prompt; returns an empty op array (candidate construction is unaffected)."""
     def __init__(self):
         self.last_prompt = ""
 
@@ -130,7 +130,7 @@ async def test_batch_chain_trace_fetches_each_depth_once():
 
 
 def _seed_chain(store, shared):
-    """E0 ← E1 ← E2（E2=ACTIVE 链头，E0/E1=SUPERSEDED），同向量。"""
+    """E0 <- E1 <- E2 (E2 = ACTIVE chain head, E0/E1 = SUPERSEDED), same vector."""
     def mk(nid, content, status, is_latest, sup=None, sb=None, days=0):
         n = MemoryNode(
             node_id=nid, user_id="u1", agent_id="default_agent", session_id="s1",
@@ -141,9 +141,9 @@ def _seed_chain(store, shared):
         n.embedding = list(shared)
         run(store.upsert(n))
 
-    mk("E0", "用户住在涩谷的公寓", MemoryStatus.SUPERSEDED, False, sb=["E1"], days=30)
-    mk("E1", "用户搬到了新宿", MemoryStatus.SUPERSEDED, False, sup=["E0"], sb=["E2"], days=15)
-    mk("E2", "用户现在住横滨", MemoryStatus.ACTIVE, True, sup=["E1"], days=1)
+    mk("E0", "The user lives in an apartment in Shibuya", MemoryStatus.SUPERSEDED, False, sb=["E1"], days=30)
+    mk("E1", "The user moved to Shinjuku", MemoryStatus.SUPERSEDED, False, sup=["E0"], sb=["E2"], days=15)
+    mk("E2", "The user now lives in Yokohama", MemoryStatus.ACTIVE, True, sup=["E1"], days=1)
 
 
 def _run_reconcile(store, config, shared, new_mem):
@@ -164,10 +164,10 @@ class TestReconcileChainMerge:
     def test_chain_dedups_to_head_in_prompt(self, store, config):
         shared = _emb()
         _seed_chain(store, shared)
-        llm, res = _run_reconcile(store, config, shared, "用户住在大阪")
+        llm, res = _run_reconcile(store, config, shared, "The user lives in Osaka")
         assert res.success
 
-        # prompt 里 existing_memories 应只出现链头 E2，链身 E0/E1 不出现
+        # existing_memories in the prompt should show only the chain head E2, never the body nodes E0/E1
         assert "E2" in llm.last_prompt
         assert "E0" not in llm.last_prompt
         assert "E1" not in llm.last_prompt
@@ -175,12 +175,12 @@ class TestReconcileChainMerge:
     def test_prompt_has_no_history_versions(self, store, config):
         shared = _emb()
         _seed_chain(store, shared)
-        llm, res = _run_reconcile(store, config, shared, "用户住在大阪")
+        llm, res = _run_reconcile(store, config, shared, "The user lives in Osaka")
         assert res.success
-        # 不暴露历史版本字段
+        # no history version field is exposed
         assert "history_versions" not in llm.last_prompt
-        # 旧节点 content 也不应泄漏进 prompt
-        assert "涩谷" not in llm.last_prompt
-        assert "新宿" not in llm.last_prompt
-        # 链头 content 在
-        assert "横滨" in llm.last_prompt
+        # content of the old nodes must not leak into the prompt either
+        assert "Shibuya" not in llm.last_prompt
+        assert "Shinjuku" not in llm.last_prompt
+        # the chain head's content is present
+        assert "Yokohama" in llm.last_prompt

@@ -369,24 +369,26 @@ export function renderFlowText(document: FlowDocument): string {
     // print "undefined".
     if (plan.kind === "model_profile_remove") {
       return [
-        `预览：${plan.kind}`,
-        `目标配置：${plan.target}`,
-        "未执行任何写操作。加 --confirm 才会真正删除。",
+        `Preview: ${plan.kind}`,
+        `Target configuration: ${plan.target}`,
+        "No write was performed. Add --confirm to actually delete.",
         "",
       ].join("\n");
     }
     return [
-      `预览：${plan.kind}`,
-      `操作 ID：${"request_id" in plan ? plan.request_id : plan.operation_id}`,
-      `确认摘要：${plan.digest}`,
-      "未执行任何写操作。请把 --json 输出保存为 plan 文件，再用对应命令加 --confirm。",
+      `Preview: ${plan.kind}`,
+      `Operation ID: ${"request_id" in plan ? plan.request_id : plan.operation_id}`,
+      `Confirmation digest: ${plan.digest}`,
+      "No write was performed. Save the --json output as a plan file, then run the matching command with --confirm.",
       "",
     ].join("\n");
   }
   const lines = [
-    `操作状态：${document.state}`,
-    `操作 ID：${document.operation_id ?? "无"}`,
-    "code" in document ? `代码：${document.code}` : "已返回有界回执。",
+    `Operation state: ${document.state}`,
+    `Operation ID: ${document.operation_id ?? "none"}`,
+    "code" in document
+      ? `code: ${document.code}`
+      : "A bounded receipt was returned.",
   ];
   // A partial success or an all-rejected batch must name each source that was
   // not accepted; a bare "partial" leaves the user with nothing to act on.
@@ -400,12 +402,12 @@ export function renderFlowText(document: FlowDocument): string {
       | undefined;
     if (failed) {
       for (const [sourceId, reason] of Object.entries(failed)) {
-        lines.push(`  未接入 ${sourceId}：${String(reason)}`);
+        lines.push(`  not connected ${sourceId}: ${String(reason)}`);
       }
     }
     const accepted = document.receipt.accepted_source_ids;
     if (document.state === "partial" && Array.isArray(accepted)) {
-      lines.push(`  已接入：${accepted.join("、")}`);
+      lines.push(`  connected: ${accepted.join(", ")}`);
     }
   }
   lines.push("");

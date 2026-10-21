@@ -235,20 +235,22 @@ def test_repeated_undo_walks_back_distinct_revisions(tmp_path) -> None:
 
 def test_confirmed_content_shadow_follows_create_correct_and_delete(tmp_path) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="shadow", verbatim="原文保持不变")
+    evidence_id = evidence(database, message_id="shadow", verbatim="Original text stays unchanged")
     store = MemoryGovernanceStore(database)
     created = as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="独特记忆目标短语",
+            content="unique target memory phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
         request_id="create-shadow",
     )
 
-    found, more = store.find_confirmed_matching_terms(user_id="local", terms=("独特记忆目标短语",))
+    found, more = store.find_confirmed_matching_terms(
+        user_id="local", terms=("unique target memory phrase",)
+    )
     assert [memory.memory_id for memory in found] == [created.memory_id]
     assert more is False
 
@@ -257,15 +259,18 @@ def test_confirmed_content_shadow_follows_create_correct_and_delete(tmp_path) ->
         user_id="local",
         request_id="correct-shadow",
         expected_revision=created.revision,
-        content="更正后的不同短语",
+        content="corrected different phrase",
     )
     assert (
-        store.find_confirmed_matching_terms(user_id="local", terms=("独特记忆目标短语",))[0] == []
+        store.find_confirmed_matching_terms(
+            user_id="local", terms=("unique target memory phrase",)
+        )[0]
+        == []
     )
     assert [
         memory.memory_id
         for memory in store.find_confirmed_matching_terms(
-            user_id="local", terms=("更正后的不同短语",)
+            user_id="local", terms=("corrected different phrase",)
         )[0]
     ] == [created.memory_id]
 
@@ -276,22 +281,25 @@ def test_confirmed_content_shadow_follows_create_correct_and_delete(tmp_path) ->
         expected_revision=corrected.revision,
     )
     assert (
-        store.find_confirmed_matching_terms(user_id="local", terms=("更正后的不同短语",))[0] == []
+        store.find_confirmed_matching_terms(user_id="local", terms=("corrected different phrase",))[
+            0
+        ]
+        == []
     )
 
 
 def test_superseded_memory_leaves_the_content_shadow_after_restart(tmp_path) -> None:
     """The derived candidate path must not resurrect a superseded memory."""
     database = tmp_path / "one-memory.sqlite3"
-    old_evidence = evidence(database, message_id="supersede-shadow-old", verbatim="原文")
-    new_evidence = evidence(database, message_id="supersede-shadow-new", verbatim="原文")
+    old_evidence = evidence(database, message_id="supersede-shadow-old", verbatim="Original text")
+    new_evidence = evidence(database, message_id="supersede-shadow-new", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     old = door.create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="旧版发布窗口是周四。",
+            content="The old release window was Thursday.",
             scopes=("all-apps",),
             evidence_ids=(old_evidence,),
         ),
@@ -301,7 +309,7 @@ def test_superseded_memory_leaves_the_content_shadow_after_restart(tmp_path) -> 
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="新版发布窗口是周五。",
+            content="The new release window is Friday.",
             scopes=("all-apps",),
             evidence_ids=(new_evidence,),
         ),
@@ -309,7 +317,9 @@ def test_superseded_memory_leaves_the_content_shadow_after_restart(tmp_path) -> 
     )
     assert old.memory_id in {
         memory.memory_id
-        for memory in store.find_confirmed_matching_terms(user_id="local", terms=("旧版发布",))[0]
+        for memory in store.find_confirmed_matching_terms(user_id="local", terms=("old release",))[
+            0
+        ]
     }
     store.write_from_hy(
         HySupersede(
@@ -323,14 +333,16 @@ def test_superseded_memory_leaves_the_content_shadow_after_restart(tmp_path) -> 
     )
     assert old.memory_id not in {
         memory.memory_id
-        for memory in store.find_confirmed_matching_terms(user_id="local", terms=("旧版发布",))[0]
+        for memory in store.find_confirmed_matching_terms(user_id="local", terms=("old release",))[
+            0
+        ]
     }
     reopened = MemoryGovernanceStore(database)
     assert old.memory_id not in {
         memory.memory_id
-        for memory in reopened.find_confirmed_matching_terms(user_id="local", terms=("旧版发布",))[
-            0
-        ]
+        for memory in reopened.find_confirmed_matching_terms(
+            user_id="local", terms=("old release",)
+        )[0]
     }
 
 
@@ -437,20 +449,20 @@ def test_list_is_user_scoped_and_escapes_wildcards(tmp_path) -> None:
 
 
 def test_a_memory_says_how_it_got_here(tmp_path) -> None:
-    """回填进来的答案要和抽出来的记忆分得开。
+    """A backfilled answer has to stay separable from an extracted memory.
 
-    分不开的后果是具体的：记忆一经写入就进召回，看不出这条是模型写的
-    综述还是你自己说过的话，别的 AI 就会把它当成你本人的判决读回去。
+    The cost of not separating them is concrete: a memory enters recall as soon as it is
+    written, so nothing shows whether it is a model summary or words you said yourself, and
     """
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="m1", verbatim="周末不排评审会")
+    evidence_id = evidence(database, message_id="m1", verbatim="No review meetings on weekends")
     store = MemoryGovernanceStore(database)
 
     extracted = as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户周末不安排评审会。",
+            content="The user schedules no review meetings on weekends.",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -460,7 +472,7 @@ def test_a_memory_says_how_it_got_here(tmp_path) -> None:
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="综上，用户的排期习惯是把评审集中在工作日。",
+            content="In summary, the user keeps review meetings on weekdays.",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
             origin=MemoryOrigin.ANSWERED,
@@ -476,26 +488,26 @@ def test_a_memory_says_how_it_got_here(tmp_path) -> None:
 
 
 def test_a_library_written_before_this_column_existed_still_opens(tmp_path) -> None:
-    """老库里的每一条都是抽出来的，因为那时候没有别的来路。
+    """Every row in an old library is extracted, because there were no other origins then.
 
-    正向对照在上一条：新写进去的 answered 读回来必须还是 answered，
-    否则这条测的只是「全都读成 extracted」。
+    The positive control is the test above: an answered row written now must still read back
+    as answered, otherwise this test only measures that everything reads as extracted.
     """
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="m1", verbatim="周末不排评审会")
+    evidence_id = evidence(database, message_id="m1", verbatim="No review meetings on weekends")
     store = MemoryGovernanceStore(database)
     created = as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户周末不安排评审会。",
+            content="The user schedules no review meetings on weekends.",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
         request_id="create-1",
     )
 
-    # 把这一列真的拆掉，模拟一个这轮改动之前写下的库。
+    # Really drop this column, simulating a library written before this change.
     with sqlite3.connect(database) as connection:
         connection.execute("ALTER TABLE governed_memories DROP COLUMN origin")
     columns = {
@@ -512,56 +524,56 @@ def test_a_library_written_before_this_column_existed_still_opens(tmp_path) -> N
 
 def test_a_made_up_origin_is_refused(tmp_path) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="m1", verbatim="周末不排评审会")
+    evidence_id = evidence(database, message_id="m1", verbatim="No review meetings on weekends")
     MemoryGovernanceStore(database)
 
     with pytest.raises(ValidationError):
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="随便写的",
+            content="Sloppy content",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
-            origin="模型瞎编的来路",
+            origin="a made-up model origin",
         )
 
 
 def test_topic_tags_survive_a_round_trip(tmp_path) -> None:
-    """HY 每条记忆都带 tags，而边界上一直全丢。
+    """HY tags every memory, and the boundary dropped all of them.
 
-    它抽取前会先把库里已有的标签收集起来喂进 prompt 引导复用，所以这套
-    聚类其实一直在跑，只是从没浮到产品层。
+    It collects the tags already in the library before extraction and feeds them into the
+    prompt to encourage reuse, so that clustering always ran, it just never surfaced.
     """
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="m1", verbatim="周末不排评审会")
+    evidence_id = evidence(database, message_id="m1", verbatim="No review meetings on weekends")
     store = MemoryGovernanceStore(database)
 
     created = as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户周末不安排评审会。",
+            content="The user schedules no review meetings on weekends.",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
-            tags=("排期", "工作习惯"),
+            tags=("scheduling", "work habits"),
         ),
         request_id="create-1",
     )
 
-    assert created.tags == ("排期", "工作习惯")
-    assert store.get(created.memory_id, user_id="local").tags == ("排期", "工作习惯")
+    assert created.tags == ("scheduling", "work habits")
+    assert store.get(created.memory_id, user_id="local").tags == ("scheduling", "work habits")
 
 
 def test_a_memory_with_no_tags_reads_as_none_rather_than_breaking(tmp_path) -> None:
-    """正向对照在上一条：带标签的读回来必须还带着，否则这条测的只是「全是空」。"""
+    """The positive control is the test above: a tagged row must read back tagged."""
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="m1", verbatim="周末不排评审会")
+    evidence_id = evidence(database, message_id="m1", verbatim="No review meetings on weekends")
     store = MemoryGovernanceStore(database)
     created = as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户周末不安排评审会。",
+            content="The user schedules no review meetings on weekends.",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -579,13 +591,13 @@ def test_a_memory_with_no_tags_reads_as_none_rather_than_breaking(tmp_path) -> N
 
 def test_content_candidate_predicate_is_optional_and_stable(tmp_path) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="predicate", verbatim="原文")
+    evidence_id = evidence(database, message_id="predicate", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="独特记忆目标短语",
+            content="unique target memory phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -593,25 +605,25 @@ def test_content_candidate_predicate_is_optional_and_stable(tmp_path) -> None:
     )
 
     with store._connection() as connection:
-        predicate, values = content_candidate_predicate(connection, ("独特", "特记", "记忆"))
+        predicate, values = content_candidate_predicate(connection, ("unique", "target", "memory"))
 
     assert predicate is not None
     assert "governed_memories_terms" in predicate
-    assert values == ("独特", "特记", "记忆")
+    assert values == ("unique", "target", "memory")
 
 
 def test_content_candidate_union_keeps_or_semantics_across_terms(tmp_path) -> None:
     assert CONTENT_CANDIDATE_UNION_VERSION >= 1
     database = tmp_path / "one-memory.sqlite3"
-    first_evidence = evidence(database, message_id="candidate-a", verbatim="甲")
-    second_evidence = evidence(database, message_id="candidate-b", verbatim="乙")
+    first_evidence = evidence(database, message_id="candidate-a", verbatim="alpha")
+    second_evidence = evidence(database, message_id="candidate-b", verbatim="beta")
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     first = door.create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="稀有术语 甲",
+            content="rare term alpha",
             scopes=("all-apps",),
             evidence_ids=(first_evidence,),
         ),
@@ -621,14 +633,14 @@ def test_content_candidate_union_keeps_or_semantics_across_terms(tmp_path) -> No
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="常见词分支 乙",
+            content="common branch beta",
             scopes=("all-apps",),
             evidence_ids=(second_evidence,),
         ),
         request_id="candidate-b",
     )
 
-    found, more = store.find_confirmed_matching_terms(user_id="local", terms=("有术", "见词"))
+    found, more = store.find_confirmed_matching_terms(user_id="local", terms=("rare", "branch"))
 
     assert {memory.memory_id for memory in found} == {first.memory_id, second.memory_id}
     assert more is False
@@ -652,9 +664,9 @@ def test_partially_indexed_terms_fall_back_to_like_instead_of_dropping_matches(t
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="张 的偏好",
+            content="\u5f20 \u7684\u504f\u597d",
             scopes=("all-apps",),
-            evidence_ids=(evidence(database, message_id="partial-single", verbatim="甲"),),
+            evidence_ids=(evidence(database, message_id="partial-single", verbatim="alpha"),),
         ),
         request_id="partial-single",
     )
@@ -664,17 +676,17 @@ def test_partially_indexed_terms_fall_back_to_like_instead_of_dropping_matches(t
             kind=MemoryKind.CHAT,
             content="shared target",
             scopes=("all-apps",),
-            evidence_ids=(evidence(database, message_id="partial-shared", verbatim="乙"),),
+            evidence_ids=(evidence(database, message_id="partial-shared", verbatim="beta"),),
         ),
         request_id="partial-shared",
     )
 
     # The single character alone matches on the exact path.
-    only_single, _ = store.find_confirmed_matching_terms(user_id="local", terms=("张",))
+    only_single, _ = store.find_confirmed_matching_terms(user_id="local", terms=("\u5f20",))
     assert {memory.memory_id for memory in only_single} == {single.memory_id}
 
     # Mixed with an indexable bigram it must still find both memories.
-    mixed, more = store.find_confirmed_matching_terms(user_id="local", terms=("张", "shared"))
+    mixed, more = store.find_confirmed_matching_terms(user_id="local", terms=("\u5f20", "shared"))
     assert {memory.memory_id for memory in mixed} == {single.memory_id, shared.memory_id}
     assert more is False
 
@@ -697,7 +709,7 @@ def test_a_query_over_the_term_cap_reports_truncation_instead_of_a_clean_empty(t
             kind=MemoryKind.CHAT,
             content="zeta unique",
             scopes=("all-apps",),
-            evidence_ids=(evidence(database, message_id="term-cap", verbatim="甲"),),
+            evidence_ids=(evidence(database, message_id="term-cap", verbatim="alpha"),),
         ),
         request_id="term-cap",
     )
@@ -727,19 +739,19 @@ def test_content_candidate_shadow_honors_a_larger_caller_limit(tmp_path) -> None
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index in range(250):
-        evidence_id = evidence(database, message_id=f"limit-shadow-{index}", verbatim="甲")
+        evidence_id = evidence(database, message_id=f"limit-shadow-{index}", verbatim="alpha")
         door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"共享目标短语 {index}",
+                content=f"shared target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
             request_id=f"limit-shadow-{index}",
         )
 
-    found, more = store.find_confirmed_matching_terms(user_id="local", terms=("共享",), limit=300)
+    found, more = store.find_confirmed_matching_terms(user_id="local", terms=("shared",), limit=300)
 
     assert len(found) == 250
     assert more is False
@@ -770,7 +782,7 @@ def test_public_candidate_index_initializer_backfills_a_bare_schema(tmp_path) ->
     with sqlite3.connect(database) as connection, connection:
         connection.execute(
             "INSERT INTO governed_memories VALUES "
-            "('m1','local','working','confirmed','独特记忆目标短语','[\"all-apps\"]',"
+            "('m1','local','working','confirmed','unique target memory phrase','[\"all-apps\"]',"
             "'extracted','[]',1,'now','now',NULL,NULL)"
         )
         ensure_content_candidate_index(connection)
@@ -779,8 +791,8 @@ def test_public_candidate_index_initializer_backfills_a_bare_schema(tmp_path) ->
 
 def test_frequency_threshold_keeps_a_common_term_on_the_like_path(tmp_path, monkeypatch) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    first_evidence = evidence(database, message_id="common-a", verbatim="甲")
-    second_evidence = evidence(database, message_id="common-b", verbatim="乙")
+    first_evidence = evidence(database, message_id="common-a", verbatim="alpha")
+    second_evidence = evidence(database, message_id="common-b", verbatim="beta")
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index, (evidence_id, content) in enumerate(
@@ -806,8 +818,8 @@ def test_frequency_threshold_keeps_a_common_term_on_the_like_path(tmp_path, monk
 
 def test_coverage_aware_candidate_plan_marks_a_truncated_union(tmp_path) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    first_evidence = evidence(database, message_id="plan-a", verbatim="甲")
-    second_evidence = evidence(database, message_id="plan-b", verbatim="乙")
+    first_evidence = evidence(database, message_id="plan-a", verbatim="alpha")
+    second_evidence = evidence(database, message_id="plan-b", verbatim="beta")
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index, evidence_id in enumerate((first_evidence, second_evidence)):
@@ -834,9 +846,9 @@ def test_coverage_aware_candidate_plan_marks_a_truncated_union(tmp_path) -> None
 
 def test_plan_is_incomplete_when_one_or_term_is_filtered(tmp_path, monkeypatch) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    first_evidence = evidence(database, message_id="mix-a", verbatim="甲")
-    second_evidence = evidence(database, message_id="mix-b", verbatim="乙")
-    third_evidence = evidence(database, message_id="mix-c", verbatim="丙")
+    first_evidence = evidence(database, message_id="mix-a", verbatim="alpha")
+    second_evidence = evidence(database, message_id="mix-b", verbatim="beta")
+    third_evidence = evidence(database, message_id="mix-c", verbatim="gamma")
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     memories = []
@@ -872,13 +884,13 @@ def test_plan_is_incomplete_when_one_or_term_is_filtered(tmp_path, monkeypatch) 
 
 def test_opening_a_legacy_library_does_not_backfill_the_candidate_shadow(tmp_path) -> None:
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="legacy-shadow", verbatim="原文")
+    evidence_id = evidence(database, message_id="legacy-shadow", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="独特记忆目标短语",
+            content="unique target memory phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -898,9 +910,9 @@ def test_opening_a_legacy_library_does_not_backfill_the_candidate_shadow(tmp_pat
             == 1
         )
     found, _ = reopened.find_confirmed_matching_terms(
-        user_id="local", terms=("独特", "特记", "记忆")
+        user_id="local", terms=("unique", "target", "memory")
     )
-    assert [memory.content for memory in found] == ["独特记忆目标短语"]
+    assert [memory.content for memory in found] == ["unique target memory phrase"]
 
     with reopened._connection() as connection:
         ensure_content_candidate_index(connection)
@@ -915,13 +927,13 @@ def test_content_candidate_backfill_runs_off_the_startup_path(tmp_path) -> None:
     import time
 
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="background-shadow", verbatim="原文")
+    evidence_id = evidence(database, message_id="background-shadow", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="独特记忆目标短语",
+            content="unique target memory phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -969,13 +981,13 @@ def test_content_candidate_backfill_failure_is_observable_and_non_blocking(
     import time
 
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="background-failure", verbatim="原文")
+    evidence_id = evidence(database, message_id="background-failure", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="独特记忆目标短语",
+            content="unique target memory phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -999,8 +1011,8 @@ def test_content_candidate_backfill_failure_is_observable_and_non_blocking(
     assert store.content_candidate_backfill_state() == "failed"
     assert store.content_candidate_backfill_failure() == "database_locked"
     assert store.wait_content_candidate_backfill(timeout=0) is True
-    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("独特", "记忆"))
-    assert [memory.content for memory in found] == ["独特记忆目标短语"]
+    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("unique", "memory"))
+    assert [memory.content for memory in found] == ["unique target memory phrase"]
 
 
 def test_content_candidate_backfill_rejects_a_negative_timeout(tmp_path) -> None:
@@ -1015,15 +1027,15 @@ def test_content_candidate_backfill_rebuilds_stale_terms_not_only_empty_memories
     import time
 
     database = tmp_path / "one-memory.sqlite3"
-    first_evidence = evidence(database, message_id="stale-shadow-a", verbatim="原文")
-    second_evidence = evidence(database, message_id="stale-shadow-b", verbatim="原文")
+    first_evidence = evidence(database, message_id="stale-shadow-a", verbatim="Original text")
+    second_evidence = evidence(database, message_id="stale-shadow-b", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     stale = door.create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="旧版本短语",
+            content="stale old phrase",
             scopes=("all-apps",),
             evidence_ids=(first_evidence,),
         ),
@@ -1033,7 +1045,7 @@ def test_content_candidate_backfill_rebuilds_stale_terms_not_only_empty_memories
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="新鲜目标短语",
+            content="fresh target phrase",
             scopes=("all-apps",),
             evidence_ids=(second_evidence,),
         ),
@@ -1044,7 +1056,7 @@ def test_content_candidate_backfill_rebuilds_stale_terms_not_only_empty_memories
     with sqlite3.connect(database) as connection, connection:
         connection.execute(
             "UPDATE governed_memories SET content=?, updated_at=? WHERE memory_id=?",
-            ("全新目标短语", "2099-01-01T00:00:00+00:00", stale.memory_id),
+            ("brand new target phrase", "2099-01-01T00:00:00+00:00", stale.memory_id),
         )
         connection.execute(
             "UPDATE governed_memories_terms_meta SET content_hash=? WHERE memory_id=?",
@@ -1052,7 +1064,7 @@ def test_content_candidate_backfill_rebuilds_stale_terms_not_only_empty_memories
         )
         connection.execute(
             "DELETE FROM governed_memories_terms WHERE memory_id=? AND term!=?",
-            (stale.memory_id, "旧版"),
+            (stale.memory_id, "stale"),
         )
 
     assert store.start_content_candidate_backfill() is True
@@ -1068,9 +1080,9 @@ def test_content_candidate_backfill_rebuilds_stale_terms_not_only_empty_memories
                 (stale.memory_id,),
             )
         }
-    assert "全新" in terms and "目标" in terms
-    assert not {"旧版", "版短"} & terms
-    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("全新", "目标"))
+    assert "brand" in terms and "target" in terms
+    assert not {"stale", "old"} & terms
+    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("brand", "target"))
     assert stale.memory_id in {memory.memory_id for memory in found}
 
 
@@ -1078,13 +1090,13 @@ def test_content_candidate_backfill_is_idempotent_after_content_hash_exists(tmp_
     import time
 
     database = tmp_path / "one-memory.sqlite3"
-    evidence_id = evidence(database, message_id="idempotent-shadow", verbatim="原文")
+    evidence_id = evidence(database, message_id="idempotent-shadow", verbatim="Original text")
     store = MemoryGovernanceStore(database)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="独特记忆目标短语",
+            content="unique target memory phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
@@ -1127,12 +1139,12 @@ def test_content_candidate_backfill_commits_between_batches_and_releases_writer(
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index in range(6):
-        evidence_id = evidence(database, message_id=f"batch-{index}", verbatim="原文")
+        evidence_id = evidence(database, message_id=f"batch-{index}", verbatim="Original text")
         door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"批量目标短语 {index}",
+                content=f"batch target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -1176,12 +1188,12 @@ def test_content_candidate_backfill_resumes_after_partial_batch(tmp_path, monkey
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index in range(5):
-        evidence_id = evidence(database, message_id=f"resume-{index}", verbatim="原文")
+        evidence_id = evidence(database, message_id=f"resume-{index}", verbatim="Original text")
         door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"恢复目标短语 {index}",
+                content=f"resume target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -1220,7 +1232,7 @@ def test_content_candidate_backfill_resumes_after_partial_batch(tmp_path, monkey
             connection.execute("SELECT count(*) FROM governed_memories_terms_meta").fetchone()[0]
             == 5
         )
-    found, _ = resumed.find_confirmed_matching_terms(user_id="local", terms=("恢复目标",))
+    found, _ = resumed.find_confirmed_matching_terms(user_id="local", terms=("resume target",))
     assert len(found) == 5
 
 
@@ -1232,8 +1244,11 @@ def test_content_candidate_backfill_handles_a_single_oversized_memory(
 
     database = tmp_path / "one-memory.sqlite3"
     store = MemoryGovernanceStore(database)
-    evidence_id = evidence(database, message_id="huge", verbatim="原文")
-    huge = "巨大目标短语" + ("内容" * 400_000)
+    evidence_id = evidence(database, message_id="huge", verbatim="Original text")
+    # 130k repeats of a 7-char word, not the 400k the Chinese fixture needed: the point is
+    # one record over the backfill char budget but still inside MemoryDraft's 1,000,000-char
+    # field limit, and "content" is 3.5x the length of the two-character word it replaced.
+    huge = "huge target phrase" + ("content" * 130_000)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
@@ -1272,12 +1287,12 @@ def test_content_candidate_backfill_pauses_between_batches_and_lets_a_writer_in(
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index in range(4):
-        evidence_id = evidence(database, message_id=f"gap-{index}", verbatim="原文")
+        evidence_id = evidence(database, message_id=f"gap-{index}", verbatim="Original text")
         door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"批间目标短语 {index}",
+                content=f"gap target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -1346,12 +1361,12 @@ def test_content_candidate_backfill_handles_cursor_front_and_back_mutations(
     door = as_person(store)
     created: dict[str, str] = {}
     for index in range(4):
-        evidence_id = evidence(database, message_id=f"cursor-{index}", verbatim="原文")
+        evidence_id = evidence(database, message_id=f"cursor-{index}", verbatim="Original text")
         memory = door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"游标目标短语 {index}",
+                content=f"cursor target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -1397,26 +1412,26 @@ def test_content_candidate_backfill_handles_cursor_front_and_back_mutations(
         user_id="local",
         request_id="cursor-correct-behind",
         expected_revision=1,
-        content="游标目标已更正 0",
+        content="cursor target corrected 0",
     )
     # Ahead of the cursor: create and delete rows the sweep has not reached.
-    extra_evidence = evidence(database, message_id="cursor-extra", verbatim="原文")
+    extra_evidence = evidence(database, message_id="cursor-extra", verbatim="Original text")
     extra = door.create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="游标新增短语",
+            content="cursor extra phrase",
             scopes=("all-apps",),
             evidence_ids=(extra_evidence,),
         ),
         request_id="cursor-extra",
     )
-    delete_evidence = evidence(database, message_id="cursor-delete", verbatim="原文")
+    delete_evidence = evidence(database, message_id="cursor-delete", verbatim="Original text")
     deleted = door.create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="游标待删除短语",
+            content="cursor pending delete phrase",
             scopes=("all-apps",),
             evidence_ids=(delete_evidence,),
         ),
@@ -1432,7 +1447,9 @@ def test_content_candidate_backfill_handles_cursor_front_and_back_mutations(
     assert store.wait_content_candidate_backfill(timeout=10) is True
     assert store.content_candidate_backfill_state() == "ready"
 
-    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("游标目标", "游标新增"))
+    found, _ = store.find_confirmed_matching_terms(
+        user_id="local", terms=("cursor target", "cursor extra")
+    )
     ids = {memory.memory_id for memory in found}
     assert created["cursor-0"] in ids
     assert extra.memory_id in ids
@@ -1454,12 +1471,12 @@ def test_content_candidate_backfill_repeat_is_a_no_op_after_ready(tmp_path) -> N
     store = MemoryGovernanceStore(database)
     door = as_person(store)
     for index in range(3):
-        evidence_id = evidence(database, message_id=f"repeat-{index}", verbatim="原文")
+        evidence_id = evidence(database, message_id=f"repeat-{index}", verbatim="Original text")
         door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"重复目标短语 {index}",
+                content=f"repeat target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -1493,19 +1510,19 @@ def test_content_candidate_backfill_meta_hash_is_the_derivation_rule(tmp_path) -
 
     database = tmp_path / "one-memory.sqlite3"
     store = MemoryGovernanceStore(database)
-    evidence_id = evidence(database, message_id="hash-rule", verbatim="原文")
+    evidence_id = evidence(database, message_id="hash-rule", verbatim="Original text")
     memory = as_person(store).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="hash 派生目标短语",
+            content="hash derived target phrase",
             scopes=("all-apps",),
             evidence_ids=(evidence_id,),
         ),
         request_id="hash-rule",
     )
-    expected_terms = governance._shadow_terms("hash 派生目标短语")
-    expected_hash = governance._shadow_content_hash("hash 派生目标短语")
+    expected_terms = governance._shadow_terms("hash derived target phrase")
+    expected_hash = governance._shadow_content_hash("hash derived target phrase")
     with sqlite3.connect(database) as connection, connection:
         assert (
             connection.execute(
@@ -1529,7 +1546,7 @@ def test_content_candidate_backfill_meta_hash_is_the_derivation_rule(tmp_path) -
             (memory.memory_id,),
         )
         connection.execute(
-            "INSERT INTO governed_memories_terms(term,memory_id) VALUES ('旧派',?)",
+            "INSERT INTO governed_memories_terms(term,memory_id) VALUES ('old term',?)",
             (memory.memory_id,),
         )
     assert store.start_content_candidate_backfill() is True
@@ -1566,12 +1583,14 @@ def test_content_candidate_backfill_does_not_revive_a_concurrently_deleted_memor
     door = as_person(store)
     created: list[str] = []
     for index in range(4):
-        evidence_id = evidence(database, message_id=f"delete-race-{index}", verbatim="原文")
+        evidence_id = evidence(
+            database, message_id=f"delete-race-{index}", verbatim="Original text"
+        )
         memory = door.create(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"删除竞态目标短语 {index}",
+                content=f"delete race target phrase {index}",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -1616,7 +1635,7 @@ def test_content_candidate_backfill_does_not_revive_a_concurrently_deleted_memor
     release.set()
     assert store.wait_content_candidate_backfill(timeout=10) is True
     assert store.content_candidate_backfill_state() == "ready"
-    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("删除竞态",))
+    found, _ = store.find_confirmed_matching_terms(user_id="local", terms=("delete race",))
     assert created[3] not in {memory.memory_id for memory in found}
     with sqlite3.connect(database) as connection:
         assert (
@@ -1721,7 +1740,9 @@ def test_another_workspace_cannot_spend_the_shadow_candidate_budget(tmp_path) ->
                 kind=MemoryKind.CHAT,
                 content=f"shared target phrase b{index}",
                 scopes=("project:b",),
-                evidence_ids=(evidence(database, message_id=f"crowd-{index}", verbatim="原文"),),
+                evidence_ids=(
+                    evidence(database, message_id=f"crowd-{index}", verbatim="Original text"),
+                ),
             ),
             request_id=f"crowd-{index}",
             memory_id=f"aaa-{index:04d}",
@@ -1732,7 +1753,9 @@ def test_another_workspace_cannot_spend_the_shadow_candidate_budget(tmp_path) ->
             kind=MemoryKind.CHAT,
             content="shared target phrase readable",
             scopes=("project:a",),
-            evidence_ids=(evidence(database, message_id="crowd-readable", verbatim="原文"),),
+            evidence_ids=(
+                evidence(database, message_id="crowd-readable", verbatim="Original text"),
+            ),
         ),
         request_id="crowd-readable",
         memory_id="zzz-readable",
@@ -1764,7 +1787,9 @@ def test_shadow_path_reports_truncation_like_the_like_fallback(tmp_path) -> None
                 kind=MemoryKind.CHAT,
                 content=f"shared target phrase {index}",
                 scopes=("all-apps",),
-                evidence_ids=(evidence(database, message_id=f"trunc-{index}", verbatim="原文"),),
+                evidence_ids=(
+                    evidence(database, message_id=f"trunc-{index}", verbatim="Original text"),
+                ),
             ),
             request_id=f"trunc-{index}",
             memory_id=f"m{index:04d}",

@@ -14,8 +14,8 @@ from one_memory.memory_qa import MemoryAnswerer
 from one_memory.model_profiles import ModelProfileStore
 from one_memory.secrets import InMemorySecretStore
 
-QUESTION = "看板要用真实数据还是 mock 数据？"
-CONTENT = "用户要求产品看板使用真实数据，不能使用 mock 数据。"
+QUESTION = "Should the dashboard use real data or mock data?"
+CONTENT = "The user requires the product dashboard to use real data and forbids mock data."
 
 
 def library(tmp_path, *, crowd: int):

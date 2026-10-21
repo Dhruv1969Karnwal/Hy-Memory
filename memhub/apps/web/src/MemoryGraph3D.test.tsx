@@ -23,7 +23,7 @@ function makeGraph(nodeCount: number): MemoryGraphResponse {
     (_, index) => ({
       node_id: `node-${index}`,
       node_type: NODE_TYPES[index % NODE_TYPES.length],
-      label: `节点 ${index}`,
+      label: `Node ${index}`,
       memory_id: null,
       source_id: null,
       kind: null,
@@ -48,7 +48,7 @@ function makeGraph(nodeCount: number): MemoryGraphResponse {
 }
 
 describe("MemoryGraph3D", () => {
-  it("没有 WebGL 时给出可访问降级提示", () => {
+  it("gives an accessible fallback without WebGL", () => {
     render(
       <MemoryGraph3D
         graph={makeGraph(8)}
@@ -56,11 +56,13 @@ describe("MemoryGraph3D", () => {
         onSelectNode={() => {}}
       />,
     );
-    expect(screen.getByText(/这台设备打不开 3D 视图/)).toBeDefined();
+    expect(
+      screen.getByText(/This device cannot open the 3D view/),
+    ).toBeDefined();
   });
 
-  // 场景装配（布局分帧、入场动画、按需渲染、选中态走 ref 而非 effect 依赖）
-  // 在这里没有守卫，而且不是遗漏：jsdom 无 WebGL，effect 在建 renderer 时就抛并
-  // 提前返回，装配代码一行都不会执行。恢复配方见 OPEN-ITEMS A-31。
-  // 不要在这里补一条断言组件没被卸载的用例：那条测过，加不加修复都绿。
+  // Scene assembly (frame-split layout, entrance animation, on-demand rendering, selected state via ref instead of effect deps)
+  // is not covered here, and that is not an oversight: jsdom has no WebGL, the effect throws when building the renderer and
+  // returns early, so none of the assembly code runs. See OPEN-ITEMS A-31 for the restoration recipe.
+  // Do not add a case here asserting the component was not unmounted: that one was tested, and it is green with or without the fix.
 });

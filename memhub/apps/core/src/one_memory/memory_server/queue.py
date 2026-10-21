@@ -297,8 +297,8 @@ def build_mark_invoked_statement(job_id: str, owner: str) -> tuple[str, tuple[An
 # ---------------------------------------------------------------------------
 # A2-03: claimers and executors are separate roles.
 #
-# The architecture is explicit (ARCHITECTURE.md "不要复制 HY Memory App 的旧
-# claim 风暴"): one claim coroutine per executor is what produced 80 claims a
+# The architecture is explicit (ARCHITECTURE.md "do not copy the old HY Memory App
+# claim storm"): one claim coroutine per executor is what produced 80 claims a
 # second against a single table and `Lock wait timeout exceeded` (1205) with
 # only a couple of rows queued. So the claimer count stays small and fixed,
 # executors take work from a bounded in-process queue, and an executor never

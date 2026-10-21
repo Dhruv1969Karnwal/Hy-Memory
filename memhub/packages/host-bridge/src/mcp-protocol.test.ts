@@ -96,7 +96,7 @@ describe("MemHub MCP protocol", () => {
   it("passes bounded arguments to the broker and returns structured content", async () => {
     const recall = vi.fn(async () => ({
       state: "grounded" as const,
-      query: "我的偏好",
+      query: "my preferences",
       scope: "all-apps",
       hits: [],
       used_characters: 0,
@@ -119,7 +119,7 @@ describe("MemHub MCP protocol", () => {
           params: {
             name: "om_recall",
             arguments: {
-              query: "我的偏好",
+              query: "my preferences",
               limit: 3,
               character_budget: 800,
             },
@@ -129,7 +129,7 @@ describe("MemHub MCP protocol", () => {
     );
 
     expect(recall).toHaveBeenCalledWith("/fixture/discovery.json", {
-      query: "我的偏好",
+      query: "my preferences",
       limit: 3,
       character_budget: 800,
     });
@@ -181,7 +181,7 @@ describe("MemHub MCP protocol", () => {
   it("attaches the project the host says it is in", async () => {
     const recall = vi.fn(async () => ({
       state: "empty" as const,
-      query: "结论",
+      query: "the decision",
       scope: "all-apps",
       hits: [],
       used_characters: 0,
@@ -197,13 +197,13 @@ describe("MemHub MCP protocol", () => {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
-      params: { name: "om_recall", arguments: { query: "结论" } },
+      params: { name: "om_recall", arguments: { query: "the decision" } },
     });
 
     // The model is never asked for this. It could name a directory it is not
     // in, and that is the one boundary the workspace design draws.
     expect(recall).toHaveBeenCalledWith("/fixture/discovery.json", {
-      query: "结论",
+      query: "the decision",
       workspace_path: "/Users/example/hy-memory-admin",
     });
   });

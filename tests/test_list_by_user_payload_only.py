@@ -1,29 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-list_by_user payload-only 调用点：`with_vectors=False` 是否真的传到了后端。
+list_by_user payload-only call sites: whether `with_vectors=False` really reaches the backend.
 
-背景：VectorStoreBase.list_by_user 加了 `with_vectors` 开关（默认 True 保持
-向后兼容），只需要 payload/tags/metadata 的调用点必须显式传 False，
-避免把 embedding 一并拉回；否则一次列举可能顺带带回 MB 级向量。
+Background: VectorStoreBase.list_by_user gained a `with_vectors` switch (default True for
+backward compat); call sites that only need payload/tags/metadata must pass False explicitly,
+to avoid pulling embeddings back too; otherwise a single listing may bring back MB-scale vectors.
 
-本次修复覆盖的调用点（在 fix/list-by-user-without-vectors 分支上）：
+Call sites covered by this fix (on the fix/list-by-user-without-vectors branch):
 
 client.py:
-  - `_list_vdb_bucket`                 (list API，序列化为 list item)
-  - `async_get_basic_info`             (只读 custom.basic_info_kv + 链)
-  - `async_build_entity_store`         (只用 node_id/content 重建 entity)
-  - `async_clone_user` 里 dst 空检查   (只判长度)
+  - `_list_vdb_bucket`                 (list API, serialized into list items)
+  - `async_get_basic_info`             (read-only custom.basic_info_kv + chain)
+  - `async_build_entity_store`         (rebuild entity using only node_id/content)
+  - `async_clone_user` dst empty check   (only checks length)
 
 writer.py:
-  - `_get_recent_history`              (只读 content/node_id/gmt_created)
-  - `_collect_existing_tags`           (已在同一分支上覆盖)
+  - `_get_recent_history`              (read-only content/node_id/gmt_created)
+  - `_collect_existing_tags`           (already covered on the same branch)
 
 basic_profile.py:
-  - `_find_latest_l0`                  (只读 layer/custom/is_latest)
-  - `_assemble_full_kv`                (只读 custom.basic_info_kv)
+  - `_find_latest_l0`                  (read-only layer/custom/is_latest)
+  - `_assemble_full_kv`                (read-only custom.basic_info_kv)
 
-反向断言（必须保留 embedding 的调用点）：
-  - `async_clone_user` src 全量复制    (embedding 会被 to_dict/from_dict 拷贝)
+Negative assertions (call sites that must retain embeddings):
+  - `async_clone_user` src full copy    (embedding is copied via to_dict/from_dict)
 """
 
 from datetime import datetime, timedelta
@@ -48,15 +48,15 @@ def run(coro):
 
 
 # ---------------------------------------------------------------------------
-# fake vector store：抓 list_by_user 的每次 kwargs
+# fake vector store: capture every list_by_user kwargs
 # ---------------------------------------------------------------------------
 
 class RecordingVectorStore:
-    """只关心 list_by_user 传参；返回值可预置。"""
+    """Only cares about list_by_user arguments; return values can be preset."""
 
     def __init__(self, nodes=None):
         self.nodes = nodes or []
-        self.calls = []  # 每次 list_by_user 的 kwargs
+        self.calls = []  # kwargs of each list_by_user call
         self.get_calls = []
 
     async def list_by_user(self, **kwargs):
@@ -67,7 +67,7 @@ class RecordingVectorStore:
         self.get_calls.append(node_id)
         return None
 
-    # 下列接口在部分调用路径里会被引用，给出安全的默认实现
+    # the following methods are referenced on some call paths; provide safe default implementations
     async def delete_entities_for_memory(self, **kwargs):
         return None
 
@@ -134,7 +134,7 @@ def _l2_fact_node(content):
 
 
 # ---------------------------------------------------------------------------
-# basic_profile.py：_find_latest_l0 / _assemble_full_kv
+# basic_profile.py: _find_latest_l0 / _assemble_full_kv
 # ---------------------------------------------------------------------------
 
 class TestBasicProfilePayloadOnly:
@@ -147,7 +147,7 @@ class TestBasicProfilePayloadOnly:
         assert node is not None
         assert len(store.calls) == 1
         assert store.calls[0].get("with_vectors") is False, (
-            "_find_latest_l0 只用 layer/custom/is_latest 判定链头，不需要 embedding"
+            "_find_latest_l0 only uses layer/custom/is_latest to identify the chain head, no embedding needed"
         )
 
     def test_assemble_full_kv_omits_vectors(self):
@@ -165,12 +165,12 @@ class TestBasicProfilePayloadOnly:
         assert kv == {"name": "alvin", "city": "sh"}
         assert len(store.calls) == 1
         assert store.calls[0].get("with_vectors") is False, (
-            "_assemble_full_kv 只读 custom.basic_info_kv，不需要 embedding"
+            "_assemble_full_kv only reads custom.basic_info_kv, no embedding needed"
         )
 
 
 # ---------------------------------------------------------------------------
-# writer.py：_get_recent_history
+# writer.py: _get_recent_history
 # ---------------------------------------------------------------------------
 
 class TestWriterPayloadOnly:
@@ -205,28 +205,28 @@ class TestWriterPayloadOnly:
         assert "hi" in history and "hello" in history
         assert len(store.calls) == 1
         assert store.calls[0].get("with_vectors") is False, (
-            "_get_recent_history 只读 content/node_id/gmt_created，不需要 embedding"
+            "_get_recent_history only reads content/node_id/gmt_created, no embedding needed"
         )
 
 
 # ---------------------------------------------------------------------------
-# client.py：_list_vdb_bucket / async_get_basic_info /
-#            async_build_entity_store / async_clone_user (dst + src 反向断言)
+# client.py: _list_vdb_bucket / async_get_basic_info /
+#            async_build_entity_store / async_clone_user (dst + src negative assertion)
 # ---------------------------------------------------------------------------
 
 class TestClientPayloadOnly:
     def _client_with(self, store):
-        """构造一个只带最小 self 属性的裸 client 实例。
+        """Construct a bare client instance carrying only the minimal self attributes.
 
-        真实 client 有 _loop_thread / _cache / _graph_store 等一堆运行时依赖；
-        这里只测 list_by_user 的传参，其他埋点走 no-op。
+        a real client has a pile of runtime deps like _loop_thread / _cache / _graph_store;
+        here we only test list_by_user arguments, with all other instrumentation as no-ops.
         """
         from hy_memory.client import HyMemoryClient
         c = HyMemoryClient.__new__(HyMemoryClient)
         c._vector_store = store
-        # 关掉 op_log 埋点（走 early return）
+        # disable op_log instrumentation (takes the early return)
         c._cache = None
-        # 关掉 graph store 埋点（多数方法只在 non-None 时才引用）
+        # disable graph store instrumentation (most methods reference it only when non-None)
         c._graph_store = None
         return c
 
@@ -239,15 +239,15 @@ class TestClientPayloadOnly:
             limit=10, offset=0, order="desc",
         ))
 
-        # user-level L0 需要额外一次不带 agent 的查询；两路都只读 payload。
+        # user-level L0 needs an extra query without agent; both paths are payload-only.
         assert len(store.calls) == 2
         assert all(call.get("with_vectors") is False for call in store.calls), (
-            "list API 只序列化 payload 到 list item，不需要 embedding"
+            "the list API only serializes payload into list items, no embedding needed"
         )
         assert "agent_id" not in store.calls[1] and "agent_ids" not in store.calls[1]
 
     def test_async_get_basic_info_omits_vectors(self, monkeypatch):
-        # 避开 evolution 展开的额外 IO：patch 成透传恒等
+        # avoid the extra IO of evolution expansion: patch it to a pass-through identity
         async def _fake_expand(vs, hits):
             return hits
 
@@ -259,20 +259,20 @@ class TestClientPayloadOnly:
         store = RecordingVectorStore([_basic_info_node()])
         client = self._client_with(store)
 
-        # 公开方法带 @_ensure_internal_loop，需要 self._loop_thread；这里只验证 list_by_user 传参，
-        # 绕过装饰器直接拿原函数（functools.wraps 保留在 __wrapped__）。
+        # the public method has @_ensure_internal_loop and needs self._loop_thread; here we only verify list_by_user arguments,
+        # so bypass the decorator and grab the original function (functools.wraps keeps it in __wrapped__).
         from hy_memory.client import HyMemoryClient
         raw = HyMemoryClient.async_get_user_basic_info.__wrapped__
         result = run(raw(client, user_id="u1"))
 
-        assert result["memories"], "至少要能取到一条 basic info"
-        assert store.calls, "必须真的走了 list_by_user"
+        assert result["memories"], "must be able to get at least one basic info"
+        assert store.calls, "must really go through list_by_user"
         assert store.calls[0].get("with_vectors") is False, (
-            "async_get_user_basic_info 只读 custom.basic_info_kv/content/tags/chain"
+            "async_get_user_basic_info only reads custom.basic_info_kv/content/tags/chain"
         )
 
     def test_async_build_entity_store_omits_vectors(self, monkeypatch):
-        # patch entity indexer：不真的 embed，只关心是否走对了 list 参数
+        # patch the entity indexer: don't really embed, only care whether the list arguments are right
         async def _fake_index(**kwargs):
             return 1
 
@@ -283,7 +283,7 @@ class TestClientPayloadOnly:
 
         store = RecordingVectorStore([_l2_fact_node("t1"), _l2_fact_node("t2")])
         client = self._client_with(store)
-        client._embed_service = None  # index_memory_entities 已 patch
+        client._embed_service = None  # index_memory_entities already patched
 
         from hy_memory.client import HyMemoryClient
         raw = HyMemoryClient.async_build_entity_store.__wrapped__
@@ -291,31 +291,31 @@ class TestClientPayloadOnly:
 
         assert result["success"] is True
         assert result["memories_scanned"] == 2
-        assert store.calls, "必须真的走了 list_by_user"
+        assert store.calls, "must really go through list_by_user"
         assert store.calls[0].get("with_vectors") is False, (
-            "entity rebuild 只用 node_id/content，重新 embed entity 名"
+            "entity rebuild only uses node_id/content, re-embedding entity names"
         )
 
     def test_async_clone_user_dst_check_omits_vectors_src_keeps_them(self):
         """Clone checks agent + user-level L0 on both source and destination.
 
         Destination checks are payload-only. Source reads must retain vectors:
-        src 全量复制走 to_dict/from_dict 深拷贝，to_dict 会把 embedding 一并
-        序列化到新节点；若 src 侧 with_vectors=False，克隆节点 embedding 会
-        丢失，导致新用户后续 recall 命中率归零——这是绝对不能改的口径。
+        the src full copy uses a to_dict/from_dict deep copy; to_dict serializes the embedding
+        into the new node too; if the src side passes with_vectors=False, the cloned node's embedding
+        is lost, zeroing the new user's later recall hit rate -- a behavior that must never change.
         """
-        # 调用顺序：dst agent、dst L0、src agent、src L0。
+        # call order: dst agent, dst L0, src agent, src L0.
         class _ClonefakeStore(RecordingVectorStore):
             async def list_by_user(self, *args, **kwargs):
-                # dst 检查真实调用是位置参数 list_by_user(dst_user_id, agent_id=..., limit=1, with_vectors=False)
-                # 归一化到 kwargs 记录，便于断言
+                # the dst check's real call is positional list_by_user(dst_user_id, agent_id=..., limit=1, with_vectors=False)
+                # normalize into the kwargs record for easier assertions
                 if args:
                     kwargs = {**kwargs, "user_id": args[0]}
                 self.calls.append(kwargs)
-                # 目标侧两次检查都返回空。
+                # both destination-side checks return empty.
                 if len(self.calls) <= 2:
                     return []
-                # 源侧返回一条带 embedding 的节点。
+                # the source side returns one node carrying an embedding.
                 node = MemoryNode(
                     node_id=str(uuid.uuid4()),
                     user_id="src",
@@ -333,7 +333,7 @@ class TestClientPayloadOnly:
                 return [n.node_id for n in nodes]
 
             async def delete_by_metadata(self, **kwargs):
-                # rollback 兜底，返回 no-op
+                # rollback fallback, return a no-op
                 return 0
 
         store = _ClonefakeStore()
@@ -348,12 +348,12 @@ class TestClientPayloadOnly:
         assert result["success"] is True, result
         assert len(store.calls) == 4
 
-        # dst agent + dst user-level L0：只判存在性，不需要 embedding。
+        # dst agent + dst user-level L0: only checks existence, no embedding needed.
         assert all(call.get("with_vectors") is False for call in store.calls[:2])
 
-        # src agent + src user-level L0：必须默认（未传，等价于 True）。
+        # src agent + src user-level L0: must use the default (not passed, equivalent to True).
         assert all(call.get("with_vectors", True) is True for call in store.calls[2:])
 
-        # 顺带确认写入的新节点真的带了 embedding
-        assert hasattr(store, "_upserted") and store._upserted, "src 必须真的 upsert 了"
-        assert store._upserted[0].embedding, "克隆节点必须保留 embedding"
+        # also confirm the newly written nodes really carry an embedding
+        assert hasattr(store, "_upserted") and store._upserted, "src must really upsert"
+        assert store._upserted[0].embedding, "cloned nodes must keep the embedding"

@@ -558,13 +558,13 @@ def test_host_tools_record_metadata_without_bodies(tmp_path):
                     role="user",
                     written_by=WrittenBy.PERSON,
                     created_at=None,
-                    verbatim="抽取终于跑通了",
+                    verbatim="extraction finally works",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             )
             app.state.memory_answerer = Answerer()
             local = await client.get(
-                "/api/v1/conversations/search", params={"query": "SECRET_QUERY_抽取"}
+                "/api/v1/conversations/search", params={"query": "SECRET_QUERY_extraction"}
             )
             assert local.status_code == 200
             assert app.state.call_event_store.list().total == 0
@@ -574,7 +574,7 @@ def test_host_tools_record_metadata_without_bodies(tmp_path):
             }
             found = await client.get(
                 "/api/v1/conversations/search",
-                params={"query": "SECRET_QUERY_抽取"},
+                params={"query": "SECRET_QUERY_extraction"},
                 headers=external,
             )
             asked = await client.post(
@@ -611,7 +611,7 @@ def test_host_tools_record_metadata_without_bodies(tmp_path):
             assert sum(event.tool == "om_ask" for event in events.items) == 1
             encoded = events.model_dump_json()
             assert "SECRET" not in encoded
-            assert "抽取终于" not in encoded
+            assert "extraction finally" not in encoded
             assert all(event.host_id == "cursor" for event in events.items)
             assert all(event.installation_id is not None for event in events.items)
 

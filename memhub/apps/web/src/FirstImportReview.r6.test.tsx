@@ -89,20 +89,24 @@ it("uses step2 frame and withholds unqualified pure-user feed from old receipts"
   expect(view.container.querySelector(".onboarding-r6")).toBeTruthy();
   expect(
     screen
-      .getByRole("navigation", { name: "首次设置进度" })
+      .getByRole("navigation", { name: "First-time setup progress" })
       .querySelector('[aria-current="step"]')?.textContent,
-  ).toContain("连接应用");
+  ).toContain("Connect apps");
   expect(
-    await screen.findByText("后台将持续为你导入，可以放心进入下一步"),
+    await screen.findByText(
+      "The background keeps importing; you can safely move to the next step",
+    ),
   ).toBeTruthy();
-  expect(screen.queryByText("持续导入中...")).toBeNull();
+  expect(screen.queryByText("Import continuing...")).toBeNull();
   expect(api.receipt).not.toHaveBeenCalled();
-  expect(screen.getByText("已保存 7 条消息")).toBeTruthy();
+  expect(screen.getByText("Saved 7 messages")).toBeTruthy();
   expect(
-    screen.getByRole("heading", { name: "正在导入你的会话" }),
+    screen.getByRole("heading", { name: "Importing your conversations" }),
   ).toBeTruthy();
   expect(
-    screen.getByText("后台将持续为你导入，可以放心进入下一步"),
+    screen.getByText(
+      "The background keeps importing; you can safely move to the next step",
+    ),
   ).toBeTruthy();
 });
 
@@ -117,8 +121,10 @@ it("does not render saved excerpts or a transcript while import is still running
       onContinue={vi.fn()}
     />,
   );
-  expect(screen.queryByText("还没导完也能看到的问题")).toBeNull();
-  expect(screen.queryByRole("button", { name: "查看原文" })).toBeNull();
+  expect(
+    screen.queryByText("Questions you can ask before the import finishes"),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "View source text" })).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(api.receipt).not.toHaveBeenCalled();
   expect(api.conversation).not.toHaveBeenCalled();
@@ -143,13 +149,13 @@ it("pauses only accepted history jobs, retains partial receipts and never touche
       onContinue={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "暂停导入" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pause import" }));
   await waitFor(() => expect(change).toHaveBeenCalledTimes(2));
   expect(change.mock.calls).toEqual([
     ["a", "pause"],
     ["b", "pause"],
   ]);
-  expect(await screen.findByText(/已确认 1 项，1 项未确认/)).toBeTruthy();
+  expect(await screen.findByText(/Confirmed 1, 1 unconfirmed/)).toBeTruthy();
   expect(screen.queryByText(/secret/)).toBeNull();
 });
 
@@ -169,11 +175,11 @@ it("stops remaining batch commands after cancellation without pretending the in-
       onContinue={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "暂停导入" }));
-  fireEvent.click(screen.getByRole("button", { name: "停止后续操作" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pause import" }));
+  fireEvent.click(screen.getByRole("button", { name: "Stop later actions" }));
   await act(async () => resolve({ ...job("a"), status: "paused" }));
   expect(change).toHaveBeenCalledOnce();
-  expect(screen.getByText(/已停止后续操作/)).toBeTruthy();
+  expect(screen.getByText(/Later actions stopped/)).toBeTruthy();
 });
 
 it("does not offer resume for a cancelled job and still permits safe pause when stale", () => {
@@ -187,7 +193,7 @@ it("does not offer resume for a cancelled job and still permits safe pause when 
       onContinue={vi.fn()}
     />,
   );
-  expect(screen.queryByRole("button", { name: "继续导入" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Resume import" })).toBeNull();
   view.rerender(
     <FirstImportReview
       sourceIds={["a"]}
@@ -199,7 +205,7 @@ it("does not offer resume for a cancelled job and still permits safe pause when 
     />,
   );
   expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "暂停导入" })
+    screen.getByRole<HTMLButtonElement>("button", { name: "Pause import" })
       .disabled,
   ).toBe(false);
   expect(change).not.toHaveBeenCalled();
@@ -216,7 +222,7 @@ it("does not present unwired connection choices as actionable", () => {
   );
   for (const input of screen.getAllByRole<HTMLInputElement>("checkbox"))
     expect(input.disabled).toBe(true);
-  expect(screen.getByText(/暂时无法连接应用/)).toBeTruthy();
+  expect(screen.getByText(/Apps cannot be connected right now/)).toBeTruthy();
 });
 
 it("emits controlled connection drafts only and passes continuation without completing onboarding", () => {
@@ -234,15 +240,20 @@ it("emits controlled connection drafts only and passes continuation without comp
       onContinue={next}
     />,
   );
-  fireEvent.click(screen.getByRole("checkbox", { name: "一键接入应用" }));
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Connect apps in one click" }),
+  );
   expect(update).toHaveBeenCalledWith({
     hostSourceIds: ["a"],
   });
   expect(
-    screen.getByRole<HTMLInputElement>("checkbox", { name: "一键接入应用" })
-      .checked,
+    screen.getByRole<HTMLInputElement>("checkbox", {
+      name: "Connect apps in one click",
+    }).checked,
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "配置模型，沉淀记忆" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Configure a model to build memory" }),
+  );
   expect(next).toHaveBeenCalledWith("settings");
   expect(api.conversation).not.toHaveBeenCalled();
 });
@@ -260,7 +271,9 @@ it("keeps profile-based Harness and paused OpenClaw out of the atomic one-click 
       onContinue={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole("checkbox", { name: "一键接入应用" }));
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Connect apps in one click" }),
+  );
   expect(update).toHaveBeenCalledWith({
     hostSourceIds: ["a"],
   });
@@ -277,17 +290,19 @@ it("shows a disabled host option for a noncanonical test instance", () => {
       onConnectionDraftChange={update}
       connectionExecutionAvailable
       hostConnectionAvailable={false}
-      connectionNote="测试实例不接入应用"
+      connectionNote="Test instance does not connect apps"
       onContinue={vi.fn()}
     />,
   );
 
   const host = screen.getByRole<HTMLInputElement>("checkbox", {
-    name: "测试实例不接入应用",
+    name: "Test instance does not connect apps",
   });
   expect(host.disabled).toBe(true);
   expect(host.checked).toBe(false);
-  expect(screen.getAllByText("测试实例不接入应用").length).toBeGreaterThan(0);
+  expect(
+    screen.getAllByText("Test instance does not connect apps").length,
+  ).toBeGreaterThan(0);
 });
 
 it("does not adopt later history jobs into the initially accepted batch", async () => {
@@ -311,7 +326,7 @@ it("does not adopt later history jobs into the initially accepted batch", async 
       ]}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "暂停导入" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pause import" }));
   await waitFor(() => expect(change).toHaveBeenCalledOnce());
   expect(change).toHaveBeenCalledWith("a", "pause");
 });
@@ -332,7 +347,7 @@ it("stops the remainder when source authority changes during a pending command",
   const view = render(
     <FirstImportReview {...props} sources={[source("a"), source("b")]} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "暂停导入" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pause import" }));
   view.rerender(
     <FirstImportReview
       {...props}
@@ -341,7 +356,7 @@ it("stops the remainder when source authority changes during a pending command",
   );
   await act(async () => resolve({ ...job("a"), status: "paused" }));
   expect(change).toHaveBeenCalledOnce();
-  expect(screen.getByText(/已确认 0 项，1 项未确认/)).toBeTruthy();
+  expect(screen.getByText(/Confirmed 0, 1 unconfirmed/)).toBeTruthy();
 });
 
 it("does not accept a command receipt for another task", async () => {
@@ -357,9 +372,9 @@ it("does not accept a command receipt for another task", async () => {
       onContinue={vi.fn()}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "暂停导入" }));
-  expect(await screen.findByText(/已确认 0 项，1 项未确认/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "暂停导入" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Pause import" }));
+  expect(await screen.findByText(/Confirmed 0, 1 unconfirmed/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Pause import" })).toBeTruthy();
 });
 
 it("uses user-facing connection confirmation copy without implementation narration", () => {
@@ -374,17 +389,25 @@ it("uses user-facing connection confirmation copy without implementation narrati
       onContinue={vi.fn()}
     />,
   );
-  expect(screen.getByRole("complementary", { name: "连接应用" })).toBeTruthy();
+  expect(
+    screen.getByRole("complementary", { name: "Connect apps" }),
+  ).toBeTruthy();
   expect(
     screen.getByText(
-      "点击底部按钮后，后台分别接入各应用；某个应用失败不影响其他应用。",
+      "After you press the bottom button, the background connects each app separately; one app failing does not affect the others.",
     ),
   ).toBeTruthy();
   expect(
-    screen.queryByText(/选择草稿|按各应用回执|本页任务控制尚未接通/),
+    screen.queryByText(
+      /Select draft|Per-app receipts|This page task controls are not connected/,
+    ),
   ).toBeNull();
-  expect(screen.getByText(/不会自动开放应用读取权限/)).toBeTruthy();
-  expect(screen.getByText(/配置模型后，才会开始生成记忆/)).toBeTruthy();
+  expect(screen.getByText(/does not grant app read access/)).toBeTruthy();
+  expect(
+    screen.getByText(
+      /Memory generation starts only after a model is configured/,
+    ),
+  ).toBeTruthy();
 });
 
 it.each(["paused", "failed", "cancelled", "interrupted"] as const)(
@@ -398,12 +421,18 @@ it.each(["paused", "failed", "cancelled", "interrupted"] as const)(
         onContinue={vi.fn()}
       />,
     );
-    expect(screen.queryByText("导入在后台继续，无需等待。")).toBeNull();
     expect(
-      screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+      screen.queryByText(
+        "The import continues in the background. No need to wait.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByRole("heading", {
+        name: "Your conversations are coming in; memory starts here",
+      }),
     ).toBeTruthy();
     expect(
-      screen.getByText(/已保存的对话还在/, {
+      screen.getByText(/Saved conversations are still here/, {
         selector: ".first-import-r6-footer-note p",
       }),
     ).toBeTruthy();
@@ -426,9 +455,9 @@ it("does not turn a failed import into a claim that there was nothing to save", 
       onContinue={vi.fn()}
     />,
   );
-  expect(screen.queryByText("没有可保存的历史对话")).toBeNull();
-  expect(screen.getByText(/导入遇到问题/)).toBeTruthy();
-  expect(screen.getByText(/1 条读取异常/)).toBeTruthy();
+  expect(screen.queryByText("No history conversations to save")).toBeNull();
+  expect(screen.getByText(/Import.*problem/)).toBeTruthy();
+  expect(screen.getByText(/read error/)).toBeTruthy();
 });
 
 it.each(["stale", "revoked", "missing"])(
@@ -444,10 +473,21 @@ it.each(["stale", "revoked", "missing"])(
       />,
     );
     if (kind === "missing")
-      expect(screen.getByText("导入在后台继续，无需等待。")).toBeTruthy();
-    else expect(screen.queryByText("导入在后台继续，无需等待。")).toBeNull();
+      expect(
+        screen.getByText(
+          "The import continues in the background. No need to wait.",
+        ),
+      ).toBeTruthy();
+    else
+      expect(
+        screen.queryByText(
+          "The import continues in the background. No need to wait.",
+        ),
+      ).toBeNull();
     expect(
-      screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+      screen.getByRole("heading", {
+        name: "Your conversations are coming in; memory starts here",
+      }),
     ).toBeTruthy();
     expect(api.conversation).not.toHaveBeenCalled();
   },
@@ -472,9 +512,9 @@ it("does not open a transcript when the saved count changes", () => {
       onContinue={vi.fn()}
     />,
   );
-  expect(screen.getByText("已保存 9 条消息")).toBeTruthy();
+  expect(screen.getByText("Saved 9 messages")).toBeTruthy();
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.queryByRole("button", { name: "查看原文" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "View source text" })).toBeNull();
   expect(api.receipt).not.toHaveBeenCalled();
   expect(api.conversation).not.toHaveBeenCalled();
 });

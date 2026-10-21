@@ -1,75 +1,75 @@
 # SourceAdapter V1
 
-状态：9/2 冻结；9/3 仅做向后兼容补强。
+Status: frozen on 9/2; 9/3 only allows backward-compatible hardening.
 
-## 输入与输出
+## Inputs and outputs
 
-每个来源实现：
+Every source implements:
 
-- `descriptor`：来源 ID、展示名、存储形态和能力声明。
-- `detect()`：只判断用户已授权根内是否有可读来源；不能扫描真实 Home
-  来“猜”用户装了什么。
-- `scan(options)`：异步流式输出 `ScannedEvidence | ScanFailure |
-  ScanSkip | ScanProgressEvent`。
+- `descriptor`: source ID, display name, storage shape, and capability claims.
+- `detect()`: only decides whether a readable source exists inside a root the user authorized;
+  it must never scan the real Home directory to "guess" what the user installed.
+- `scan(options)`: asynchronously streams out `ScannedEvidence | ScanFailure |
+  ScanSkip | ScanProgressEvent`.
 
-`ScanOptions.cursors` 是同一用户、同一来源的多文件游标集合。每个 cursor
-包含 opaque `file_key`、文件 identity、已提交 checkpoint、观察到的大小和
-mtime。Adapter 只能在对应 Evidence 已提交，或该记录可安全跳过后推进该文件
-cursor。旧文件后续追加也必须能被再次发现，不能只有一个“最后文件”游标。
+`ScanOptions.cursors` is the multi-file cursor set for one user and one source. Each cursor holds
+an opaque `file_key`, the file identity, the committed checkpoint, the observed size, and the
+mtime. The adapter may advance a file's cursor only after the matching Evidence is committed, or once
+that record can be safely skipped. Later appends to older files must stay rediscoverable, so a single "last file" cursor is not enough.
 
-用户授权是读取前置条件。环境变量只用于发现候选根，不能代替授权。每个候选
-文件必须在打开时再次验证 realpath 归属、symlink、普通文件类型和大小预算。
+User authorization is a precondition for reading. Environment variables only discover candidate roots
+and never substitute for authorization. Every candidate file must be revalidated when opened for realpath ownership, symlinks, regular file type, and the size budget.
 
 ## Evidence
 
-必填：
+Required:
 
-- 用户、来源、会话、原始 role、真正作者、原话、至少一个 origin。
-- `message_id` 有则使用；没有稳定消息 ID 时必须提供来源内确定性的
-  `source_ordinal`。ordinal 只用于区分同一会话内位置，不用于跨通道关联。
-- Hook / 插件不知道 `message_id` 但有同一稳定标识时写入 `correlation_id`；
-  后续文件扫描提供相同 `message_id` 后合并为同一 Evidence。
-- Adapter 必须确认 `correlation_id` 与来源 `message_id` 属于同一命名空间；
-  不能把局部序号或自行生成的 UUID 填入该字段。
+- user, source, session, raw role, true author, verbatim wording, and at least one origin.
+- Use `message_id` when it exists; without a stable message ID the source must provide a deterministic
+  `source_ordinal`. The ordinal only distinguishes position within one session, never cross-channel correlation.
+- A hook / plugin that does not know `message_id` but holds the same stable identifier writes `correlation_id`;
+  a later file scan supplying the same `message_id` merges them into one Evidence.
+- The adapter must confirm that `correlation_id` and the source `message_id` share one namespace; a local
+  sequence number or a self-generated UUID must never be written into this field.
 
-约束：
+Constraints:
 
-- 原始 role 不能直接推导真正作者。
-- tool call 参数、tool result 正文、reasoning、文件内容和命令输出默认不进入
-  Evidence；若只为维持对话结构需要，可输出不含内容的最小元数据或 `ScanSkip`。
-- 缺失来源时间保持 `null`，不能用导入时间冒充。
-- 同一来源消息经文件、Hook 或插件提供相同 `message_id` / `correlation_id`
-  时合并 origins；没有可靠相关键时不凭相同文本强行合并。
-- 跨来源相同文本不能合并。
-- 每个 origin 独立保存 `raw_meta` 与 `source_version`，不能用后来的 Hook
-  元数据覆盖文件定位信息；单个 origin 的 `raw_meta` 最多 64 KiB。
-- 当前只接受文本 Evidence，不声明附件、图片或音频支持。
+- A raw role must never be used to derive the true author directly.
+- Tool call arguments, tool result bodies, reasoning, file contents, and command output stay out of
+  Evidence by default; when only the conversation structure needs them, emit minimal metadata without content or a `ScanSkip`.
+- A missing source timestamp stays `null`; import time must not impersonate it.
+- When the same source message arrives via file, hook, or plugin with the same `message_id` /
+  `correlation_id`, merge the origins; without a reliable correlation key, never merge just because the text matches.
+- Identical text across sources is never merged.
+- Each origin keeps its own `raw_meta` and `source_version`; later hook metadata must never overwrite
+  the file locator information. A single origin's `raw_meta` is capped at 64 KiB.
+- Only text Evidence is accepted today; no attachment, image, or audio support is claimed.
 
-## 来源能力
+## Source capabilities
 
 - `can_append`
 - `can_observe_edits`
 - `can_observe_deletes`
 - `can_reconcile_complete_set`
 
-只有 `can_observe_deletes` 的明确删除事件，或
-`can_reconcile_complete_set` 的健康完整对账，才能驱动源删除。
-来源暂时不可读、文件锁定或 schema 未知不能解释为删除。
+Only an explicit delete event from `can_observe_deletes`, or a healthy complete reconciliation from
+`can_reconcile_complete_set`, may drive source deletion.
+A source being temporarily unreadable, a locked file, or an unknown schema is never read as a deletion.
 
-## 事件、错误与恢复
+## Events, errors, and recovery
 
-- `ScannedEvidence`：产生一条文本 Evidence。
-- `ScanSkip`：合法排除，如 tool content、reasoning、无文本或预算限制；不计错误。
-- `ScanFailure`：单条损坏或来源忙；Runner 记录后继续或稍后恢复。
-- `ScanProgressEvent`：只上报真实 phase 与发现目标增量；总量未知时不得估算百分比。
-- skip / failure 只允许枚举机器码。持久化错误不得包含正文、绝对路径或自由文本异常。
-- conversation 错误标识进入任务库前必须不可逆哈希。
-- Adapter 整体异常使 job 进入 `failed`；正常 Core 退出使运行任务进入
-  `interrupted`，不是失败。
-- `paused`、`interrupted` 或 `failed` job 从多文件 cursor set 恢复。
-- Evidence 必须先原子提交，再推进对应 cursor；若中间崩溃，重跑只能 merge，
-  不能产生新 Evidence 或正文 revision。
+- `ScannedEvidence`: produces one text Evidence.
+- `ScanSkip`: a legitimate exclusion, such as tool content, reasoning, no text, or a budget limit; not counted as an error.
+- `ScanFailure`: a single corrupt record or a busy source; the runner records it and continues or resumes later.
+- `ScanProgressEvent`: reports only the real phase and the increment of discovered targets; when the total is unknown, no percentage may be estimated.
+- skip / failure allow enumerated machine codes only. Persisted errors must not contain body text, absolute paths, or free-text exceptions.
+- Conversation error identifiers must be irreversibly hashed before entering the task database.
+- A whole-adapter exception puts the job in `failed`; a normal Core exit puts running tasks in
+  `interrupted`, which is not a failure.
+- A `paused`, `interrupted`, or `failed` job resumes from the multi-file cursor set.
+- Evidence must be committed atomically before the matching cursor advances; if the process crashes in
+  between, a rerun may only merge and must not create new Evidence or body revisions.
 
-## 版本策略
+## Version policy
 
-V1 字段只做向后兼容增加；删除、改名和改变既有含义必须新建合同版本。
+V1 fields only gain backward-compatible additions; removals, renames, and changes to existing meaning require a new contract version.

@@ -237,7 +237,7 @@ def test_formal_wiki_receives_all_governed_memories_before_compaction():
             if "catalog" in data:
                 self.seen += len(data["catalog"])
                 assert len(data["catalog"]) <= 12
-                assert "最多12条" not in system
+                assert "at most 12 entries" not in system
                 return outline()
             return {"reviews": [{"id": "r0", "verdict": "supported"}]}
 

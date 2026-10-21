@@ -1,7 +1,10 @@
-"""升级前的备份是 Core 启动的第一步：只读地看、照原样备份，之后才有任何东西改库。
+"""The pre-upgrade backup is the first step of Core startup: the library is only looked at, \
+copied as it is, and only then does anything change it.
 
-备份不再由「恰好第一个打开」的治理 store 顺带做，所以换了哪个 store 先开，
-备份都得是这次启动之前的库；治理 store 自己也不肯改写一份没人备份过的旧库。
+The backup is no longer done in passing by whichever governance store happens to open first, so \
+whichever store opens first,
+the backup must be the library from before this start; the governance store itself also refuses \
+to rewrite an old library nobody backed up.
 """
 
 import asyncio
@@ -24,8 +27,9 @@ from tests.test_memory_no_candidate import (
     _tables,
 )
 
-#: 库文件头里描述「这是一份什么样的库」的字段（SQLite 文件格式第 1.3 节），
-#: 不含每次写入都会变的修改计数。
+#: The fields in the library file header that describe what kind of library this is (section 1.3 of
+# the SQLite file format),
+#: without the change counter that every write moves.
 HEADER_FIELDS = {
     "page_size": (16, 18),
     "write_version": (18, 19),
@@ -44,7 +48,8 @@ def _header(database: Path) -> dict[str, bytes]:
 
 
 def _stamp(database: Path) -> None:
-    """给库打上 user_version / application_id，备份若是重建的而非照抄，这两个就会丢。"""
+    """Stamp user_version / application_id on the library; a backup that is rebuilt rather than \
+copied loses both."""
     import sqlite3
 
     connection = sqlite3.connect(database)
@@ -71,7 +76,8 @@ def test_the_backup_is_the_library_file_as_this_start_found_it(tmp_path, journal
     database, _evidence = _legacy_library(data_dir, journal=journal)
     _stamp(database)
     header, schema, before = _header(database), _schema(database), _tables(database)
-    # 正向前提：两种日志模式在文件头里确实写得不一样，比对它才有意义。
+    # Positive premise: the two journal modes really are written differently in the header, so
+    # comparing it means something.
     assert header["write_version"] == (b"\x02" if journal == "wal" else b"\x01")
 
     _start(tmp_path)
@@ -80,7 +86,7 @@ def test_the_backup_is_the_library_file_as_this_start_found_it(tmp_path, journal
     assert _header(backup) == header
     assert _schema(backup) == schema
     assert _tables(backup) == before
-    assert _header(database)["write_version"] == b"\x02", "启动之后才切到 WAL"
+    assert _header(database)["write_version"] == b"\x02", "WAL is only switched on after startup"
 
 
 def test_preparing_a_library_changes_nothing_in_it(tmp_path) -> None:
@@ -130,10 +136,11 @@ def test_a_backup_of_another_library_does_not_let_this_one_be_rewritten(tmp_path
     here, _ = _legacy_library(tmp_path / "here", journal="delete")
     other, _ = _legacy_library(tmp_path / "other", journal="delete")
     content = here.read_bytes()
-    # 两份都在迁移前签出：迁移后的库不再需要备份，签出的证明不带备份，就测不到路径了。
+    # Both are checked out before migration: a migrated library needs no backup, so a proof without
+    # a backup could not reach the path.
     for_other, also_for_other = prepare_library(other), prepare_library(other)
     assert also_for_other.backup is not None
-    # 正向前提：这样签出的证明用在它备份过的那份库上是放行的。
+    # Positive premise: a proof checked out this way is accepted for the very library it backed up.
     MemoryGovernanceStore(other, prepared=for_other)
 
     with pytest.raises(LibraryUpgradeError) as refused:
@@ -156,7 +163,8 @@ def _candidate_status(database: Path) -> str:
 
 
 def test_a_proof_nobody_issued_does_not_let_a_library_be_rewritten(tmp_path) -> None:
-    """证明只能由 prepare_library 签出：自己拼一个，哪怕指向一份真能用的备份，也不放行。"""
+    """Only prepare_library may issue a proof: assembling one yourself is not accepted, not even \
+when it points at a backup that would work."""
     import shutil
 
     from one_memory.library_upgrade import LibraryUpgradeError, PreparedLibrary
@@ -166,7 +174,7 @@ def test_a_proof_nobody_issued_does_not_let_a_library_be_rewritten(tmp_path) -> 
     real_copy = tmp_path / "copy.sqlite3"
     shutil.copyfile(database, real_copy)
 
-    for backup in (tmp_path / "不存在.sqlite3", real_copy):
+    for backup in (tmp_path / "\u4e0d\u5b58\u5728.sqlite3", real_copy):
         with pytest.raises(LibraryUpgradeError) as refused:
             MemoryGovernanceStore(database, prepared=PreparedLibrary(database.resolve(), backup))
         assert refused.value.code == "library_upgrade_not_prepared"
@@ -181,7 +189,7 @@ def test_a_proof_lets_one_store_through_and_no_second(tmp_path) -> None:
     database, _evidence = _legacy_library(tmp_path, journal="delete")
     content = database.read_bytes()
     prepared = prepare_library(database)
-    # 正向前提：第一次用，照常迁移。
+    # Positive premise: first use, migrated as usual.
     MemoryGovernanceStore(database, prepared=prepared)
     assert _candidate_status(database) == "confirmed"
     close_main_databases()
@@ -220,18 +228,19 @@ def _delete(backup: Path) -> None:
 
 
 def _empty(backup: Path) -> None:
-    # 强杀在备份写到一半时留下的，就是这样一个空占位。
+    # A hard kill half way through the backup leaves exactly this kind of empty placeholder.
     backup.write_bytes(b"")
 
 
 def _garble(backup: Path) -> None:
-    # 文件头完好，只看文件头的检查认不出来。
+    # The file header is intact, so a check that only reads the header cannot notice.
     head = backup.read_bytes()
     backup.write_bytes(head[:100] + b"\xa5" * (len(head) - 100))
 
 
 def _replace(backup: Path) -> None:
-    # 换成一份完好但无关的库：文件头、quick_check 都过，却还原不了这份库。
+    # Swapped for an intact but unrelated library: header and quick_check both pass, yet it cannot
+    # restore this library.
     import sqlite3
 
     backup.unlink()
@@ -267,7 +276,8 @@ def test_a_backup_that_is_gone_by_the_time_it_is_needed_stops_the_upgrade(tmp_pa
 
 @pytest.mark.parametrize("spoil", [_empty, _garble], ids=["empty", "garbled"])
 def test_a_backup_that_was_never_sound_stops_the_upgrade(tmp_path, monkeypatch, spoil) -> None:
-    """写出来就是坏的：签发时记下的摘要就是坏文件的，只有复验文件本身能认出来。"""
+    """Broken as it is written: the digest recorded at issue time is the broken file's, so only \
+re-verifying the file notices."""
     from one_memory.database_access import MainDatabase
     from one_memory.library_upgrade import LibraryUpgradeError, prepare_library
 
@@ -291,7 +301,8 @@ def test_a_backup_that_was_never_sound_stops_the_upgrade(tmp_path, monkeypatch, 
 
 
 def test_the_backup_does_not_depend_on_which_store_opens_first(tmp_path, monkeypatch) -> None:
-    """Core 里别的 store 换到治理 store 前面打开，备份仍然是启动之前的库。"""
+    """Another Core store moved ahead of the governance store, and the backup is still the \
+library from before startup."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     database, _evidence = _legacy_library(data_dir)
@@ -303,7 +314,8 @@ def test_the_backup_does_not_depend_on_which_store_opens_first(tmp_path, monkeyp
         return governance(path, **kwargs)
 
     monkeypatch.setattr(api, "MemoryGovernanceStore", evidence_first)
-    # 正向前提：EvidenceStore 真的会往旧库里加东西，否则调换顺序什么也证明不了。
+    # Positive premise: EvidenceStore really does add to the old library, otherwise swapping the
+    # order proves nothing.
     probe = tmp_path / "probe"
     probe.mkdir()
     probe_database, _ = _legacy_library(probe)
@@ -319,7 +331,8 @@ def test_the_backup_does_not_depend_on_which_store_opens_first(tmp_path, monkeyp
 
 
 def test_a_backup_does_not_need_hard_links(tmp_path, monkeypatch) -> None:
-    """exFAT、部分网络盘不支持硬链接；实测 exFAT 上 os.link 报 ENOTSUP，旧库起不来。"""
+    """exFAT and some network drives do not support hard links; measured on exFAT, os.link \
+reports ENOTSUP and the old library cannot start."""
     from one_memory.library_upgrade import prepare_library
 
     database, _evidence = _legacy_library(tmp_path)

@@ -84,7 +84,7 @@ def test_answering_reads_credentials_off_loop(tmp_path, monkeypatch, stream):
             return _original(*args, **kwargs)
 
         monkeypatch.setattr(profiles, method, checked)
-    body = '{"citations":["memory-real-data"],"answer":"使用真实数据"}'
+    body = '{"citations":["memory-real-data"],"answer":"Use real data"}'
     transport = (
         _ndjson_stream((body,))
         if stream
@@ -98,10 +98,10 @@ def test_answering_reads_credentials_off_loop(tmp_path, monkeypatch, stream):
 
     async def scenario():
         if stream:
-            events = [item async for item in answerer.answer_stream("看板真实数据")]
+            events = [item async for item in answerer.answer_stream("dashboard real data")]
             assert events[-1]["mode"] == "generated"
         else:
-            assert (await answerer.answer("看板真实数据")).mode == "generated"
+            assert (await answerer.answer("dashboard real data")).mode == "generated"
 
     asyncio.run(scenario())
 

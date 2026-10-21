@@ -394,7 +394,7 @@ def test_http_200_with_permission_error_body_is_unauthorized(tmp_path) -> None:
 
 
 def test_http_200_with_quota_error_body_is_rate_limited(tmp_path) -> None:
-    """额度耗尽必须与鉴权失败区分：两者修复动作完全不同。"""
+    """Quota exhaustion must be told apart from an auth failure: the fixes are unrelated."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -429,7 +429,7 @@ def test_listed_model_with_http_402_generation_is_not_available(tmp_path) -> Non
 
 
 def test_healthy_body_without_error_field_still_passes(tmp_path) -> None:
-    """回归保护：正常响应不得被新增的 body 检查拦下。"""
+    """Regression guard: a normal response must not be stopped by the new body checks."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
@@ -471,7 +471,12 @@ def test_probe_survives_a_gateway_without_a_model_listing_endpoint(tmp_path) -> 
         if request.url.path.endswith("/models"):
             return httpx.Response(
                 400,
-                json={"error": {"message": "请求中未解析到模型信息", "code": "2001"}},
+                json={
+                    "error": {
+                        "message": "No model information was parsed from the request",
+                        "code": "2001",
+                    }
+                },
             )
         if request.url.path == "/api/embed":
             return httpx.Response(200, json={"embeddings": [[0.1] * 768]})
@@ -486,14 +491,14 @@ def test_probe_survives_a_gateway_without_a_model_listing_endpoint(tmp_path) -> 
     assert result.capabilities.endpoint_reachable is True
     assert result.capabilities.structured_output is True
     assert result.capabilities.embedding_available is True
-    # 列不出模型时，模型可用性由生成调用背书，不能直接判死
+    # When models cannot be listed, a generation call vouches for availability; do not judge dead
     assert result.capabilities.model_available is True
 
 
 def test_a_gateway_without_model_listing_still_fails_when_generation_fails(tmp_path) -> None:
-    """正向对照：列不出模型 + 生成也失败时，绝不能报成可用。
+    """Positive control: no model list plus a failing generation call must never read available.
 
-    没有这条，上一条测试可以被「无条件把 model_available 设成 True」骗过。
+    Without this, the previous test could be fooled by setting model_available to True always.
     """
     store = ModelProfileStore(tmp_path / "one-memory.sqlite3")
     secrets = InMemorySecretStore()
@@ -501,7 +506,9 @@ def test_a_gateway_without_model_listing_still_fails_when_generation_fails(tmp_p
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/models"):
-            return httpx.Response(400, json={"error": {"message": "请求中未解析到模型信息"}})
+            return httpx.Response(
+                400, json={"error": {"message": "No model information was parsed from the request"}}
+            )
         if request.url.path == "/api/embed":
             return httpx.Response(200, json={"embeddings": [[0.1] * 768]})
         return httpx.Response(200, json={"choices": [{"message": {"content": "not json"}}]})
@@ -541,9 +548,9 @@ def test_probe_reads_the_body_before_calling_a_401_an_auth_failure(tmp_path) -> 
 
 
 def test_a_real_401_is_still_reported_as_an_auth_failure(tmp_path) -> None:
-    """正向对照：真的鉴权失败仍须报 UNAUTHORIZED。
+    """Positive control: a genuine auth failure must still report UNAUTHORIZED.
 
-    没有这条，上一条可以被「把所有 401 都改判成 MODEL_NOT_FOUND」骗过。
+    Without this, the previous test could be fooled by judging every 401 as MODEL_NOT_FOUND.
     """
     store = ModelProfileStore(tmp_path / "one-memory.sqlite3")
     secrets = InMemorySecretStore()
@@ -569,7 +576,9 @@ def test_a_gateway_that_refuses_response_format_is_not_a_dead_model(tmp_path) ->
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/models"):
-            return httpx.Response(400, json={"error": {"message": "请求中未解析到模型信息"}})
+            return httpx.Response(
+                400, json={"error": {"message": "No model information was parsed from the request"}}
+            )
         if request.url.path == "/api/embed":
             return httpx.Response(200, json={"embeddings": [[0.1] * 768]})
         asked_for_schema = b"response_format" in request.content
@@ -593,18 +602,18 @@ def test_a_gateway_that_refuses_response_format_is_not_a_dead_model(tmp_path) ->
     prober = ModelProber(store=store, secrets=secrets, transport=httpx.MockTransport(handler))
     result = asyncio.run(prober.probe(profile.profile_id))
 
-    # 先按能约束 schema 的方式问，被拒了才退一步 —— 顺序反了就永远不会去要 schema。
+    # Ask in the schema-constrained way first and step back only once refused; reversed, never ask.
     assert attempts == [True, False]
-    # 能生成，所以卡可用；约束不了 schema，所以这项如实报 False。
+    # It can generate, so the card is available; it cannot constrain schema, so that says False.
     assert result.capabilities.model_available is True
     assert result.capabilities.structured_output is False
     assert result.capabilities.embedding_available is True
 
 
 def test_a_gateway_that_refuses_everything_is_still_a_dead_model(tmp_path) -> None:
-    """正向对照：退一步之后还是不出 JSON，就得照旧判死。
+    """Positive control: stepping back and still getting no JSON has to be judged dead as before.
 
-    没有这条，上一条可以被「凡是 response_format 被拒就无条件放行」骗过。
+    Without this, the previous test could be fooled by passing anything response_format refuses.
     """
     store = ModelProfileStore(tmp_path / "one-memory.sqlite3")
     secrets = InMemorySecretStore()
@@ -612,7 +621,9 @@ def test_a_gateway_that_refuses_everything_is_still_a_dead_model(tmp_path) -> No
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/models"):
-            return httpx.Response(400, json={"error": {"message": "请求中未解析到模型信息"}})
+            return httpx.Response(
+                400, json={"error": {"message": "No model information was parsed from the request"}}
+            )
         if request.url.path == "/api/embed":
             return httpx.Response(200, json={"embeddings": [[0.1] * 768]})
         if b"response_format" in request.content:
@@ -625,7 +636,7 @@ def test_a_gateway_that_refuses_everything_is_still_a_dead_model(tmp_path) -> No
                     }
                 },
             )
-        return httpx.Response(200, json={"choices": [{"message": {"content": "还是不是 JSON"}}]})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "still not JSON"}}]})
 
     prober = ModelProber(store=store, secrets=secrets, transport=httpx.MockTransport(handler))
     result = asyncio.run(prober.probe(profile.profile_id))
@@ -635,12 +646,12 @@ def test_a_gateway_that_refuses_everything_is_still_a_dead_model(tmp_path) -> No
 
 
 def test_only_a_schema_refusal_gets_a_second_try(tmp_path) -> None:
-    """失败原因不是「网关不收这个参数」时，不许重试。
+    """Retrying is not allowed when the failure is not "the gateway will not take this parameter".
 
-    第一版这条测试是用 404 写的，而变异测试证明它什么都没守：404 退一步还是
-    404，把条件放宽成「任何失败都重试」照样全绿。真正的风险是重试会把间歇性
-    故障洗白 —— 这里第一发 500、第二发 200，无条件重试就会把一台正在抽风的
-    网关报成可用，而探针存在的意义正是如实报告。
+    The first version of this test used 404, and mutation testing proved it guarded nothing: 404
+    steps back into 404, and widening the rule to "retry on any failure" still passed. The real
+    risk is that retrying launders an intermittent fault -- first a 500 then a 200, and an
+    unconditional retry reports a flailing gateway as available while the probe exists to report.
     """
     store = ModelProfileStore(tmp_path / "one-memory.sqlite3")
     secrets = InMemorySecretStore()
@@ -650,7 +661,9 @@ def test_only_a_schema_refusal_gets_a_second_try(tmp_path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal generation_calls
         if request.url.path.endswith("/models"):
-            return httpx.Response(400, json={"error": {"message": "请求中未解析到模型信息"}})
+            return httpx.Response(
+                400, json={"error": {"message": "No model information was parsed from the request"}}
+            )
         if request.url.path == "/api/embed":
             return httpx.Response(200, json={"embeddings": [[0.1] * 768]})
         generation_calls += 1

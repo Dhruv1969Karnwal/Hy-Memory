@@ -16,6 +16,7 @@ import {
   validateProcessing,
   validateSources,
 } from "./core-responses.js";
+import { counted, countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 type ReadState =
@@ -240,31 +241,31 @@ export async function readProgress(
 
 export function renderSourcesText(document: SourcesDocument): string {
   if (document.state !== "ok") {
-    return "暂时无法读取应用连接状态，请确认后台正在运行后重试。\n";
+    return "App connection status could not be read right now. Confirm the backend is running and try again.\n";
   }
-  const lines = [`已发现 ${document.sources.length} 个应用：`];
+  const lines = [`Found ${countLabel(document.sources.length, "app")}:`];
   for (const source of document.sources) {
     lines.push(
-      `- ${source.display_name}：${source.authorized ? "已连接" : source.available ? "可连接" : "未发现"}；处理${source.sync_enabled === true ? "已开启" : "已冻结"}`,
-      `  已导入 ${source.imported_conversations} 个会话 · ${source.imported_messages} 条消息`,
+      `- ${source.display_name}: ${source.authorized ? "Connected" : source.available ? "Can connect" : "Not found"}; processing ${source.sync_enabled === true ? "on" : "frozen"}`,
+      `  Imported ${countLabel(counted(source.imported_conversations), "conversation")} - ${countLabel(counted(source.imported_messages), "message")}`,
     );
   }
-  if (document.sources.length === 0) lines.push("（没有来源）");
+  if (document.sources.length === 0) lines.push("(no sources)");
   lines.push("");
   return lines.join("\n");
 }
 
 export function renderSyncText(document: SyncDocument): string {
   if (!["ok", "partial"].includes(document.state)) {
-    return `同步状态读取未完成：${document.state}（${document.code}）\n`;
+    return `Sync status read did not complete: ${document.state} (${document.code})\n`;
   }
-  const lines = [`同步状态：${document.state}`];
+  const lines = [`Sync status: ${document.state}`];
   for (const source of document.sources) {
     lines.push(
-      `- ${source.source_id}  ${source.state}  模式=${source.mode}  最近错误=${source.last_error_code ?? "无"}`,
+      `- ${source.source_id}  ${source.state}  mode=${source.mode}  last error=${source.last_error_code ?? "none"}`,
     );
   }
-  if (document.sources.length === 0) lines.push("（没有同步来源）");
+  if (document.sources.length === 0) lines.push("(no sync sources)");
   lines.push("");
   return lines.join("\n");
 }
@@ -272,28 +273,28 @@ export function renderSyncText(document: SyncDocument): string {
 export function renderProgressText(document: ProgressDocument): string {
   const lines = [
     document.state === "ok"
-      ? "导入与整理已完成。"
+      ? "Import and organization are complete."
       : document.state === "active"
-        ? "正在导入和整理，你可以继续使用。"
-        : "部分任务需要处理。",
+        ? "Importing and organizing now, so you can keep using the app."
+        : "Some tasks need attention.",
     document.imports.imported_messages === null
-      ? "累计导入：暂时无法读取"
-      : `累计导入：${document.imports.imported_conversations} 个会话 · ${document.imports.imported_messages} 条消息`,
-    `导入任务：${document.imports.validated} 个`,
+      ? "Imported so far: not available right now"
+      : `Imported so far: ${countLabel(document.imports.imported_conversations ?? 0, "conversation")} - ${countLabel(document.imports.imported_messages, "message")}`,
+    `Import jobs: ${document.imports.validated}`,
   ];
   if (document.imports.issues) {
-    lines.push(`需要留意的导入记录：${document.imports.issues.length} 条`);
+    lines.push(`Import records to review: ${document.imports.issues.length}`);
   }
   lines.push(
     document.generation.summary
-      ? `记忆整理：待处理 ${document.generation.summary.pending} · 进行中 ${document.generation.summary.running} · 等待模型 ${document.generation.summary.waiting_for_model} · 失败 ${document.generation.summary.failed}`
-      : "记忆整理：暂时无法读取",
+      ? `Memory organization: pending ${document.generation.summary.pending} - running ${document.generation.summary.running} - waiting for model ${document.generation.summary.waiting_for_model} - failed ${document.generation.summary.failed}`
+      : "Memory organization: not available right now",
   );
   if (
     document.imports.output_truncated ||
     document.generation.output_truncated
   ) {
-    lines.push("这里只显示汇总；完整记录请使用 --json。");
+    lines.push("This shows a summary only; use --json for the full records.");
   }
   lines.push("");
   return lines.join("\n");

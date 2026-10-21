@@ -509,7 +509,7 @@
   scroll-behavior: auto;
 }
 
-/* 运行诊断 139:7980. Reached from 帮助与诊断, and the source puts it on the
+/* Diagnostics 139:7980. Reached from Help and diagnostics, and the source puts it on the
    same white 1038x710 content card rather than the old boxed sub-panels:
    22px Medium title, 16px row label, 16px verdict, 13px timing note, and a
    974px divider between rows. Markup is unchanged; only this surface is
@@ -546,7 +546,7 @@
   border-bottom: 1px solid #d8e2ea;
   border-radius: 0;
   display: grid;
-  /* 139:7980 lays each row out as 名称 / 状态 / 时间 at x32 / x390 / x748
+  /* 139:7980 lays each row out as name / status / time at x32 / x390 / x748
      inside the 974px content width. */
   grid-template-columns: 300px minmax(0, 1fr) 250px;
   column-gap: 58px;

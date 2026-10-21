@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-L1_RAW 降级 SHADOW 的触发条件（writer._run_agent 末段）。
+Trigger conditions for degrading L1_RAW to SHADOW (tail of writer._run_agent).
 
-背景：extractor 判定「这段对话没有可提取的用户事实」（纯技术问答等）时返回
-memory=[]，此前 `if stored_ids and memory_id` 使 stored_ids 为空 → 不降级，
-L1_RAW 长期停在 ACTIVE 被 list / search / keyword_search 召回。
+Background: when the extractor concludes "this dialogue holds no extractable user facts" (pure technical
+Q&A and the like) it returns memory=[]; the previous `if stored_ids and memory_id` meant empty stored_ids -> no
+degradation, so L1_RAW stayed ACTIVE for good and was recalled by list / search / keyword_search.
 
-本测试锁定五条语义：
-  1. 提取为空（success=True, memory=[]）→ **应降级**（本次修复点）
-  2. 提取失败（success=False，如 EMPTY_RESPONSE）→ **不降级**，留 ACTIVE 待重试
-  3. 正常提取到内容 → 仍降级（回归保护，原行为不变）
-  4. 显式指定非 raw 层（metadata 传 extra["layer"]）→ **不降级**，
-     否则等于逻辑删除调用方刚写入的数据
-  5. 降级时 upsert 抛错 → 不影响本次写入判定成功（容错保持）
+This test pins down five semantics:
+  1. empty extraction (success=True, memory=[]) -> **must degrade** (the point of this fix)
+  2. failed extraction (success=False, e.g. EMPTY_RESPONSE) -> **must not degrade**, stays ACTIVE for retry
+  3. normal extraction with content -> still degrades (regression protection, original behaviour unchanged)
+  4. an explicitly requested non-raw layer (metadata passes extra["layer"]) -> **must not degrade**, otherwise
+     it amounts to a logical delete of the data the caller just wrote
+  5. upsert raising during degradation -> does not change the success verdict of this write (fault tolerance kept)
 """
 
 import asyncio
@@ -29,7 +29,7 @@ from hy_memory.pipelines.base import WriteRequest, WriteResponse
 
 @dataclass
 class _FakeAgentResult:
-    """只带 _run_agent 实际读取的字段，避免依赖 AgentResult 的构造细节。"""
+    """Carries only the fields _run_agent actually reads, avoiding AgentResult construction details."""
 
     success: bool = True
     extracted_info: Dict[str, Any] = field(default_factory=dict)
@@ -54,7 +54,7 @@ class _FakeMemAgent:
 
 
 class _FakeVectorStore:
-    """内存 VDB。记录每次 upsert 时的 (node_id, status)，供断言降级是否发生。"""
+    """In-memory VDB. Records (node_id, status) per upsert so assertions can tell whether degradation happened."""
 
     def __init__(self, fail_upsert: bool = False):
         self.nodes: Dict[str, MemoryNode] = {}
@@ -92,10 +92,10 @@ class _FakeEmbed:
 
 
 def _build_writer(agent_result: _FakeAgentResult, store: _FakeVectorStore):
-    """构造一个只用于跑 _run_agent 的 writer。
+    """Build a writer used solely to run _run_agent.
 
-    cache=None 使各 pipeline log 直接 return（`_write_extract_log` 首行判空），
-    因此不依赖 sqlite / 可观测性安装。
+    cache=None makes every pipeline log return immediately (`_write_extract_log` checks it on the first line),
+    so there is no dependency on sqlite or on observability being installed.
     """
     from hy_memory.config import MemoryConfig
     from hy_memory.pipelines.writer import MemoryWriter
@@ -104,7 +104,7 @@ def _build_writer(agent_result: _FakeAgentResult, store: _FakeVectorStore):
     w = MemoryWriter(cfg, embed_service=_FakeEmbed(), vector_store=store, cache=None)
     w._mem_agent = _FakeMemAgent(agent_result)
     w._vector_store = store
-    # 提取到内容时走 _direct_store 分支即可（不需要真跑 reconcile LLM）
+    # When content is extracted, the _direct_store branch is enough (no real reconcile LLM run needed)
     w._reconcile_and_store = _stub_store          # type: ignore[assignment]
     w._direct_store = _stub_store                 # type: ignore[assignment]
     return w
@@ -123,7 +123,7 @@ def _mk_node(layer: MemoryLayer = MemoryLayer.L1_RAW) -> MemoryNode:
         user_id="u1",
         agent_id="default_agent",
         session_id="s1",
-        content="你能直接 git 仓库吗",
+        content="Can you access the git repository directly",
         layer=layer,
         status=MemoryStatus.ACTIVE,
         is_latest=True,
@@ -131,7 +131,7 @@ def _mk_node(layer: MemoryLayer = MemoryLayer.L1_RAW) -> MemoryNode:
 
 
 class _Span:
-    """tracer span 占位（_run_agent 只调这两个方法）。"""
+    """tracer span placeholder (_run_agent only calls these two methods)."""
 
     def set_output(self, *a, **kw):
         pass
@@ -147,11 +147,11 @@ def _run_agent(agent_result: _FakeAgentResult,
                memory_id: Optional[str] = None,
                upsert_store: Optional[_FakeVectorStore] = None,
                request_id: str = "req-test"):
-    """跑一次 _run_agent，返回 (mem_node, response, store)。
+    """Run _run_agent once and return (mem_node, response, store).
 
-    upsert_store: 传入时用它作为 _run_agent 的 vector_store 参数
-                  （用于模拟降级写库失败），store 仍作为 writer 的内部 store。
-    memory_id:    默认取 node.node_id；传空串可模拟 L1 写入失败的场景。
+    upsert_store: when passed, it is used as the vector_store argument of _run_agent
+                  (to simulate a failing degradation write); store stays the writer's internal store.
+    memory_id:    defaults to node.node_id; an empty string simulates a failed L1 write.
     """
     node = node or _mk_node()
     store = store or _FakeVectorStore()
@@ -186,18 +186,18 @@ def _run_agent(agent_result: _FakeAgentResult,
 
 class TestShadowOnEmptyExtract:
     def test_empty_extract_still_shadows_l1_raw(self):
-        """提取为空（正常结论）也要降级 —— 本次修复的核心语义。"""
+        """An empty extraction (a normal verdict) must still degrade -- the core semantics of this fix."""
         node, resp, store = _run_agent(
             _FakeAgentResult(success=True, extracted_info={"memory": [], "intentions": []})
         )
 
         assert resp.extra["agent_status"] == "success"
-        assert resp.extra["agent_nodes"] == 0, "空提取不应产出高层节点"
-        assert node.status == MemoryStatus.SHADOW, "空提取时 L1_RAW 仍应降级"
+        assert resp.extra["agent_nodes"] == 0, "an empty extraction must not produce higher-layer nodes"
+        assert node.status == MemoryStatus.SHADOW, "L1_RAW must still degrade on an empty extraction"
         assert (node.node_id, MemoryStatus.SHADOW) in store.upsert_calls
 
     def test_failed_extract_keeps_active(self):
-        """提取失败保持 ACTIVE：数据可能还有救，留档待重试。"""
+        """A failed extraction stays ACTIVE: the data may still be salvageable, so it is kept for retry."""
         node, resp, store = _run_agent(
             _FakeAgentResult(
                 success=False,
@@ -208,15 +208,15 @@ class TestShadowOnEmptyExtract:
         )
 
         assert resp.extra["agent_status"] == "failed"
-        assert node.status == MemoryStatus.ACTIVE, "提取失败不得降级"
+        assert node.status == MemoryStatus.ACTIVE, "a failed extraction must not degrade"
         assert all(s != MemoryStatus.SHADOW for _, s in store.upsert_calls)
 
     def test_successful_extract_still_shadows(self):
-        """回归保护：正常提取到内容时的降级行为不变。"""
+        """Regression protection: the degradation behaviour of a normal extraction with content is unchanged."""
         node, resp, store = _run_agent(
             _FakeAgentResult(
                 success=True,
-                extracted_info={"memory": [{"content": "用户在学吉他", "layer": "L2_FACT"}]},
+                extracted_info={"memory": [{"content": "The user is learning guitar", "layer": "L2_FACT"}]},
             )
         )
 
@@ -225,45 +225,45 @@ class TestShadowOnEmptyExtract:
         assert node.status == MemoryStatus.SHADOW
 
     def test_explicit_non_raw_layer_is_not_shadowed(self):
-        """调用方显式指定非 raw 层时不得降级 —— 否则等于逻辑删除其刚写入的数据。
+        """When the caller explicitly names a non-raw layer it must not degrade -- that would logically delete the data it just wrote.
 
-        layer 由 metadata 透传进 extra（client.async_add 的 metadata 原样进 extra），
-        此处直接用 L2_FACT 节点模拟该场景。
+        The layer travels from metadata into extra (client.async_add puts metadata into extra verbatim),
+        so an L2_FACT node simulates that scenario directly.
 
-        用「提取到内容」而非「提取为空」：只有前者才会走到降级分支，
-        才真正验证 layer 守卫生效（提取为空时旧条件本身也不降级，测不出区别）。
+        Uses "extracted content" rather than "empty extraction": only the former reaches the degradation branch,
+        which is what actually proves the layer guard works (with an empty extraction the old condition would not degrade either, so nothing is observable).
         """
         node, resp, store = _run_agent(
             _FakeAgentResult(
                 success=True,
-                extracted_info={"memory": [{"content": "用户在学吉他", "layer": "L2_FACT"}]},
+                extracted_info={"memory": [{"content": "The user is learning guitar", "layer": "L2_FACT"}]},
             ),
             node=_mk_node(layer=MemoryLayer.L2_FACT),
             extra={"layer": MemoryLayer.L2_FACT.value},
         )
 
         assert resp.extra["agent_status"] == "success"
-        assert resp.extra["agent_nodes"] >= 1, "本用例须走到降级分支才有意义"
-        assert node.status == MemoryStatus.ACTIVE, "非 L1_RAW 节点不得被降级"
+        assert resp.extra["agent_nodes"] >= 1, "this case only means something if it reaches the degradation branch"
+        assert node.status == MemoryStatus.ACTIVE, "a non-L1_RAW node must not be degraded"
 
     def test_shadow_upsert_failure_does_not_fail_write(self):
-        """降级写库失败只告警，不改变本次写入的成功判定。"""
+        """A failing degradation write only warns; it does not change the success verdict of this write."""
         node, resp, _ = _run_agent(
             _FakeAgentResult(success=True, extracted_info={"memory": []}),
             upsert_store=_FakeVectorStore(fail_upsert=True),
             request_id="req-shadow-fail",
         )
 
-        # 降级失败被 except 吞掉，agent 仍判定 success
+        # The failed degradation is swallowed by except, so the agent still reports success
         assert resp.extra["agent_status"] == "success"
         assert node.status == MemoryStatus.SHADOW, (
-            "status 在内存里已改（upsert 才失败）——此处只断言写入判定不受影响"
+            "the status was already changed in memory (only the upsert failed) -- here we only assert the write verdict is unaffected"
         )
 
 
 class TestShadowGuards:
     def test_no_memory_id_skips_shadow(self):
-        """L1 写入失败时 memory_id 为空串，不应尝试降级。"""
+        """When the L1 write fails memory_id is an empty string, so degradation must not be attempted."""
         node, resp, store = _run_agent(
             _FakeAgentResult(success=True, extracted_info={"memory": []}),
             memory_id="",

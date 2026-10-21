@@ -175,7 +175,9 @@ def test_lexical_terms_ignore_order_without_semantic_calls(database, query):
         "!!!",
         "%_\\",
         "a",
-        *tuple("我你他她它的了是在和与或这那也都很没有就还而但却因且把被从给到又著着过啊呢吗吧"),
+        *tuple(
+            "\u6211\u4f60\u4ed6\u5979\u5b83\u7684\u4e86\u662f\u5728\u548c\u4e0e\u6216\u8fd9\u90a3\u4e5f\u90fd\u5f88\u6ca1\u6709\u5c31\u8fd8\u800c\u4f46\u5374\u56e0\u4e14\u628a\u88ab\u4ece\u7ed9\u5230\u53c8\u8457\u7740\u8fc7\u554a\u5462\u5417\u5427"
+        ),
     ],
 )
 def test_empty_terms_are_empty_not_match_all_or_model_fallback(database, query, monkeypatch):
@@ -190,18 +192,18 @@ def test_empty_terms_are_empty_not_match_all_or_model_fallback(database, query, 
 
 def test_chinese_terms_and_exact_like_characters(database):
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "zh", content="需要记录项目的发布范围")
+        put(db, "zh", content="\u9700\u8981\u8bb0\u5f55\u9879\u76ee\u7684\u53d1\u5e03\u8303\u56f4")
         put(db, "literal", content="alpha_beta")
         put(db, "not-wildcard", content="alphaXbeta")
-    assert ids(read(database, "发布范围")) == ["zh"]
+    assert ids(read(database, "\u53d1\u5e03\u8303\u56f4")) == ["zh"]
     assert ids(read(database, "alpha_beta")) == ["literal"]
 
 
 def test_single_chinese_character_query_finds_the_memory(database):
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "zh-name", content="张 的偏好")
-        put(db, "unrelated", content="项目发布范围")
-    assert ids(read(database, "张")) == ["zh-name"]
+        put(db, "zh-name", content="\u5f20 \u7684\u504f\u597d")
+        put(db, "unrelated", content="\u9879\u76ee\u53d1\u5e03\u8303\u56f4")
+    assert ids(read(database, "\u5f20")) == ["zh-name"]
 
 
 def test_count_sentinel_is_bounded_and_only_counts_authorized_matches(database):
@@ -1011,10 +1013,10 @@ def test_unbackfilled_shadow_does_not_black_out_lexical_recall(database):
     set and silently return nothing; recall must fall back to the LIKE path.
     """
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "zh", content="需要记录项目的发布范围")
+        put(db, "zh", content="\u9700\u8981\u8bb0\u5f55\u9879\u76ee\u7684\u53d1\u5e03\u8303\u56f4")
         assert db.execute("SELECT count(*) FROM governed_memories_terms").fetchone() == (0,)
 
-    assert ids(read(database, "发布范围")) == ["zh"]
+    assert ids(read(database, "\u53d1\u5e03\u8303\u56f4")) == ["zh"]
     assert ids(read(database, "alpha beta")) == []
 
 
@@ -1222,9 +1224,9 @@ def test_complete_candidate_plan_cannot_bypass_time_window(database, monkeypatch
     assert ids(result) == ["alpha-only"]
 
 
-@pytest.mark.parametrize("tail", [" ALPHA_BETA", " 发布范围"])
+@pytest.mark.parametrize("tail", [" ALPHA_BETA", " \u53d1\u5e03\u8303\u56f4"])
 def test_tail_excerpt_is_literal_unicode_contiguous_and_revalidates(database, tail):
-    content = "前" * 30000 + tail + "后" * 30000
+    content = "\u524d" * 30000 + tail + "\u540e" * 30000
     with closing(sqlite3.connect(database)) as db, db:
         put(db, "memory", content=content)
     result = read(database, tail)
@@ -1242,11 +1244,17 @@ def test_tail_excerpt_is_literal_unicode_contiguous_and_revalidates(database, ta
 
 def test_semantic_ids_join_when_lexical_does_not_overlap(database):
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "strong", content="用户决定 One Memory 采用 MIT 协议发布。")
-        put(db, "weak", content="这个开源项目的许可方案还在评审中，尚未定稿。")
+        put(db, "strong", content="The user decided One Memory ships under the MIT license.")
+        put(
+            db,
+            "weak",
+            content="The open-source project's licensing plan is still under review and not final.",
+        )
     result = read_memory_context(
         database,
-        ContextSearchRequest(query="开源许可证怎么选", kinds=("memory",)),
+        ContextSearchRequest(
+            query="How should we pick the open source license?", kinds=("memory",)
+        ),
         scopes=None,
         deadline=time.monotonic() + 5,
         semantic_ids=("strong",),
@@ -1259,12 +1267,16 @@ def test_semantic_ids_join_when_lexical_does_not_overlap(database):
 def test_unique_keyword_match_is_not_displaced_by_full_semantic_top_k(database):
     marker = "n30-exact-unique-marker"
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "lexical-target", content=f"用户使用 {marker} 作为唯一验收代号。")
+        put(db, "lexical-target", content=f"The user uses {marker} as the sole acceptance code.")
         semantic_ids = []
         for index in range(10):
             memory_id = f"semantic-unrelated-{index}"
             semantic_ids.append(memory_id)
-            put(db, memory_id, content=f"语义候选 {index} 与唯一验收代号无关。")
+            put(
+                db,
+                memory_id,
+                content=f"Semantic candidate {index} unrelated to the sole acceptance code.",
+            )
 
     request = ContextSearchRequest(query=marker, kinds=("memory",), limit=8)
     result = read_memory_context(
@@ -1298,9 +1310,18 @@ def test_semantic_ids_are_still_scope_and_status_bound(database):
 
 def test_current_query_follows_explicit_supersession_not_date_or_title(database):
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "old", content="项目发布用个人证书。", status="superseded")
-        put(db, "head", content="项目发布现在改用团队证书。")
-        put(db, "newer-same-title", content="另一个项目发布现在仍用个人证书。")
+        put(
+            db,
+            "old",
+            content="The project release used a personal certificate.",
+            status="superseded",
+        )
+        put(db, "head", content="The project release now uses a team certificate.")
+        put(
+            db,
+            "newer-same-title",
+            content="Another project release still uses a personal certificate.",
+        )
         db.execute(
             "INSERT INTO governed_memory_supersessions(memory_id,superseded_by,created_at) "
             "VALUES('old','head',?)",
@@ -1308,20 +1329,25 @@ def test_current_query_follows_explicit_supersession_not_date_or_title(database)
         )
     result = read_memory_context(
         database,
-        ContextSearchRequest(query="现在该用哪张凭据", kinds=("memory",)),
+        ContextSearchRequest(query="Which credential do we pick now?", kinds=("memory",)),
         scopes=None,
         deadline=time.monotonic() + 5,
         semantic_ids=("old",),
         semantic_outcome="answered",
     )
     assert ids(result) == ["head"]
-    assert "团队证书" in result.items[0].content
+    assert "team certificate" in result.items[0].content
 
 
 def test_historical_query_does_not_rewrite_a_superseded_id_to_current(database):
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "old", content="当时发布用个人证书。", status="superseded")
-        put(db, "head", content="后来改用团队证书。")
+        put(
+            db,
+            "old",
+            content="Back then the release used a personal certificate.",
+            status="superseded",
+        )
+        put(db, "head", content="Later the team certificate took over.")
         db.execute(
             "INSERT INTO governed_memory_supersessions(memory_id,superseded_by,created_at) "
             "VALUES('old','head',?)",
@@ -1329,7 +1355,7 @@ def test_historical_query_does_not_rewrite_a_superseded_id_to_current(database):
         )
     result = read_memory_context(
         database,
-        ContextSearchRequest(query="当时怎么决定的", kinds=("memory",)),
+        ContextSearchRequest(query="How was the decision made back then?", kinds=("memory",)),
         scopes=None,
         deadline=time.monotonic() + 5,
         semantic_ids=("old",),
@@ -1340,9 +1366,9 @@ def test_historical_query_does_not_rewrite_a_superseded_id_to_current(database):
 
 def test_correction_head_must_still_pass_scope_and_source_authority(database):
     with closing(sqlite3.connect(database)) as db, db:
-        put(db, "old", content="旧决定", status="superseded")
-        put(db, "hidden-head", content="现在的私密决定", scopes=("workspace:secret",))
-        put(db, "revoked-head", content="现在的撤权决定", links=("e2",))
+        put(db, "old", content="Old decision", status="superseded")
+        put(db, "hidden-head", content="Current private decision", scopes=("workspace:secret",))
+        put(db, "revoked-head", content="Current revoked decision", links=("e2",))
         db.executemany(
             "INSERT INTO governed_memory_supersessions(memory_id,superseded_by,created_at) "
             "VALUES('old',?,?)",
@@ -1351,7 +1377,7 @@ def test_correction_head_must_still_pass_scope_and_source_authority(database):
         revoke(db, "workbuddy")
     result = read_memory_context(
         database,
-        ContextSearchRequest(query="现在的决定", kinds=("memory",)),
+        ContextSearchRequest(query="Current decision", kinds=("memory",)),
         scopes=frozenset({"all-apps"}),
         deadline=time.monotonic() + 5,
         semantic_ids=("old",),
@@ -1370,14 +1396,19 @@ def test_semantic_authority_must_precede_hy_topk(database):
         for index in range(12):
             memory_id = f"hidden-{index:02d}"
             hidden.append(memory_id)
-            put(db, memory_id, content="语义相关的私密决定", scopes=("workspace:secret",))
-        put(db, "readable-13", content="语义相关的合法决定")
+            put(
+                db,
+                memory_id,
+                content="Semantically related private decision",
+                scopes=("workspace:secret",),
+            )
+        put(db, "readable-13", content="Semantically related legitimate decision")
     # This is the current unscoped HY contract: its finite top-K contains only
     # inaccessible IDs. The readable candidate exists in HY at rank 13 but the
     # context lane cannot ask HY to apply authority before its limit.
     result = read_memory_context(
         database,
-        ContextSearchRequest(query="换一种说法找决定", kinds=("memory",)),
+        ContextSearchRequest(query="Find the decision in other words", kinds=("memory",)),
         scopes=frozenset({"all-apps"}),
         deadline=time.monotonic() + 5,
         semantic_ids=tuple(hidden),

@@ -25,7 +25,7 @@ def chatgpt_export():
     return [
         {
             "id": "chat-1",
-            "title": "产品发布",
+            "title": "Product launch",
             "mapping": {
                 "root": {"message": None, "parent": None},
                 "u1": {
@@ -34,7 +34,9 @@ def chatgpt_export():
                         "id": "u1",
                         "author": {"role": "user"},
                         "create_time": 1726100000,
-                        "content": {"parts": ["项目周会不安排在周五。"]},
+                        "content": {
+                            "parts": ["The project weekly meeting is not scheduled on Fridays."]
+                        },
                     },
                 },
                 "a1": {
@@ -43,7 +45,7 @@ def chatgpt_export():
                         "id": "a1",
                         "author": {"role": "assistant"},
                         "create_time": None,
-                        "content": {"parts": ["可以安排到周三。"]},
+                        "content": {"parts": ["It can be moved to Wednesday."]},
                     },
                 },
                 "alternate": {
@@ -51,7 +53,7 @@ def chatgpt_export():
                     "message": {
                         "id": "a2",
                         "author": {"role": "assistant"},
-                        "content": {"parts": ["另一个分支建议周四。"]},
+                        "content": {"parts": ["The other branch suggests Thursday."]},
                     },
                 },
             },
@@ -67,22 +69,27 @@ def test_chatgpt_preserves_authorship_unknown_time_and_branch_identity():
     assert [message.written_by for message in result.messages] == ["person", "agent", "agent"]
     assert result.messages[1].created_at is None
     assert result.messages[2].conversation_id != result.messages[1].conversation_id
-    assert result.messages[0].verbatim == "项目周会不安排在周五。"
+    assert result.messages[0].verbatim == "The project weekly meeting is not scheduled on Fridays."
 
 
 def test_claude_and_unsupported_formats_are_not_guessed():
     data = [
         {
             "uuid": "c1",
-            "name": "产品设计",
+            "name": "Product design",
             "chat_messages": [
                 {
                     "uuid": "m1",
                     "sender": "human",
-                    "text": "保留原话。",
+                    "text": "Keep the original words.",
                     "created_at": "2026-09-11T00:00:00Z",
                 },
-                {"uuid": "m2", "sender": "assistant", "text": "建议使用引用。", "created_at": None},
+                {
+                    "uuid": "m2",
+                    "sender": "assistant",
+                    "text": "Suggest using citations.",
+                    "created_at": None,
+                },
             ],
         }
     ]

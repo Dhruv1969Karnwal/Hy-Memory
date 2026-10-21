@@ -41,16 +41,18 @@ export function SourceDisconnectDialog({
           }
         }}
       >
-        <h2 id="disconnect-source-title">撤回 {name} 的授权？</h2>
+        <h2 id="disconnect-source-title">Revoke authorization for {name}?</h2>
         <p>
-          停止同步与相关记忆的外部读取。已导入的原文和修改历史保留在本机，不修改来源应用中的对话。
+          Stops sync and external reads of related memories. Imported source
+          text and revision history stay on this machine; conversations in the
+          source app are not modified.
         </p>
         <div className="consent-actions">
           <button type="button" className="secondary" onClick={onCancel}>
-            取消
+            Cancel
           </button>
           <button type="button" onClick={onConfirm}>
-            撤回授权
+            Revoke authorization
           </button>
         </div>
       </section>

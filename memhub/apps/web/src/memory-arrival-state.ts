@@ -114,19 +114,23 @@ export function memoryArrivalTitle(arrival: MemoryArrival): string {
   switch (arrival.phase) {
     case "checking":
     case "unavailable":
-      return arrival.refreshing ? "已保存内容保留，正在核对进度" : "进度待更新";
+      return arrival.refreshing
+        ? "Saved content kept; checking progress"
+        : "Progress needs refreshing";
     case "importing":
-      return "正在导入对话";
+      return "Importing conversations";
     case "processing":
-      return "正在沉淀记忆";
+      return "Settling memories";
     case "model-required":
       return modelBlock(arrival.blockedStages ?? [])
-        ? "待继续"
-        : "尚未设置整理模型";
+        ? "Waiting to resume"
+        : "No organizing model set up";
     case "failed":
     case "stopped":
-      return "待继续";
+      return "Waiting to resume";
     default:
-      return arrival.importedMessages > 0 ? "待继续" : "还没有保存的对话";
+      return arrival.importedMessages > 0
+        ? "Waiting to resume"
+        : "No conversations saved yet";
   }
 }

@@ -1,15 +1,17 @@
-"""R-09：首次安装引导把画像录下来，不问用户一句话。
+"""R-09: the first-install onboarding records the profile without asking the user a word.
 
-引导导完来源就结束了，从不归纳一次画像。`digest()` 全仓唯一的调用方是
-记忆空间里那个按钮（`MemorySpace.tsx:265`），也就是说首次安装走完，
-System 2 归纳出的画像一条都不在治理层里,新装的库对「我是谁」一无所知，
-而证据其实已经导进来了。
+Onboarding used to end once the sources were done, never inducing a profile. The only
+caller of `digest()` in the whole repo is that button in the memory space (`MemorySpace.tsx:265`), \
+so after a first install
+not one System 2 induced profile sits in the governance layer, and a fresh library knows
+nothing about "who am I", even though the evidence is already imported.
 
-归纳本身还漏了一半：`_record_schemas` 只挑 `L6_SCHEMA` 节点，
-`L0_BASIC_INFO` 直接跳过。`_read_graph_snapshot` 的查询不带 layer 过滤，
-L0 节点本来就在快照里,取回来了又丢掉。HY 自己把这两层并称画像
-（`_PROFILE_LAYERS = {"l0_basic_info", "l6_schema"}`），
-basic info 那半边留在 Kuzu 里，本地看不见。
+Induction itself also drops half: `_record_schemas` only picks `L6_SCHEMA` nodes and
+skips `L0_BASIC_INFO` outright. The `_read_graph_snapshot` query carries no layer filter,
+so L0 nodes are already in the snapshot, fetched and then discarded. HY itself calls these two \
+layers the profile together
+(`_PROFILE_LAYERS = {"l0_basic_info", "l6_schema"}),
+the basic info half stays behind in Kuzu, invisible locally.
 """
 
 import asyncio
@@ -48,7 +50,8 @@ from tests.person_door import as_person
 
 
 class FakeGraph:
-    """归纳只用得上四个方法，其余不实现,少一个假实现少一处失真。"""
+    """Induction only uses four methods; the rest are unimplemented, one fake less and one \
+distortion less."""
 
     def __init__(self, graph_nodes: tuple[HyGraphNode, ...]) -> None:
         self.graph_nodes = graph_nodes
@@ -118,19 +121,20 @@ def _imported(evidence: EvidenceStore, *, workspace: str | None = "workspace:v1:
             content_kind=EvidenceContentKind.RAW_CONVERSATION,
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="导入进来的一段对话。",
+            verbatim="A conversation that was imported.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
 
 
 def _confirmed_from(governance: MemoryGovernanceStore, evidence_id: str) -> None:
-    """归纳只对「还有本地证据的 scope」动手，所以得先有一条确认记忆。"""
+    """Induction only acts on "scopes that still have local evidence", so a confirmed memory must \
+exist first."""
     as_person(governance).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="项目里的一条既有记忆。",
+            content="An existing memory inside the project.",
             scopes=("workspace:v1:project",),
             evidence_ids=(evidence_id,),
         ),
@@ -153,11 +157,12 @@ def _supervisor(tmp_path, stores, bridge) -> MemoryProcessingSupervisor:
 
 
 def test_the_basic_info_half_of_the_profile_is_written_down_too(tmp_path) -> None:
-    """L0_BASIC_INFO 取回来了又被丢掉,画像只进了一半。
+    """L0_BASIC_INFO comes back and is dropped again, so only half the profile lands.
 
-    HY 自己把 L0_basic_info 与 L6_schema 并称画像，快照里两层都在，
-    而 `_record_schemas` 只留 L6。零提问录画像要的正是 L0 这半边:
-    「用户是一名产品经理」这种事实，只会出现在 basic info 层。
+    HY itself calls L0_basic_info and L6_schema the profile; both layers are in the snapshot,
+    yet `_record_schemas` keeps only L6. Zero-question profile capture is precisely about this L0 \
+half:
+    facts like "the user is a product manager" only ever appear in the basic info layer.
     """
     stores = _setup(tmp_path)
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
@@ -167,12 +172,12 @@ def test_the_basic_info_half_of_the_profile_is_written_down_too(tmp_path) -> Non
         graph_nodes=(
             HyGraphNode(
                 node_id="basic-1",
-                content="用户是一名非技术背景的产品经理。",
+                content="The user is a product manager without a technical background.",
                 layer="l0_basic_info",
             ),
             HyGraphNode(
                 node_id="schema-1",
-                content="用户偏好可验证的结论。",
+                content="The user prefers verifiable conclusions.",
                 layer="l6_schema",
             ),
         ),
@@ -186,23 +191,24 @@ def test_the_basic_info_half_of_the_profile_is_written_down_too(tmp_path) -> Non
         for memory in governance.list(user_id="local")
         if memory.scopes == ("all-apps",)
     }
-    assert "用户是一名非技术背景的产品经理。" in profile_contents
-    assert "用户偏好可验证的结论。" in profile_contents
+    assert "The user is a product manager without a technical background." in profile_contents
+    assert "The user prefers verifiable conclusions." in profile_contents
     assert result["schemas_recorded"] == 2
-    basic = profile_contents["用户是一名非技术背景的产品经理。"]
+    basic = profile_contents["The user is a product manager without a technical background."]
     assert basic.status is MemoryStatus.CONFIRMED
-    # 说得出为什么相信它,和 L6 那半边同一个标准。
+    # It must say why we believe it, the same bar as the L6 half.
     assert basic.evidence_ids == (record.evidence_id,)
-    # kind 用仓库既有的 layer→kind 映射，不为画像新造一个种类
-    # （种类是 API 契约的一部分，新增要人放行）。
+    # kind uses the repo's existing layer-to-kind map; no new kind is invented for profiles
+    # (the kind is part of the API contract, adding one needs a human sign-off).
     assert basic.kind is MemoryKind.CHAT
 
 
 def test_a_layer_hy_does_not_call_profile_still_never_reaches_governance(tmp_path) -> None:
-    """绿对照，也是这一项的防假修复守卫。
+    """Green control, and the fake-fix guard for this item.
 
-    把「只挑 L6」改成「快照里的都带回来」能让上面那条变绿，代价是
-    整段原始对话（L1_RAW）被当成画像广播给每个 app。这条盯着它。
+    Turning "only pick L6" into "bring back everything in the snapshot" would turn the test above \
+green at the cost of
+    whole raw conversations (L1_RAW) broadcast to every app as profiles. This one watches that.
     """
     stores = _setup(tmp_path)
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
@@ -210,7 +216,7 @@ def test_a_layer_hy_does_not_call_profile_still_never_reaches_governance(tmp_pat
     _confirmed_from(governance, record.evidence_id)
     bridge = FakeGraph(
         graph_nodes=tuple(
-            HyGraphNode(node_id=f"node-{layer}", content=f"{layer} 的内容。", layer=layer)
+            HyGraphNode(node_id=f"node-{layer}", content=f"content of {layer}", layer=layer)
             for layer in ("l1_raw", "l2_fact", "l3_summary", "l4_identity", "l7_intention")
         ),
     )
@@ -220,12 +226,13 @@ def test_a_layer_hy_does_not_call_profile_still_never_reaches_governance(tmp_pat
 
     assert result["schemas_recorded"] == 0
     assert [memory.content for memory in governance.list(user_id="local")] == [
-        "项目里的一条既有记忆。"
+        "An existing memory inside the project."
     ]
 
 
 def test_the_same_basic_info_is_not_written_twice(tmp_path) -> None:
-    """绿对照：归纳会被反复触发（引导一次、按钮随时），不能越攒越多。"""
+    """Green control: induction is triggered repeatedly (once on onboarding, anytime via the \
+button); it must not pile up."""
     stores = _setup(tmp_path)
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
     record = _imported(evidence)
@@ -233,7 +240,7 @@ def test_the_same_basic_info_is_not_written_twice(tmp_path) -> None:
     nodes = (
         HyGraphNode(
             node_id="basic-1",
-            content="用户是一名非技术背景的产品经理。",
+            content="The user is a product manager without a technical background.",
             layer="l0_basic_info",
         ),
     )
@@ -248,7 +255,7 @@ def test_the_same_basic_info_is_not_written_twice(tmp_path) -> None:
         memory.content
         for memory in governance.list(user_id="local")
         if memory.scopes == ("all-apps",)
-    ] == ["用户是一名非技术背景的产品经理。"]
+    ] == ["The user is a product manager without a technical background."]
 
 
 def _app(tmp_path):
@@ -285,7 +292,7 @@ def test_finishing_onboarding_is_not_model_content_consent(tmp_path) -> None:
 
             app.state.memory_processing_supervisor.digest = spy  # type: ignore[method-assign]
 
-            # 只是看一眼引导状态，不该触发归纳。
+            # Just glancing at the onboarding state must not trigger induction.
             assert (await client.get("/api/v1/onboarding")).status_code == 200
             assert calls == []
 
@@ -298,11 +305,12 @@ def test_finishing_onboarding_is_not_model_content_consent(tmp_path) -> None:
 
 
 def test_the_way_back_to_the_first_run_deletes_nothing(tmp_path) -> None:
-    """重置只动完成标记，记忆一条不少。
+    """Reset only moves the completion flag; not one memory is lost.
 
-    完成态和记忆放在同一个库里是有意的:重装一遍 App 不该把一个已经有记忆的人
-    当成新用户。代价是想再看一次冷启动，重装不管用。这条盯着那个出口:
-    状态回到首次运行，别的都不动。
+    Keeping the completion state and the memories in one library is deliberate: reinstalling the app
+    must not treat someone who already has memories as a new user. The price is that reinstalling \
+does not show the cold start again. This watches that exit:
+    the state goes back to first run and nothing else moves.
     """
 
     async def scenario() -> None:
@@ -319,7 +327,7 @@ def test_the_way_back_to_the_first_run_deletes_nothing(tmp_path) -> None:
                         "local",
                         "chat",
                         "confirmed",
-                        "记忆必须保留",
+                        "memory must be kept",
                         '["all-apps"]',
                         1,
                         "2026-10-17T00:00:00+00:00",
@@ -335,19 +343,19 @@ def test_the_way_back_to_the_first_run_deletes_nothing(tmp_path) -> None:
             assert reset.status_code == 200
             assert reset.json()["status"] == "not_started"
             assert reset.json()["completed_at"] is None
-            # 落盘了，不是只在响应里改一下：下一次启动读到的也是首次运行。
+            # It really landed on disk, not just in this response: the next startup also reads first
+            # run.
             assert (await client.get("/api/v1/onboarding")).json()["status"] == "not_started"
             with sqlite3.connect(database) as connection:
                 assert connection.execute(
-                    "SELECT content,revision FROM governed_memories "
-                    "WHERE memory_id='keep-me'"
-                ).fetchone() == ("记忆必须保留", 1)
+                    "SELECT content,revision FROM governed_memories WHERE memory_id='keep-me'"
+                ).fetchone() == ("memory must be kept", 1)
 
     asyncio.run(scenario())
 
 
 def test_resetting_before_anything_was_completed_is_not_an_error(tmp_path) -> None:
-    """绿对照:新库里还没有那一行，重置不能炸。"""
+    """Green control: with no such row yet in a fresh library, resetting must not blow up."""
 
     async def scenario() -> None:
         app = _app(tmp_path)
@@ -361,10 +369,11 @@ def test_resetting_before_anything_was_completed_is_not_an_error(tmp_path) -> No
 
 
 def test_hy_being_down_does_not_leave_the_first_install_unfinished(tmp_path) -> None:
-    """守卫：这一步可跳过，归纳失败不能把引导卡住。
+    """Guard: this step is skippable, an induction failure must not wedge onboarding.
 
-    首次安装时模型档案可能还没配好，通用出站网络也可能不可用。
-    归纳失败只该少一条画像，不该让人装不完。
+    On a first install the model profile may not be configured yet, and general outbound \
+networking may be unavailable too.
+    An induction failure should only cost one profile, never leave the install unfinished.
     """
 
     async def scenario() -> None:
@@ -381,7 +390,7 @@ def test_hy_being_down_does_not_leave_the_first_install_unfinished(tmp_path) -> 
             assert finished.status_code == 200
             assert finished.json()["status"] == "completed"
             assert finished.json()["completed_at"] is not None
-            # 状态是真的落了盘，不是只在这次响应里。
+            # The state really persisted, it is not just in this response.
             assert (await client.get("/api/v1/onboarding")).json()["status"] == "completed"
 
     asyncio.run(scenario())

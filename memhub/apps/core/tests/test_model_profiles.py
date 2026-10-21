@@ -367,7 +367,7 @@ def _probed(store, secrets, *, structured: bool, generates: bool = True):
 
 
 def test_a_model_that_cannot_be_schema_constrained_can_still_be_turned_on(tmp_path) -> None:
-    """约束不了 schema 不该拦住整张卡被启用。
+    """Failing to constrain the schema must not block the whole card from being enabled.
 
     A compatible endpoint may reject response_format while still generating
     valid prompted JSON. HY does not require that optional constraint.
@@ -379,14 +379,14 @@ def test_a_model_that_cannot_be_schema_constrained_can_still_be_turned_on(tmp_pa
     active = store.activate(profile.profile_id, secrets)
 
     assert active.is_active is True
-    # 启用了，但不谎报能力：约束不了就是约束不了。
+    # Enabled, but without lying about capabilities: it cannot constrain the schema, so it does not.
     assert active.capabilities.structured_output is False
 
 
 def test_a_model_that_cannot_generate_still_cannot_be_turned_on(tmp_path) -> None:
-    """正向对照：真的生成不了时照旧拦住。
+    """Positive control: when generation truly fails, it is still blocked.
 
-    没有这条，上一条可以被「把这段判据整体删掉」骗过。
+    Without this one, the previous test could be fooled by "delete this whole check".
     """
     store = ModelProfileStore(tmp_path / "one-memory.sqlite3")
     secrets = InMemorySecretStore()

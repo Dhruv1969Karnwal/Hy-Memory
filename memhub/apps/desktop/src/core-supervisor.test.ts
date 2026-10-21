@@ -307,7 +307,7 @@ describe("Core ownership", () => {
       });
 
       await expect(supervisor.start()).rejects.toThrow(
-        "无法验证正在运行的 MemHub Core",
+        "Cannot verify the running MemHub Core",
       );
       expect(spawnProcess).not.toHaveBeenCalled();
     },
@@ -338,7 +338,7 @@ describe("Core ownership", () => {
     });
 
     await expect(supervisor.start()).rejects.toThrow(
-      "无法验证正在运行的 MemHub Core",
+      "Cannot verify the running MemHub Core",
     );
     expect(spawnProcess).not.toHaveBeenCalled();
   });
@@ -518,7 +518,7 @@ describe("a Core left behind by a crashed app", () => {
     });
     const { supervisor } = await supervisorBlockedOnce(dataDir);
 
-    await expect(supervisor.start()).rejects.toThrow("另一个 MemHub Core");
+    await expect(supervisor.start()).rejects.toThrow("Another MemHub Core");
     expect(processIsAlive(holder)).toBe(true);
     process.kill(holder, "SIGKILL");
   });
@@ -534,7 +534,7 @@ describe("a Core left behind by a crashed app", () => {
     });
     const { supervisor } = await supervisorBlockedOnce(dataDir);
 
-    await expect(supervisor.start()).rejects.toThrow(`进程 ${holder}`);
+    await expect(supervisor.start()).rejects.toThrow(`process ${holder}`);
     expect(processIsAlive(holder)).toBe(true);
     process.kill(holder, "SIGKILL");
   });

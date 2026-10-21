@@ -114,9 +114,11 @@ describe("connection prompt", () => {
     const material = renderConnectionMaterial(runtime());
     expect(material.prompt).toContain(material.mcp);
     expect(material.prompt).toContain(material.shell);
-    expect(material.prompt).toContain("不能把写入配置当作连接成功");
-    expect(material.prompt).toContain("不要创建公网代理");
-    expect(material.prompt).toContain("保留其他服务");
+    expect(material.prompt).toContain(
+      "writing the config isn't proof that the connection succeeded",
+    );
+    expect(material.prompt).toContain("don't create a public proxy");
+    expect(material.prompt).toContain("keep the other services");
   });
 });
 

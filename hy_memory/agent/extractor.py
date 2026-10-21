@@ -1,14 +1,14 @@
 """
-Agent Memory - Extractor 提取智能体
+Agent Memory - Extractor agent
 
-统一 Prompt 提取: 单次 LLM 调用提取 memory / intentions / basic_info。
-  - memory: 一切值得长期记忆的信息（偏好/观点/事件/计划/经历/习惯/决定）
-  - intentions: 用户未来要做的前瞻意图（带 valid_until 截止日）
-  - basic_info: 结构化基础画像 kv
+Unified prompt extraction: a single LLM call extracts memory / intentions / basic_info.
+  - memory: anything worth remembering long term (preferences/opinions/events/plans/experiences/habits/decisions)
+  - intentions: forward-looking intentions the user will act on later (with a valid_until deadline)
+  - basic_info: structured basic profile kv
 
-LLM 只需感知 memory 与 intention 两类，无需感知内部分层（layer）。
+The LLM only needs to know the two kinds memory and intention, not the internal layering (layer).
 
-另保留 deep_extract (System 2 深度分析) 供后台精炼使用。
+deep_extract (System 2 deep analysis) is kept for background refinement.
 """
 
 from typing import Dict, Any, Optional, List
@@ -69,20 +69,20 @@ def dedup_internal_memory_sentences(text: str) -> str:
 
 
 # ================================================================
-# 数据结构
+# Data structures
 # ================================================================
 
 
 class ExtractMode(str, Enum):
-    """提取模式"""
+    """Extraction mode"""
 
-    LIGHT = "light"  # System 1 轻量提取
-    DEEP = "deep"  # System 2 深度提取
+    LIGHT = "light"  # System 1 lightweight extraction
+    DEEP = "deep"  # System 2 deep extraction
 
 
 @dataclass
 class ExtractResult:
-    """提取结果 (V1 兼容)"""
+    """Extraction result (V1 compatible)"""
 
     success: bool
     info: Dict[str, Any] = field(default_factory=dict)
@@ -96,7 +96,7 @@ class ExtractResult:
         None  # "EMPTY_RESPONSE" / "JSON_PARSE_FAILED" / "LLM_ERROR"
     )
     raw_response: Optional[str] = (
-        None  # LLM 原始返回（失败时保留，用于写 pipeline_log）
+        None  # Raw LLM response (kept on failure, used to write pipeline_log)
     )
     llm_finish_reason: str = ""
     llm_model: str = ""
@@ -104,48 +104,48 @@ class ExtractResult:
     llm_choices_count: int = 0
     llm_content_len: int = 0
     llm_tool_calls_count: int = 0
-    # 推理模型诊断：reasoning_tokens 接近/等于 max_tokens 且 content 为空，
-    # 说明思维链吃光了输出配额（hy3 需传 reasoning_effort=no_think）。
+    # Reasoning-model diagnostics: reasoning_tokens close to/equal to max_tokens with empty content
+    # means the chain of thought ate the whole output budget (hy3 needs reasoning_effort=no_think).
     llm_reasoning_tokens: int = 0
     llm_reasoning_len: int = 0
-    tool_calls_only: bool = False  # True 当 LLM 只返回了 tool_calls，content 为空
+    tool_calls_only: bool = False  # True when the LLM returned only tool_calls and content is empty
     attempts: List[Dict[str, Any]] = field(
         default_factory=list
-    )  # LLM 重试各次失败明细（来自 LLMRetryError.attempts），写入 EXTRACT trace
+    )  # Failure detail for each LLM retry (from LLMRetryError.attempts), written into the EXTRACT trace
     _actual_prompt: Optional[str] = (
-        None  # 实际发送给 LLM 的 user prompt（用于 trace 日志）
+        None  # The user prompt actually sent to the LLM (for trace logging)
     )
-    _actual_system_prompt: Optional[str] = None  # 实际的 system prompt
+    _actual_system_prompt: Optional[str] = None  # The system prompt actually used
 
 
 @dataclass
 class V2ExtractResult:
-    """V2 提取结果 (丰富结构)"""
+    """V2 extraction result (rich structure)"""
 
     success: bool
     mode: ExtractMode = ExtractMode.LIGHT
 
-    # 事实提取
+    # Fact extraction
     facts: List[Dict[str, Any]] = field(default_factory=list)
 
-    # 实体与关系
+    # Entities and relations
     entities: List[Dict[str, Any]] = field(default_factory=list)
     relations: List[Dict[str, Any]] = field(default_factory=list)
 
-    # 情绪标注
+    # Emotion annotation
     emotional_valence: float = 0.0
     emotional_arousal: float = 0.0
 
-    # 时间信息
+    # Temporal information
     temporal_expressions: List[Dict[str, Any]] = field(default_factory=list)
 
-    # 意图检测
+    # Intention detection
     intentions: List[Dict[str, Any]] = field(default_factory=list)
 
-    # 画像信息
+    # Profile information
     profile_updates: List[Dict[str, Any]] = field(default_factory=list)
 
-    # 更新类型判断 (深度模式)
+    # Update type classification (deep mode)
     update_classifications: List[Dict[str, Any]] = field(default_factory=list)
 
     tokens_used: int = 0
@@ -153,18 +153,18 @@ class V2ExtractResult:
 
 
 # ================================================================
-# Prompt 模板
+# Prompt templates
 # ================================================================
 
-# 统一提取 Prompt
+# Unified extraction prompt
 #
-# 设计要点（v0.3.45_v0 post8）：
-#   - 不再输出 basic_info 字段；稳定结构化属性（name/age/location/occupation/employer）
-#     由 LLM 通过 function-calling tool `update_basic_user_profile` 表达。
-#   - 不再输出 time_ref 字段。时间相关信息如果是时间敏感的（schedule / past event），
-#     让 LLM 把已解析的时间自然嵌入 content 即可；稳定偏好类 content 保持不含时间。
+# Design notes (v0.3.45_v0 post8):
+#   - the basic_info field is no longer emitted; stable structured attributes (name/age/location/occupation/employer)
+#     are expressed by the LLM through the function-calling tool `update_basic_user_profile`.
+#   - the time_ref field is no longer emitted. When time-related information is time sensitive (schedule / past event),
+#     the LLM just embeds the resolved time naturally inside content; stable preference content stays free of time.
 
-# System prompt（固定，不参与 format）
+# System prompt (fixed, not part of format)
 EXTRACT_SYSTEM_PROMPT = """# ROLE
 
 You are a Memory Extractor.
@@ -231,7 +231,7 @@ subject. Which subject to use is decided by **who spoke**:
 
 | Speaker | Subject to write | Example |
 | --- | --- | --- |
-| `role: "user"` | the user | "The user ..." / "用户..." |
+| `role: "user"` | the user | "The user ..." / the same phrase in the input language |
 | any speaker with a `name` other than the user (e.g. `name: "John"`) | that person, by name | "John ..." |
 | `role: "assistant"` with NO `name` | the AI assistant | "The assistant ..." |
 
@@ -240,7 +240,7 @@ The two input sections express the speaker differently:
 * **New Messages** is a JSON array — read `role` and the optional `name` field.
 * **Last k Messages** is rendered text — the speaker is the bracket label,
   `[user]:` / `[John]:` / `[assistant]:`, optionally preceded by one line
-  "The user's name is Tim" / "用户名叫Tim".
+  "The user's name is Tim" (or the same line in the input language).
 
 Rules:
 
@@ -666,15 +666,15 @@ John carries `role: "assistant"` but he has a `name`, so he is another real pers
 ## Example 10 — Counter-example: another person's attributes never go into basic_info
 
 New Messages:
-[{"role": "user", "name": "Tim", "content": "你最近在忙什么？"},
- {"role": "assistant", "name": "John", "content": "我在柏林一家医院当护士，上的是夜班，挺累的。"}]
+[{"role": "user", "name": "Tim", "content": "What have you been up to lately?"},
+ {"role": "assistant", "name": "John", "content": "I work as a nurse at a hospital in Berlin on night shifts, which is pretty tiring."}]
 Memory Date: 2025-09-02
 
 Output:
 ```json
 {
   "memory": [
-    {"content": "John是柏林一家医院的护士，上夜班，觉得很累。", "tags": ["work", "health"], "owner": "user"}
+    {"content": "John works as a nurse at a hospital in Berlin on night shifts and finds it very tiring.", "tags": ["work", "health"], "owner": "user"}
   ],
   "intentions": [],
   "basic_info": {"name": "Tim"}
@@ -750,7 +750,7 @@ Rules:
   in the NEW user messages. Never infer, never invent. If no field is explicitly
   stated, output `{{}}`.
   * Exception for `name`: the `name` field on the user's own message, or a leading
-    line "The user's name is X" / "用户名叫X", is an authoritative source for
+    line "The user's name is X" (or the same line in the input language), is an authoritative source for
     `name` — even though the user never said it out loud.
   * NEVER put another real person's attributes here. If John (an assistant-role
     message carrying `name`) says "I'm a nurse in Berlin", that is a `memory`
@@ -763,7 +763,7 @@ Rules:
 Output the JSON now."""
 
 
-# User prompt when MEMORY_ENABLE_INTENTION=false（无 intentions 桶）
+# User prompt when MEMORY_ENABLE_INTENTION=false (no intentions bucket)
 EXTRACT_PROMPT_NO_INTENTION = """## Last k Messages
 
 {last_messages}
@@ -818,7 +818,7 @@ Rules:
   in the NEW user messages. Never infer, never invent. If no field is explicitly
   stated, output `{{}}`.
   * Exception for `name`: the `name` field on the user's own message, or a leading
-    line "The user's name is X" / "用户名叫X", is an authoritative source for
+    line "The user's name is X" (or the same line in the input language), is an authoritative source for
     `name` — even though the user never said it out loud.
   * NEVER put another real person's attributes here. If John (an assistant-role
     message carrying `name`) says "I'm a nurse in Berlin", that is a `memory`
@@ -832,60 +832,60 @@ Output the JSON now."""
 
 
 # ================================================================
-# 核心实现
+# Core implementation
 # ================================================================
 
 
 def _system_prompt_without_intention(system_prompt: str, *, lang: str) -> str:
-    """从 system prompt 去掉 intentions 分桶，改为单一 memory（含未来计划）。"""
+    """Strip the intentions bucket from the system prompt, leaving a single memory kind (future plans included)."""
     import re
 
     if lang == "zh":
         repl = (
-            "# 记忆\n"
+            "# MEMORY\n"
             "\n"
-            "你只提取一类记忆：**memory（记忆）**。\n"
+            "You extract exactly one kind of memory: **memory**.\n"
             "\n"
-            "## memory（记忆）\n"
+            "## memory\n"
             "\n"
-            "一切值得长期记住的信息都放这里——既包括用户本人的，也包括对话中其他具名真人的：\n"
+            "Anything worth remembering long-term belongs here, for the user and for any other named person:\n"
             "\n"
-            "* 偏好、观点、态度、价值观\n"
-            "* 事件、行动、经历\n"
-            "* 习惯、行为模式\n"
-            "* 关系、稳定特质\n"
-            "* 客观事实、决策、约束条件\n"
-            "* 正在进行的活动\n"
-            "* **未来计划 / 即将发生的安排**（若值得记住，直接写进 `memory`；"
-            "不要单独开 intentions 桶）\n"
+            "* preferences, opinions, attitudes, values\n"
+            "* events, actions, experiences\n"
+            "* habits, behavioral patterns\n"
+            "* relationships, stable traits\n"
+            "* objective facts, decisions, constraints\n"
+            "* ongoing activities\n"
+            "* **future plans / upcoming arrangements** (if worth remembering, write them into "
+              "`memory`; do not open a separate intentions bucket)\n"
             "\n"
-            "如果用户隐式表达偏好，也应提取。\n"
+            "Implicit preferences expressed by the user should also be extracted.\n"
             "\n"
-            "不要把\"用户是怎样的人\"和\"发生了什么\"分开。两者都放进 `memory`。\n"
+            "Do not separate \"what kind of person the user is\" from \"what happened\"; both go into `memory`.\n"
             "\n"
             "---\n"
             "\n"
         )
         system_prompt = re.sub(
-            r"# 两类记忆.*?(?=\n# OWNER)",
+            r"# Two kinds of memory.*?(?=\n# OWNER)",
             repl,
             system_prompt,
             count=1,
             flags=re.S,
         )
         system_prompt = system_prompt.replace(
-            "每条 memory 和 intention 都必须带 `owner`",
-            "每条 memory 都必须带 `owner`",
+            "Every memory and intention must carry an `owner`",
+            "Every memory must carry an `owner`",
         )
         system_prompt = system_prompt.replace(
-            "每条 memory 和 intention 都必须带",
-            "每条 memory 都必须带",
+            "required on every memory and intention",
+            "required on every memory",
         )
-        # few-shot 里若仍出现 intentions，用硬约束盖住
+        # when few-shot examples still mention intentions, override them with a hard constraint
         system_prompt += (
-            "\n\n---\n\n# INTENTION 关闭\n"
-            "当前配置关闭了 intention 抽取。即使示例里出现 `intentions`，"
-            "也**不要**输出该字段；未来计划写入 `memory`。\n"
+            "\n\n---\n\n# INTENTION DISABLED\n"
+            "The current configuration disables intention extraction. Even when examples show "
+            "`intentions`, do **not** emit that field; write future plans into `memory`.\n"
         )
     else:
         repl = (
@@ -936,9 +936,9 @@ def _system_prompt_without_intention(system_prompt: str, *, lang: str) -> str:
 
 class Extractor:
     """
-    提取智能体 (V2)
+    Extraction agent (V2)
 
-    支持 V1 兼容接口 + V2 双模式接口。
+    Supports the V1 compatible interface plus the V2 dual-mode interface.
     """
 
     def __init__(
@@ -953,7 +953,7 @@ class Extractor:
         logger.info("Extractor V2 initialized")
 
     # ================================================================
-    # V1 兼容接口
+    # V1 compatible interface
     # ================================================================
 
     async def extract(
@@ -970,39 +970,39 @@ class Extractor:
         basic_profile_fields: Optional[Dict[str, str]] = None,
     ) -> ExtractResult:
         """
-        统一提取：identity / facts / basic_info
+        Unified extraction: identity / facts / basic_info
 
         Args:
-            content:       原始对话内容
-            context:       业务上下文（目前透传，不使用）
-            extract_types: 兼容参数（未使用）
-            current_time:  当前时间字符串
-            existing_tags: 可选，该用户已有的所有 tags（供 LLM 优先复用）
-            tools:         **DEPRECATED**: 自 v0.1.5.13 起 extractor 不再调用 LLM
-                           function-calling 工具——基础画像通过 prompt + JSON 输出
-                           的 basic_info 字段表达。保留参数仅为向后兼容；传入也不
-                           会被透传到 LLM API。
-            tool_registry: **DEPRECATED**: 同上，不再使用。
-            tool_context:  保留，作为 dispatch context 传给（未来可能扩展的）非 basic_info
-                           tool；当前未使用。
+            content:       raw conversation content
+            context:       business context (currently passed through, unused)
+            extract_types: compatibility parameter (unused)
+            current_time:  current time string
+            existing_tags: optional, all tags this user already has (so the LLM reuses them first)
+            tools:         **DEPRECATED**: since v0.1.5.13 the extractor no longer calls LLM
+                           function-calling tools; the basic profile is expressed through the prompt plus the JSON
+                           basic_info field. The parameter is kept only for backward compatibility; passing it
+                           still does not forward anything to the LLM API.
+            tool_registry: **DEPRECATED**: same as above, no longer used.
+            tool_context:  retained as the dispatch context for non-basic_info tools
+                           (a possible future extension); currently unused.
             basic_profile_fields:
-                **DEPRECATED**: 曾用于渲染 EXTRACT prompt 的基础画像 schema 段落，
-                现已移除该段落（basic_info 由内置 few-shot / 指令引导）。保留参数
-                仅为向后兼容，传入不再生效。
+                **DEPRECATED**: once used to render the basic profile schema section of the EXTRACT prompt;
+                that section has since been removed (basic_info is guided by the built-in few-shot / instructions). The parameter
+                is kept only for backward compatibility and no longer has any effect.
         """
         MAX_TOOL_ROUNDS = 5
 
         try:
-            # 构建 last_messages（传入的 history_context 就是格式化好的历史对话文本）
+            # Build last_messages (the history_context passed in is already formatted history text)
             _last_messages = history_context or "(none)"
 
-            # 构建日期字段
+            # Build the date fields
             from datetime import date as _date_cls
 
             _current_date = (
                 _date_cls.today().isoformat()
-            )  # 系统当前日期 e.g. "2026-05-23"
-            # memory_at: 转为日精度
+            )  # System date, e.g. "2026-05-23"
+            # memory_at: convert to day precision
             if current_time:
                 try:
                     from datetime import datetime as _dt_cls
@@ -1033,7 +1033,7 @@ class Extractor:
                     self._llm_config, "extract_system_prompt_zh", None
                 )
                 if _custom_sys:
-                    # client 自定义 system prompt：直接用，不追加内置 few-shot
+                    # Client-defined system prompt: used as is, with no built-in few-shot appended
                     system_prompt = _custom_sys
                 else:
                     system_prompt = EXTRACT_SYSTEM_PROMPT_ZH
@@ -1083,7 +1083,7 @@ class Extractor:
                     last_messages=_last_messages,
                 )
 
-            # 累计 token 统计
+            # Accumulate token statistics
             if _log_llm_content_enabled():
                 logger.debug(f"[extractor] user prompt: {prompt!r}")
             else:
@@ -1105,19 +1105,19 @@ class Extractor:
             all_tool_calls: List[Dict[str, Any]] = []
             all_tool_results: List[Dict[str, Any]] = []
 
-            # 构造 messages（system + user）
+            # Build messages (system + user)
             messages: List[Dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ]
-            # 保存实际 prompt 用于 trace 日志
+            # Keep the actual prompts for trace logging
             _actual_user_prompt = prompt
             _actual_sys_prompt = system_prompt
 
-            # 第一轮调用
-            # NOTE: tools / tool_choice 已废弃 — 基础画像走 prompt + JSON basic_info
-            # 字段，而不是 LLM function-calling tool（弱模型乱填）。
-            # 若调用方传入 tools/tool_registry，会被忽略。
+            # First round call
+            # NOTE: tools / tool_choice are deprecated -- the basic profile goes through the prompt plus the JSON basic_info
+            # field instead of an LLM function-calling tool (weak models fill it in at random).
+            # tools/tool_registry passed by a caller are ignored.
             response = await self.llm.complete_messages(
                 messages=messages,
                 max_tokens=self._llm_config.agent_max_tokens,
@@ -1139,7 +1139,7 @@ class Extractor:
             llm_reasoning_tokens = getattr(response, "reasoning_tokens", 0) or 0
             llm_reasoning_len = len(getattr(response, "reasoning_content", "") or "")
 
-            # 多轮 tool-use loop（仅当传入 tool_registry 时启用）
+            # Multi-round tool-use loop (only enabled when a tool_registry is passed in)
             if response.tool_calls and tool_registry:
                 from .tools.base import parse_tool_calls_from_json
 
@@ -1153,7 +1153,7 @@ class Extractor:
 
                     all_tool_calls.extend(response.tool_calls)
 
-                    # 追加 assistant 消息（含 tool_calls）
+                    # Append the assistant message (with tool_calls)
                     messages.append(
                         {
                             "role": "assistant",
@@ -1162,7 +1162,7 @@ class Extractor:
                         }
                     )
 
-                    # 执行每个 tool call
+                    # Execute each tool call
                     parsed_calls = parse_tool_calls_from_json(response.tool_calls)
                     for tc_raw, tc_parsed in zip(
                         response.tool_calls, parsed_calls or []
@@ -1226,8 +1226,8 @@ class Extractor:
                             }
                         )
 
-                    # 下一轮 LLM 调用（已废弃 tools；保留 dispatch 路径仅用于
-                    # 极端情况下 LLM 通过其他途径返回 tool_calls 的兼容处理）
+                    # Next LLM call (tools deprecated; the dispatch path is kept only to stay compatible
+                    # with the edge case where the LLM returns tool_calls through some other route)
                     response = await self.llm.complete_messages(
                         messages=messages,
                         max_tokens=self._llm_config.agent_max_tokens,
@@ -1259,12 +1259,12 @@ class Extractor:
                 )
 
             elif response.tool_calls and not tool_registry:
-                # 没有 tool_registry 时，透传 tool_calls 给上层（向后兼容）
+                # Without a tool_registry, pass tool_calls through to the caller (backward compatibility)
                 all_tool_calls = response.tool_calls
 
             self._total_tokens += total_tokens
 
-            # 空响应判断
+            # Empty response check
             if (not raw_text or not raw_text.strip()) and not all_tool_calls:
                 logger.warning(
                     "[extractor] LLM returned empty response "
@@ -1302,7 +1302,7 @@ class Extractor:
                     _actual_system_prompt=_actual_sys_prompt,
                 )
 
-            # 解析 JSON
+            # Parse the JSON
             info: Dict[str, Any]
             if raw_text and raw_text.strip():
                 parsed = self._parse_json(raw_text)
@@ -1334,7 +1334,7 @@ class Extractor:
             else:
                 info = {}
 
-            # 记录 tool 调用信息供上层（pipeline log / writer）使用
+            # Record tool call information for the layers above (pipeline log / writer)
             if all_tool_calls:
                 info["tool_calls"] = all_tool_calls
             if all_tool_results:
@@ -1357,7 +1357,7 @@ class Extractor:
                                 _item.get("topic_assignments")
                             )
 
-            # Intention 开关关闭：即使模型仍返回 intentions，也丢弃（写侧另有硬闸）
+            # Intention switch off: discard intentions even if the model still returns them (the write side has a hard gate as well)
             if not _enable_intention:
                 if info.get("intentions"):
                     logger.info(
@@ -1376,7 +1376,7 @@ class Extractor:
                 _name_only = re.compile(
                     rf"^(?:the\s+user(?:'s|’s)\s+name\s+is|"
                     rf"the\s+user\s+is\s+(?:named|called))\s+{_name_key}[.!。]?$|"
-                    rf"^(?:用户(?:的名字|名)?(?:是|叫))\s*{_name_key}[.!。]?$",
+                    rf"^(?:\u7528\u6237(?:\u7684\u540d\u5b57|\u540d)?(?:\u662f|\u53eb))\s*{_name_key}[.!\u3002]?$",
                     flags=re.I,
                 )
                 for _key in ("memory", "facts"):
@@ -1434,9 +1434,9 @@ class Extractor:
             )
             return result
         except Exception as e:
-            # 带异常类型 + 完整 traceback，避免只剩笼统 "LLM_ERROR" 无从排查。
-            # 若为 LLM 重试耗尽，RuntimeError 的 __cause__ 里含真实根因（超时/401/连接等），
-            # 且 LLMRetryError.attempts 带每一次 attempt 的失败明细。
+            # Log the exception type plus the full traceback, so we are not left with a vague "LLM_ERROR" and nothing to debug.
+            # When LLM retries are exhausted, RuntimeError.__cause__ holds the real root cause (timeout/401/connection and so on),
+            # and LLMRetryError.attempts carries the failure detail of every attempt.
             logger.error(f"Extractor.extract failed: {type(e).__name__}: {e}", exc_info=True)
             _root = e.__cause__ or e
             _err_msg = f"{type(e).__name__}: {e}"
@@ -1461,7 +1461,7 @@ class Extractor:
         content: str,
         context: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
-        """专门提取用户画像 (profile 已包含 preferences)"""
+        """Extract the user profile specifically (profile already includes preferences)"""
         result = await self.extract(content, context)
         if result.success:
             return result.info.get("profile", {})
@@ -1472,20 +1472,20 @@ class Extractor:
         content: str,
         context: Dict[str, Any] = None,
     ) -> List[Dict[str, Any]]:
-        """提取实体"""
+        """Extract entities"""
         result = await self.extract(content, context)
         if result.success:
             return result.info.get("entities", [])
         return []
 
     # ================================================================
-    # 工具方法
+    # Utility methods
     # ================================================================
 
     def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
-        """从 LLM 输出中解析 JSON。成功返回 dict，解析失败返回 None。"""
+        """Parse JSON from the LLM output. Returns a dict on success, None when parsing fails."""
         text = text.strip()
-        # 处理 markdown 代码块
+        # Handle markdown code fences
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
         elif "```" in text:
@@ -1494,14 +1494,14 @@ class Extractor:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            # 尝试找到 JSON 块
+            # Try to locate a JSON block
             match = re.search(r"\{[\s\S]*\}", text)
             if match:
                 try:
                     return json.loads(match.group())
                 except json.JSONDecodeError:
                     pass
-        # 最后兜底：json_repair 修复常见 LLM 残缺输出（缺逗号/引号/未闭合等）
+        # Final fallback: json_repair fixes common truncated LLM output (missing commas/quotes/unclosed brackets)
         try:
             from json_repair import repair_json
 
@@ -1514,7 +1514,7 @@ class Extractor:
         return None
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计信息"""
+        """Return usage statistics"""
         return {
             "call_count": self._call_count,
             "total_tokens": self._total_tokens,

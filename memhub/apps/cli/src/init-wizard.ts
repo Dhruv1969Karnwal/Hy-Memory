@@ -38,7 +38,7 @@ export type WizardOutcome =
 /**
  * Parse a numbered multi-select line.
  *
- * "" or "all" → every option (the product default: 扫描后默认全选导入).
+ * "" or "all" → every option (the product default: after a scan everything is selected for import).
  * "none"/"0"  → no options.
  * "1,3"       → those (1-based) options, de-duplicated and order-normalised.
  */
@@ -63,8 +63,10 @@ export function parseSelection(line: string, count: number): number[] | null {
 export function parseYesNo(line: string, fallback: boolean): boolean | null {
   const trimmed = line.trim().toLowerCase();
   if (trimmed === "") return fallback;
-  if (["y", "yes", "是", "开", "on", "1"].includes(trimmed)) return true;
-  if (["n", "no", "否", "关", "off", "0"].includes(trimmed)) return false;
+  if (["y", "yes", "\u662f", "\u5f00", "on", "1"].includes(trimmed))
+    return true;
+  if (["n", "no", "\u5426", "\u5173", "off", "0"].includes(trimmed))
+    return false;
   return null;
 }
 
@@ -74,7 +76,7 @@ export async function runInitWizard(
 ): Promise<WizardOutcome> {
   if (options.length === 0) return { state: "invalid", code: "no_sources" };
 
-  prompter.write("检测到以下来源：");
+  prompter.write("Detected these sources:");
   options.forEach((option, index) => {
     prompter.write(
       `  ${index + 1}) ${option.source_id}  ${option.display_name}`,
@@ -84,11 +86,11 @@ export async function runInitWizard(
   let selected: number[] | null = null;
   while (selected === null) {
     const line = await prompter.ask(
-      "选择要接入的来源（回车=全选，输入 none 取消，如 1,3）: ",
+      "Choose the sources to connect (Enter = all, type none to cancel, e.g. 1,3): ",
     );
     const parsed = parseSelection(line, options.length);
     if (parsed === null) {
-      prompter.write("输入无法识别，请重新输入编号、all 或 none。");
+      prompter.write("Unrecognized input; enter numbers, all or none again.");
       continue;
     }
     selected = parsed;
@@ -96,7 +98,7 @@ export async function runInitWizard(
   if (selected.length === 0) return { state: "cancelled" };
 
   const processingAnswer = await prompter.ask(
-    "开启处理？开启后会处理历史未完成会话并持续接收新会话；输入 n 保持冻结。[Y/n]: ",
+    "Turn on processing? It processes unfinished history conversations and keeps receiving new ones; enter n to stay frozen. [Y/n]: ",
   );
   const processing = parseYesNo(processingAnswer, true);
   if (processing === null) return { state: "invalid", code: "invalid_answer" };

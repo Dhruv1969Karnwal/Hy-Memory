@@ -26,7 +26,7 @@ def supervisor_for(tmp_path, runner=None):
         message_id="dispatch-input",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="保留原话并检查是否进入处理队列。",
+        content="Keep the original words and check that it enters the processing queue.",
     )
     return supervisor, record
 
@@ -224,7 +224,7 @@ def _dispatch_setup(tmp_path, runner, monkeypatch):
         message_id="dispatch-failure",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="这条原话的任务会遇到一个出错的 runner。",
+        content="This source text's task will meet a runner that fails.",
     )
     task = tasks.create(
         request_id=f"native:{record.evidence_id}:{record.revision}:dispatch",

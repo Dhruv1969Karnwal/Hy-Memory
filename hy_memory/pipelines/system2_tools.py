@@ -1,21 +1,21 @@
 """
 System 2 Agent Tools
 
-10 个工具供 System 2 Agent (LLM) 操作 VDB + Graph 双层存储。
+10 tools for the System 2 Agent (LLM) to operate the two-tier VDB + Graph storage.
 
 Read (4):
-  1. search_vdb     — 向量语义检索 VDB (L0-L4)
-  2. search_graph   — 按内容/标签/层级查 Graph (L5-L7)
-  3. get_node       — 统一获取节点详情 (VDB or Graph)，渐进式披露
-  4. expand_node    — 图遍历，查看某节点的关联节点
+  1. search_vdb     — semantic vector search over VDB (L0-L4)
+  2. search_graph   — query Graph by content/tag/layer (L5-L7)
+  3. get_node       — unified node detail retrieval (VDB or Graph), progressive disclosure
+  4. expand_node    — graph traversal to view a node's related nodes
 
-Write (6): — Graph 专用
-  5. create_graph_node   — 创建 L6 SCHEMA / L7 INTENTION 节点
-  6. update_graph_node   — 更新已有 Graph 节点
-  7. add_edge            — 建立关系 (RELATED_TO)
-  8. delete_graph_node   — 删除节点
-  9. revise_schema       — 版本化修订 Schema，旧版本退出 active 检索
-  10. retire_schema      — 用户明确遗忘时归档 Schema
+Write (6): — Graph only
+  5. create_graph_node   — create L6 SCHEMA / L7 INTENTION nodes
+  6. update_graph_node   — update existing Graph nodes
+  7. add_edge            — create relationships (RELATED_TO)
+  8. delete_graph_node   — delete nodes
+  9. revise_schema       — versioned Schema revision; old versions leave active retrieval
+  10. retire_schema      — archive a Schema when the user explicitly forgets
 """
 
 import json
@@ -395,9 +395,9 @@ SYSTEM2_TOOL_DEFINITIONS = [
 
 class System2ToolExecutor:
     """
-    执行 System 2 Agent 的 tool calls。
+    Executes tool calls from the System 2 Agent.
 
-    持有 VDB + Graph store 引用，所有操作自动记 pipeline log。
+    Holds VDB + Graph store references; every operation is automatically recorded in the pipeline log.
     """
 
     def __init__(
@@ -417,7 +417,7 @@ class System2ToolExecutor:
         self.tool_call_log: List[Dict[str, Any]] = []
 
     async def execute(self, tool_name: str, args: Dict[str, Any]) -> str:
-        """执行一个 tool call，返回 JSON string 结果"""
+        """Execute one tool call and return the result as a JSON string"""
         start_time = time.perf_counter()
         
         handler = getattr(self, f"_tool_{tool_name}", None)
@@ -437,12 +437,12 @@ class System2ToolExecutor:
         self.tool_call_log.append({
             "tool": tool_name,
             "args": args,
-            "result": result_json,  # 完整结果
+            "result": result_json,  # full result
             "result_preview": _truncate(result_json, 200),
             "elapsed_ms": round(elapsed_ms, 2),
         })
 
-        # Metrics: Graph ops（write tools 记录到 graph_ops）
+        # Metrics: Graph ops (write tools recorded under graph_ops)
         _GRAPH_WRITE_TOOLS = {
             "create_graph_node", "add_evidence", "revise_schema", "retire_schema", "add_edge",
         }
@@ -615,7 +615,7 @@ class System2ToolExecutor:
         layer = MemoryLayer.from_string(layer_str)
         node_id = str(uuid.uuid4())
 
-        # Embed content → V_con（Graph 向量检索用）
+        # Embed content → V_con (for Graph vector retrieval)
         try:
             content_embedding = await self.embed_service.embed_queued(content)
         except Exception as e:
@@ -734,8 +734,8 @@ class System2ToolExecutor:
         )
         if content_embedding:
             node._graph_embedding = content_embedding
-        # embedding 必须在 upsert CREATE 时写入（Kuzu 索引列不可 SET）。
-        # Neo4j 可在 upsert 后 SET，但 _graph_embedding 已在 upsert 中处理，无需再调 update_embedding。
+        # The embedding must be written during the upsert CREATE (Kuzu index columns cannot be SET).
+        # Neo4j could SET after upsert, but _graph_embedding is already handled in upsert, so update_embedding is unnecessary.
         await self.graph_store.upsert_memory_node(node)
         try:
             # Create VdbRef + DERIVED_FROM edges for each evidence
@@ -746,7 +746,7 @@ class System2ToolExecutor:
                 linked = await self.graph_store.add_derived_from(node_id, eid)
                 if require_evidence_links and linked is False:
                     raise RuntimeError(f"failed to link evidence {eid}")
-                # 递增 VDB fact 的 s2_evidence_count（用于 preprocess 过滤已消化 facts）
+                # Increment the VDB fact's s2_evidence_count (used by preprocess to filter already-digested facts)
                 if increment_evidence:
                     await self._increment_evidence_count(eid, vdb_node)
 
@@ -891,7 +891,7 @@ class System2ToolExecutor:
         if marker.user_id != self.user_id or marker.agent_id != self.agent_id:
             return {"error": f"Forget marker {forget_fact_id} is outside the current user scope"}
         marker_text = str(marker.content or "").lower()
-        if "forget" not in marker_text and "忘记" not in marker_text:
+        if "forget" not in marker_text and "\u5fd8\u8bb0" not in marker_text:
             return {"error": f"Fact {forget_fact_id} is not an explicit forgetting directive"}
         custom = dict(schema.custom or {})
         custom.update({
@@ -974,15 +974,15 @@ class System2ToolExecutor:
         }
 
     async def _increment_evidence_count(self, vdb_id: str, vdb_node=None) -> None:
-        """递增 VDB fact 的 s2_evidence_count（存在 custom 子字典中，best-effort）"""
+        """Increment the VDB fact's s2_evidence_count (stored in the custom sub-dict, best-effort)"""
         try:
-            # 读出当前 custom dict
+            # Read out the current custom dict
             custom = {}
             if vdb_node and hasattr(vdb_node, "custom") and isinstance(vdb_node.custom, dict):
                 custom = dict(vdb_node.custom)
             current = custom.get("s2_evidence_count", 0)
             custom["s2_evidence_count"] = current + 1
-            # 写回 custom 子字典（_payload_to_node 通过 MemoryNode.from_dict 读 custom）
+            # Write the custom sub-dict back (_payload_to_node reads custom via MemoryNode.from_dict)
             await self.vector_store.update_payload(vdb_id, {"custom": custom})
         except Exception as e:
             logger.debug(f"[S2-tools] increment s2_evidence_count for {vdb_id} failed: {e}")

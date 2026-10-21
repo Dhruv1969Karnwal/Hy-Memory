@@ -16,11 +16,11 @@ it("requires explicit confirmation and supports safe keyboard cancellation", asy
     />,
   );
   expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "取消" }),
+    screen.getByRole("button", { name: "Cancel" }),
   );
   await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
   expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "撤回授权" }),
+    screen.getByRole("button", { name: "Revoke authorization" }),
   );
   await userEvent.keyboard("{Escape}");
   expect(cancel).toHaveBeenCalledOnce();

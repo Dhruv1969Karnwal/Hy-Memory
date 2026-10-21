@@ -17,10 +17,10 @@ from one_memory.imports.probe import describe_json, render_report
 
 
 def test_reports_keys_and_shapes_without_any_message_text() -> None:
-    secret = "某位同事说这个季度先不做 Windows,等模型额度下来再说"
+    secret = "A colleague said we skip Windows this quarter until the model quota frees up"
     payload = [
         {
-            "title": "内部排期",
+            "title": "Internal schedule",
             "mapping": {
                 "abc-123": {
                     "message": {
@@ -38,9 +38,9 @@ def test_reports_keys_and_shapes_without_any_message_text() -> None:
     assert "author" in report
     # Nothing of the conversation itself, not even a fragment of it.
     assert secret not in report
-    assert "某位同事" not in report
-    assert "模型额度" not in report
-    assert "内部排期" not in report
+    assert "A colleague" not in report
+    assert "model quota" not in report
+    assert "Internal schedule" not in report
 
 
 def test_keeps_short_enumerations_because_they_are_the_shape() -> None:
@@ -74,28 +74,28 @@ def test_holds_back_a_small_sample_where_every_value_differs() -> None:
     four-value enumeration and prints the entire conversation.
     """
     payload = [
-        {"text": "在吗"},
-        {"text": "帮我看下这个"},
-        {"text": "好的谢谢"},
-        {"text": "明天再说"},
+        {"text": "You there"},
+        {"text": "Take a look at this for me"},
+        {"text": "OK thanks"},
+        {"text": "Say more tomorrow"},
     ]
 
     report = render_report(describe_json(payload))
 
-    for line in ("在吗", "帮我看下这个", "好的谢谢", "明天再说"):
+    for line in ("You there", "Take a look at this for me", "OK thanks", "Say more tomorrow"):
         assert line not in report
     assert "free text" in report
 
 
 def test_treats_a_field_with_many_distinct_values_as_content() -> None:
-    payload = [{"title": f"关于 {n} 的讨论"} for n in range(30)]
+    payload = [{"title": f"Discussion about {n}"} for n in range(30)]
 
     report = render_report(describe_json(payload))
 
     # Titles look enumerable in a three-row sample and are not. The rule has
     # to be about how the field behaves across the file, not how it looks in
     # the first row.
-    assert "关于 0 的讨论" not in report
+    assert "Discussion about 0" not in report
     assert "str" in report
 
 
@@ -103,14 +103,14 @@ def test_holds_back_a_value_seen_only_a_couple_of_times() -> None:
     """Two sightings of the same short string is not evidence of a vocabulary.
 
     The ratio rule alone lets this through: one distinct value over two
-    sightings repeats perfectly. But "好的" said twice in a two-message
+    sightings repeats perfectly. But "OK" said twice in a two-message
     sample is someone's message, not a label.
     """
-    payload = [{"text": "好的"}, {"text": "好的"}]
+    payload = [{"text": "OK"}, {"text": "OK"}]
 
     report = render_report(describe_json(payload))
 
-    assert "好的" not in report
+    assert "OK" not in report
 
 
 def test_holds_back_a_field_with_many_values_however_often_it_repeats() -> None:
@@ -121,12 +121,12 @@ def test_holds_back_a_field_with_many_values_however_often_it_repeats() -> None:
     need spelled out to write a parser; knowing the field is a string is
     enough, and printing them is printing the user's data.
     """
-    payload = [{"tag": f"话题{n % 20}"} for n in range(100)]
+    payload = [{"tag": f"Topic{n % 20}"} for n in range(100)]
 
     report = render_report(describe_json(payload))
 
-    assert "话题0" not in report
-    assert "话题19" not in report
+    assert "Topic0" not in report
+    assert "Topic19" not in report
     assert "free text" in report
 
 
@@ -137,13 +137,16 @@ def test_holds_back_a_long_value_however_often_it_repeats() -> None:
     export, so repetition cannot be the only test -- a single distinct value
     over fifty sightings is the strongest possible ratio.
     """
-    boilerplate = "你是一个乐于助人的助手,请用简体中文回答用户的所有问题,并保持礼貌"
+    boilerplate = (
+        "You are a helpful assistant, answer all user questions in Simplified Chinese and stay "
+        "polite"
+    )
     payload = [{"system": boilerplate} for _ in range(50)]
 
     report = render_report(describe_json(payload))
 
     assert boilerplate not in report
-    assert "乐于助人" not in report
+    assert "helpful assistant" not in report
     assert "free text" in report
 
 

@@ -32,14 +32,16 @@ vi.mock("./use-import-sources", () => ({
   }),
 }));
 vi.mock("./ApplicationsHome", () => ({
-  ApplicationsHome: () => <p>应用主页已就绪</p>,
+  ApplicationsHome: () => <p>Applications home ready</p>,
 }));
-vi.mock("./MemorySpace", () => ({ MemorySpace: () => <p>记忆工作台</p> }));
-vi.mock("./R6Settings", () => ({ R6Settings: () => <p>设置已就绪</p> }));
+vi.mock("./MemorySpace", () => ({
+  MemorySpace: () => <p>Memory workbench</p>,
+}));
+vi.mock("./R6Settings", () => ({ R6Settings: () => <p>Settings ready</p> }));
 vi.mock("./OnboardingFlow", () => ({
   OnboardingFlow: ({ state }: { state: OnboardingState }) => {
     mocks.flow(state);
-    return <p>继续首次设置：{state.status}</p>;
+    return <p>Continue first-time setup: {state.status}</p>;
   },
 }));
 vi.mock("./learning-preferences", () => ({ saveLearningState: mocks.write }));
@@ -74,10 +76,12 @@ it("recovers an initial failed read into the completed user's homepage without w
   render(<App />);
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.queryByText(/SECRET_RAW_ERROR/)).toBeNull();
-  expect(screen.queryByText("正在打开 MemHub…")).toBeNull();
-  expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
-  await screen.findByText("应用主页已就绪");
+  expect(screen.queryByText("Opening MemHub...")).toBeNull();
+  expect(
+    screen.queryByRole("navigation", { name: "Primary navigation" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Read again" }));
+  await screen.findByText("Applications home ready");
   expect(mocks.getOnboarding).toHaveBeenCalledTimes(2);
   expect(mocks.flow).not.toHaveBeenCalled();
   expect(mocks.write).not.toHaveBeenCalled();
@@ -91,22 +95,22 @@ it("retains retry after another failure and single-flights rapid retry clicks", 
     .mockReturnValueOnce(retry.promise);
   render(<App />);
   await screen.findByRole("alert");
-  const button = screen.getByRole("button", { name: "重新读取" });
+  const button = screen.getByRole("button", { name: "Read again" });
   fireEvent.click(button);
   fireEvent.click(button);
   fireEvent.click(button);
   await waitFor(() => expect(mocks.getOnboarding).toHaveBeenCalledTimes(2));
-  expect(screen.getByText("正在打开 MemHub…")).toBeTruthy();
+  expect(screen.getByText("Opening MemHub...")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   await act(async () => retry.reject(new Error("still offline")));
   await screen.findByRole("alert");
-  expect(screen.getByRole("button", { name: "重新读取" })).toHaveProperty(
+  expect(screen.getByRole("button", { name: "Read again" })).toHaveProperty(
     "disabled",
     false,
   );
   expect(mocks.getOnboarding).toHaveBeenCalledTimes(2);
-  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
-  await screen.findByText("应用主页已就绪");
+  fireEvent.click(screen.getByRole("button", { name: "Read again" }));
+  await screen.findByText("Applications home ready");
   expect(mocks.getOnboarding).toHaveBeenCalledTimes(3);
   expect(mocks.write).not.toHaveBeenCalled();
 });
@@ -122,10 +126,10 @@ it("preserves the exact unfinished onboarding state after retry instead of compl
     .mockResolvedValueOnce(state);
   render(<App />);
   await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
-  await screen.findByText("继续首次设置：new");
+  fireEvent.click(screen.getByRole("button", { name: "Read again" }));
+  await screen.findByText("Continue first-time setup: new");
   expect(mocks.flow).toHaveBeenLastCalledWith(state);
-  expect(screen.queryByText("应用主页已就绪")).toBeNull();
+  expect(screen.queryByText("Applications home ready")).toBeNull();
   expect(mocks.write).not.toHaveBeenCalled();
 });
 
@@ -139,15 +143,15 @@ it.each(["initial", "retry"])(
     const old = render(<App />);
     if (phase === "retry") {
       await screen.findByRole("alert");
-      fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+      fireEvent.click(screen.getByRole("button", { name: "Read again" }));
     }
     await act(async () => {});
     old.unmount();
     render(<App />);
-    await screen.findByText("应用主页已就绪");
+    await screen.findByText("Applications home ready");
     const reads = mocks.getOnboarding.mock.calls.length;
     await act(async () => late.resolve({ status: "new" }));
-    expect(screen.getByText("应用主页已就绪")).toBeTruthy();
+    expect(screen.getByText("Applications home ready")).toBeTruthy();
     expect(mocks.flow).not.toHaveBeenCalled();
     expect(mocks.getOnboarding).toHaveBeenCalledTimes(reads);
     expect(mocks.write).not.toHaveBeenCalled();
@@ -177,7 +181,7 @@ it("shares the pending initial read across StrictMode effect replay", async () =
   await act(async () => {});
   expect(mocks.getOnboarding).toHaveBeenCalledOnce();
   await act(async () => read.resolve({ status: "completed" }));
-  await screen.findByText("应用主页已就绪");
+  await screen.findByText("Applications home ready");
   expect(mocks.write).not.toHaveBeenCalled();
 });
 
@@ -186,13 +190,13 @@ it("keeps the read error actionable even if import startup is also pending", asy
   mocks.getOnboarding.mockRejectedValueOnce(new Error("offline"));
   const view = render(<App />);
   await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+  fireEvent.click(screen.getByRole("button", { name: "Read again" }));
   await act(async () => {});
-  expect(screen.queryByText("应用主页已就绪")).toBeNull();
-  expect(screen.getByText("正在打开 MemHub…")).toBeTruthy();
+  expect(screen.queryByText("Applications home ready")).toBeNull();
+  expect(screen.getByText("Opening MemHub...")).toBeTruthy();
   mocks.importsLoading = false;
   view.rerender(<App />);
-  await screen.findByText("应用主页已就绪");
+  await screen.findByText("Applications home ready");
   expect(mocks.getOnboarding).toHaveBeenCalledTimes(2);
 });
 
@@ -201,8 +205,8 @@ it("retains an explicit settings destination after successful retry", async () =
   mocks.getOnboarding.mockRejectedValueOnce(new Error("offline"));
   render(<App />);
   await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
-  await screen.findByText("设置已就绪");
+  fireEvent.click(screen.getByRole("button", { name: "Read again" }));
+  await screen.findByText("Settings ready");
   expect(window.location.search).toBe("?view=settings");
   expect(mocks.write).not.toHaveBeenCalled();
 });
@@ -217,7 +221,7 @@ it("re-reads on its own once a session exists after the failed first read", asyn
   await act(async () => {
     view.rerender(<App />);
   });
-  await screen.findByText("应用主页已就绪");
+  await screen.findByText("Applications home ready");
   expect(screen.queryByRole("alert")).toBeNull();
   expect(mocks.getOnboarding).toHaveBeenCalledTimes(2);
   expect(mocks.write).not.toHaveBeenCalled();
@@ -232,7 +236,7 @@ it("re-reads when the page comes back after the failed first read", async () => 
   await act(async () => {
     fireEvent(document, new Event("visibilitychange"));
   });
-  await screen.findByText("应用主页已就绪");
+  await screen.findByText("Applications home ready");
   expect(screen.queryByRole("alert")).toBeNull();
   expect(mocks.getOnboarding).toHaveBeenCalledTimes(2);
 });

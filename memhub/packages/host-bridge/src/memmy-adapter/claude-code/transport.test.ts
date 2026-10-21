@@ -237,7 +237,7 @@ it.each(["recall-and-sync", "sync-only"] as const)(
         expect(
           JSON.parse(prompt.stdout).hookSpecificOutput.additionalContext,
         ).toContain("synthetic-memory");
-        expect(prompt.stderr).toContain("正在使用 MemHub 查询记忆");
+        expect(prompt.stderr).toContain("Using MemHub to query memories");
       } else {
         expect(JSON.parse(prompt.stdout)).toEqual({
           continue: true,

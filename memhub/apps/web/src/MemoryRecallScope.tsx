@@ -25,21 +25,21 @@ export function memoryProvenanceLabel(detail: MemoryDetail): string {
     );
     const author =
       authors.size !== 1
-        ? "多位作者"
+        ? "Multiple authors"
         : authors.has("person")
-          ? "用户原文"
+          ? "User original text"
           : authors.has("agent")
-            ? "Agent 原文"
-            : "作者未知";
-    return `导入的已有记忆 · ${author}`;
+            ? "Agent original text"
+            : "Author unknown";
+    return `Imported existing memory - ${author}`;
   }
   return detail.memory.origin === "manual"
-    ? "手动添加"
+    ? "Added manually"
     : detail.memory.origin === "answered"
-      ? "问答生成"
+      ? "Generated from Q&A"
       : detail.memory.origin === "agent"
-        ? "由 AI 回复整理"
-        : "由原始对话整理";
+        ? "Compiled from AI replies"
+        : "Compiled from the original conversation";
 }
 
 export function MemoryRecallScope({
@@ -69,10 +69,10 @@ export function MemoryRecallScope({
   const editable = detail.memory.status === "confirmed";
   const summary =
     current === "shared"
-      ? "所有关联工具"
+      ? "All connected tools"
       : current === "disabled"
-        ? "已停止外部记忆召回"
-        : "原有限定范围";
+        ? "External memory recall is stopped"
+        : "Existing limited scope";
   const close = () => {
     setEditing(false);
     setMode(current);
@@ -97,28 +97,31 @@ export function MemoryRecallScope({
       // has to match, or the log and the screen disagree about the same write.
       setError(
         apiErrorCode(reason) === "memory_revision_conflict"
-          ? "记忆已更新，请重新打开这条记忆后再调整范围。"
+          ? "The memory has been updated. Reopen this memory before adjusting the scope."
           : isDefiniteRefusal(reason)
-            ? "范围修改未提交，当前范围保持不变。请修正后重试。"
-            : "保存结果尚未确认，请重试。",
+            ? "The scope change was not submitted; the current scope stays unchanged. Fix it and try again."
+            : "The save result is unconfirmed. Try again.",
       );
     } finally {
       setSaving(false);
     }
   };
   return (
-    <section className="memory-recall-scope" aria-label="外部记忆召回范围">
+    <section
+      className="memory-recall-scope"
+      aria-label="External memory recall scope"
+    >
       <div className="recall-scope-heading">
         <span>
           <LockKeyhole size={15} aria-hidden="true" />
-          外部记忆召回
+          External memory recall
         </span>
         {editable && !editing && (
           <button
             type="button"
             className="quiet map-tool"
-            title="调整召回范围"
-            aria-label="调整召回范围"
+            title="Adjust recall scope"
+            aria-label="Adjust recall scope"
             ref={editButton}
             disabled={disabled}
             onClick={() => {
@@ -134,12 +137,14 @@ export function MemoryRecallScope({
       {editing && (
         <>
           <fieldset disabled={disabled}>
-            <legend className="sr-only">选择召回范围</legend>
+            <legend className="sr-only">Choose the recall scope</legend>
             {(
               [
-                ...(previous.length ? [["limited", "原有限定范围"]] : []),
-                ["shared", "所有关联工具"],
-                ["disabled", "停止外部记忆召回"],
+                ...(previous.length
+                  ? [["limited", "Existing limited scope"]]
+                  : []),
+                ["shared", "All connected tools"],
+                ["disabled", "Stop external memory recall"],
               ] as [Mode, string][]
             ).map(([value, label]) => (
               <label key={value} className="recall-scope-option">
@@ -169,16 +174,16 @@ export function MemoryRecallScope({
               onClick={() => void save()}
             >
               <Check size={15} aria-hidden="true" />
-              {saving ? "正在保存…" : "保存召回范围"}
+              {saving ? "Saving..." : "Save recall scope"}
             </button>
             <button
               type="button"
               className="quiet"
-              aria-label="取消范围修改"
+              aria-label="Cancel scope change"
               disabled={disabled}
               onClick={close}
             >
-              取消
+              Cancel
             </button>
           </div>
         </>
@@ -189,7 +194,8 @@ export function MemoryRecallScope({
         </p>
       )}
       <p className="recall-scope-boundary">
-        原文检索仍按来源授权；已带出的内容不会撤回。
+        Raw-text retrieval still follows source authorization; content already
+        brought out cannot be withdrawn.
       </p>
     </section>
   );

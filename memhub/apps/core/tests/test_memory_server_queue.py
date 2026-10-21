@@ -280,9 +280,11 @@ def test_build_claim_statements_is_ordered() -> None:
 # ---------------------------------------------------------------------------
 # A2-03: claimers and executors are separate roles.
 #
-# ARCHITECTURE.md is explicit: "不要复制 HY Memory App 的旧 claim 风暴 …
-# 将 claimer 与 executor 分开", and "claimer 数量和 executor 数量分开配置；
-# 禁止每个 executor 高频抢表". These tests pin the shape, because the failure
+# ARCHITECTURE.md is explicit: "do not copy the old HY Memory App claim storm ...
+# separate the claimer from the executor", and "the claimer count and the executor count are
+# configured separately;
+# forbidding every executor from hammering the claim table at high frequency". These tests pin the
+# shape, because the failure
 # mode (one claimer per executor) is invisible in a passing single-worker test.
 # ---------------------------------------------------------------------------
 

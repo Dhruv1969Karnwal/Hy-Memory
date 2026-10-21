@@ -1,29 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Coding Memory Store - 双层物理存储
+Coding Memory Store - two-layer physical storage
 
-- SQLite (coding_memory.db)        — coding_memory_meta 表，每条 memory 一行
-- VDB (独立 collection)              — 每个 search key 一行向量，由 _vec_collection 名隔离
-                                       从 chat collection 派生独立 collection 名
+- SQLite (coding_memory.db)        — coding_memory_meta table, one row per memory
+- VDB (separate collection)              — one vector row per search key, isolated by the _vec_collection name
+                                       the separate collection name is derived from the chat collection
 
-每条 CodingMemory 在 VDB 里有 1 + N 行（task + N 个 search_keys）。
-SQLite 里有 1 行（含 search_keys JSON 字段，便于 update 时知道有几行 keys）。
+Each CodingMemory occupies 1 + N rows in the VDB (task + N search_keys).
+SQLite holds 1 row (with a search_keys JSON field, so an update knows how many key rows exist).
 
-写入流程:
+Write flow:
   1. SQLite upsert
   2. embed_batch(task + search_keys)
-  3. VDB upsert_batch（每行一个 MemoryNode，custom 字段携带 coding_experience_id 等）
+  3. VDB upsert_batch (one MemoryNode per row; the custom field carries coding_experience_id and so on)
 
-更新流程（覆盖式）:
-  1. 拿旧 search_keys 长度 → 删旧 keys 的 VDB node_id
+Update flow (overwrite):
+  1. Read the old search_keys length → delete the old keys' VDB node_ids
   2. SQLite update
-  3. 重新走写入步骤 2-3
+  3. Repeat write steps 2-3
 
-删除流程:
-  1. 拿 search_keys 长度 → 删全部 VDB node_id
+Delete flow:
+  1. Read the search_keys length → delete all VDB node_ids
   2. SQLite delete
 
-对外使用方式见 docs/scene_coding_usage.md。
+See docs/scene_coding_usage.md for the public usage.
 """
 
 import concurrent.futures
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 # ================================================================
-# SQLite 线程池
+# SQLite thread pool
 # ================================================================
 
 _CODING_SQLITE_POOL_SIZE = 16
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS coding_memory_meta (
 );
 """
 
-# 事实层（episodic）。与经验表同库不同表；无 TTL，靠 SUPERSEDE 软删保新鲜。
+# Fact layer (episodic). Same database as the experience table but a different one; no TTL, freshness comes from SUPERSEDE soft deletes.
 _CREATE_FACT_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS working_fact (
     fact_id                TEXT PRIMARY KEY,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS working_fact (
     fact_chain_summary     TEXT NOT NULL DEFAULT '',
     created_at             TEXT NOT NULL
 );
--- 反查前驱（谁的 fact_link 指向我）走这个索引，写演变总结时要顺着链往回走
+-- Looking up predecessors (whose fact_link points at me) uses this index; writing the evolution summary walks the chain backwards
 CREATE INDEX IF NOT EXISTS idx_working_fact_link ON working_fact(fact_link);
 """
 
@@ -145,7 +145,7 @@ _CREATE_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_fact_created ON working_fact(created_at DESC);",
 ]
 
-# 旧 schema：主键叫 memory_id，且带一个不再使用的 boundary_scope 列。
+# Legacy schema: the primary key was named memory_id, plus a boundary_scope column that is no longer used.
 _MIGRATE_COPY_SQL = """
 INSERT INTO coding_memory_meta (
     experience_id, user_id, agent_id, task, search_keys, solution,
@@ -159,21 +159,21 @@ SELECT
 FROM coding_memory_meta_legacy;
 """
 
-# 后加的列：老库用 ADD COLUMN 补，不必重建表
+# Columns added later: legacy databases get them via ADD COLUMN, no table rebuild needed
 _ADDED_COLUMNS = {
     "coding_memory_meta": {
         "source_fact_ids": "TEXT NOT NULL DEFAULT '[]'",
         "extraction_source": "TEXT NOT NULL DEFAULT 'auto_extract'",
     },
-    # 早期版本存过一列 fact_chain（机械累积的历代说法），已废弃：同样的信息顺着
-    # fact_link 反查就有。老库里那一列留着不管，有默认值不影响插入。
+    # Early versions stored a fact_chain column (mechanically accumulated wordings over time), now obsolete: the same information
+    # is available by looking it up backwards along fact_link. Legacy databases keep that column untouched; the default keeps inserts working.
     "working_fact": {
         "fact_chain_summary": "TEXT NOT NULL DEFAULT ''",
-        # 事实层比经验层晚补这一列，老库里已有的行会是 NULL。作用域过滤按
-        # "NULL = 没记录分支"处理，不当成"记录了别的分支"，见 _scope_where。
+        # The fact layer got this column later than the experience layer, so rows already in legacy databases are NULL. Scope filtering
+        # treats "NULL = branch not recorded", not "a different branch recorded"; see _scope_where.
         "branch": "TEXT",
-        # 覆盖闸门的硬锚点，和它配套的可寻址原文。老库里的行是空串：subject 空
-        # 就退回纯语义 + LLM 判覆盖（改动前的行为），details 空就只有摘要可读。
+        # Hard anchor for the override gate, plus the addressable source text paired with it. Legacy rows hold empty strings: an empty subject
+        # falls back to pure semantics plus an LLM override decision (the behavior before this change), and empty details leaves only the summary readable.
         "subject": "TEXT NOT NULL DEFAULT ''",
         "details": "TEXT NOT NULL DEFAULT ''",
         "source": "TEXT NOT NULL DEFAULT 'default'",
@@ -182,23 +182,23 @@ _ADDED_COLUMNS = {
 
 
 # ================================================================
-# workspace / branch 作用域过滤
+# workspace / branch scope filtering
 #
-# 一套规则，经验层与事实层、召回（search）与枚举（list）共用：
-#   - workspace_id 为空 → 不过滤，全量召回。调用方没传就是维持现状。
-#   - workspace_id 非空 → 精确匹配。NULL 是"不属于任何 repo"，排除掉。
-#   - branch 只在 workspace_id 非空时才叠加（与 list_memories 既有的组合语义
-#     一致），单独传 branch 不生效。
-#   - branch 容 NULL。branch IS NULL 的行是"没记录分支"，不是"记录了别的分支"，
-#     筛掉它会在两处误杀：事实表这一列是后补的，老库里整表都是 NULL；写入方没
-#     传 branch 的新行也是 NULL。branch 是 workspace 内部的细分，绝大多数经验
-#     本来就与分支无关，宁可多给几条不确定的，也不能让它们变成召不回来。
+# One rule set, shared by the experience and fact layers and by recall (search) and enumeration (list):
+#   - empty workspace_id → no filtering, full recall. A caller that passes nothing keeps the current behavior.
+#   - non-empty workspace_id → exact match. NULL means "belongs to no repo" and is excluded.
+#   - branch is only layered on when workspace_id is non-empty (consistent with the existing combined
+#     semantics of list_memories); passing branch alone has no effect.
+#   - branch tolerates NULL. A row with branch IS NULL means "branch not recorded", not "a different branch recorded",
+#     and filtering those out would wrongly drop rows in two places: the fact table got this column late, so legacy databases are all NULL,
+#     and new rows written without a branch are NULL too. branch is a subdivision inside a workspace and most
+#     experiences are branch-independent anyway; better to return a few uncertain ones than to make them unretrievable.
 # ================================================================
 
 def _scope_where(
     workspace_id: Optional[str], branch: Optional[str]
 ) -> Tuple[str, List[Any]]:
-    """把作用域条件翻译成 SQL 布尔表达式 + 绑定参数。不过滤时返回恒真的 "1"。"""
+    """Translate the scope condition into a SQL boolean expression plus bound parameters; returns the always-true "1" when not filtering."""
     if not workspace_id:
         return "1", []
     sql = "workspace_id = ?"
@@ -215,7 +215,7 @@ def _scope_matches(
     workspace_id: Optional[str],
     branch: Optional[str],
 ) -> bool:
-    """_scope_where 的 Python 等价，用于已经取到对象之后再过一道同样的规则。"""
+    """Python equivalent of _scope_where, applying the same rules to objects that were already loaded."""
     if not workspace_id:
         return True
     if row_workspace_id != workspace_id:
@@ -225,20 +225,20 @@ def _scope_matches(
     return True
 
 
-# 作用域过滤下推不到向量库：chroma（默认后端）把 custom 整体 JSON 序列化成一个
-# metadata 字段，没法按 custom.coding_workspace_id 建条件；qdrant 能做到，但一个
-# "只有部分后端才真生效"的硬过滤比没有更危险。所以过滤放在 SQLite —— 它才是这两
-# 列的权威来源 —— 向量那边按过滤的选择率放大取数，让过滤不吃召回。
+# The scope filter cannot be pushed down into the vector database: chroma (the default backend) serializes all of custom into a single
+# metadata field, so a condition on custom.coding_workspace_id is impossible; qdrant could do it, but a hard filter
+# that really takes effect on only some backends is more dangerous than none. So filtering lives in SQLite -- it is the authority for these two
+# columns -- while the vector side over-fetches by the filter's selectivity so filtering does not eat recall.
 #
-# 放大倍数不是拍的：total/scoped 就是从权威表数出来的选择率倒数，按它取数，ANN
-# 返回的 top-N 里期望仍有 top 条落在作用域内。作用域覆盖了该 user 大半数据时倍数
-# 接近 1；只占一小片时会一路放大到把这个 user 的行基本取全，此时过滤是精确的。
-# 上限只为兜住"单 user 数据量病态大 + 作用域极窄"这一种组合。
+# The overfetch factor is not a guess: total/scoped is the inverse selectivity counted from the authority table, and fetching that many
+# keeps an expected top entries inside the scope among the ANN top-N. When the scope covers most of this user's data the factor
+# approaches 1; when it covers only a sliver it grows until this user's rows are nearly all fetched, at which point the filter is exact.
+# The upper bound only guards against one combination: pathologically large data for a single user plus a very narrow scope.
 _SCOPE_OVERFETCH_MAX_ROWS = 2000
 
 
 def _scope_overfetch(top: int, scoped: int, total: int) -> int:
-    """按作用域选择率放大向量取数条数。"""
+    """Scale the number of vector rows fetched according to the scope selectivity."""
     if scoped <= 0 or scoped >= total:
         return top
     scaled = math.ceil(top * total / scoped)
@@ -261,7 +261,7 @@ def _parse_dt(s: Optional[str]) -> Optional[datetime]:
     if not s:
         return None
     try:
-        # 去掉末尾 Z
+        # Strip the trailing Z
         return datetime.fromisoformat(s.rstrip("Z"))
     except Exception:
         return None
@@ -302,13 +302,13 @@ def _row_to_fact(row: sqlite3.Row) -> WorkingFact:
         source=row["source"],
         statement=row["statement"],
         files=json.loads(row["files"] or "[]"),
-        # 老库刚 ADD COLUMN 时可能取不到这两列，用 keys() 兜一下（同 fact_chain_summary）
+        # Right after ADD COLUMN on a legacy database these two columns may be missing, so keys() guards them (same as fact_chain_summary)
         subject=(row["subject"] or "" if "subject" in row.keys() else ""),
         details=(row["details"] or "" if "details" in row.keys() else ""),
         fact_link=row["fact_link"],
         derived_experience_ids=json.loads(row["derived_experience_ids"] or "[]"),
         status=row["status"],
-        # 老库刚 ADD COLUMN 时可能取不到这一列，用 keys() 兜一下
+        # Right after ADD COLUMN on a legacy database this column may be missing, so keys() guards it
         fact_chain_summary=(row["fact_chain_summary"] or ""
                             if "fact_chain_summary" in row.keys() else ""),
         created_at=_parse_dt(row["created_at"]),
@@ -316,24 +316,24 @@ def _row_to_fact(row: sqlite3.Row) -> WorkingFact:
 
 
 def _derive_coding_collection_name(base: str, suffix: str = "") -> str:
-    """从 chat collection 派生 coding_keys collection。
+    """Derive the coding_keys collection from the chat collection.
 
-    suffix 是**变体后缀**（scene="coding" 传 "_cv"，working 传 ""）。为空时返回值
-    与加这个参数之前逐字相同 —— working 的集合名不能变，否则已落盘的库读不到。
+    suffix is the **variant suffix** (scene="coding" passes "_cv", working passes ""). When empty the return value is
+    byte-for-byte what it was before this parameter existed -- the working collection name must not change, or databases already on disk become unreadable.
     """
     base = (base or "agent_memories").strip()
-    # 维度后缀由 VectorStoreBase 自动拼接，这里只在 base_name 上加 _coding_keys
+    # The dimension suffix is appended automatically by VectorStoreBase; only _coding_keys is added to base_name here
     return f"{base}_coding_keys{suffix}"
 
 
 def _derive_fact_collection_name(base: str, suffix: str = "") -> str:
-    """从 chat collection 派生事实层 collection。suffix 同上。"""
+    """Derive the fact-layer collection from the chat collection. suffix behaves as above."""
     base = (base or "agent_memories").strip()
     return f"{base}_working_facts{suffix}"
 
 
 def _variant_db_path(db_path: str, suffix: str) -> str:
-    """给 sqlite 路径加变体后缀。suffix 为空时原样返回。
+    """Append a variant suffix to a sqlite path. Returned unchanged when suffix is empty.
 
     coding_memory.db → coding_memory_cv.db
     """
@@ -344,7 +344,7 @@ def _variant_db_path(db_path: str, suffix: str) -> str:
 
 
 def _clone_config_with_collection(config: MemoryConfig, derive, suffix: str = "") -> MemoryConfig:
-    """深拷贝 config 并把 collection_name 换成 derive() 派生出的名字。"""
+    """Deep-copy config and replace collection_name with the name derived by derive()."""
     cfg = deepcopy(config)
     base = cfg.vector_store.collection_name or "agent_memories"
     cfg.vector_store.collection_name = derive(base, suffix)
@@ -357,9 +357,9 @@ def _clone_config_with_collection(config: MemoryConfig, derive, suffix: str = ""
 
 class CodingMemoryStore:
     """
-    Coding Memory 双层存储。
+    Two-layer storage for Coding Memory.
 
-    必须先 await initialize() 再用。close() 释放资源。
+    Await initialize() before use. close() releases the resources.
     """
 
     def __init__(
@@ -371,32 +371,32 @@ class CodingMemoryStore:
     ):
         self.config = config
         self.embed_service = embed_service
-        # 变体后缀。working → ""（路径和集合名与改动前逐字相同，已落盘的库照旧能读）；
-        # coding → "_cv"（独立 sqlite + 独立两个向量集合）。
+        # Variant suffix. working → "" (paths and collection names are byte-identical to before, so databases already on disk stay readable);
+        # coding → "_cv" (its own sqlite plus its own two vector collections).
         #
-        # 为什么必须分库而不是加一个 variant 列做过滤：检索是**先**在向量集合里取
-        # top-K、**再**用 sqlite 过滤。两个变体的 fact 混在同一个集合里时，向量那一步
-        # 就已经混了 —— 后面加任何 SQL 条件都救不回来，因为 top-K 的名额已经被另一个
-        # 变体占掉了。而且两套抽取规范产出的 statement 风格不同，混着召回本身有害。
+        # Why separate databases instead of a variant column to filter on: retrieval **first** takes top-K from the vector collection and
+        # **then** filters with sqlite. Once both variants' facts share one collection, the vector step is already mixed --
+        # no later SQL condition can recover it, because the other variant has taken the top-K slots.
+        # Moreover the two extraction specs produce differently styled statements, and recalling them mixed is harmful by itself.
         self.variant = "coding" if str(variant or "").strip().lower() == "coding" else "working"
         _suffix = "_cv" if self.variant == "coding" else ""
 
-        # SQLite 路径
+        # SQLite path
         if db_path is None:
             data_dir = os.path.dirname(config.history.db_path) if config.history.db_path else "./data"
             db_path = os.path.join(data_dir, "coding_memory.db")
         self._db_path = _variant_db_path(db_path, _suffix)
-        # 原始轨迹是用户/agent 的上下文，不属于某个 variant。working 与 coding
-        # 业务表继续分库，但 last-K 历史共用一份独立 SQLite，避免自动路由切换后失忆。
+        # Raw traces are user/agent context and do not belong to any variant. The working and coding
+        # business tables keep separate databases, but last-K history shares one separate SQLite so an automatic routing switch does not cause amnesia.
         self._trace_db_path = _variant_db_path(db_path, "_trace")
 
-        # SQLite 连接（与现有 cache_sqlite 风格一致）
+        # SQLite connections (matching the existing cache_sqlite style)
         self._conn: Optional[sqlite3.Connection] = None
         self._lock = threading.Lock()
         self._trace_conn: Optional[sqlite3.Connection] = None
         self._trace_lock = threading.Lock()
 
-        # VDB：经验层与事实层各自独立 collection
+        # VDB: the experience layer and the fact layer each get their own collection
         self._coding_config = _clone_config_with_collection(
             config, _derive_coding_collection_name, _suffix
         )
@@ -452,7 +452,7 @@ class CodingMemoryStore:
         self._trace_conn.executescript(_CREATE_TRACE_TABLE_SQL)
 
     def _add_missing_columns_sync(self) -> None:
-        """给已存在的表补后加的列。ADD COLUMN 各版本 SQLite 都支持，无需重建。"""
+        """Add the later-added columns to existing tables. Every SQLite version supports ADD COLUMN, so no rebuild is needed."""
         assert self._conn is not None
         for table, columns in _ADDED_COLUMNS.items():
             cur = self._conn.execute(f"PRAGMA table_info({table})")
@@ -463,11 +463,11 @@ class CodingMemoryStore:
                     self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
     def _migrate_legacy_schema_sync(self) -> None:
-        """把旧 schema（memory_id 主键 + boundary_scope 列）就地重建为新 schema。
+        """Rebuild the legacy schema (memory_id primary key + boundary_scope column) in place into the new schema.
 
-        走"建新表 + 拷数据 + 删旧表"而不是 ALTER：RENAME COLUMN 要 SQLite 3.25+、
-        DROP COLUMN 要 3.35+，重建则不挑版本。experience_id 直接沿用旧 memory_id 的
-        值，因此向量库那边 deterministic 的 node_id 不受影响。
+        It creates a new table, copies the data and drops the old one instead of using ALTER: RENAME COLUMN needs SQLite 3.25+
+        and DROP COLUMN needs 3.35+, while a rebuild is version agnostic. experience_id reuses the old memory_id
+        values directly, so the deterministic node_ids on the vector database side are unaffected.
         """
         assert self._conn is not None
         cur = self._conn.execute("PRAGMA table_info(coding_memory_meta)")
@@ -481,11 +481,11 @@ class CodingMemoryStore:
             self._conn.execute(
                 "ALTER TABLE coding_memory_meta RENAME TO coding_memory_meta_legacy"
             )
-            # 索引跟着旧表走且重名，先清掉再让新表重建
+            # Indexes follow the old table and would clash by name, so drop them and let the new table recreate them
             for name in _INDEX_NAMES:
                 self._conn.execute(f"DROP INDEX IF EXISTS {name}")
-            # 用 execute 而非 executescript：后者遇到未决事务会先隐式 COMMIT，
-            # 会把这次迁移的原子性打断
+            # Uses execute rather than executescript: the latter implicitly COMMITs when a transaction is pending,
+            # which would break this migration's atomicity
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.execute(_MIGRATE_COPY_SQL)
             self._conn.execute("DROP TABLE coding_memory_meta_legacy")
@@ -512,11 +512,11 @@ class CodingMemoryStore:
         self._initialized = False
 
     # ------------------------------------------------------------
-    # 写入
+    # Writes
     # ------------------------------------------------------------
 
     async def insert(self, memory: CodingMemory) -> None:
-        """新增一条 coding memory（SQLite + VDB 全套）"""
+        """Insert one coding memory (the full SQLite + VDB set)."""
         self._fill_timestamps(memory)
         await _run_in_pool(self._upsert_sql_sync, memory)
         await self._upsert_vec_keys(memory)
@@ -526,8 +526,8 @@ class CodingMemoryStore:
         )
 
     async def update(self, memory: CodingMemory) -> None:
-        """覆盖式更新一条 coding memory。"""
-        # 拿旧 keys 长度，先删旧 VDB rows
+        """Overwrite an existing coding memory."""
+        # Read the old keys length and delete the old VDB rows first
         prev = await self.get_by_id(memory.experience_id, user_id=memory.user_id)
         prev_key_count = (1 + len(prev.search_keys)) if prev else 0
 
@@ -535,9 +535,9 @@ class CodingMemoryStore:
         if memory.created_at is None and prev is not None:
             memory.created_at = prev.created_at
         await _run_in_pool(self._upsert_sql_sync, memory)
-        # 删旧 VDB
+        # Delete the old VDB rows
         await self._delete_vec_keys_by_count(memory.experience_id, prev_key_count)
-        # 写新 VDB
+        # Write the new VDB rows
         await self._upsert_vec_keys(memory)
         logger.info(
             f"[coding-store] updated experience_id={memory.experience_id} "
@@ -545,7 +545,7 @@ class CodingMemoryStore:
         )
 
     async def delete(self, experience_id: str, user_id: str) -> bool:
-        """删除一条 coding memory，返回是否真有删到。"""
+        """Delete one coding memory, returning whether anything was really deleted."""
         prev = await self.get_by_id(experience_id, user_id=user_id)
         if prev is None:
             logger.info(f"[coding-store] delete skipped (not found): {experience_id}")
@@ -556,7 +556,7 @@ class CodingMemoryStore:
         return True
 
     # ------------------------------------------------------------
-    # 读取
+    # Reads
     # ------------------------------------------------------------
 
     async def get_by_id(
@@ -579,7 +579,7 @@ class CodingMemoryStore:
     async def list_user_tasks(
         self, user_id: str, limit: int = 50
     ) -> List[str]:
-        """返回该 user 已有的 task 列表（最近修改的优先）。供 extractor prompt 引用。"""
+        """Return this user's existing task list (most recently modified first); referenced by the extractor prompt."""
         return await _run_in_pool(self._list_user_tasks_sync, user_id, limit)
 
     async def append_trace(
@@ -594,7 +594,7 @@ class CodingMemoryStore:
         branch: Optional[str] = None,
         source: str = "default",
     ) -> None:
-        """保存一次已限长的 working/coding 原始轨迹，供后续 last-K 上下文使用。"""
+        """Store one length-bounded working/coding raw trace for later last-K context."""
         payload = [m.to_dict() for m in messages]
         await _run_in_pool(
             self._append_trace_sync,
@@ -610,7 +610,7 @@ class CodingMemoryStore:
         max_user_turns: int = 5,
         source: str = "default",
     ) -> List[Any]:
-        """取历史最近 K 个 user-turn；当前 write 尚未 append，因此不会自引用。"""
+        """Return the most recent K user turns from history; this write is not appended yet, so there is no self-reference."""
         from ..pipelines.base import ChatMessage
         rows = await _run_in_pool(
             self._get_recent_trace_payloads_sync,
@@ -640,10 +640,10 @@ class CodingMemoryStore:
         limit: int = 100,
         offset: int = 0,
     ) -> List["CodingMemory"]:
-        """按 workspace_id（+可选 branch）纯过滤列出该 user 的完整 coding memory。
+        """List this user's complete coding memories filtered only by workspace_id (plus optional branch).
 
-        作用域规则见 _scope_where（与 search 路径共用同一套）。无语义排序，按
-        updated_at 倒序（最近修改优先）。
+        Scope rules live in _scope_where (the same set the search path uses). No semantic ranking; ordered by
+        updated_at descending (most recently modified first).
         """
         return await _run_in_pool(
             self._list_by_workspace_sync, user_id, workspace_id, branch, limit, offset
@@ -663,7 +663,7 @@ class CodingMemoryStore:
             return [_row_to_memory(r) for r in cur.fetchall()]
 
     # ------------------------------------------------------------
-    # 召回
+    # Recall
     # ------------------------------------------------------------
 
     async def search_by_query_embedding(
@@ -678,7 +678,7 @@ class CodingMemoryStore:
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        向量检索。返回 dedup 后按分数降序的 hit list：
+        Vector retrieval. Returns a deduplicated hit list sorted by score descending:
             [
                 {
                     "experience_id": "...",
@@ -688,9 +688,9 @@ class CodingMemoryStore:
                 },
                 ...
             ]
-        workspace_id / branch 是作用域过滤，规则见 _scope_where：不传则纯语义召回
-        （行为与加过滤前完全一致）；传了则只保留 SQLite 里落在作用域内的经验，并按
-        作用域的选择率放大向量取数，避免"先取 top-N 再过滤"把召回吃掉。
+        workspace_id / branch are the scope filter, rules in _scope_where: without them this is pure semantic recall
+        (exactly the behavior before the filter existed); with them only experiences inside the scope per SQLite are kept, and the
+        vector fetch is scaled by the scope's selectivity so "take top-N first, then filter" does not eat recall.
         """
         if self._vec is None:
             return []
@@ -729,11 +729,11 @@ class CodingMemoryStore:
             eid = custom.get("coding_experience_id")
             if not eid:
                 continue
-            # 认 SQLite 那份而不是向量行 payload 里的 coding_workspace_id 副本：
-            # 两边不是一个事务写的，经验换 workspace 后 payload 可能还是旧值。
+            # Trust the SQLite copy rather than the coding_workspace_id copy in the vector row payload:
+            # they are not written in one transaction, so after an experience changes workspace the payload may still hold the old value.
             if allowed is not None and eid not in allowed:
                 continue
-            # dedup by experience_id, 保留最高分
+            # dedup by experience_id, keeping the highest score
             cur = best.get(eid)
             if cur is None or score > cur["score"]:
                 best[eid] = {
@@ -742,15 +742,15 @@ class CodingMemoryStore:
                     "matched_key_kind": custom.get("coding_key_kind", "aspect"),
                     "matched_key_text": custom.get("coding_key_text") or node.content,
                 }
-        # 排序
+        # Sort
         return sorted(best.values(), key=lambda h: -h["score"])
 
     # ------------------------------------------------------------
-    # 事实层
+    # Fact layer
     # ------------------------------------------------------------
 
     async def insert_fact(self, fact: WorkingFact) -> None:
-        """新增一条事实（SQLite + 事实 collection 各一行）。"""
+        """Insert one fact (one row in SQLite plus one in the fact collection)."""
         if fact.created_at is None:
             fact.created_at = datetime.utcnow()
         await _run_in_pool(self._upsert_fact_sql_sync, fact)
@@ -786,24 +786,24 @@ class CodingMemoryStore:
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Tuple[WorkingFact, float]]:
-        """事实层语义召回，只返回 active，按分数降序，最多 top 条。
+        """Semantic recall over the fact layer; returns only active facts, score descending, at most top entries.
 
-        SUPERSEDE 时向量行已被删掉，理论上召不到 superseded；这里再按 SQLite 的
-        status 过一道，避免两边不一致时把过期结论放出去。
+        SUPERSEDE already deleted the vector row, so superseded facts should not be recallable; the SQLite status is checked
+        once more here so an inconsistency between the two sides cannot release a stale conclusion.
 
-        workspace_id / branch 是作用域过滤，规则见 _scope_where，语义与经验层一致：
-        不传不过滤，传了按 SQLite 里的值筛，并按选择率放大向量取数。
+        workspace_id / branch are the scope filter, rules in _scope_where, with the same semantics as the experience layer:
+        absent means no filtering, present means filtering by the SQLite values with the vector fetch scaled by selectivity.
 
-        向量库按 top 的 4 倍过采样：向量行和 SQLite 行不是一个事务里写的，中间挂掉
-        就会留下"向量还在、SQLite 没了"的孤儿，软删时删向量失败也会留下 superseded
-        残留。这些都会在下面被过滤掉，不过采样的话它们会直接吃掉候选名额——极端情况
-        下前 top 条全是残留，召回就空了。
+        The VDB is oversampled 4x over top: vector rows and SQLite rows are not written in one transaction, so a crash in between
+        leaves orphans where the vector is still there but SQLite is gone, and a failed vector delete during a soft delete also leaves superseded
+        residue. All of it is filtered out below; without oversampling it would consume the candidate budget directly -- in the worst case
+        the first top entries are all residue and recall comes back empty.
 
-        给了 query_text 就在截断到 top 之前加一路 BM25 词面召回做融合重排（见
-        coding/lexical.py）。返回的分数始终是稠密余弦分，不是融合分——上层
-        client.py:851 用 0.30 的余弦阈值过闸门，返回融合分（另一套量纲）会把事实层
-        静默清空。min_score 让调用方把那道闸门下移到重排之前：先砍掉过不了闸的候选再
-        重排，返回条数就恒等于纯稠密的条数，词面只改选谁、不会让召回变少。
+        When query_text is given, a BM25 lexical channel is added before the truncation to top and the results are fused and reranked (see
+        coding/lexical.py). The returned score is always the dense cosine score, never the fused score, because the layer above
+        (client.py:851) passes its gate on a 0.30 cosine threshold, and returning fused scores (a different scale) would silently empty the fact layer.
+        min_score lets the caller move that gate ahead of reranking: cutting the candidates that would fail the gate first and then
+        reranking keeps the returned count identical to the pure dense count, with lexical only changing who is chosen, never reducing recall.
         """
         if self._fact_vec is None:
             return []
@@ -855,12 +855,12 @@ class CodingMemoryStore:
             and _scope_matches(f.workspace_id, f.branch, workspace_id, branch)
         ]
         kept = [(f, s) for f, s in alive if s >= min_score]
-        # get_facts 不保证按 ordered_ids 的顺序返回，这里显式按分数重排。
+        # get_facts does not guarantee returning rows in ordered_ids order, so they are explicitly re-sorted by score.
         kept.sort(key=lambda p: -p[1])
         if alive and not kept:
-            # 闸门在这里就把事实层清空了。调用方（client.py）随后只看到空列表，分不清
-            # "没召回到"和"召回了但都不够分"，而后者意味着阈值调过头了。所以在拿得到
-            # 分数的地方报。
+            # The gate emptied the fact layer right here. The caller (client.py) then only sees an empty list and cannot tell
+            # "nothing recalled" from "recalled but all below threshold", and the latter means the threshold was raised too far, so it is
+            # reported wherever the scores are available.
             logger.warning(
                 f"[coding-store] fact layer emptied by min_score={min_score}: "
                 f"{len(alive)} active hit(s), top={max(s for _, s in alive):.3f}"
@@ -868,8 +868,8 @@ class CodingMemoryStore:
         if len(kept) <= top or not (query_text or "").strip():
             return kept[:top]
 
-        # 候选比名额多，词面通道才有得选。文本要和嵌入侧一致（_upsert_fact_vec 嵌的是
-        # `subject: statement`），否则两路排的不是同一个东西。
+        # The lexical channel only has a choice when there are more candidates than slots. The text must match the embedding side (_upsert_fact_vec embeds
+        # `subject: statement`), otherwise the two channels would not be ranking the same thing.
         from .lexical import rerank
 
         by_id = {f.fact_id: (f, s) for f, s in kept}
@@ -887,28 +887,28 @@ class CodingMemoryStore:
                 f"[coding-store] bm25 rerank changed the top-{top}: "
                 f"{len(swapped)} fact(s) swapped in from {len(kept)} candidates"
             )
-        # 返回稠密分（见 docstring）；顺序已按融合排好，不要再按分数排。
+        # Return the dense scores (see docstring); the order is already fused, so do not sort by score again.
         return fused
 
     async def get_fact_ancestors(
         self, fact_id: str, *, user_id: Optional[str] = None, max_depth: int = 8
     ) -> List[WorkingFact]:
-        """顺 fact_link 反向走，返回这条事实的历代前身，时间正序，不含自己。
+        """Walk fact_link backwards and return this fact's predecessors in chronological order, excluding itself.
 
-        SUPERSEDE 只软删不真删，被顶掉的那条原样留在库里、fact_link 指向后继，
-        所以"这个结论以前说过什么"不需要另存一份，反查即可。
+        SUPERSEDE only soft deletes, so the replaced fact stays in the store untouched with fact_link pointing at its successor,
+        which means "what did this conclusion say earlier" needs no extra copy; a reverse lookup is enough.
 
-        最多走 max_depth 代；到头、断链或成环都停。成环理论上不该发生，但一旦
-        发生就是死循环，不值得为一个总结冒这个险。
+        At most max_depth generations; it stops at the end, at a broken link, or on a cycle. A cycle should never happen, but once it
+        does it is an infinite loop, which is not a risk worth taking for a summary.
         """
         return await _run_in_pool(
             self._get_fact_ancestors_sync, fact_id, user_id, max_depth
         )
 
     async def supersede_fact(self, old_fact_id: str, new_fact_id: str) -> bool:
-        """旧事实软删：status=superseded + fact_link 指向新事实，并撤出向量库。
+        """Soft delete the old fact: status=superseded plus fact_link pointing at the new fact, and withdrawn from the vector database.
 
-        SQLite 行保留，fact_link 链路可回溯；向量行删掉，不再占召回名额。
+        The SQLite row is kept so the fact_link chain stays traceable; the vector row is deleted so it no longer takes recall slots.
         """
         changed = await _run_in_pool(
             self._supersede_fact_sql_sync, old_fact_id, new_fact_id
@@ -928,7 +928,7 @@ class CodingMemoryStore:
     async def set_fact_derived_experiences(
         self, fact_id: str, experience_ids: List[str]
     ) -> None:
-        """覆盖写 fact.derived_experience_ids（调用方负责取并集）。"""
+        """Overwrite fact.derived_experience_ids (the caller computes the union)."""
         await _run_in_pool(
             self._set_json_column_sync,
             "working_fact", "fact_id", fact_id,
@@ -938,7 +938,7 @@ class CodingMemoryStore:
     async def set_experience_source_facts(
         self, experience_id: str, fact_ids: List[str]
     ) -> None:
-        """覆盖写 experience.source_fact_ids（调用方负责取并集）。"""
+        """Overwrite experience.source_fact_ids (the caller computes the union)."""
         await _run_in_pool(
             self._set_json_column_sync,
             "coding_memory_meta", "experience_id", experience_id,
@@ -946,7 +946,7 @@ class CodingMemoryStore:
         )
 
     # ------------------------------------------------------------
-    # SQLite 同步实现
+    # Synchronous SQLite implementation
     # ------------------------------------------------------------
 
     def _fill_timestamps(self, memory: CodingMemory) -> None:
@@ -1046,16 +1046,16 @@ class CodingMemoryStore:
                 params.extend(exclude_sources)
             cur = self._conn.execute(sql, params)
             rows = cur.fetchall()
-            # 保留输入顺序
+            # Preserve the input order
             by_id = {r["experience_id"]: _row_to_memory(r) for r in rows}
             return [by_id[eid] for eid in experience_ids if eid in by_id]
 
     def _scoped_experience_ids_sync(
         self, user_id: str, workspace_id: str, branch: Optional[str]
     ) -> Tuple[Set[str], int]:
-        """返回 (落在作用域内的 experience_id 集合, 该 user 的经验总数)。
+        """Return (the experience_ids inside the scope, the total number of experiences for this user).
 
-        一次查询同时拿到过滤结果和选择率分母：前者供向量命中做交集，后者定放大倍数。
+        One query yields both the filtered result and the selectivity denominator: the first intersects vector hits, the second sets the overfetch factor.
         """
         scope_sql, scope_params = _scope_where(workspace_id, branch)
         with self._lock:
@@ -1071,9 +1071,9 @@ class CodingMemoryStore:
     def _count_active_facts_sync(
         self, user_id: str, workspace_id: str, branch: Optional[str]
     ) -> Tuple[int, int]:
-        """返回 (作用域内 active 事实数, 该 user 的 active 事实总数)。
+        """Return (the number of active facts inside the scope, the total active facts for this user).
 
-        事实层的过滤在 get_facts 拿到对象之后用 _scope_matches 做，这里只要选择率。
+        Fact-layer filtering happens with _scope_matches after get_facts returns the objects; only the selectivity is needed here.
         """
         scope_sql, scope_params = _scope_where(workspace_id, branch)
         with self._lock:
@@ -1141,7 +1141,7 @@ class CodingMemoryStore:
                 params.append(user_id)
             cur = self._conn.execute(sql, params)
             by_id = {r["fact_id"]: _row_to_fact(r) for r in cur.fetchall()}
-            # 保留输入顺序
+            # Preserve the input order
             return [by_id[fid] for fid in fact_ids if fid in by_id]
 
     def _get_fact_ancestors_sync(
@@ -1152,7 +1152,7 @@ class CodingMemoryStore:
             sql = "SELECT * FROM working_fact WHERE fact_link = ?"
             if user_id:
                 sql += " AND user_id = ?"
-            # 同一条被顶掉两次不该发生（supersede 只对 active 生效），真撞上就取最早的
+            # Being superseded twice should not happen (supersede only applies to active), but if it does, take the earliest
             sql += " ORDER BY created_at ASC LIMIT 1"
 
             out: List[WorkingFact] = []
@@ -1172,7 +1172,7 @@ class CodingMemoryStore:
                 seen.add(parent.fact_id)
                 out.append(parent)
                 cur_id = parent.fact_id
-            out.reverse()          # 反查是由近及远，调用方要时间正序
+            out.reverse()          # the reverse walk goes near to far; callers want chronological order
             return out
 
     def _supersede_fact_sql_sync(self, old_fact_id: str, new_fact_id: str) -> bool:
@@ -1228,8 +1228,8 @@ class CodingMemoryStore:
                     json.dumps(payload, ensure_ascii=False), _now_iso(),
                 ),
             )
-            # last-K 只需近期轨迹；保留 100 次 write 足够覆盖异常大的单-turn 分布，
-            # 同时避免原始工具轨迹在 SQLite 中无限增长。
+            # last-K only needs recent traces; keeping 100 writes covers an unusually large single-turn distribution
+            # while preventing raw tool traces from growing unbounded in SQLite.
             self._trace_conn.execute(
                 "DELETE FROM coding_trace WHERE rowid IN ("
                 "SELECT rowid FROM coding_trace WHERE user_id=? AND agent_id=? "
@@ -1259,11 +1259,11 @@ class CodingMemoryStore:
         return out
 
     # ------------------------------------------------------------
-    # VDB 实现
+    # VDB implementation
     # ------------------------------------------------------------
 
     async def _upsert_vec_keys(self, memory: CodingMemory) -> None:
-        """把 task + search_keys 写入 VDB（每行一个 MemoryNode）。"""
+        """Write task + search_keys into the VDB (one MemoryNode per row)."""
         if self._vec is None:
             return
 
@@ -1290,7 +1290,7 @@ class CodingMemoryStore:
                 agent_id=memory.agent_id,
                 session_id=memory.session_id or "",
                 source=memory.source,
-                # layer 字段不参与 chat 路径过滤（独立 collection），用 L1_RAW 占位
+                # layer takes no part in chat-path filtering (separate collection), so L1_RAW is used as a placeholder
                 layer=MemoryLayer.L1_RAW,
                 content=text,
                 embedding=emb,
@@ -1312,13 +1312,13 @@ class CodingMemoryStore:
             logger.warning(f"[coding-store] vdb upsert_batch failed: {e}")
 
     async def _upsert_fact_vec(self, fact: WorkingFact) -> None:
-        """事实入向量库。一条事实一行，node_id 就是 fact_id。
+        """Persist a fact into the vector database: one row per fact, with node_id equal to fact_id.
 
-        检索文本是 statement，前面缀上 subject（有的话）。subject 通常已经在
-        statement 里出现过，但点查类问题（"Dylan 第二天午餐吃什么"）成败全看主体
-        这个词的权重，缀一遍把它从"顺带提到"提成"标题"。details 刻意不进向量：
-        它是原文，长度不受控，embed 进去会把摘要的语义冲淡，而它要解决的问题是
-        "命中之后读得到值"，不是"更容易命中"。
+        The retrieval text is the statement, prefixed with subject when there is one. The subject is usually already
+        present in the statement, but a pinpoint question ("what did Dylan eat for lunch the next day") hinges entirely on the weight of that subject word,
+        so prefixing it once promotes it from "incidentally mentioned" to "title". details is deliberately kept out of the vector:
+        it is the source text, its length is uncontrolled, embedding it would dilute the summary's semantics, and the problem it solves is
+        "being able to read the value after a hit", not "hitting more easily".
         """
         if self._fact_vec is None or not fact.statement:
             return
@@ -1337,7 +1337,7 @@ class CodingMemoryStore:
             agent_id=fact.agent_id,
             session_id=fact.session_id or "",
             source=fact.source,
-            # layer 不参与 chat 路径过滤（独立 collection），用 L1_RAW 占位
+            # layer takes no part in chat-path filtering (separate collection), so L1_RAW is used as a placeholder
             layer=MemoryLayer.L1_RAW,
             content=vector_text,
             embedding=embedding,
@@ -1356,7 +1356,7 @@ class CodingMemoryStore:
             logger.warning(f"[coding-store] fact vdb upsert failed: {e}")
 
     async def _delete_vec_keys_by_count(self, experience_id: str, count: int) -> None:
-        """按 deterministic node_id 删除 0..count-1。"""
+        """Delete deterministic node_ids 0..count-1."""
         if self._vec is None or count <= 0:
             return
         for i in range(count):

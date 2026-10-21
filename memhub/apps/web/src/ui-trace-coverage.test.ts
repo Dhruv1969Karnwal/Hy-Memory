@@ -331,7 +331,7 @@ describe("ui trace write coverage", () => {
   });
 
   it("traces the memory-note process write", () => {
-    // "重新整理" starts note processing: a non-GET write that had no trace.
+    // "Reprocess" starts note processing: a non-GET write that had no trace.
     const composer = source("MemoryNoteComposer.tsx");
     expect(composer).toMatch(/traceUiAction\("memory", "retry"\)/);
     expect(composer).toMatch(

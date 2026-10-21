@@ -67,7 +67,7 @@ def score_vdb_node(
     w_bm25: float = 0.4,
 ) -> float:
     """
-    Legacy convex fusion（保留给旧路径 / 测试）:
+    Legacy convex fusion (kept for the old path / tests):
 
         final = semantic × w_sem + bm25 × w_bm25
     """
@@ -83,14 +83,14 @@ def score_vdb_node_additive(
     w_tag: float = 0.3,
     clamp01: bool = True,
 ) -> float:
-    """按条加成的 VDB 打分（hybrid / reconcile 使用）:
+    """Per-item VDB scoring bonuses (used by hybrid / reconcile):
 
         final = sem
               + 𝟙[bm25>0] · w_bm25 · bm25
               + 𝟙[tag_cos>0] · w_tag · tag_cos
 
-    - 无 BM25 的记忆保留满权重 sem，不再被全局 has_bm25 乘 0.6 打折。
-    - tag_cos 应由调用方先做 entity×entity + 阈值过滤；未过线传 0。
+    - memories without BM25 keep the full sem weight instead of being discounted by 0.6 through the global has_bm25.
+    - tag_cos should already be filtered by the caller with entity×entity plus a threshold; pass 0 when below the threshold.
     """
     final = float(semantic_score or 0.0)
     b = float(bm25_score or 0.0)

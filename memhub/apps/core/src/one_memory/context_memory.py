@@ -32,7 +32,15 @@ _CANDIDATE_LIMIT = 21
 _TERM_LIMIT = 32
 _CANDIDATE_TERM_CAP = 5_000
 _CORRECTION_DEPTH_LIMIT = 32
-_CURRENT_QUERY_MARKERS = ("现在", "当前", "现行", "最新", "now", "current", "latest")
+_CURRENT_QUERY_MARKERS = (
+    "\u73b0\u5728",
+    "\u5f53\u524d",
+    "\u73b0\u884c",
+    "\u6700\u65b0",
+    "now",
+    "current",
+    "latest",
+)
 
 
 class _CandidatePlan(Protocol):

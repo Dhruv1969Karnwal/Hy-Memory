@@ -1,7 +1,7 @@
 """
-Agent Memory - 性能监控
+Agent Memory - Performance monitoring
 
-提供性能指标收集和统计
+Provides performance metric collection and statistics.
 """
 
 import time
@@ -15,7 +15,7 @@ import threading
 
 @dataclass
 class MetricRecord:
-    """单次调用的指标记录"""
+    """Metrics record for a single call."""
     method_name: str
     duration_ms: float
     timestamp: str
@@ -26,9 +26,9 @@ class MetricRecord:
 
 class MemoryMetrics:
     """
-    记忆系统指标收集器（单例模式）
+    Memory system metrics collector (singleton pattern)
     
-    收集和统计各方法的执行时间
+    Collects and aggregates the execution time of each method.
     """
     
     _instance = None
@@ -49,7 +49,7 @@ class MemoryMetrics:
         self._records: Dict[str, List[MetricRecord]] = defaultdict(list)
         self._enabled = True
         self._print_enabled = False
-        self._max_records = 1000  # 每个方法最多保留 1000 条记录
+        self._max_records = 1000  # keep at most 1000 records per method
         self._initialized = True
     
     @property
@@ -69,7 +69,7 @@ class MemoryMetrics:
         self._print_enabled = value
     
     def record(self, record: MetricRecord) -> None:
-        """记录一条指标"""
+        """Record one metric."""
         if not self._enabled:
             return
         
@@ -77,7 +77,7 @@ class MemoryMetrics:
             records = self._records[record.method_name]
             records.append(record)
             
-            # 限制记录数量
+            # Cap the number of retained records
             if len(records) > self._max_records:
                 self._records[record.method_name] = records[-self._max_records:]
         
@@ -87,13 +87,13 @@ class MemoryMetrics:
     
     def get_stats(self, method_name: Optional[str] = None) -> Dict[str, Any]:
         """
-        获取统计信息
+        Get statistics
         
         Args:
-            method_name: 方法名，如果为 None 则返回所有方法的统计
+            method_name: method name; None returns statistics for all methods
         
         Returns:
-            统计信息字典
+            dictionary of statistics
         """
         if method_name:
             return self._calc_stats(method_name, self._records.get(method_name, []))
@@ -104,7 +104,7 @@ class MemoryMetrics:
         }
     
     def _calc_stats(self, name: str, records: List[MetricRecord]) -> Dict[str, Any]:
-        """计算单个方法的统计信息"""
+        """Compute statistics for a single method."""
         if not records:
             return {"method": name, "count": 0}
         
@@ -125,11 +125,11 @@ class MemoryMetrics:
         }
     
     def print_summary(self) -> None:
-        """打印统计摘要"""
+        """Print a summary of the statistics."""
         stats = self.get_stats()
         
         if not stats:
-            print("[Memory Metrics] 没有记录")
+            print("[Memory Metrics] no records")
             return
         
         print("\n" + "=" * 80)
@@ -156,12 +156,12 @@ class MemoryMetrics:
         print("=" * 80 + "\n")
     
     def clear(self) -> None:
-        """清空所有记录"""
+        """Clear all records."""
         with self._lock:
             self._records.clear()
     
     def export(self) -> Dict[str, Any]:
-        """导出所有指标"""
+        """Export all metrics."""
         return {
             "stats": self.get_stats(),
             "enabled": self._enabled,
@@ -169,16 +169,16 @@ class MemoryMetrics:
         }
 
 
-# 全局单例
+# Global singleton
 metrics = MemoryMetrics()
 
 
 def timed(method_name: Optional[str] = None):
     """
-    方法计时装饰器
+    Method timing decorator
     
     Args:
-        method_name: 自定义方法名，默认使用函数名
+        method_name: custom method name; defaults to the function name
     
     Usage:
         @timed()
@@ -197,7 +197,7 @@ def timed(method_name: Optional[str] = None):
             
             name = method_name or func.__name__
             
-            # 如果是类方法，添加类名前缀
+            # For class methods, prefix the class name
             if args and hasattr(args[0], '__class__'):
                 class_name = args[0].__class__.__name__
                 name = f"{class_name}.{name}"
@@ -230,7 +230,7 @@ def timed(method_name: Optional[str] = None):
 
 
 def timed_async(method_name: Optional[str] = None):
-    """异步方法计时装饰器"""
+    """Async method timing decorator."""
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):

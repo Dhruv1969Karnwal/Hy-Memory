@@ -186,13 +186,13 @@ export async function installServiceWithDisabledFallback(options: {
  * their memories, because that is the first thing anyone asks. */
 export const STABLE_RUNTIME_USER_MESSAGES: Record<string, string> = {
   installed_version_conflict:
-    "运行环境与这个安装包不一致，无法安全接管。请安装更新版本的 MemHub；你的记忆数据不会受到影响。",
+    "The runtime doesn't match this installer, so it can't be taken over safely. Install a newer version of MemHub; your memory data is unaffected.",
   distribution_downgrade_refused:
-    "已安装的运行环境比这个安装包更新，无法用旧安装包启动。请安装最新版本的 MemHub；你的记忆数据不会受到影响。",
+    "The installed runtime is newer than this installer, so an old installer can't start it. Install the latest version of MemHub; your memory data is unaffected.",
   install_current_unmanaged:
-    "运行环境的安装目录被改动过，无法安全接管。请重新安装 MemHub，你的记忆数据不会受到影响。",
+    "The runtime's install directory was modified, so it can't be taken over safely. Reinstall MemHub; your memory data is unaffected.",
   desktop_start_failed:
-    "MemHub 启动失败。请重新启动；如果仍然打不开，请重新安装，你的记忆数据不会受到影响。",
+    "MemHub failed to start. Start it again; if it still won't open, reinstall it. Your memory data is unaffected.",
 };
 
 export function stableRuntimeUserMessage(error: unknown): string {

@@ -108,9 +108,9 @@ describe("ImportProgressStrip", () => {
       />,
     );
     expect(screen.getByRole("status").textContent).toContain(
-      "正在导入你的历史对话",
+      "Importing your conversation history",
     );
-    expect(screen.queryByText("查看进度与详情")).toBeNull();
+    expect(screen.queryByText("View progress and details")).toBeNull();
   });
 
   it("import jobs and backfill preparation alone do not assert active generation", () => {
@@ -124,8 +124,10 @@ describe("ImportProgressStrip", () => {
     );
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("正在导入对话");
-    expect(container.textContent).not.toContain("更多记忆会陆续出现");
+    ).toContain("Importing conversations");
+    expect(container.textContent).not.toContain(
+      "more memories will appear soon",
+    );
     rerender(
       <ImportProgressStrip
         jobs={[job({ status: "completed" })]}
@@ -136,8 +138,8 @@ describe("ImportProgressStrip", () => {
     );
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("正在准备整理");
-    expect(container.textContent).not.toContain("正在沉淀记忆");
+    ).toContain("Preparing to organize");
+    expect(container.textContent).not.toContain("Memories are taking shape");
   });
 
   it.each(["failed", "processing"] as const)(
@@ -174,20 +176,22 @@ describe("ImportProgressStrip", () => {
         ".import-strip-headline",
       )?.textContent;
       expect(headline).toContain(
-        phase === "processing" ? "正在沉淀记忆" : "待继续",
+        phase === "processing"
+          ? "Memories are taking shape"
+          : "Waiting to resume",
       );
-      expect(headline).toContain("0 条记忆");
+      expect(headline).toContain("0 memories");
       expect(container.querySelectorAll(".import-strip-pulse")).toHaveLength(
         phase === "processing" ? 1 : 0,
       );
       expect(container.querySelector("details")?.textContent).toContain(
-        "正在导入 Cursor",
+        "Importing Cursor",
       );
       expect(container.querySelector("details")?.textContent).toContain(
-        "模型请求未成功",
+        "The model request did not succeed",
       );
       expect(container.querySelector("details")?.textContent).toContain(
-        "这段对话含过长原文，暂未整理；原文已保留",
+        "This conversation contains oversized source text; not organized yet, source text kept",
       );
       // Named in the reader's language, never in the pipeline's.
       expect(container.querySelector("details")?.textContent).not.toContain(
@@ -208,13 +212,13 @@ describe("ImportProgressStrip", () => {
     );
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("待继续");
+    ).toContain("Waiting to resume");
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).not.toMatch(/失败|异常/);
+    ).not.toMatch(/failed|issues/i);
     expect(container.querySelector("details")?.open).toBe(false);
     expect(container.querySelector("details")?.textContent).toContain(
-      "2 条异常",
+      "2 issues",
     );
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -243,15 +247,19 @@ describe("ImportProgressStrip", () => {
         onOpenSources={vi.fn()}
       />,
     );
-    expect(screen.getAllByText("正在沉淀记忆")).toHaveLength(1);
-    expect(screen.getByText("先整理近期对话，更多记忆会陆续出现")).toBeTruthy();
+    expect(screen.getAllByText("Memories are taking shape")).toHaveLength(1);
+    expect(
+      screen.getByText(
+        "Recent conversations are being organized first; more memories will appear soon",
+      ),
+    ).toBeTruthy();
     expect(container.querySelectorAll(".import-strip-pulse")).toHaveLength(1);
     expect(container.querySelector("details")?.textContent).toContain(
-      "2 条异常",
+      "2 issues",
     );
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).not.toContain("异常");
+    ).not.toContain("issues");
   });
 
   it.each(["model-required", "failed"] as const)(
@@ -274,11 +282,12 @@ describe("ImportProgressStrip", () => {
       );
       expect(
         container.querySelector(".import-strip-headline")?.textContent,
-      ).not.toContain("正在沉淀");
+      ).not.toContain("taking shape");
       expect(container.querySelector(".import-strip-pulse")).toBeNull();
       expect(
         screen.getByRole("button", {
-          name: phase === "model-required" ? "设置模型" : "继续整理",
+          name:
+            phase === "model-required" ? "Set up model" : "Continue organizing",
         }),
       ).toBeTruthy();
     },
@@ -314,12 +323,14 @@ describe("ImportProgressStrip", () => {
       />,
     );
     const text = screen.getByRole("status").textContent;
-    expect(text).toContain("正在检查 Cursor 的新增对话");
-    expect(text).toContain("本次新增 0 条原文");
-    expect(text).toContain("累计已保存：Cursor 81,614 条原文");
-    expect(text).toContain("1,761 个会话");
-    expect(text).toContain("81,614 条已存在");
-    expect(text).not.toMatch(/正在导入|0 条原文已保存|本次新增 81,614/);
+    expect(text).toContain("Checking Cursor for new conversations");
+    expect(text).toContain("0 new originals this run");
+    expect(text).toContain("Total saved: Cursor 81,614 originals");
+    expect(text).toContain("1,761 conversations");
+    expect(text).toContain("81,614 already existed");
+    expect(text).not.toMatch(
+      /Importing|0 originals saved|81,614 new originals/,
+    );
   });
 
   it("keeps mixed history and sync counters separate", () => {
@@ -340,19 +351,22 @@ describe("ImportProgressStrip", () => {
       />,
     );
     const text = screen.getByRole("status").textContent;
-    expect(text).toContain("正在导入 Claude Code 的历史");
-    expect(text).toContain("正在检查 Cursor 的新增对话");
-    expect(text).toContain("本次新增 0 条原文");
-    expect(text).toContain("7 条原文已保存");
-    expect(text).not.toContain("本次新增 7");
+    expect(text).toContain("Importing Claude Code history");
+    expect(text).toContain("Checking Cursor for new conversations");
+    expect(text).toContain("0 new originals this run");
+    expect(text).toContain("7 originals saved");
+    expect(text).not.toContain("7 new originals");
   });
 
   it.each([
-    ["pending", "Cursor 新增同步等待检查"],
-    ["paused", "Cursor 新增同步已暂停"],
-    ["interrupted", "Cursor 新增同步已中断"],
-    ["failed", "Cursor 新增同步失败"],
-    ["completed", "Cursor 本次新增检查已完成，仍有读取异常"],
+    ["pending", "Cursor new-item sync waiting to check"],
+    ["paused", "Cursor new-item sync paused"],
+    ["interrupted", "Cursor new-item sync interrupted"],
+    ["failed", "Cursor new-item sync failed"],
+    [
+      "completed",
+      "Cursor this new-item check finished, but read issues remain",
+    ],
   ] as const)(
     "names sync %s without implying unread history",
     (status, label) => {
@@ -373,9 +387,11 @@ describe("ImportProgressStrip", () => {
       );
       const text = screen.getByRole("status").textContent;
       expect(text).toContain(label);
-      expect(text).toContain("本次新增 0 条原文");
-      expect(text).toContain("81,614 条原文");
-      expect(text).not.toMatch(/尚未导完|没能读完|正在导入/);
+      expect(text).toContain("0 new originals this run");
+      expect(text).toContain("81,614 originals");
+      expect(text).not.toMatch(
+        /history import not finished|failed to read through|Importing/,
+      );
     },
   );
 
@@ -392,13 +408,17 @@ describe("ImportProgressStrip", () => {
       );
       expect(
         container.querySelector(".import-strip-headline")?.textContent,
-      ).toContain("待继续");
+      ).toContain("Waiting to resume");
       expect(container.querySelector(".import-strip-pulse")).toBeNull();
       expect(
-        screen.queryByText("先整理近期对话，更多记忆会陆续出现"),
+        screen.queryByText(
+          "Recent conversations are being organized first; more memories will appear soon",
+        ),
       ).toBeNull();
       expect(
-        screen.queryByText("存量数据较大，为保证质量，正在后台分批整理"),
+        screen.queryByText(
+          "Large backlog; organizing in background batches to preserve quality",
+        ),
       ).toBeNull();
     },
   );
@@ -425,16 +445,20 @@ describe("ImportProgressStrip", () => {
     );
     const details = container.querySelector("details");
     expect(details?.open).toBe(false);
-    await userEvent.click(screen.getByText("查看进度与详情"));
+    await userEvent.click(screen.getByText("View progress and details"));
     expect(details?.open).toBe(true);
     // Said in the reader's language. A raw reason code, a job id or an ISO
     // timestamp in here is what this test exists to prevent.
-    expect(details?.textContent).toContain("这个来源的读取授权变了");
+    expect(details?.textContent).toContain(
+      "The read authorization for this source changed",
+    );
     expect(details?.textContent).not.toContain("source_permission_changed");
     expect(details?.textContent).not.toContain(confirmedAt);
     expect(details?.textContent).not.toContain("job-1");
-    expect(screen.getByRole("list", { name: "完整任务回执" })).toBeTruthy();
-    expect(details?.textContent).toContain("已完成");
+    expect(
+      screen.getByRole("list", { name: "Full job receipts" }),
+    ).toBeTruthy();
+    expect(details?.textContent).toContain("Completed");
     expect(details?.textContent).not.toContain("completed");
     expect(open).not.toHaveBeenCalled();
   });
@@ -465,12 +489,12 @@ describe("ImportProgressStrip", () => {
     );
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("待继续");
+    ).toContain("Waiting to resume");
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
     expect(container.querySelector("details")?.textContent).toContain(
-      "模型认证失败。更新 key 后",
+      "Model authentication failed. Update the key, then",
     );
-    await userEvent.click(screen.getByRole("button", { name: "设置模型" }));
+    await userEvent.click(screen.getByRole("button", { name: "Set up model" }));
     expect(configure).toHaveBeenCalledOnce();
   });
 
@@ -484,13 +508,15 @@ describe("ImportProgressStrip", () => {
         onOpenSources={vi.fn()}
       />,
     );
-    expect(screen.getByRole("status").textContent).toContain("新增同步");
+    expect(screen.getByRole("status").textContent).toContain("New-item sync");
     expect(screen.getByRole("status").textContent).toContain(
-      "本次新增 0 条原文",
+      "0 new originals this run",
     );
-    expect(screen.getByRole("status").textContent).toContain("81,614 条原文");
+    expect(screen.getByRole("status").textContent).toContain(
+      "81,614 originals",
+    );
     expect(screen.getByRole("status").textContent).not.toMatch(
-      /正在检查|正在导入|正在整理/,
+      /Checking|Importing|organiz/,
     );
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
   });
@@ -506,8 +532,10 @@ describe("ImportProgressStrip", () => {
           onOpenSources={vi.fn()}
         />,
       );
-      expect(screen.getByRole("status").textContent).toContain("尚未导完");
-      expect(screen.getByRole("button", { name: "查看来源" })).toBeTruthy();
+      expect(screen.getByRole("status").textContent).toContain(
+        "history import not finished",
+      );
+      expect(screen.getByRole("button", { name: "View sources" })).toBeTruthy();
     },
   );
 
@@ -521,14 +549,16 @@ describe("ImportProgressStrip", () => {
       />,
     );
     expect(screen.getByRole("status").textContent).toContain(
-      "280 条原文已保存",
+      "280 originals saved",
     );
-    expect(screen.getByRole("status").textContent).toContain("10 条已存在");
-    expect(screen.getByRole("status").textContent).toContain("8 条跳过");
-    expect(screen.getByRole("status").textContent).toContain("2 条异常");
+    expect(screen.getByRole("status").textContent).toContain(
+      "10 already existed",
+    );
+    expect(screen.getByRole("status").textContent).toContain("8 skipped");
+    expect(screen.getByRole("status").textContent).toContain("2 issues");
   });
 
-  it("导入进行中时报出真实来源名，计数是各来源之和", () => {
+  it("reports the real source names while importing, counts are the sum across sources", () => {
     render(
       <ImportProgressStrip
         jobs={[
@@ -570,7 +600,7 @@ describe("ImportProgressStrip", () => {
     );
   });
 
-  it("没有任何在跑的任务时整条消失", () => {
+  it("the whole strip disappears when no jobs are running", () => {
     render(
       <ImportProgressStrip
         jobs={[job({ status: "completed" })]}
@@ -594,14 +624,14 @@ describe("ImportProgressStrip", () => {
     );
 
     expect(screen.getByRole("status").textContent).toContain(
-      "正在准备已授权对话的整理任务",
+      "Preparing organizing jobs for authorized conversations",
     );
     expect(screen.getByRole("status").textContent).not.toContain(
-      "正在沉淀记忆",
+      "Memories are taking shape",
     );
   });
 
-  it("失败的来源不假装还在跑，而是说出来并给出口", async () => {
+  it("a failed source is not pretended to still be running, it is named with a way out", async () => {
     const user = userEvent.setup();
     const onOpenSources = vi.fn();
     render(
@@ -615,13 +645,13 @@ describe("ImportProgressStrip", () => {
 
     const strip = screen.getByRole("status");
     expect(strip.textContent).toContain("Cursor");
-    expect(strip.textContent).toContain("没能读完");
+    expect(strip.textContent).toContain("failed to read through");
 
-    await user.click(screen.getByRole("button", { name: "查看来源" }));
+    await user.click(screen.getByRole("button", { name: "View sources" }));
     expect(onOpenSources).toHaveBeenCalledOnce();
   });
 
-  it("同一个来源多次任务只看最新那次", () => {
+  it("for repeated jobs on one source only the latest is used", () => {
     render(
       <ImportProgressStrip
         jobs={[
@@ -643,7 +673,7 @@ describe("ImportProgressStrip", () => {
     );
 
     const strip = screen.getByRole("status");
-    expect(strip.textContent).not.toContain("没能读完");
+    expect(strip.textContent).not.toContain("failed to read through");
   });
 
   it("keeps stale running jobs static with distinct source totals, job counts and confirmed time", () => {
@@ -662,17 +692,17 @@ describe("ImportProgressStrip", () => {
       />,
     );
     const strip = screen.getByRole("status");
-    expect(strip.textContent).toContain("状态待核对");
+    expect(strip.textContent).toContain("status pending verification");
     expect(strip.textContent).toContain("Cursor");
-    expect(strip.textContent).toContain("上次确认来源");
-    expect(strip.textContent).toContain("900 条原文");
-    expect(strip.textContent).toContain("21 个会话");
-    expect(strip.textContent).toContain("任务回执");
-    expect(strip.textContent).toContain("280 条原文已保存");
-    expect(strip.textContent).toContain("10 条已存在");
-    expect(strip.textContent).toContain("8 条跳过");
-    expect(strip.textContent).toContain("2 条异常");
-    expect(strip.textContent).not.toMatch(/正在导入|正在整理|%/);
+    expect(strip.textContent).toContain("Last confirmed sources");
+    expect(strip.textContent).toContain("900 originals");
+    expect(strip.textContent).toContain("21 conversations");
+    expect(strip.textContent).toContain("Job receipts");
+    expect(strip.textContent).toContain("280 originals saved");
+    expect(strip.textContent).toContain("10 already existed");
+    expect(strip.textContent).toContain("8 skipped");
+    expect(strip.textContent).toContain("2 issues");
+    expect(strip.textContent).not.toMatch(/Importing|organiz|%/);
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
     expect(container.querySelector("time")?.dateTime).toBe(confirmedAt);
     expect(container.querySelector("time")?.textContent).toBe(
@@ -690,9 +720,11 @@ describe("ImportProgressStrip", () => {
         onOpenSources={vi.fn()}
       />,
     );
-    expect(screen.getByRole("status").textContent).toContain("状态待核对");
+    expect(screen.getByRole("status").textContent).toContain(
+      "status pending verification",
+    );
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
-    expect(screen.getByRole("button", { name: "查看来源" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View sources" })).toBeTruthy();
   });
 
   it.each([null, "not-a-date"])(
@@ -708,9 +740,11 @@ describe("ImportProgressStrip", () => {
         />,
       );
       const text = screen.getByRole("status").textContent;
-      expect(text).toContain("状态待核对");
-      expect(text).toContain("尚无已确认的来源状态");
-      expect(text).not.toMatch(/0 条|已导入|正在整理|Invalid Date/);
+      expect(text).toContain("status pending verification");
+      expect(text).toContain("No confirmed source status yet");
+      expect(text).not.toMatch(
+        /0 originals|imported so far|organiz|Invalid Date/,
+      );
       expect(container.querySelector("time")).toBeNull();
       expect(container.querySelector(".import-strip-pulse")).toBeNull();
     },
@@ -731,9 +765,13 @@ describe("ImportProgressStrip", () => {
       );
       expect(screen.getByRole("status").textContent).toContain("Cursor");
       expect(screen.getByRole("status").textContent).toContain(
-        status === "failed" ? "没能读完" : "尚未导完",
+        status === "failed"
+          ? "failed to read through"
+          : "history import not finished",
       );
-      await userEvent.click(screen.getByRole("button", { name: "查看来源" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "View sources" }),
+      );
       expect(open).toHaveBeenCalledOnce();
     },
   );
@@ -753,13 +791,13 @@ describe("ImportProgressStrip", () => {
       />,
     );
     const trigger = screen.getByRole<HTMLButtonElement>("button", {
-      name: "刷新核对",
+      name: "Refresh and verify",
     });
     expect(trigger.querySelector("svg")).toBeTruthy();
     expect(refresh).not.toHaveBeenCalled();
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("进度待更新");
+    ).toContain("Progress needs updating");
     act(() => {
       fireEvent.click(trigger);
       fireEvent.click(trigger);
@@ -767,31 +805,37 @@ describe("ImportProgressStrip", () => {
     expect(refresh.mock.calls).toEqual([[]]);
     expect(trigger.disabled).toBe(true);
     expect(screen.getByRole("status").getAttribute("aria-busy")).toBe("true");
-    expect(screen.getByRole("status").textContent).toContain("正在核对");
+    expect(screen.getByRole("status").textContent).toContain(
+      "Checking source status",
+    );
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("已保存内容保留，正在核对进度");
+    ).toContain("Saved content is kept; verifying progress");
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
     await act(async () =>
       pending.resolve({ arbitrary: "not a certified source snapshot" }),
     );
-    expect(screen.getByRole("status").textContent).toContain("状态待核对");
+    expect(screen.getByRole("status").textContent).toContain(
+      "status pending verification",
+    );
     expect(screen.getByRole("status").textContent).not.toMatch(
-      /正在导入|正在整理/,
+      /Importing|organiz/,
     );
     expect(container.querySelector("time")?.dateTime).toBe(confirmedAt);
     expect(trigger.disabled).toBe(false);
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).toContain("进度待更新");
+    ).toContain("Progress needs updating");
     expect(
       container.querySelector(".import-strip-headline")?.textContent,
-    ).not.toContain("正在");
+    ).not.toContain("Checking");
     expect(open).not.toHaveBeenCalled();
   });
 
   it("keeps the previous time and counts after refresh failure, and recovers only from fresh props", async () => {
-    const refresh = vi.fn().mockRejectedValueOnce(new Error("本地服务不可用"));
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Local service unavailable"));
     const props = {
       jobs: [job()],
       sources,
@@ -801,32 +845,40 @@ describe("ImportProgressStrip", () => {
       onOpenSources: vi.fn(),
     };
     const { container, rerender } = render(<ImportProgressStrip {...props} />);
-    await userEvent.click(screen.getByRole("button", { name: "刷新核对" }));
-    expect(container.querySelector("details")?.textContent).toContain(
-      "核对失败",
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh and verify" }),
     );
     expect(container.querySelector("details")?.textContent).toContain(
-      "本地服务不可用",
+      "Verification failed",
+    );
+    expect(container.querySelector("details")?.textContent).toContain(
+      "Local service unavailable",
     );
     expect(screen.queryByRole("alert")).toBeNull();
     expect(container.querySelector("time")?.dateTime).toBe(confirmedAt);
     expect(screen.getByRole("status").textContent).toContain(
-      "300 条原文已保存",
+      "300 originals saved",
     );
     refresh.mockResolvedValueOnce(undefined);
-    await userEvent.click(screen.getByRole("button", { name: "刷新核对" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh and verify" }),
+    );
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(container.querySelector(".import-strip-refresh-error")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain("状态待核对");
+    expect(screen.getByRole("status").textContent).toContain(
+      "status pending verification",
+    );
     rerender(
       <ImportProgressStrip
         {...props}
         sourceSnapshot={{ confirmedAt: "2026-09-14T02:21:00Z", stale: false }}
       />,
     );
-    expect(screen.getByRole("status").textContent).toContain("正在导入");
-    expect(screen.getByRole("status").textContent).not.toContain("状态待核对");
+    expect(screen.getByRole("status").textContent).toContain("Importing");
+    expect(screen.getByRole("status").textContent).not.toContain(
+      "status pending verification",
+    );
     expect(container.querySelector(".import-strip-pulse")).toBeTruthy();
   });
 
@@ -842,7 +894,7 @@ describe("ImportProgressStrip", () => {
     const { rerender } = render(
       <ImportProgressStrip {...props} sourceSnapshot={staleSnapshot} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "刷新核对" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh and verify" }));
     rerender(
       <ImportProgressStrip
         {...props}
@@ -851,7 +903,7 @@ describe("ImportProgressStrip", () => {
     );
     await act(async () => pending.reject(new Error("old request failed")));
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain("正在导入");
+    expect(screen.getByRole("status").textContent).toContain("Importing");
   });
 
   it("handles unknown refresh errors honestly and does not refresh on unmount", async () => {
@@ -870,12 +922,14 @@ describe("ImportProgressStrip", () => {
         onOpenSources={vi.fn()}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "刷新核对" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh and verify" }),
+    );
     expect(container.querySelector("details")?.textContent).toContain(
-      "核对失败",
+      "Verification failed",
     );
     expect(screen.queryByRole("alert")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "刷新核对" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh and verify" }));
     unmount();
     await act(async () => pending.reject(new Error("unmounted")));
     expect(refresh).toHaveBeenCalledTimes(2);
@@ -892,11 +946,11 @@ describe("ImportProgressStrip", () => {
     );
     const text = screen.getByRole("status").textContent;
     expect(text).toContain("Cursor");
-    expect(text).toContain("280 条原文已保存");
-    expect(text).toContain("2 条异常");
-    expect(text).not.toContain("没能读完");
+    expect(text).toContain("280 originals saved");
+    expect(text).toContain("2 issues");
+    expect(text).not.toContain("failed to read through");
     expect(container.querySelector(".import-strip-pulse")).toBeNull();
-    expect(screen.getByRole("button", { name: "查看来源" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View sources" })).toBeTruthy();
   });
 
   it("selects the newest created job even when an older resumed job was updated later", () => {
@@ -921,8 +975,12 @@ describe("ImportProgressStrip", () => {
         onOpenSources={vi.fn()}
       />,
     );
-    expect(screen.getByRole("status").textContent).toContain("正在导入 Cursor");
-    expect(screen.getByRole("status").textContent).not.toContain("没能读完");
+    expect(screen.getByRole("status").textContent).toContain(
+      "Importing Cursor",
+    );
+    expect(screen.getByRole("status").textContent).not.toContain(
+      "failed to read through",
+    );
   });
 
   it("compares creation instants rather than ISO string order and never mutates job order", () => {
@@ -979,10 +1037,10 @@ describe("ImportProgressStrip", () => {
     ).not.toContain("Cursor");
     expect(container.querySelector("details")?.textContent).toContain("Cursor");
     expect(container.querySelector("details")?.textContent).toContain(
-      "5 条异常",
+      "5 issues",
     );
     expect(screen.getByRole("status").textContent).toContain(
-      "Claude Code 没能读完",
+      "Claude Code failed to read through",
     );
   });
 
@@ -1005,10 +1063,12 @@ describe("ImportProgressStrip", () => {
       />,
     );
     const status = screen.getByRole("status");
-    expect(status.textContent).toContain("正在沉淀记忆");
-    expect(status.textContent).toContain("先整理近期对话，更多记忆会陆续出现");
-    expect(screen.queryByRole("button", { name: "查看来源" })).toBeNull();
-    expect(screen.queryByText("查看进度与详情")).toBeNull();
+    expect(status.textContent).toContain("Memories are taking shape");
+    expect(status.textContent).toContain(
+      "Recent conversations are being organized first; more memories will appear soon",
+    );
+    expect(screen.queryByRole("button", { name: "View sources" })).toBeNull();
+    expect(screen.queryByText("View progress and details")).toBeNull();
   });
 });
 
@@ -1090,9 +1150,9 @@ describe("pausing and continuing imports from the strip", () => {
       />,
     );
     const names = actionNames();
-    expect(names[0]).toBe("全部暂停");
-    expect(names).toContain("设置模型");
-    const pause = screen.getByRole("button", { name: "全部暂停" });
+    expect(names[0]).toBe("Pause all");
+    expect(names).toContain("Set up model");
+    const pause = screen.getByRole("button", { name: "Pause all" });
     expect(pause.className).toContain("quiet");
     expect(pause.querySelector("svg")).toBeTruthy();
   });
@@ -1106,20 +1166,20 @@ describe("pausing and continuing imports from the strip", () => {
       return settle(id, next, initial);
     });
     render(<Harness initial={initial} action={action} />);
-    await user.click(screen.getByRole("button", { name: "全部暂停" }));
-    const busy = screen.getByRole("button", { name: "暂停中…" });
+    await user.click(screen.getByRole("button", { name: "Pause all" }));
+    const busy = screen.getByRole("button", { name: "Pausing..." });
     expect((busy as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => gate.resolve());
     expect(
-      await screen.findByRole("button", { name: "全部继续" }),
+      await screen.findByRole("button", { name: "Continue all" }),
     ).toBeTruthy();
     expect(action.mock.calls).toEqual([
       ["job-1", "pause"],
       ["job-2", "pause"],
     ]);
     expect(screen.getByRole("status").textContent).toContain(
-      "导入已暂停，已保存内容保留，随时可以继续。",
+      "Import paused; saved content is kept; continue anytime.",
     );
   });
 
@@ -1130,8 +1190,8 @@ describe("pausing and continuing imports from the strip", () => {
       settle(id, next, initial),
     );
     render(<Harness initial={initial} action={action} />);
-    await user.click(screen.getByRole("button", { name: "全部暂停" }));
-    await screen.findByRole("button", { name: "全部继续" });
+    await user.click(screen.getByRole("button", { name: "Pause all" }));
+    await screen.findByRole("button", { name: "Continue all" });
     expect(action.mock.calls).toEqual([["job-2", "pause"]]);
   });
 
@@ -1144,14 +1204,14 @@ describe("pausing and continuing imports from the strip", () => {
       return settle(id, next, initial);
     });
     render(<Harness initial={initial} action={action} />);
-    await user.click(screen.getByRole("button", { name: "全部继续" }));
+    await user.click(screen.getByRole("button", { name: "Continue all" }));
     expect(
-      (screen.getByRole("button", { name: "继续中…" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Resuming..." }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
     await act(async () => gate.resolve());
     expect(
-      await screen.findByRole("button", { name: "全部暂停" }),
+      await screen.findByRole("button", { name: "Pause all" }),
     ).toBeTruthy();
     expect(action.mock.calls).toEqual([
       ["job-1", "resume"],
@@ -1166,15 +1226,17 @@ describe("pausing and continuing imports from the strip", () => {
       .fn(async (id: string, next: Action) => settle(id, next, initial))
       .mockImplementationOnce(async (id, next) => settle(id, next, initial))
       .mockImplementationOnce(async () => {
-        throw new Error("来源操作未完成，请核对当前状态后重试。");
+        throw new Error(
+          "The source operation did not complete; verify the current status and retry.",
+        );
       });
     render(<Harness initial={initial} action={action} />);
-    await user.click(screen.getByRole("button", { name: "全部暂停" }));
+    await user.click(screen.getByRole("button", { name: "Pause all" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Claude Code 未能暂停：来源操作未完成，请核对当前状态后重试。",
+      "Claude Code could not pause: The source operation did not complete; verify the current status and retry.",
     );
-    await user.click(screen.getByRole("button", { name: "重试暂停" }));
-    await screen.findByRole("button", { name: "全部继续" });
+    await user.click(screen.getByRole("button", { name: "Retry pause" }));
+    await screen.findByRole("button", { name: "Continue all" });
     expect(action.mock.calls.slice(2)).toEqual([["job-2", "pause"]]);
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -1183,27 +1245,27 @@ describe("pausing and continuing imports from the strip", () => {
     const user = userEvent.setup();
     const action = vi.fn(async () => running(cursorRunning));
     render(<Harness initial={[cursorRunning]} action={action} />);
-    await user.click(screen.getByRole("button", { name: "全部暂停" }));
+    await user.click(screen.getByRole("button", { name: "Pause all" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Cursor 未能暂停：后台尚未确认此操作完成。",
+      "Cursor could not pause: The backend has not confirmed this operation yet.",
     );
-    expect(screen.getByRole("button", { name: "重试暂停" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry pause" })).toBeTruthy();
   });
 
   it("does not take a receipt for another job", async () => {
     const user = userEvent.setup();
     const action = vi.fn(async () => paused(claudeRunning));
     render(<Harness initial={[cursorRunning]} action={action} />);
-    await user.click(screen.getByRole("button", { name: "全部暂停" }));
+    await user.click(screen.getByRole("button", { name: "Pause all" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Cursor 未能暂停：未收到此任务的有效回执。",
+      "Cursor could not pause: No valid receipt received for this job.",
     );
   });
 
   it("offers nothing for new-conversation checks, or while the snapshot is stale", () => {
     const sync = job({ operation: "sync" } as Partial<ImportJob>);
     const { unmount } = render(<Harness initial={[sync]} action={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "全部暂停" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pause all" })).toBeNull();
     unmount();
     render(
       <ImportProgressStrip
@@ -1215,6 +1277,6 @@ describe("pausing and continuing imports from the strip", () => {
         onJobAction={vi.fn()}
       />,
     );
-    expect(screen.queryByRole("button", { name: "全部暂停" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pause all" })).toBeNull();
   });
 });

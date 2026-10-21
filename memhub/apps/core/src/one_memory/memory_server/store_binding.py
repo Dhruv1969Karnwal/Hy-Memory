@@ -4,11 +4,12 @@ Having two implementations is not a migration; binding one is. This module is
 the single place that decides, so the swap is reviewable and reversible without
 touching the 142 call sites.
 
-**按 D56：数据库定为 SQLite（覆盖 D53 的 MySQL-only）。MySQL 路径标注为「未启用」——
-目标第 4 条要求「不留双路径」。因此 `store_for` 不再返回 MySQL store；若环境变量被设为
-`mysql`，此处按未启用处理并回落到 SQLite 并如实报告 `fell_back=True`，而不是静默双跑。
-MySQL 相关代码（db / mysql_store / sync_facade）保留但标注未启用，待按 D56 的复核结果决定
-删除还是重启。
+**Per D56 the database is SQLite, overriding D53's MySQL-only decision. The MySQL path is
+marked "not enabled" because goal 4 requires that no dual path remains, so `store_for` no longer
+returns a MySQL store: when the env var is set to `mysql` it is treated as not enabled, the call
+falls back to SQLite and reports `fell_back=True` honestly instead of silently running two engines.
+The MySQL code (db / mysql_store / sync_facade) is kept but marked not enabled until D56's review \
+decides whether to delete it or restart it.
 """
 
 from __future__ import annotations
@@ -108,8 +109,9 @@ def store_for(path: Path | str, environ: Mapping[str, str] | None = None) -> Mai
     working. So MySQL is only returned when `resolve_engine` reports it in
     force, which requires `mysql_available` to have checked that the server
     can really start.
-    按 D56 追加：MySQL 路径本身已标注未启用（`MYSQL_ENABLED=False`），故此处
-    一律返回 SQLite 并在 `fell_back` 报告中说明原因，避免两套引擎同时生效。
+    Added under D56: the MySQL path itself is marked not enabled (`MYSQL_ENABLED=False`), so this
+    always returns SQLite and states the reason in the `fell_back` report, keeping both engines \
+from being in force at once.
     """
     from one_memory.database_access import main_database
 

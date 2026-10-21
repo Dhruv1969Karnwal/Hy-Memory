@@ -1,12 +1,13 @@
-"""模型的 schema 必须在 import 时建好，不能拖到运行时在事件循环上建。
+"""Model schemas must be built at import time, not deferred to runtime on the event loop.
 
-pydantic 遇到前向引用时会把核心 schema 留着不建，等第一次用到再现场生成。
-那个「第一次」通常发生在第一个请求上，也就是事件循环上；生成过程会走进
-inspect.signature → tokenize，真机 core.log 第 1973 行的 watchdog dump 里
-MainThread 就正卡在这条路径上。
+pydantic leaves core schemas unbuilt when it meets forward references, generating them on first use.
+That "first use" usually lands on the first request, i.e. on the event loop, and generation walks
+inspect.signature → tokenize; the watchdog dump at core.log line 1973 on the real machine shows
+MainThread stuck right on that path.
 
-所以这条守卫不看耗时（耗时会随机器抖动），只看一个确定性的事实：
-import 完之后，还有没有模型的 schema 是没建完的。
+So this guard does not look at elapsed time (it varies with the machine), only at one \
+deterministic fact:
+after imports finish, is any model schema still unbuilt.
 """
 
 from __future__ import annotations
@@ -26,10 +27,12 @@ def _every_model() -> list[type[pydantic.BaseModel]]:
         try:
             importlib.import_module(info.name)
         except ImportError:
-            # 可选依赖缺席是已知情况。除此之外的失败必须报出来：
-            # 悄悄跳过一个模块，正好会把它里面那个不完整的模型一起藏掉。
+            # A missing optional dependency is a known case. Every other failure must be reported:
+            # silently skipping a module would hide exactly the incomplete model inside it.
             unimportable.append(info.name)
-    assert not unimportable, f"这些模块 import 失败，里面的模型没有被检查到：{sorted(unimportable)}"
+    assert not unimportable, (
+        f"these modules failed to import, their models went unchecked: {sorted(unimportable)}"
+    )
     seen: dict[str, type[pydantic.BaseModel]] = {}
     for name, module in list(sys.modules.items()):
         if not name.startswith("one_memory"):
@@ -46,9 +49,11 @@ def _every_model() -> list[type[pydantic.BaseModel]]:
 
 def test_every_model_has_its_schema_built_before_the_first_request():
     models = _every_model()
-    # 先证明这把尺子确实量到了东西，否则「没有不完整的模型」可能只是
-    # 因为压根没收集到模型 —— 那样这条守卫永远绿。
-    assert len(models) > 100, f"只收集到 {len(models)} 个模型，守卫没在量真东西"
+    # First prove this ruler actually measures something, or "no incomplete models" may just mean
+    # no models were collected at all -- which would keep this guard forever green.
+    assert len(models) > 100, (
+        f"collected only {len(models)} models, the guard is not measuring anything real"
+    )
 
     deferred = sorted(
         f"{model.__module__}.{model.__qualname__}"
@@ -56,6 +61,8 @@ def test_every_model_has_its_schema_built_before_the_first_request():
         if not model.__pydantic_complete__
     )
     assert not deferred, (
-        "这些模型的 schema 要等到第一次使用才生成，那一次很可能在事件循环上："
-        f"{deferred}。在定义完前向引用指向的类之后调用 model_rebuild() 即可。"
+        "these model schemas wait until first use to generate, and that call likely lands on the "
+        "event loop: "
+        f"{deferred}. Call model_rebuild() once the class the forward reference points to is "
+        "defined."
     )

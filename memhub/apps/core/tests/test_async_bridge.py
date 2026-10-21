@@ -105,7 +105,7 @@ def test_starting_a_read_does_not_stop_the_app_answering(monkeypatch) -> None:
     # It really read, so this cannot pass by reading nothing.
     assert read == [0, 1, 2, 3, 4]
     assert event_loop_thread not in source_reader_start_threads
-    assert longest < 0.6, f"开始读取时循环被堵住 {longest:.3f}s"
+    assert longest < 0.6, f"the loop was blocked for {longest:.3f}s when reading started"
 
 
 def test_source_parsers_are_globally_serialized_to_protect_interactive_reads() -> None:

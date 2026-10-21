@@ -18,7 +18,7 @@ import { commitSources } from "./source-state";
 
 vi.mock("./RecallPermissionControl", () => ({
   RecallPermissionControl: ({ host }: { host: { hostId: string } }) => (
-    <span>授权控件 {host.hostId}</span>
+    <span>Grant control {host.hostId}</span>
   ),
 }));
 const source = {
@@ -45,7 +45,7 @@ const props = {
 };
 function statusControl() {
   return screen.getByRole("button", {
-    name: /检测中|已接通|未接通|未开启关联|已安装，但取不到记忆/,
+    name: /Checking|Connected|Not connected|Association off|Installed, but it can't reach memories/,
   });
 }
 afterEach(() => {
@@ -61,7 +61,7 @@ beforeEach(() => {
 });
 it("returns to the application home immediately", () => {
   render(<ApplicationDetail {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: "返回应用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to apps" }));
   expect(props.onBack).toHaveBeenCalledOnce();
 });
 it("matches only an exact host identity and never installs on entry", async () => {
@@ -75,8 +75,8 @@ it("matches only an exact host identity and never installs on entry", async () =
     installRecall: install,
   } as unknown as NonNullable<typeof window.oneMemory>;
   render(<ApplicationDetail {...props} />);
-  await screen.findByText("未开启关联");
-  expect(screen.queryByText(/授权控件/)).toBeNull();
+  await screen.findByText("Association off");
+  expect(screen.queryByText(/Grant control/)).toBeNull();
   expect(install).not.toHaveBeenCalled();
 });
 it("does not report host read errors as missing installation", async () => {
@@ -84,8 +84,8 @@ it("does not report host read errors as missing installation", async () => {
     getRecallHosts: vi.fn().mockRejectedValue(new Error("offline")),
   } as unknown as NonNullable<typeof window.oneMemory>;
   render(<ApplicationDetail {...props} />);
-  await screen.findByText("检测中");
-  expect(screen.queryByText("未开启关联")).toBeNull();
+  await screen.findByText("Checking");
+  expect(screen.queryByText("Association off")).toBeNull();
 });
 
 it("does not leave a failed host read looking like an endless probe", async () => {
@@ -99,9 +99,9 @@ it("does not leave a failed host read looking like an endless probe", async () =
     />,
   );
 
-  expect(await screen.findByText("状态待核对")).toBeTruthy();
-  expect(screen.queryByText("检测中")).toBeNull();
-  expect(screen.getByText(/暂时无法读取连接状态/)).toBeTruthy();
+  expect(await screen.findByText("Status pending verification")).toBeTruthy();
+  expect(screen.queryByText("Checking")).toBeNull();
+  expect(screen.getByText(/Couldn't read the connection status/)).toBeTruthy();
 });
 
 it("does not fall back to a previously wired self-check after a failed new probe", async () => {
@@ -128,9 +128,9 @@ it("does not fall back to a previously wired self-check after a failed new probe
     />,
   );
 
-  expect(await screen.findByText("状态待核对")).toBeTruthy();
-  expect(screen.queryByText("已接通")).toBeNull();
-  expect(screen.getByText(/本次连接探测失败/)).toBeTruthy();
+  expect(await screen.findByText("Status pending verification")).toBeTruthy();
+  expect(screen.queryByText("Connected")).toBeNull();
+  expect(screen.getByText(/This connection probe failed/)).toBeTruthy();
 });
 it("installs and grants one-click insertion directly from app detail", async () => {
   const permission = {
@@ -187,7 +187,9 @@ it("installs and grants one-click insertion directly from app detail", async () 
       refresh={vi.fn().mockResolvedValue({ sources: [source] })}
     />,
   );
-  const insertion = await screen.findByRole("switch", { name: "一键插入应用" });
+  const insertion = await screen.findByRole("switch", {
+    name: "One-click insertion",
+  });
   await waitFor(() =>
     expect(insertion.getAttribute("aria-checked")).toBe("false"),
   );
@@ -206,15 +208,17 @@ it("installs and grants one-click insertion directly from app detail", async () 
 });
 it("disables every mutation while a stale snapshot refreshes", () => {
   render(<ApplicationDetail {...props} stale />);
-  for (const name of ["同步开关", "一键插入应用"]) {
+  for (const name of ["Sync switch", "One-click insertion"]) {
     expect(screen.getByRole("switch", { name })).toHaveProperty(
       "disabled",
       true,
     );
   }
-  expect(screen.getByRole("switch", { name: "同步开关" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "Sync switch" })).toBeTruthy();
   expect(statusControl()).toHaveProperty("disabled", false);
-  expect(screen.queryByRole("button", { name: /已保存原文/ })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: /Saved source text/ }),
+  ).toBeNull();
 });
 
 it("does not write sync or host permission from a stale detail", () => {
@@ -225,7 +229,7 @@ it("does not write sync or host permission from a stale detail", () => {
     setRecallPermission: permission,
   } as unknown as NonNullable<typeof window.oneMemory>;
   render(<ApplicationDetail {...props} stale setSync={setSync} />);
-  fireEvent.click(screen.getByRole("switch", { name: "同步开关" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Sync switch" }));
   expect(setSync).not.toHaveBeenCalled();
   expect(permission).not.toHaveBeenCalled();
 });
@@ -238,7 +242,7 @@ it("lets a confirmed sync write continue after its follow-up read turns the snap
   const view = render(
     <ApplicationDetail {...props} stale syncWriteConfirmed setSync={setSync} />,
   );
-  const sync = screen.getByRole("switch", { name: "同步开关" });
+  const sync = screen.getByRole("switch", { name: "Sync switch" });
   expect(sync).toHaveProperty("disabled", false);
   fireEvent.click(sync);
   await waitFor(() =>
@@ -248,7 +252,7 @@ it("lets a confirmed sync write continue after its follow-up read turns the snap
     ),
   );
   view.rerender(<ApplicationDetail {...props} stale setSync={setSync} />);
-  expect(screen.getByRole("switch", { name: "同步开关" })).toHaveProperty(
+  expect(screen.getByRole("switch", { name: "Sync switch" })).toHaveProperty(
     "disabled",
     true,
   );
@@ -407,7 +411,9 @@ it("lets insertion turn off and on again without getting stuck on stale host sta
       refresh={vi.fn().mockResolvedValue({ sources: [source] })}
     />,
   );
-  const insertion = await screen.findByRole("switch", { name: "一键插入应用" });
+  const insertion = await screen.findByRole("switch", {
+    name: "One-click insertion",
+  });
   await waitFor(() =>
     expect(insertion.getAttribute("aria-checked")).toBe("true"),
   );
@@ -492,7 +498,7 @@ it("names the file and place to check when turning an app off cannot be confirme
     review: [
       {
         path: "/home/me/.config/opencode/plugin/one-memory-capture.js",
-        where: "文件内容与安装时不同",
+        where: "File contents differ from install time",
       },
     ],
     fingerprint: "fp",
@@ -505,14 +511,16 @@ it("names the file and place to check when turning an app off cannot be confirme
       refresh={vi.fn().mockResolvedValue({ sources: [opencode] })}
     />,
   );
-  const insertion = await screen.findByRole("switch", { name: "一键插入应用" });
+  const insertion = await screen.findByRole("switch", {
+    name: "One-click insertion",
+  });
   await waitFor(() =>
     expect(insertion.getAttribute("aria-checked")).toBe("true"),
   );
   fireEvent.click(insertion);
   expect(
     await screen.findByText(
-      "已撤销记忆权限，OpenCode 已查不到记忆。但无法确认连接已全部移除，需要你手动核对：/home/me/.config/opencode/plugin/one-memory-capture.js（文件内容与安装时不同）。",
+      "Memory permission revoked, so OpenCode can no longer look up memories. But the connection can't be confirmed as fully removed, so you need to check manually: /home/me/.config/opencode/plugin/one-memory-capture.js (File contents differ from install time).",
     ),
   ).toBeTruthy();
   expect(bridge.uninstallRecall).not.toHaveBeenCalled();
@@ -528,7 +536,9 @@ it("revokes an app whose config was edited when its connection cannot be removed
       refresh={vi.fn().mockResolvedValue({ sources: [opencode] })}
     />,
   );
-  const insertion = await screen.findByRole("switch", { name: "一键插入应用" });
+  const insertion = await screen.findByRole("switch", {
+    name: "One-click insertion",
+  });
   await waitFor(() =>
     expect(insertion.getAttribute("aria-checked")).toBe("true"),
   );
@@ -543,7 +553,7 @@ it("revokes an app whose config was edited when its connection cannot be removed
   expect(bridge.uninstallRecall).not.toHaveBeenCalled();
   expect(
     await screen.findByText(
-      "已撤销记忆权限，OpenCode 已查不到记忆。配置文件被改过，MemHub 没有自动删除；请手动移除其中的 MemHub 连接。",
+      "Memory permission revoked, so OpenCode can no longer look up memories. The config file was edited, so MemHub didn't delete it automatically. Remove the MemHub connection from it manually.",
     ),
   ).toBeTruthy();
   await waitFor(() =>
@@ -561,14 +571,16 @@ it("shows insertion still on when neither removal nor revocation succeeded", asy
       refresh={vi.fn().mockResolvedValue({ sources: [opencode] })}
     />,
   );
-  const insertion = await screen.findByRole("switch", { name: "一键插入应用" });
+  const insertion = await screen.findByRole("switch", {
+    name: "One-click insertion",
+  });
   await waitFor(() =>
     expect(insertion.getAttribute("aria-checked")).toBe("true"),
   );
   fireEvent.click(insertion);
   expect(
     await screen.findByText(
-      "连接未能移除，记忆权限也未能撤销，OpenCode 仍可使用记忆，请重试。原因：应用控制通道暂不可用。",
+      "The connection wasn't removed and the memory permission wasn't revoked, so OpenCode can still use memories. Try again. Reason: The app control channel is unavailable.",
     ),
   ).toBeTruthy();
   await waitFor(() =>
@@ -614,10 +626,10 @@ it("explains why an app without a revocable connection cannot be inserted", asyn
   );
   expect(
     await screen.findByText(
-      "Pi 暂不支持一键插入：它没有 MCP 通道，无法发放可撤销的记忆凭证。",
+      "Pi One-click insertion is not supported yet: it has no MCP channel, so no revocable memory credential can be issued.",
     ),
   ).toBeTruthy();
-  const insertion = screen.getByRole("switch", { name: "一键插入应用" });
+  const insertion = screen.getByRole("switch", { name: "One-click insertion" });
   await waitFor(() => expect(insertion).toHaveProperty("disabled", true));
   expect(previewRecallInstall).not.toHaveBeenCalled();
 });
@@ -693,16 +705,16 @@ it("waits for an explicit click before applying a cold-start insertion preferenc
     />,
   );
   const insertion = await screen.findByRole("switch", {
-    name: "一键插入应用",
+    name: "One-click insertion",
   });
   expect(insertion.getAttribute("aria-checked")).toBe("false");
-  expect(screen.queryByRole("button", { name: "检查连接" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
   expect(installRecall).not.toHaveBeenCalled();
   fireEvent.click(insertion);
   await waitFor(() =>
     expect(installRecall).toHaveBeenCalledWith("cursor", "fingerprint"),
   );
-  expect(await screen.findByText("已接通")).toBeTruthy();
+  expect(await screen.findByText("Connected")).toBeTruthy();
 });
 
 it("does not call an approved install connected when the recall probe cannot start", async () => {
@@ -752,11 +764,11 @@ it("does not call an approved install connected when the recall probe cannot sta
       refresh={vi.fn().mockResolvedValue({ sources: [source] })}
     />,
   );
-  expect(await screen.findByText("未接通")).toBeTruthy();
-  expect(screen.queryByText("成功关联")).toBeNull();
+  expect(await screen.findByText("Not connected")).toBeTruthy();
+  expect(screen.queryByText("Association succeeded")).toBeNull();
   expect(
     screen.getByText(
-      "记忆工具没有进到 Cursor 当前对话。完全退出 Cursor 后重新打开，新对话里才会出现。",
+      "The memory tool isn't in Cursor's current conversation. Quit Cursor completely and reopen it, and it appears only in a new conversation.",
     ),
   ).toBeTruthy();
 });
@@ -813,7 +825,7 @@ it("names the open application when the recall tool is not in its current chat",
   );
   expect(
     await screen.findByText(
-      "记忆工具没有进到 WorkBuddy 当前对话。完全退出 WorkBuddy 后重新打开，新对话里才会出现。",
+      "The memory tool isn't in WorkBuddy's current conversation. Quit WorkBuddy completely and reopen it, and it appears only in a new conversation.",
     ),
   ).toBeTruthy();
   expect(screen.queryByText(/Cursor/)).toBeNull();
@@ -885,7 +897,7 @@ it("does not auto-install a cold-start remembered host on page entry", async () 
     />,
   );
   const insertion = await screen.findByRole("switch", {
-    name: "一键插入应用",
+    name: "One-click insertion",
   });
   expect(insertion.getAttribute("aria-checked")).toBe("false");
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -912,7 +924,7 @@ it("lets sync turn on and off again without leaving the page", async () => {
       refresh={refresh}
     />,
   );
-  const sync = await screen.findByRole("switch", { name: "同步开关" });
+  const sync = await screen.findByRole("switch", { name: "Sync switch" });
   await waitFor(() => expect(sync.getAttribute("aria-checked")).toBe("false"));
   fireEvent.click(sync);
   await waitFor(() =>
@@ -967,17 +979,17 @@ it("writes a remembered WorkBuddy sync and only then shows it as on", async () =
       refresh={refresh}
     />,
   );
-  expect(screen.getByText("已冻结")).toBeTruthy();
+  expect(screen.getByText("Frozen")).toBeTruthy();
   await waitFor(() =>
     expect(setSync).toHaveBeenCalledWith(
       expect.objectContaining({ source_id: "workbuddy", sync_enabled: false }),
       true,
     ),
   );
-  await waitFor(() => expect(screen.getByText("处理中")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText("Processing")).toBeTruthy());
   expect(
     screen
-      .getByRole("switch", { name: "同步开关" })
+      .getByRole("switch", { name: "Sync switch" })
       .getAttribute("aria-checked"),
   ).toBe("true");
 });
@@ -1010,28 +1022,30 @@ it("does not keep WorkBuddy looking synced when the server write fails", async (
   await waitFor(() => expect(setSync).toHaveBeenCalledOnce());
   await waitFor(() =>
     expect(
-      screen.getByText("此应用的处理开关结果未能确认，其他应用不受影响。"),
+      screen.getByText(
+        "This app's processing switch result is unconfirmed. Other apps are unaffected.",
+      ),
     ).toBeTruthy(),
   );
-  expect(screen.getByText("已冻结")).toBeTruthy();
+  expect(screen.getByText("Frozen")).toBeTruthy();
   expect(
     screen
-      .getByRole("switch", { name: "同步开关" })
+      .getByRole("switch", { name: "Sync switch" })
       .getAttribute("aria-checked"),
   ).toBe("false");
-  // 2026-10-12: 提示语必须留在开关左侧的说明栏里；开关恒居右，不许被挤动。
+  // 2026-10-12: the notice stays in the description column to the left of the switch; the switch always sits at the right edge and must not be pushed aside.
   const section = screen
-    .getByRole("switch", { name: "同步开关" })
+    .getByRole("switch", { name: "Sync switch" })
     .closest("section");
   const children = Array.from(section?.children ?? []);
   expect(children[children.length - 1]).toBe(
-    screen.getByRole("switch", { name: "同步开关" }),
+    screen.getByRole("switch", { name: "Sync switch" }),
   );
   expect(
     screen
       .getByRole("alert")
       .compareDocumentPosition(
-        screen.getByRole("switch", { name: "同步开关" }),
+        screen.getByRole("switch", { name: "Sync switch" }),
       ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
@@ -1045,14 +1059,13 @@ it("disables connection and explains why outside Applications, and stays enabled
   } as unknown as NonNullable<typeof window.oneMemory>;
   render(<ApplicationDetail {...props} />);
   await waitFor(() =>
-    expect(screen.getByRole("switch", { name: "一键插入应用" })).toHaveProperty(
-      "disabled",
-      true,
-    ),
+    expect(
+      screen.getByRole("switch", { name: "One-click insertion" }),
+    ).toHaveProperty("disabled", true),
   );
   expect(
     screen.getByText(
-      "请先把 MemHub 拖到“应用程序”并从那里重新打开，才能接入应用。",
+      "Drag MemHub into Applications and reopen it from there before an app can be connected.",
     ),
   ).toBeTruthy();
 
@@ -1065,14 +1078,13 @@ it("disables connection and explains why outside Applications, and stays enabled
   } as unknown as NonNullable<typeof window.oneMemory>;
   render(<ApplicationDetail {...props} />);
   await waitFor(() =>
-    expect(screen.getByRole("switch", { name: "一键插入应用" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
+    expect(
+      screen.getByRole("switch", { name: "One-click insertion" }),
+    ).toHaveProperty("disabled", false),
   );
   expect(
     screen.queryByText(
-      "请先把 MemHub 拖到“应用程序”并从那里重新打开，才能接入应用。",
+      "Drag MemHub into Applications and reopen it from there before an app can be connected.",
     ),
   ).toBeNull();
 });
@@ -1087,12 +1099,14 @@ it("hides the read-permission switch and states the frozen truth (D97)", () => {
       setSync={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  expect(screen.getByRole("switch", { name: "同步开关" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "Sync switch" })).toBeTruthy();
   // Kristin 14:14: nothing about recall stays printed under the switch.
   expect(
-    screen.queryByText("关闭后已生成的记忆仍会参与召回，如需清除请删除。"),
+    screen.queryByText(
+      "Memories already generated still take part in recall after this is turned off; delete them to remove them.",
+    ),
   ).toBeNull();
-  expect(screen.getByText("已冻结")).toBeTruthy();
+  expect(screen.getByText("Frozen")).toBeTruthy();
 });
 
 it("promises a backfill when the switch is turned back on (D97)", async () => {
@@ -1105,10 +1119,18 @@ it("promises a backfill when the switch is turned back on (D97)", async () => {
       setSync={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  expect(screen.queryByText(/将补充冻结期间的新对话/)).toBeNull();
-  fireEvent.click(await screen.findByRole("switch", { name: "同步开关" }));
+  expect(
+    screen.queryByText(
+      /New conversations from the frozen period will be backfilled/,
+    ),
+  ).toBeNull();
+  fireEvent.click(await screen.findByRole("switch", { name: "Sync switch" }));
   await waitFor(() =>
-    expect(screen.getByText(/将补充冻结期间的新对话/)).toBeTruthy(),
+    expect(
+      screen.getByText(
+        /New conversations from the frozen period will be backfilled/,
+      ),
+    ).toBeTruthy(),
   );
 });
 
@@ -1129,13 +1151,17 @@ it("says sync is being turned on while the write is in flight (D77)", async () =
       setSync={setSync}
     />,
   );
-  const sync = await screen.findByRole("switch", { name: "同步开关" });
+  const sync = await screen.findByRole("switch", { name: "Sync switch" });
   fireEvent.click(sync);
-  await waitFor(() => expect(screen.getByText("正在开启处理…")).toBeTruthy());
-  expect(screen.getByRole("status").textContent).toContain("一两分钟");
-  expect(screen.queryByText("处理中")).toBeNull();
+  await waitFor(() =>
+    expect(screen.getByText("Turning processing on...")).toBeTruthy(),
+  );
+  expect(screen.getByRole("status").textContent).toContain("minute or two");
+  expect(screen.queryByText("Processing")).toBeNull();
   finish();
-  await waitFor(() => expect(screen.queryByText("正在开启处理…")).toBeNull());
+  await waitFor(() =>
+    expect(screen.queryByText("Turning processing on...")).toBeNull(),
+  );
 });
 
 it("sends a click made while the remembered sync is still writing (D77)", async () => {
@@ -1171,7 +1197,7 @@ it("sends a click made while the remembered sync is still writing (D77)", async 
   );
   await waitFor(() => expect(setSync).toHaveBeenCalledTimes(1));
   // The person turns it off again while the remembered "on" is in flight.
-  fireEvent.click(screen.getByRole("switch", { name: "同步开关" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Sync switch" }));
   finish();
   await waitFor(() =>
     expect(setSync).toHaveBeenLastCalledWith(
@@ -1179,5 +1205,5 @@ it("sends a click made while the remembered sync is still writing (D77)", async 
       false,
     ),
   );
-  await waitFor(() => expect(screen.getByText("已冻结")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText("Frozen")).toBeTruthy());
 });

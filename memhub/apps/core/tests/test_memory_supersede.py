@@ -1,7 +1,9 @@
-"""HY 取代一条记忆时，产品里的旧记忆变成「已被取代」并指向新记忆。
+"""When HY supersedes a memory, the old one in the product becomes "superseded" and points at the \
+new one.
 
-旧记忆不删除、不再当作当前记忆：召回、默认列表和宿主上下文都只给链头，
-按编号仍能读到旧记忆和它的替换链。
+The old memory is not deleted and is no longer treated as current: recall, the default list and \
+host context all give only the chain head,
+while reading by id still reaches the old memory and its replacement chain.
 """
 
 import asyncio
@@ -35,11 +37,11 @@ from one_memory.memory_mutation_receipts import read_memory_mutation_receipt
 from one_memory.recall import GovernedRecallTarget, RecallRequest, RecallState
 from tests.person_door import as_person
 
-OLD = "用户的发布前检查要求一次权限评审"
-NEW = "用户的发布前检查现在要求两次权限评审"
+OLD = "The user's pre-release check requires one round of permission review"
+NEW = "The user's pre-release check now requires two rounds of permission review"
 
 
-def _evidence(database, message_id="m1", verbatim="发布前要做权限评审。"):
+def _evidence(database, message_id="m1", verbatim="Do a permission review before release."):
     return (
         EvidenceStore(database)
         .put(
@@ -118,7 +120,12 @@ def test_superseding_keeps_the_old_memory_and_links_both_ways(tmp_path) -> None:
 
 def test_a_chain_fold_links_every_generation(tmp_path) -> None:
     database, store, first, second = _pair(tmp_path)
-    head = _confirmed(store, _evidence(database, "m2", "现在是三次。"), "三次评审", "head")
+    head = _confirmed(
+        store,
+        _evidence(database, "m2", "It is three rounds now."),
+        "three rounds of permission review",
+        "head",
+    )
 
     _supersede(store, first, second.memory_id)
     _supersede(store, store.get(second.memory_id, user_id="local"), head.memory_id)
@@ -136,7 +143,9 @@ def test_a_chain_fold_links_every_generation(tmp_path) -> None:
 
 def test_superseding_again_only_adds_the_link(tmp_path) -> None:
     database, store, old, new = _pair(tmp_path)
-    other = _confirmed(store, _evidence(database, "m3", "另一条"), "另一条替换", "other")
+    other = _confirmed(
+        store, _evidence(database, "m3", "another one"), "another replacement", "other"
+    )
     once = _supersede(store, old, new.memory_id)
 
     again = _supersede(store, once, other.memory_id, request_id="hy-supersede:task-2:old")
@@ -156,7 +165,9 @@ def test_d16_supersede_contract_distinguishes_request_revision_and_replacement_e
     must be able to tell these apart without parsing status text.
     """
     database, store, old, new = _pair(tmp_path)
-    other = _confirmed(store, _evidence(database, "m3", "另一条"), "另一条替换", "other")
+    other = _confirmed(
+        store, _evidence(database, "m3", "another one"), "another replacement", "other"
+    )
     request_id = "d16-retract:old:new"
     change = HySupersede(
         memory_id=old.memory_id,
@@ -253,15 +264,15 @@ def test_a_superseded_memory_leaves_every_current_read_path(tmp_path) -> None:
 
     # Positive first: while it is current, every path returns it.
     def current_ids():
-        recall = GovernedRecallTarget(store).recall(RecallRequest(query="权限评审"))
+        recall = GovernedRecallTarget(store).recall(RecallRequest(query="permission review"))
         semantic = asyncio.run(
             GovernedRecallTarget(
                 store, semantic_search=lambda _: _async((old.memory_id,))
-            ).recall_async(RecallRequest(query="发布之前要做什么？"))
+            ).recall_async(RecallRequest(query="What does a release need beforehand?"))
         )
         context = read_memory_context(
             database,
-            ContextSearchRequest(query="权限评审", kinds=("memory",)),
+            ContextSearchRequest(query="permission review", kinds=("memory",)),
             scopes=frozenset({"all-apps"}),
             deadline=time.monotonic() + 3,
         )
@@ -272,9 +283,9 @@ def test_a_superseded_memory_leaves_every_current_read_path(tmp_path) -> None:
             "semantic": {hit.memory_id for hit in semantic.hits},
             "matching": {
                 m.memory_id
-                for m in store.find_confirmed_matching_terms(user_id="local", terms=("权限评审",))[
-                    0
-                ]
+                for m in store.find_confirmed_matching_terms(
+                    user_id="local", terms=("permission review",)
+                )[0]
             },
             "context": {item.memory_id for item in context.items},
         }
@@ -287,7 +298,7 @@ def test_a_superseded_memory_leaves_every_current_read_path(tmp_path) -> None:
     after = current_ids()
     assert all(old.memory_id not in ids for ids in after.values()), after
     assert all(new.memory_id in after[path] for path in ("listed", "library", "recall")), after
-    assert GovernedRecallTarget(store).recall(RecallRequest(query="权限评审")).state is (
+    assert GovernedRecallTarget(store).recall(RecallRequest(query="permission review")).state is (
         RecallState.GROUNDED
     )
     # Still there by id and when asked for by status.
@@ -334,9 +345,9 @@ def test_product_actions_on_a_superseded_memory_are_refused(tmp_path, operation)
     _, store, old, new = _pair(tmp_path)
     arguments = {
         "undo": {},
-        "correct": {"content": "改一下"},
+        "correct": {"content": "make a small edit"},
         "set_scopes": {"scopes": ("cursor",)},
-        "hy_reconcile": {"content": "改一下", "evidence_ids": old.evidence_ids},
+        "hy_reconcile": {"content": "make a small edit", "evidence_ids": old.evidence_ids},
     }[operation]
     # Positive first: the same call on the current memory is not refused as superseded.
     try:
@@ -484,7 +495,7 @@ def test_the_api_shows_the_chain_refuses_edits_and_still_deletes_through_hy(tmp_
             head = (await client.get("/api/v1/memories/new")).json()["memory"]
             assert head["supersedes"] == ["old"] and head["superseded_by"] == []
             recalled = await client.post(
-                "/api/v1/recall", json={"query": "权限评审", "scope": "all-apps"}
+                "/api/v1/recall", json={"query": "permission review", "scope": "all-apps"}
             )
             assert [hit["memory_id"] for hit in recalled.json()["hits"]] == ["new"]
 
@@ -502,7 +513,7 @@ def test_the_api_shows_the_chain_refuses_edits_and_still_deletes_through_hy(tmp_
                 json={
                     "request_id": "correct-x",
                     "expected_revision": replaced.revision,
-                    "content": "改一下",
+                    "content": "make a small edit",
                 },
             )
             assert (refused.status_code, refused.json()["detail"]) == (409, "memory_superseded")
@@ -553,7 +564,7 @@ def test_supersession_integrity_reports_a_cycle_and_stays_quiet_when_healthy(tmp
                     message_id=key,
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="原文",
+                    verbatim="source text",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             )
@@ -626,7 +637,7 @@ def test_supersession_integrity_ignores_deleting_a_long_chains_head(tmp_path) ->
                     message_id=key,
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="原文",
+                    verbatim="source text",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             )
@@ -710,7 +721,7 @@ def test_supersession_integrity_ignores_a_user_deletion(tmp_path) -> None:
                     message_id=key,
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim="原文",
+                    verbatim="source text",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
             )

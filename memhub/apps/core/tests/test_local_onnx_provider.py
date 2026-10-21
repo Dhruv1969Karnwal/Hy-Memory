@@ -139,7 +139,7 @@ def test_local_hy_embed_service_returns_unit_512_vectors() -> None:
     import asyncio
 
     service = LocalHyEmbedService(LocalEmbedder())
-    vector = asyncio.run(service.embed("本地嵌入不需要出网"))
+    vector = asyncio.run(service.embed("local embedding needs no network egress"))
     assert len(vector) == 512
     length = sum(value * value for value in vector) ** 0.5
     assert length == pytest.approx(1.0, abs=1e-4)
@@ -172,16 +172,21 @@ def test_create_client_swaps_in_the_local_embed_service(tmp_path: Path) -> None:
 
 
 def test_local_embed_service_covers_every_method_hy_calls() -> None:
-    """我们的替代品必须覆盖 HY 真会调的全部方法 —— 名单从 HY 源码里数，不写死。
+    """Our replacement must cover every method HY actually calls -- the list is counted from \
+HY's source, not hardcoded.
 
-    上一版这个类只实现了 `embed`，注释还写着「HY only ever calls .embed on it」。
-    装着的这个 HY 版本里，写入流水线调的是 `embed_queued`（17 处）、`embed_batch`
-    （12 处）、`embed`（11 处）、`embed_with_meta`（1 处）。缺的那些不会报缺方法，
-    而是让 HY 退回它自己那个指向占位地址的服务，于是抽取以连接失败告终、
-    一条记忆都产不出来。
+    The previous version of this class implemented only `embed`, and the comment still read "HY \
+only ever calls .embed on it".
+    In the HY version installed here, the write \
+pipeline calls `embed_queued` (17 sites), `embed_batch`
+    (12 sites), `embed` (11 sites) and `embed_with_meta` (1 \
+site). The missing ones do not raise a missing-method error;
+    instead HY falls back to its own service pointing at a placeholder address, so extraction \
+ends in a connection failure and
+    not one memory is produced.
 
-    名单是数出来的而不是抄下来的：抄下来的名单会随 HY 升级一起烂掉，
-    而这条测试的全部意义就是替我们盯住那次升级。
+    The list is counted rather than copied: a copied list rots with each HY upgrade,
+    while this test's whole purpose is to watch that upgrade for us.
     """
     import re
     from pathlib import Path as _Path
@@ -195,23 +200,26 @@ def test_local_embed_service_covers_every_method_hy_calls() -> None:
             continue
         called.update(re.findall(r"embed_service\.([a-z_]+)", path.read_text(encoding="utf-8")))
 
-    assert called, "一个调用点都没数到，说明这条测试自己坏了"
+    assert called, "not a single call site was counted, which means this test itself is broken"
     missing = {name for name in called if not callable(getattr(LocalHyEmbedService, name, None))}
-    assert missing == set(), f"HY 会调但我们没实现：{sorted(missing)}"
+    assert missing == set(), f"HY calls these but we never implemented them: {sorted(missing)}"
 
 
 @requires_assets
 def test_the_pipelines_get_the_local_embed_service_not_only_the_client(
     tmp_path: Path,
 ) -> None:
-    """真正干活的模块拿到的必须也是本地那个。
+    """The modules that do the real work must receive the local one as well.
 
-    这是漏掉的那一步：client 在 __init__ 里把它自己那个 EmbedService 交给了
-    组件工厂（client.py:300），而所有流水线都从工厂取（registry.py:103/137/177）。
-    只替换 client 上的引用，工厂手里攥着的还是原来那个 —— 指向
-    http://127.0.0.1/local-onnx，连 TCP 都建不起来。
+    This was the missed step: in __init__ the client hands its own EmbedService to
+    the component factory (client.py:300), and every pipeline takes it from the factory \
+(registry.py:103/137/177).
+    Replacing only the reference on client leaves \
+the factory holding the original one -- pointing at
+    http://127.0.0.1/local-onnx, where not even a TCP connection can be established.
 
-    旧测试只断言 client 上那个引用，所以它一直是绿的，而抽取一直是零产出。
+    The old test only asserted the reference on client, \
+so it stayed green while extraction kept producing nothing.
     """
     from tests.test_hy_memory_bridge import snapshot
 
@@ -230,8 +238,10 @@ def test_the_pipelines_get_the_local_embed_service_not_only_the_client(
     try:
         shared = client._registry._shared_embed_service
         assert isinstance(shared, LocalHyEmbedService)
-        # 同一个对象，不是两份各自缓存的替代品：HY 的服务自带批处理队列，
-        # 两份会各攒一队，而队列的意义就是同一批一起走。
+        # The same object, not two separately cached replacements: HY's service carries its own
+        # batch queue,
+        # and two copies would each build a queue, while the point of a queue is that one batch
+        # travels together.
         assert shared is client._embed_service
     finally:
         close = getattr(client, "close", None)
@@ -241,17 +251,21 @@ def test_the_pipelines_get_the_local_embed_service_not_only_the_client(
 
 @requires_assets
 def test_the_write_pipeline_itself_gets_the_local_embed_service(tmp_path: Path) -> None:
-    """真正写记忆的那条流水线手里必须是本地那个。
+    """The pipeline that actually writes memories must hold the local one.
 
-    这是前两条守卫都没守住的一层，而它才是决定成败的一层。实测：改完
-    client 与工厂两处引用之后，真实导入仍然 67 次 ConnectError、零记忆产出。
-    原因是 client.__init__ 在 client.py:332 就把 System2Writer 预热建好了 ——
-    那时替换还没发生，于是它抓走了 HY 原本那个服务并传给内层 writer，而
-    registry._system2_writer 一旦有值就永不重建。
+    This is the layer neither of the previous two guards covers, and it is the one that decides \
+the outcome. Measured: after
+    fixing both the client and factory references, real \
+imports still hit 67 ConnectErrors and produced zero memories.
+    The cause: client.__init__ already pre-warms System2Writer at client.py:332 --
+    the replacement has not happened yet, so it takes HY's \
+original service and passes it to the inner writer, and
+    registry._system2_writer is never rebuilt once it holds a value.
 
-    调用链是实测出来的，不是读出来的：给真实 EmbedService 的 embed_queued 挂
-    栈回溯，它自己报出 client.async_add -> system2_writer.write ->
-    writer.write -> embed_queued。
+    The call chain was measured, not read: attaching \
+a stack trace to the real EmbedService's embed_queued
+    makes it report client.async_add -> system2_writer.write ->
+    writer.write -> embed_queued.
     """
     from tests.test_hy_memory_bridge import snapshot
 
@@ -270,9 +284,10 @@ def test_the_write_pipeline_itself_gets_the_local_embed_service(tmp_path: Path) 
     try:
         writer = asyncio.run(client._registry.get_system2_writer())
         assert isinstance(writer._embed_service, LocalHyEmbedService)
-        # 内层 writer 也要 —— 栈回溯显示 embed_queued 是它调的，不是 System2 调的。
+        # The inner writer too -- the stack trace shows embed_queued is called by it, not by
+        # System2.
         inner = getattr(writer, "_writer", None) or getattr(writer, "writer", None)
-        assert inner is not None, "找不到内层 writer，这条测试自己坏了"
+        assert inner is not None, "inner writer not found, which means this test itself is broken"
         assert isinstance(inner._embed_service, LocalHyEmbedService)
     finally:
         close = getattr(client, "close", None)

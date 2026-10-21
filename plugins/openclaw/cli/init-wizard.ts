@@ -40,7 +40,7 @@ export const LLM_PROVIDERS: ProviderDef[] = [
   { id: "hunyuan",    label: "Hy (Tencent)",             needsApiKey: true,  needsUrl: false, defaultModel: "hy3-preview",             defaultUrl: "https://tokenhub.tencentmaas.com/v1" },
   { id: "moonshot",   label: "Moonshot (Kimi)",          needsApiKey: true,  needsUrl: false, defaultModel: "kimi-k2.5",               defaultUrl: "https://api.moonshot.cn/v1" },
   { id: "minimax",    label: "MiniMax",                  needsApiKey: true,  needsUrl: false, defaultModel: "minimax-m2.1",            defaultUrl: "https://api.minimax.chat/v1" },
-  { id: "zhipu",      label: "Z.ai (智谱)",              needsApiKey: true,  needsUrl: false, defaultModel: "glm-4.7-flash",           defaultUrl: "https://open.bigmodel.cn/api/paas/v4" },
+  { id: "zhipu",      label: "Z.ai (Zhipu)",              needsApiKey: true,  needsUrl: false, defaultModel: "glm-4.7-flash",           defaultUrl: "https://open.bigmodel.cn/api/paas/v4" },
   { id: "ollama",     label: "Ollama (local, free)",     needsApiKey: false, needsUrl: true,  defaultModel: "qwen3-7b-instruct",       defaultUrl: "http://localhost:11434/v1" },
 ];
 
@@ -49,7 +49,7 @@ export const LLM_PROVIDERS: ProviderDef[] = [
 export const EMBEDDER_PROVIDERS: EmbedderDef[] = [
   { id: "openai",   label: "OpenAI",                needsApiKey: true,  needsUrl: false, defaultModel: "text-embedding-3-small",  defaultDims: 768 },
   { id: "gemini",   label: "Google Gemini",          needsApiKey: true,  needsUrl: false, defaultModel: "text-embedding-004",      defaultDims: 768,  defaultUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  { id: "aliyun",   label: "Aliyun Bailian (百炼)",  needsApiKey: true,  needsUrl: false, defaultModel: "text-embedding-v4",       defaultDims: 1024, defaultUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+  { id: "aliyun",   label: "Aliyun Bailian (Bailian)",  needsApiKey: true,  needsUrl: false, defaultModel: "text-embedding-v4",       defaultDims: 1024, defaultUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
   { id: "moonshot", label: "Moonshot",               needsApiKey: true,  needsUrl: false, defaultModel: "moonshot-v1-embedding",   defaultDims: 1024, defaultUrl: "https://api.moonshot.cn/v1" },
   { id: "ollama",   label: "Ollama (local, free)",   needsApiKey: false, needsUrl: true,  defaultModel: "nomic-embed-text",        defaultDims: 768,  defaultUrl: "http://localhost:11434/v1" },
 ];

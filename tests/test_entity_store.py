@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Entity store 端到端测试（chroma 后端）。
+End-to-end tests for the entity store (chroma backend).
 
-覆盖：
-- entity 抽取（spaCy；模型缺失时 skip）；
-- chroma entity store：0.95 cosine 合并、search、list、delete；
-- index helper：抽取→embed→upsert；
-- client.build_entity_store 迁移（旧数据补建）。
+Covers:
+- entity extraction (spaCy; skipped when the model is missing);
+- chroma entity store: 0.95 cosine merge, search, list, delete;
+- index helper: extract -> embed -> upsert;
+- client.build_entity_store migration (backfilling legacy data).
 """
 
 import asyncio
@@ -39,7 +39,7 @@ _needs_spacy = pytest.mark.skipif(not _SPACY_OK, reason="spaCy en_core_web_sm no
 
 
 class _FakeEmbed:
-    """确定性 fake embedder：同文本 → 同向量（哈希派生），不同文本近正交。"""
+    """Deterministic fake embedder: same text -> same vector (hash-derived), different texts near-orthogonal."""
     def __init__(self, dims=32):
         self.dims = dims
         self._cache = {}
@@ -95,8 +95,8 @@ class TestEntityExtraction:
 
     @_needs_spacy
     def test_chinese_yields_empty(self):
-        # 英文 spaCy 模型对中文几乎抽不到 entity（与 mem0 一致）
-        assert extract_entities("用户喜欢科比，住在北京") == []
+        # The English spaCy model extracts almost no entity from Chinese text (same as mem0)
+        assert extract_entities("\u7528\u6237\u559c\u6b22\u79d1\u6bd4\uff0c\u4f4f\u5728\u5317\u4eac") == []  # "the user likes Kobe and lives in Beijing"
 
     def test_empty_input(self):
         assert extract_entities("") == []
@@ -109,7 +109,7 @@ class TestChromaEntityStore:
                                       embedding=list(e), memory_id="m1", user_id="u1", agent_id="a1"))
         id2 = run(store.upsert_entity(entity_text="Kobe Bryant", entity_type="PROPER",
                                       embedding=list(e), memory_id="m2", user_id="u1", agent_id="a1"))
-        assert id1 == id2  # 0.95 cosine 合并
+        assert id1 == id2  # merged at 0.95 cosine
         id3 = run(store.upsert_entity(entity_text="Lakers", entity_type="PROPER",
                                       embedding=_emb(), memory_id="m3", user_id="u1", agent_id="a1"))
         assert id3 != id1
@@ -132,7 +132,7 @@ class TestChromaEntityStore:
         e = _emb()
         run(store.upsert_entity(entity_text="Kobe", entity_type="PROPER",
                                 embedding=list(e), memory_id="m1", user_id="u1"))
-        # 不同 user 查不到
+        # A different user finds nothing
         hits = run(store.search_entities(query_embedding=list(e), user_id="u2", top_k=10))
         assert hits == []
 
@@ -166,7 +166,7 @@ def qdrant_store(tmp_path):
 
 
 class TestQdrantEntityStore:
-    """Qdrant 后端 entity store（dev6 漏实现，本类回归保护）。"""
+    """Entity store on the Qdrant backend (missing in dev6; this class is the regression guard)."""
 
     @_needs_qdrant
     def test_merge_search_list_delete(self, qdrant_store):
@@ -176,7 +176,7 @@ class TestQdrantEntityStore:
                                       embedding=list(e), memory_id="m1", user_id="u1", agent_id="a1"))
         id2 = run(store.upsert_entity(entity_text="Kobe Bryant", entity_type="PROPER",
                                       embedding=list(e), memory_id="m2", user_id="u1", agent_id="a1"))
-        assert id1 == id2  # 0.95 cosine 合并
+        assert id1 == id2  # merged at 0.95 cosine
         id3 = run(store.upsert_entity(entity_text="Lakers", entity_type="PROPER",
                                       embedding=_emb(), memory_id="m3", user_id="u1", agent_id="a1"))
         assert id3 != id1
@@ -222,10 +222,10 @@ class TestIndexHelper:
     def test_no_entities_noop(self, store):
         from hy_memory.pipelines._retrieval.entity_store import index_memory_entities
         emb = _FakeEmbed()
-        # 中文无 entity → 0，且不报错
+        # Chinese text yields no entity -> 0, and no error
         cnt = run(index_memory_entities(
             vector_store=store, embed_service=emb,
-            memory_id="m1", content="用户喜欢科比", user_id="u1",
+            memory_id="m1", content="\u7528\u6237\u559c\u6b22\u79d1\u6bd4", user_id="u1",  # "the user likes Kobe"
         ))
         assert cnt == 0
 
@@ -233,7 +233,7 @@ class TestIndexHelper:
 class TestBuildEntityStoreMigration:
     @_needs_spacy
     def test_build_from_existing_l2(self, config, store):
-        # 先种两条旧 L2_FACT（不经 writer，模拟历史数据）
+        # Seed two legacy L2_FACT rows first (bypassing the writer, as historical data)
         emb = _FakeEmbed()
         for mid, content in [("m1", "User loves Kobe Bryant"),
                              ("m2", "User works at Notion as a product lead")]:
@@ -243,7 +243,7 @@ class TestBuildEntityStoreMigration:
             n.embedding = _emb()
             run(store.upsert(n))
 
-        # 手动构造一个最小 client 壳，调 async_build_entity_store 的核心逻辑
+        # Build a minimal client shell by hand and call the core logic of async_build_entity_store
         from hy_memory.pipelines._retrieval.entity_store import index_memory_entities
         nodes = run(store.list_by_user(user_id="u1", agent_id="default_agent",
                                        status_filter=[MemoryStatus.ACTIVE],

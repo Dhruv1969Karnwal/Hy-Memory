@@ -1,6 +1,6 @@
 /** Keep the managed bin directory on the user's PATH.
  *
- * The product requirement is "装完即短指令可用": after `memhub install` the
+ * The product requirement is "the short command works right after install": after `memhub install` the
  * user must be able to type `memhub ...` without exporting anything. The
  * installer already creates the `memhub`/`one-memory` links in `binDir`; this
  * module makes `binDir` reachable from a NEW shell.
@@ -257,10 +257,10 @@ function profileExportsDirectory(content: string, directory: string): boolean {
 
 export function renderShellPathPlan(plan: ShellPathPlan): string {
   if (plan.status === "blocked") {
-    return `PATH 未配置：${plan.blocked_reason}\n`;
+    return `PATH not configured: ${plan.blocked_reason}\n`;
   }
   if (plan.status === "present") {
-    return `PATH 已包含 ${plan.bin_directory}（${plan.profile_path}）\n`;
+    return `PATH already includes ${plan.bin_directory} (${plan.profile_path})\n`;
   }
-  return `将在 ${plan.profile_path} 添加 PATH 条目：${plan.bin_directory}\n`;
+  return `Will add a PATH entry in ${plan.profile_path}: ${plan.bin_directory}\n`;
 }

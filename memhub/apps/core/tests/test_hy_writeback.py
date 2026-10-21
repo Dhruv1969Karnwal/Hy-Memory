@@ -1,8 +1,11 @@
-"""HY 的结果只有一扇门进治理表，而且每次进门都带着调用开始时的证据快照。
+"""HY results enter the governance tables through a single door, and every pass carries the \
+evidence snapshot taken when the call began.
 
-回归测试覆盖了多条曾漏检的写回路径（抽取的四处、digest、retired、supersede），
-说明问题在路径分散，不在某一处。这里一边用静态扫描守住「只有一扇门」，
-一边把 digest、retired、supersede 在 HY 调用途中被人改判的场景逐个复现。
+The regression scenarios cover several write-back paths once missed (four in extraction, digest, \
+retired, supersede),
+showing the problem is scattered paths, not one spot. A static scan guards "only one door" here, \
+while
+the digest, retired and supersede cases where a human overrules mid-HY-call are each reproduced.
 """
 
 import ast
@@ -40,18 +43,26 @@ DIRECT_HY_WRITES = {
 }
 
 
-# ------------------------------------------------------------ 运行时的门：不靠静态扫描
+# # ------------------------------------------------------------ The runtime door: does not rely on
+# # static scanning
 #
-# 回归场景表明：按属性名加接收者文本匹配的扫描，别名、getattr、经类调用、
-# 先存绑定方法四种写法都认不出。所以安全边界放在运行时：治理 store 本身不再有人工写方法，
-# 人工写入只能经它发出一次的 PersonWrites（Core 的 API 启动时领走）。
+# The regressions showed that scanning by attribute name plus receiver text cannot recognize
+# aliases, getattr, calls through the class,
+# or a stored bound method. So the safety boundary sits at runtime: the governance store itself has
+# no manual write methods,
+# and manual writing can only come from the PersonWrites it issues once (claimed by Core's API at
+# startup).
 
 
 def _seed_record(tmp_path):
     stores = _setup(tmp_path)
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
     record = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
     return governance, record
 
@@ -83,7 +94,7 @@ def test_code_holding_only_the_store_cannot_write_as_the_person(tmp_path, bypass
     governance, record = _seed_record(tmp_path)
 
     with pytest.raises(AttributeError):
-        bypass(governance, _draft(record, "绕过人工入口写进来的记忆"))
+        bypass(governance, _draft(record, "memory written past the person entry point"))
 
     assert governance.list(user_id="local") == []
 
@@ -100,8 +111,10 @@ def test_the_person_door_is_issued_once_and_cannot_be_forged(tmp_path) -> None:
     with pytest.raises(ValueError, match="actor"):
         governance.claim_person_writes("hy")
     door = governance.claim_person_writes("user")
-    # 正向前提：领到的门确实能写。
-    written = door.create(_draft(record, "人自己写的记忆"), request_id="door")
+    # Positive premise: the claimed door really can write.
+    written = door.create(
+        _draft(record, "memory written by the person themselves"), request_id="door"
+    )
     assert governance.get(written.memory_id, user_id="local") == written
 
     with pytest.raises(PermissionError, match="person_writes_already_claimed"):
@@ -123,11 +136,12 @@ def test_core_takes_the_person_door_before_anything_else_can(tmp_path) -> None:
     asyncio.run(scenario())
 
 
-# ------------------------------------------------------------ 静态扫描：只作补充
+# # ------------------------------------------------------------ Static scanning: a supplement only
 
 
 def _governance_private_names() -> set[str]:
-    """治理层自己的私有成员里，别的模块没有同名定义的那些——出现在别处就只能是伸手进来。"""
+    """Of the governance layer's own private members, the ones no other module defines under the \
+same name -- appearing elsewhere can only mean reaching in."""
     from one_memory.memory_governance import PersonWrites
 
     own = {
@@ -149,7 +163,8 @@ def _governance_private_names() -> set[str]:
 
 
 def _reaches_into_governance(source: str, private: set[str]) -> list[tuple[int, str]]:
-    """属性引用与字符串常量都算：别名、getattr、经类调用、存绑定方法都逃不掉名字本身。"""
+    """Attribute references and string constants both count: aliases, getattr, calls through the \
+class and stored bound methods cannot escape the name itself."""
     found = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Attribute) and node.attr in private | {"claim_person_writes"}:
@@ -164,7 +179,8 @@ def _reaches_into_governance(source: str, private: set[str]) -> list[tuple[int, 
 
 def test_the_scan_sees_every_bypass_shape() -> None:
     private = _governance_private_names()
-    # 正向前提：写入口本身的私有名字都在清单里，没被"别处同名"误删。
+    # Positive premise: the write entry point's own private names are all in the list and were not
+    # deleted as "same name elsewhere".
     assert {"_create", "_mutate", "_person_key"} <= private
     for shape in (
         "store = processor.governance\nstore._create(d, request_id='r')",
@@ -200,10 +216,12 @@ def test_governance_has_one_public_door_for_hy_results() -> None:
     assert public & DIRECT_HY_WRITES == set()
 
 
-# ------------------------------------------------------------ 绕过门直接写 SQL
+# # ------------------------------------------------------------ Writing SQL straight past the door
 #
-# 回归场景表明：门守住了 Python 调用，守不住有人自己拼一句 UPDATE governed_memories。
-# 这里扫生产源码里的 SQL 文本，作为补充；表名在运行时才拼出来的写法它看不见，不是唯一防线。
+# The regressions showed: the door guards Python calls, but not someone hand-writing one UPDATE
+# governed_memories.
+# So this scans SQL text in production source as a supplement; it cannot see table names assembled
+# at runtime, so it is not the only defense.
 
 GOVERNANCE_TABLES = (
     "governed_memories",
@@ -279,7 +297,8 @@ def test_only_governance_writes_to_its_own_tables() -> None:
             own = found
             continue
         offenders += [f"{path.relative_to(SOURCE)}:{line}" for line in found]
-    # 基数非零：扫描在治理模块自己身上确实认得出写语句，下面的空表才有意义。
+    # Non-zero cardinality: the scan does recognize write statements inside the governance module
+    # itself, which is what makes the empty table below meaningful.
     assert len(own) >= 10
     assert offenders == []
 
@@ -307,12 +326,12 @@ def _digest_scene(tmp_path):
         message_id="m1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         workspace="workspace:v1:project",
     )
     for key in ("seed", "doomed"):
         as_person(governance).create(
-            _draft(record, f"记忆 {key}", scopes=("workspace:v1:project",)),
+            _draft(record, f"memory {key}", scopes=("workspace:v1:project",)),
             request_id=f"create-{key}",
             memory_id=key,
         )
@@ -327,7 +346,11 @@ def _digest_scene(tmp_path):
     bridge = _HeldDigest(
         outputs=(),
         graph_nodes=(
-            HyGraphNode(node_id="schema-1", content="用户偏好可验证的结论。", layer="l6_schema"),
+            HyGraphNode(
+                node_id="schema-1",
+                content="The user prefers verifiable conclusions.",
+                layer="l6_schema",
+            ),
         ),
     )
     supervisor._bridges[(profile.profile_id, profile.revision, None)] = bridge
@@ -368,13 +391,14 @@ def test_a_schema_digested_while_its_evidence_is_overruled_is_not_recorded(tmp_p
 
     result = asyncio.run(scenario())
 
-    assert bridge.digest_calls, "HY 必须真的被调用过"
+    assert bridge.digest_calls, "HY must actually have been called"
     assert governance.get("schema-1", user_id="local") is None
     assert result["schemas_recorded"] == 0
 
 
 def test_a_deletion_before_the_digest_began_does_not_hold_the_schema_back(tmp_path) -> None:
-    """快照之前的改判已由上下文把关；写入时只看调用途中的改判，否则碰过删除的证据永远写不进。"""
+    """Overruling before the snapshot was already gated by the context; the write only looks at \
+mid-call overruling, otherwise evidence touched by a deletion could never be written in."""
     governance, supervisor, bridge = _digest_scene(tmp_path)
     _delete(governance, "doomed")
     bridge.release.set()
@@ -389,7 +413,8 @@ def test_a_deletion_before_the_digest_began_does_not_hold_the_schema_back(tmp_pa
 
 
 class _HeldResult(_HeldBridge):
-    """HY 调用停在半路，回来时报告它删掉或取代了哪些记忆。"""
+    """The HY call stopped halfway; on the way back it reports which memories it deleted or \
+superseded."""
 
     def __init__(self, *, retired=(), superseded=None) -> None:
         super().__init__(outputs=())
@@ -410,12 +435,20 @@ class _HeldResult(_HeldBridge):
 def _turn(stores):
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
     elsewhere = _put(
-        evidence, message_id="u0", role="user", written_by=WrittenBy.PERSON, content="别处的原话"
+        evidence,
+        message_id="u0",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="source text from elsewhere",
     )
     record = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
-    doomed = _manual(governance, record, "用户在杭州。", "seed-doomed")
+    doomed = _manual(governance, record, "The user lives in Hangzhou.", "seed-doomed")
     return elsewhere, record, doomed
 
 
@@ -423,7 +456,7 @@ def test_hy_retiring_a_memory_mid_call_is_refused_once_its_evidence_is_overruled
     stores = _setup(tmp_path)
     _evidence, _profiles, tasks, governance, _secrets, profile = stores
     elsewhere, record, doomed = _turn(stores)
-    retiring = _manual(governance, elsewhere, "用户住在上海。", "seed-retiring")
+    retiring = _manual(governance, elsewhere, "The user lives in Shanghai.", "seed-retiring")
     bridge = _HeldResult(retired=(retiring.memory_id,))
     task = _task(tasks, profile, record)
 
@@ -442,8 +475,8 @@ def test_hy_superseding_a_memory_mid_call_is_refused_once_its_evidence_is_overru
     stores = _setup(tmp_path)
     _evidence, _profiles, tasks, governance, _secrets, profile = stores
     elsewhere, record, doomed = _turn(stores)
-    old = _manual(governance, elsewhere, "用户住在上海。", "seed-old")
-    head = _manual(governance, elsewhere, "用户搬到了杭州。", "seed-head")
+    old = _manual(governance, elsewhere, "The user lives in Shanghai.", "seed-old")
+    head = _manual(governance, elsewhere, "The user moved to Hangzhou.", "seed-head")
     bridge = _HeldResult(superseded={old.memory_id: (head.memory_id,)})
     task = _task(tasks, profile, record)
 
@@ -457,15 +490,20 @@ def test_hy_superseding_a_memory_mid_call_is_refused_once_its_evidence_is_overru
 
 
 def test_what_hy_itself_retired_in_a_turn_does_not_block_the_rest_of_that_turn(tmp_path) -> None:
-    """HY 自己的删除不是人的改判：同一轮里它删一条、取代一条，两件都要落地。"""
+    """HY deleting on its own is not a human overruling: in one round it deletes one and \
+supersedes one, and both must land."""
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     record = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
-    retired = _manual(governance, record, "用户住在上海。", "seed-retired")
-    old = _manual(governance, record, "用户在上海工作。", "seed-old")
-    head = _manual(governance, record, "用户在杭州工作。", "seed-head")
+    retired = _manual(governance, record, "The user lives in Shanghai.", "seed-retired")
+    old = _manual(governance, record, "The user works in Shanghai.", "seed-old")
+    head = _manual(governance, record, "The user works in Hangzhou.", "seed-head")
     bridge = _HeldResult(
         retired=(retired.memory_id,), superseded={old.memory_id: (head.memory_id,)}
     )
@@ -479,7 +517,8 @@ def test_what_hy_itself_retired_in_a_turn_does_not_block_the_rest_of_that_turn(t
     assert governance.get(old.memory_id, user_id="local").status is MemoryStatus.SUPERSEDED
 
 
-# ------------------------------------------------------------ 墓碑判定只看在用的证据
+# # ------------------------------------------------------------ Tombstone judgement only looks at
+# # evidence in use
 
 
 @pytest.mark.parametrize("still_resting", [True, False], ids=["resting", "moved-away"])
@@ -489,19 +528,24 @@ def test_only_evidence_a_deleted_memory_still_rests_on_is_held_back(
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     first = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
     later = _put(
         evidence,
         message_id="u9",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我搬到上海了。",
+        content="I moved to Shanghai.",
         conversation_id="elsewhere",
     )
-    memory = _manual(governance, first, "用户住在杭州。", "seed-memory")
+    memory = _manual(governance, first, "The user lives in Hangzhou.", "seed-memory")
     if not still_resting:
-        # HY 重新整合时换掉一条记忆的证据就是这样：旧链接留作历史、不再在用。
+        # This is how HY swaps a memory's evidence when reconciling again: the old link stays as
+        # history and is no longer in use.
         with sqlite3.connect(tmp_path / "one-memory.sqlite3") as db:
             db.execute(
                 "UPDATE governed_memory_evidence SET active=0 WHERE memory_id=?",
@@ -515,7 +559,9 @@ def test_only_evidence_a_deleted_memory_still_rests_on_is_held_back(
     _delete(governance, memory.memory_id)
     bridge = FakeBridge(
         outputs=(
-            HyMemoryOutput(memory_id="hy-new", content="用户在杭州生活。", layer="L0_BASIC_INFO"),
+            HyMemoryOutput(
+                memory_id="hy-new", content="The user is living in Hangzhou.", layer="L0_BASIC_INFO"
+            ),
         )
     )
     task = _task(tasks, profile, first)
@@ -536,21 +582,26 @@ def test_only_evidence_a_deleted_memory_still_rests_on_is_held_back(
 def test_a_deletion_mid_call_holds_back_only_evidence_the_memory_still_rests_on(
     tmp_path, still_resting
 ) -> None:
-    """同一条判据在写事务里再查一次：调用途中被删的记忆若早已换了证据，旧证据不受牵连。"""
+    """The same criterion is re-checked inside the write transaction: a memory deleted mid-call \
+whose evidence already changed leaves the old evidence untouched."""
     stores = _setup(tmp_path)
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
     first = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
     later = _put(
         evidence,
         message_id="u9",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我搬到上海了。",
+        content="I moved to Shanghai.",
         conversation_id="elsewhere",
     )
-    memory = _manual(governance, first, "用户住在杭州。", "seed-memory")
+    memory = _manual(governance, first, "The user lives in Hangzhou.", "seed-memory")
     if not still_resting:
         with sqlite3.connect(tmp_path / "one-memory.sqlite3") as db:
             db.execute(
@@ -568,7 +619,7 @@ def test_a_deletion_mid_call_holds_back_only_evidence_the_memory_still_rests_on(
     def write():
         return governance.write_from_hy(
             HyCreate(
-                draft=_draft(first, "用户在杭州生活。"),
+                draft=_draft(first, "The user is living in Hangzhou."),
                 request_id="hy-create",
                 memory_id="hy-new",
             ),
@@ -584,13 +635,14 @@ def test_a_deletion_mid_call_holds_back_only_evidence_the_memory_still_rests_on(
         assert write().status is MemoryStatus.CONFIRMED
 
 
-# ------------------------------------------------------------ 事项发现补关联
+# # ------------------------------------------------------------ Matter discovery backfills links
 
 
 def test_matter_discovery_does_not_link_evidence_overruled_while_it_reviewed(
     tmp_path, monkeypatch
 ) -> None:
-    """事项核对通过的引文会补成记忆的证据；核对途中人删了建在这条原话上的记忆，就不能再补。"""
+    """Citations that pass matter review are backfilled as memory evidence; if a human deletes \
+the memory built on that source text during review, it can no longer be backfilled."""
     from one_memory.matters import discovery as discovery_module
     from one_memory.matters.discovery import MatterDiscovery
     from one_memory.matters.model import MatterModel
@@ -608,17 +660,21 @@ def test_matter_discovery_does_not_link_evidence_overruled_while_it_reviewed(
             linked: dict[str, object] = {}
 
             async def classify(_model, memories, refs, _records, **_kwargs):
-                # 抽取之后才有这条原话，HY 的记忆本来没建在它上面，补关联才有事可做。
+                # Only after extraction does this source text exist; HY's memory was never built on
+                # it, so backfilling the link has work to do.
                 quoted = _put(
                     processor.evidence,
                     message_id="q1",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    content="Atlas仅在本机保存资料。",
+                    content="Atlas stores data only on this machine.",
                     conversation_id="atlas",
                 )
                 linked["resting"] = _manual(
-                    processor.governance, quoted, "用户只在本机存资料。", "resting"
+                    processor.governance,
+                    quoted,
+                    "The user stores data only on this machine.",
+                    "resting",
                 )
                 key = next(iter(memories))
                 assert quoted.evidence_id not in memories[key].evidence_ids
@@ -626,7 +682,9 @@ def test_matter_discovery_does_not_link_evidence_overruled_while_it_reviewed(
                 claim = Claim(
                     statement=memories[key].content,
                     kind="constraint",
-                    citations=[Citation(evidence_id=quoted.evidence_id, quote="Atlas仅在本机")],
+                    citations=[
+                        Citation(evidence_id=quoted.evidence_id, quote="Atlas stores data only")
+                    ],
                     memory_refs=[refs[key]],
                 )
                 return {"c0": claim}, {}, 0
@@ -651,7 +709,7 @@ def test_matter_discovery_does_not_link_evidence_overruled_while_it_reviewed(
 
         return asyncio.run(scenario())
 
-    # 正向前提：不改判时，这条引文确实会被补成证据。
+    # Positive premise: with no overruling, this citation really is backfilled as evidence.
     _plain, memory, quoted = run(overrule=False)
     assert quoted.evidence_id in memory.evidence_ids
 
@@ -660,29 +718,37 @@ def test_matter_discovery_does_not_link_evidence_overruled_while_it_reviewed(
     assert (result.status, result.error) == ("failed", "matter_memory_changed_during_generation")
 
 
-# ------------------------------------------------------------ 检查的是写进去的全部证据
+# # ------------------------------------------------------------ The check covers every evidence
+# # being written
 #
-# 回归场景表明：编码层修订写入「旧证据 ∪ 新证据」，调用方却只拿新证据去查。
-# 调用途中人删了另一条建在旧证据上的记忆，修订照写，被改判的原话又被接回去。
-# 让每个调用方记得传全，和上一轮「每条路径各自记得查」是同一个病，所以由门自己补全。
+# The regressions showed: the encoding-layer revision writes (old evidence UNION new evidence), but
+# the caller only checked the new ones.
+# Mid-call a human deleted another memory built on the old evidence; the revision was written anyway
+# and the overruled source text was grafted back.
+# Making every caller remember to pass everything is the same disease as the last round's "each path
+# remembers to check", so the door completes it itself.
 
 
 def _written_evidence_scene(tmp_path):
     stores = _setup(tmp_path)
     evidence, _profiles, _tasks, governance, _secrets, _profile = stores
     old = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
     new = _put(
         evidence,
         message_id="u2",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我在杭州工作。",
+        content="I work in Hangzhou.",
         conversation_id="elsewhere",
     )
-    target = _manual(governance, old, "用户住在杭州。", "seed-target")
-    doomed = _manual(governance, old, "用户家在杭州。", "seed-doomed")
+    target = _manual(governance, old, "The user lives in Hangzhou.", "seed-target")
+    doomed = _manual(governance, old, "The user's home is in Hangzhou.", "seed-doomed")
     return governance, old, new, target, doomed
 
 
@@ -691,14 +757,16 @@ def _change(kind, old, new, target):
 
     if kind == "create":
         return HyCreate(
-            draft=_draft(old, "用户在杭州生活。"), request_id="hy-create", memory_id="hy-new"
+            draft=_draft(old, "The user is living in Hangzhou."),
+            request_id="hy-create",
+            memory_id="hy-new",
         )
     if kind == "revise":
         return HyRevise(
             memory_id=target.memory_id,
             request_id="hy-revise",
             expected_revision=target.revision,
-            content="用户住在杭州并在那里工作。",
+            content="The user lives in Hangzhou and works there.",
             evidence_ids=(old.evidence_id, new.evidence_id),
         )
     return HyLink(memory_id="hy-new", evidence_id=old.evidence_id)
@@ -710,7 +778,11 @@ def test_a_write_is_checked_against_every_evidence_it_writes(tmp_path, kind, cit
     governance, old, new, target, doomed = _written_evidence_scene(tmp_path)
     if kind == "link":
         governance.write_from_hy(
-            HyCreate(draft=_draft(new, "用户在杭州工作。"), request_id="seed", memory_id="hy-new"),
+            HyCreate(
+                draft=_draft(new, "The user works in Hangzhou."),
+                request_id="seed",
+                memory_id="hy-new",
+            ),
             user_id="local",
             derivation=governance.hy_derivation((new.evidence_id,)),
         )
@@ -733,11 +805,16 @@ def test_a_write_is_checked_against_every_evidence_it_writes(tmp_path, kind, cit
 
 @pytest.mark.parametrize("kind", ["create", "revise", "link"])
 def test_citing_only_new_evidence_still_writes_when_nothing_was_overruled(tmp_path, kind) -> None:
-    """补全证据只是多查，不是多拦：没人改判时照常落地。"""
+    """Completing evidence only adds checks, not blocks: when nobody overrules, things land as \
+usual."""
     governance, old, new, target, _doomed = _written_evidence_scene(tmp_path)
     if kind == "link":
         governance.write_from_hy(
-            HyCreate(draft=_draft(new, "用户在杭州工作。"), request_id="seed", memory_id="hy-new"),
+            HyCreate(
+                draft=_draft(new, "The user works in Hangzhou."),
+                request_id="seed",
+                memory_id="hy-new",
+            ),
             user_id="local",
             derivation=governance.hy_derivation((new.evidence_id,)),
         )
@@ -752,11 +829,13 @@ def test_citing_only_new_evidence_still_writes_when_nothing_was_overruled(tmp_pa
     assert old.evidence_id in written.evidence_ids
 
 
-# ------------------------------------------------------------ HY 自己删的不算人的改判
+# # ------------------------------------------------------------ HY's own deletions are not human
+# # overruling
 #
-# 回归场景表明：调用前的把关把任何 status=deleted 的记忆都当成人删的，
-# 于是 HY 自己退役的记忆，会让它的原话在之后每一轮都被扣下。写事务里的检查已经排除了
-# by_model，调用前的把关要用同一条判据。
+# The regressions showed: the pre-call gate treated any memory with status=deleted as human-deleted,
+# so memories retired by HY itself made their source text held back in every later round. The
+# write-transaction check already
+# excludes by_model; the pre-call gate must use the same criterion.
 
 
 @pytest.mark.parametrize("by", ["person", "hy"])
@@ -766,9 +845,13 @@ def test_only_the_persons_deletion_holds_evidence_back_from_the_next_call(tmp_pa
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     record = _put(
-        evidence, message_id="u1", role="user", written_by=WrittenBy.PERSON, content="我住在杭州。"
+        evidence,
+        message_id="u1",
+        role="user",
+        written_by=WrittenBy.PERSON,
+        content="I live in Hangzhou.",
     )
-    memory = _manual(governance, record, "用户住在杭州。", "seed-memory")
+    memory = _manual(governance, record, "The user lives in Hangzhou.", "seed-memory")
     if by == "person":
         _delete(governance, memory.memory_id)
     else:
@@ -784,7 +867,9 @@ def test_only_the_persons_deletion_holds_evidence_back_from_the_next_call(tmp_pa
     assert governance.get(memory.memory_id, user_id="local").status is MemoryStatus.DELETED
     bridge = FakeBridge(
         outputs=(
-            HyMemoryOutput(memory_id="hy-new", content="用户在杭州生活。", layer="L0_BASIC_INFO"),
+            HyMemoryOutput(
+                memory_id="hy-new", content="The user is living in Hangzhou.", layer="L0_BASIC_INFO"
+            ),
         )
     )
     task = _task(tasks, profile, record)

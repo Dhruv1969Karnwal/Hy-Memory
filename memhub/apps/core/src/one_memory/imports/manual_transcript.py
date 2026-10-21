@@ -10,17 +10,18 @@ from one_memory.imports.sources.common import ParsedMessage
 ROLES = {
     "user": "user",
     "human": "user",
-    "用户": "user",
+    "\u7528\u6237": "user",
     "assistant": "assistant",
-    "助手": "assistant",
+    "\u52a9\u624b": "assistant",
 }
 MARKER = re.compile(
-    r"^(?:#{1,6}[ \t]+)?(user|human|assistant|用户|助手)[ \t]*[:：][ \t]?(.*)$"
-    r"|^#{1,6}[ \t]+(user|human|assistant|用户|助手)[ \t]*$",
+    r"^(?:#{1,6}[ \t]+)?(user|human|assistant|\u7528\u6237|\u52a9\u624b)[ \t]*[:\uff1a][ \t]?(.*)$"
+    r"|^#{1,6}[ \t]+(user|human|assistant|\u7528\u6237|\u52a9\u624b)[ \t]*$",
     re.IGNORECASE,
 )
 UNSUPPORTED = re.compile(
-    r"^(?:#{1,6}[ \t]+)?(?:system|tool|developer|系统|工具)[ \t]*(?:[:：]|$)", re.IGNORECASE
+    r"^(?:#{1,6}[ \t]+)?(?:system|tool|developer|\u7cfb\u7edf|\u5de5\u5177)[ \t]*(?:[:\uff1a]|$)",
+    re.IGNORECASE,
 )
 
 

@@ -1,19 +1,19 @@
 # Security Policy
 
-## 报告安全问题
+## Reporting a vulnerability
 
-请不要在公开 Issue 中提交漏洞细节、密钥、真实对话或个人信息。优先使用代码托管平台的
-私密安全报告功能：
-[GitHub Security Advisories](https://github.com/Tencent-Hunyuan/Hy-Memory/security/advisories/new)。
-如果该入口不可用，请不要在公开 Issue 中粘贴敏感细节，等待维护者启用私密渠道。本项目
-当前不公布安全报告邮箱。
+Please do not submit vulnerability details, keys, real conversations, or personal information in
+public issues. Prefer the code hosting platform's private security report feature:
+[GitHub Security Advisories](https://github.com/Tencent-Hunyuan/Hy-Memory/security/advisories/new).
+If that entry point is unavailable, do not paste sensitive details into public issues; wait for a
+maintainer to enable a private channel. This project currently does not publish a security email.
 
-报告中请包含受影响版本、复现条件、影响范围和可行的缓解建议。在完成修复和发布协调前
-请不要公开漏洞细节。项目尚未公布固定的确认或修复 SLA。
+Please include affected versions, reproduction conditions, impact scope, and feasible mitigation
+suggestions in the report. Do not disclose vulnerability details until the fix and release are coordinated. The project has not published a fixed acknowledgment or fix SLA.
 
-## 支持范围
+## Supported scope
 
-安全修复以 `main` 和最新发布版本为优先。仍在开发中的平台能力会在发布说明中明确标注，
-未声明支持的实验性构建不承诺长期安全更新。
+Security fixes prioritize `main` and the latest release. Platform capabilities still in development
+are clearly marked in the release notes, and experimental builds without declared support carry no promise of long-term security updates.
 
-任何屏幕、Accessibility / AXTree、OCR、键鼠、剪贴板或后台录音采集路径都视为发布阻断安全问题。
+Any screen, Accessibility / AXTree, OCR, keyboard/mouse, clipboard, or background audio capture path is treated as a release-blocking security issue.

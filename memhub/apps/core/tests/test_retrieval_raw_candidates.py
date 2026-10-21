@@ -198,7 +198,7 @@ def test_null_stored_grant_with_revocation_never_queries_vectors(indexed, monkey
 def test_unpublished_authorized_evidence_cannot_claim_complete_empty(indexed):
     """A partial index with no hits is incomplete, not an honest empty library."""
     f, generation, _, _vectors = indexed
-    put(f[1], "用户决定 One Memory 采用 MIT 协议发布。", message="unindexed")
+    put(f[1], "The user decided One Memory ships under the MIT license.", message="unindexed")
     assert f[3].consume_pending(generation) >= 1
     pending = f[3].status(generation)
     assert pending["pending"] >= 1

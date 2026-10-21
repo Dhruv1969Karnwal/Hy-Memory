@@ -44,7 +44,7 @@ class Bridge:
             memories=(
                 HyMemoryOutput(
                     memory_id="hy-atlas",
-                    content="Atlas仅在本机保存资料。",
+                    content="Atlas stores its data only on this device.",
                     owner="user",
                     layer="L2_FACT",
                     tags=("Atlas",),
@@ -96,7 +96,8 @@ def setup(tmp_path, bridge):
             message_id="u1",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="Atlas仅在本机保存资料。目标是交付一个本地笔记工具。",
+            verbatim="Atlas stores its data only on this device. The goal is to ship a local "
+            "notes tool.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     ).record
@@ -107,7 +108,7 @@ def setup(tmp_path, bridge):
             message_id="a1",
             role="assistant",
             written_by=WrittenBy.AGENT,
-            verbatim="收到，我会按这个要求继续整理。",
+            verbatim="Got it, I will keep organizing along this requirement.",
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )
     )
@@ -191,7 +192,7 @@ def test_history_supported_repeat_does_not_reassign_its_source_to_new_assistant_
                 memories=(
                     HyMemoryOutput(
                         memory_id="hy-atlas",
-                        content="Atlas仅在本机保存资料。",
+                        content="Atlas stores its data only on this device.",
                         owner="user",
                         layer="L2_FACT",
                         evidence_ids=(original.evidence_id,),
@@ -202,8 +203,8 @@ def test_history_supported_repeat_does_not_reassign_its_source_to_new_assistant_
     async def scenario():
         bridge = SupportedBridge()
         processor, old, _ = setup(tmp_path, bridge)
-        later = source(processor.evidence, "later", "assistant", "我继续整理。")
-        source(processor.evidence, "later-adopt", "user", "好，继续。")
+        later = source(processor.evidence, "later", "assistant", "I will keep organizing.")
+        source(processor.evidence, "later-adopt", "user", "Good, go on.")
         try:
             await process_turn(processor, old)
             await process_turn(processor, later)
@@ -230,8 +231,8 @@ def test_bound_native_update_preserves_memory_identity_revision_and_source_union
                 memories=(
                     HyMemoryOutput(
                         memory_id="hy-atlas",
-                        content="Atlas仅在本机保存资料。"
-                        + ("日志保留30天。" if len(self.requests) > 1 else ""),
+                        content="Atlas stores its data only on this device."
+                        + (" Logs are kept for 30 days." if len(self.requests) > 1 else ""),
                         owner="user",
                         layer="L2_FACT",
                         evidence_ids=tuple(r.evidence_id for r in records),
@@ -242,23 +243,26 @@ def test_bound_native_update_preserves_memory_identity_revision_and_source_union
     async def scenario():
         bridge = UpdatingBridge()
         processor, old, _ = setup(tmp_path, bridge)
-        later = source(processor.evidence, "later", "user", "日志保留30天。")
-        source(processor.evidence, "later-reply", "assistant", "已记录日志策略。")
+        later = source(processor.evidence, "later", "user", "Logs are kept for 30 days.")
+        source(processor.evidence, "later-reply", "assistant", "Log policy recorded.")
         try:
             await process_turn(processor, old)
             first = processor.governance.get("hy-atlas", user_id="local")
             await process_turn(processor, later)
             current = processor.governance.get("hy-atlas", user_id="local")
             assert current.revision == first.revision + 1
-            assert current.content == "Atlas仅在本机保存资料。日志保留30天。"
+            assert (
+                current.content
+                == "Atlas stores its data only on this device. Logs are kept for 30 days."
+            )
             assert set(current.evidence_ids) == {
                 record.evidence_id
                 for record in (*complete_turn(processor, old), *complete_turn(processor, later))
             }
             history = processor.governance.history("hy-atlas", user_id="local")
             assert any(version.content == first.content for version in history)
-            newest = source(processor.evidence, "newest", "assistant", "我继续整理。")
-            source(processor.evidence, "newest-adopt", "user", "继续。")
+            newest = source(processor.evidence, "newest", "assistant", "I will keep organizing.")
+            source(processor.evidence, "newest-adopt", "user", "Go on.")
             await process_turn(processor, newest)
             context = bridge.requests[-1].source_context
             assert old.evidence_id in {record.evidence_id for record in context.history}
@@ -287,7 +291,7 @@ def test_old_hy_task_cannot_certify_a_new_governed_memory_revision(tmp_path, ent
                 user_id="local",
                 request_id="human-edit",
                 expected_revision=memory.revision,
-                content="用户已人工更正这条记忆。",
+                content="The user corrected this memory by hand.",
             )
             if entry == "assemble":
                 assert governed_outputs(processor, tasks) == ({}, {})
@@ -348,7 +352,7 @@ def test_timeline_precedes_writing_without_replacing_the_hy_reference(tmp_path, 
                                 "citations": [
                                     {
                                         "evidence_id": record.evidence_id,
-                                        "quote": "Atlas仅在本机保存资料。",
+                                        "quote": "Atlas stores its data only on this device.",
                                     }
                                 ],
                             }
@@ -373,7 +377,7 @@ def test_timeline_precedes_writing_without_replacing_the_hy_reference(tmp_path, 
 
         async def timeline(_model, draft, governed, _records, **kwargs):
             trace.append("timeline")
-            assert draft.claims[0].statement == "Atlas仅在本机保存资料。"
+            assert draft.claims[0].statement == "Atlas stores its data only on this device."
             return draft.model_copy(
                 update={"claims": [draft.claims[0].model_copy(update={"state": "historical"})]}
             )
@@ -383,7 +387,7 @@ def test_timeline_precedes_writing_without_replacing_the_hy_reference(tmp_path, 
             trace.append("write")
             assert draft.claims[0].state == "historical"
             assert context.claims[0].state == "current"
-            assert context.claims[0].statement == "Atlas仅在本机保存资料。"
+            assert context.claims[0].statement == "Atlas stores its data only on this device."
             return draft, 0
 
         monkeypatch.setattr("one_memory.matters.discovery.reconcile_governed_timeline", timeline)
@@ -400,7 +404,7 @@ def test_timeline_precedes_writing_without_replacing_the_hy_reference(tmp_path, 
             assert trace == ["timeline", "write"]
             assert (
                 processor.governance.get("hy-atlas", user_id="local").content
-                == "Atlas仅在本机保存资料。"
+                == "Atlas stores its data only on this device."
             )
         finally:
             await processor.shutdown()
@@ -487,7 +491,7 @@ def test_invalid_classification_reference_has_one_scoped_retry(tmp_path, repair_
                         "items": [
                             {
                                 "memory_id": "hy-atlas",
-                                "matter_title": "Atlas笔记",
+                                "matter_title": "Atlas notes",
                                 "kind": "constraint",
                                 "state": "current",
                                 "citations": [
@@ -495,7 +499,7 @@ def test_invalid_classification_reference_has_one_scoped_retry(tmp_path, repair_
                                         "evidence_id": record.evidence_id
                                         if self.calls == 2 and repair_succeeds
                                         else "unlinked-evidence",
-                                        "quote": "Atlas仅在本机保存资料。",
+                                        "quote": "Atlas stores its data only on this device.",
                                     }
                                 ],
                             }
@@ -524,6 +528,7 @@ def test_default_discovery_cannot_bypass_hy_when_hy_fails(tmp_path, monkeypatch)
     from one_memory.matters.model import MatterModel
     from one_memory.matters.models import DiscoveryInput
     from one_memory.matters.store import MatterStore
+
     async def scenario():
         processor, record, _ = setup(tmp_path, Bridge(fail=True))
         try:
@@ -733,7 +738,7 @@ def test_context_grounding_finds_prior_support_without_crossing_conversation_sco
                                 "citations": [
                                     {
                                         "evidence_id": original.evidence_id,
-                                        "quote": "Atlas仅在本机保存资料。",
+                                        "quote": "Atlas stores its data only on this device.",
                                     }
                                 ],
                             }
@@ -788,7 +793,7 @@ def test_semantic_repair_only_changes_metadata_and_is_independently_rechecked(
                                     "citations": [
                                         {
                                             "evidence_id": record.evidence_id,
-                                            "quote": "Atlas仅在本机保存资料。",
+                                            "quote": "Atlas stores its data only on this device.",
                                         }
                                     ],
                                 }
@@ -863,7 +868,10 @@ def test_formal_dossier_invalidates_on_governance_change(tmp_path, operation):
                 statement=memory.content,
                 kind="constraint",
                 citations=[
-                    Citation(evidence_id=record.evidence_id, quote="Atlas仅在本机保存资料。")
+                    Citation(
+                        evidence_id=record.evidence_id,
+                        quote="Atlas stores its data only on this device.",
+                    )
                 ],
                 memory_refs=[ref],
             )
@@ -873,8 +881,8 @@ def test_formal_dossier_invalidates_on_governance_change(tmp_path, operation):
             )
             saved = store.save(
                 MatterDraft(
-                    title="Atlas笔记开发",
-                    purpose="交付笔记",
+                    title="Atlas notes development",
+                    purpose="Ship notes",
                     boundary="Atlas",
                     claims=[claim],
                     anchors=[record.evidence_id],
@@ -905,7 +913,7 @@ def test_formal_dossier_invalidates_on_governance_change(tmp_path, operation):
                     user_id="local",
                     request_id="correct",
                     expected_revision=memory.revision,
-                    content="Atlas的存储方案尚未确定。",
+                    content="Atlas's storage design is not decided yet.",
                     scopes=memory.scopes,
                 )
             stale = store.get(saved.matter_id)
@@ -962,7 +970,10 @@ def test_formal_dossier_consumes_hy_lifecycle_not_only_the_ledger_mirror(tmp_pat
                 statement=memory.content,
                 kind="constraint",
                 citations=[
-                    Citation(evidence_id=record.evidence_id, quote="Atlas仅在本机保存资料。")
+                    Citation(
+                        evidence_id=record.evidence_id,
+                        quote="Atlas stores its data only on this device.",
+                    )
                 ],
                 memory_refs=[ref],
             )
@@ -972,8 +983,8 @@ def test_formal_dossier_consumes_hy_lifecycle_not_only_the_ledger_mirror(tmp_pat
             )
             saved = store.save(
                 MatterDraft(
-                    title="Atlas笔记开发",
-                    purpose="交付笔记",
+                    title="Atlas notes development",
+                    purpose="Ship notes",
                     boundary="Atlas",
                     claims=[claim],
                     anchors=[record.evidence_id],
@@ -1064,17 +1075,20 @@ def test_real_hy_sdk_extracts_governed_memory_with_configured_strong_model(tmp_p
                     (
                         "user",
                         WrittenBy.PERSON,
-                        "我正在开发Atlas本地笔记产品，决定9月23日发布。第一版只做文本笔记，不做云同步。",
+                        "I am building the Atlas local notes product and decided to release on "
+                        "September 23. The first version only does text notes, no cloud sync.",
                     ),
                     (
                         "assistant",
                         WrittenBy.AGENT,
-                        "我建议先验证本机保存与恢复，跨平台验收还没有做。",
+                        "I suggest validating local save and restore first; cross-platform "
+                        "acceptance has not been done.",
                     ),
                     (
                         "user",
                         WrittenBy.PERSON,
-                        "对，Atlas的资料必须默认保存在本机。不要把建议和已验收混在一起。",
+                        "Right, Atlas data must be saved on this device by default. Do not mix "
+                        "suggestions with accepted work.",
                     ),
                 ]
             )

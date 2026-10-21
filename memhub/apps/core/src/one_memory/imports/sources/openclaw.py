@@ -171,7 +171,7 @@ def _read_conversation_db(
             # OpenClaw's own state database is orchestration bookkeeping, not a
             # transcript store, and it is usually the only database an
             # installation has. Counting every such file as a failure made a
-            # healthy app look broken (reported as "导入有异常" with zero
+            # healthy app look broken (reported as "import had errors" with zero
             # conversations), so a file without the conversation tables is
             # recorded as a skip instead: nothing was lost, there was simply
             # no conversation there to read.

@@ -1,12 +1,12 @@
 """
-HY Memory - Pipeline Tracer (用户级调试日志)
+HY Memory - Pipeline Tracer (per-user debug logging)
 
-简单粗暴的请求级 trace 工具，记录：
-1. 每个环节的耗时 (ms)
-2. 每个环节的关键中间结果 (截断到合理长度)
-3. 整条请求的完整时间线
+A straightforward request-level trace tool that records:
+1. Per-stage latency (ms)
+2. Key intermediate results per stage (truncated to a sane length)
+3. The full timeline of the whole request
 
-使用方式：
+Usage:
     tracer = PipelineTracer(
         operation="ProcessMemory",
         pipeline_version="system1",
@@ -23,15 +23,15 @@ HY Memory - Pipeline Tracer (用户级调试日志)
         s.set_output({"memory_id": memory_id})
     
     tracer.finish()
-    # → 自动写入日志文件 + Python logger
+    # -> automatically writes the log file + Python logger
 
-日志文件位置 (按 uid 分目录，按 uid+agent_id+日期 滚动):
+Log file location (one directory per uid, rotated by uid+agent_id+date):
     {MEMORY_TRACE_LOG_DIR}/{uid}/{uid}_{agent_id}_{date}.log
 
-示例:
+Example:
     /memory/logs/traces/user_123/user_123_chat_scene_2026-03-17.log
 
-每行是一个完整的 JSON trace：
+Each line is one complete JSON trace:
 {
     "trace_id": "abc123",
     "operation": "ProcessMemory",
@@ -45,7 +45,7 @@ HY Memory - Pipeline Tracer (用户级调试日志)
         {"name": "embed", "start_ms": 0.3, "end_ms": 1500.0, "duration_ms": 1499.7, "output": {"dims": 1024}},
         {"name": "qdrant_upsert", "start_ms": 1500.0, "end_ms": 1700.0, "duration_ms": 200.0, "output": {"memory_id": "xxx"}},
     ],
-    "input_summary": "用户喜欢科幻电影...",
+    "input_summary": "The user likes sci-fi movies...",
     "output_summary": {"success": true, "layer": "profile"},
     "error": null
 }
@@ -64,9 +64,9 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# 日志根目录
-# 云端部署: 设置 MEMORY_TRACE_LOG_DIR 或 MEMORY_DATA_DIR 指向挂载路径
-# 本地使用: 默认写到 ~/.hy_memory/logs/traces/
+# Log root directory
+# Cloud deploy: set MEMORY_TRACE_LOG_DIR or MEMORY_DATA_DIR to a mounted path
+# Local use: writes to ~/.hy_memory/logs/traces/ by default
 def _default_trace_log_dir() -> str:
     explicit = os.getenv("MEMORY_TRACE_LOG_DIR")
     if explicit:
@@ -76,16 +76,16 @@ def _default_trace_log_dir() -> str:
 
 _TRACE_LOG_DIR = _default_trace_log_dir()
 
-# 单个 output 字段的最大字符数 (避免日志爆炸)
-# 增大到 10000 以支持完整的文本信息打印 (向量等大数据仍需外部过滤)
+# Max characters per output field (keeps logs from exploding)
+# Raised to 10000 so full text payloads print intact (vectors and other big data still need external filtering)
 _MAX_OUTPUT_LEN = 10000
 
-# 是否启用 trace (可通过环境变量关闭)
+# Whether tracing is enabled (an env var can turn it off)
 _TRACE_ENABLED = os.getenv("MEMORY_TRACE_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
 def _truncate(obj: Any, max_len: int = _MAX_OUTPUT_LEN) -> Any:
-    """截断过长的输出"""
+    """Truncate overlong output."""
     if obj is None:
         return None
     if isinstance(obj, str):
@@ -93,7 +93,7 @@ def _truncate(obj: Any, max_len: int = _MAX_OUTPUT_LEN) -> Any:
             return obj[:max_len] + f"...(truncated, total {len(obj)})"
         return obj
     if isinstance(obj, (list, tuple)):
-        # 如果列表元素是 float (可能是向量)，立即截断
+        # If the items are floats (likely a vector), truncate immediately
         if len(obj) > 10 and all(isinstance(x, (int, float)) for x in obj[:5]):
             return {"_type": "vector", "_len": len(obj), "_sample": list(obj[:3])}
         if len(obj) > 100:
@@ -105,7 +105,7 @@ def _truncate(obj: Any, max_len: int = _MAX_OUTPUT_LEN) -> Any:
         return round(obj, 4)
     if isinstance(obj, (int, bool)):
         return obj
-    # fallback: str 表示
+    # fallback: string form
     s = str(obj)
     if len(s) > max_len:
         return s[:max_len] + "...(truncated)"
@@ -114,23 +114,23 @@ def _truncate(obj: Any, max_len: int = _MAX_OUTPUT_LEN) -> Any:
 
 @dataclass
 class Span:
-    """一个 trace 中的单个环节"""
+    """One stage within a trace."""
     name: str
     start_time: float = 0.0  # time.perf_counter()
     end_time: float = 0.0
     output: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
     
-    # 相对于 trace 起始的偏移 (ms)
+    # Offsets from the trace start (ms)
     start_ms: float = 0.0
     end_ms: float = 0.0
     
     def set_output(self, data: Dict[str, Any]) -> None:
-        """设置该环节的关键输出"""
+        """Set the key output of this stage."""
         self.output.update(data)
     
     def set_error(self, err: str) -> None:
-        """设置错误信息"""
+        """Set the error message."""
         self.error = err
     
     @property
@@ -155,10 +155,10 @@ class Span:
 
 class PipelineTracer:
     """
-    Pipeline 请求级 Tracer
+    Request-level pipeline tracer
     
-    记录一次请求的完整时间线和关键中间结果。
-    支持嵌套 span 和 context manager 用法。
+    Records the full timeline and key intermediate results of one request.
+    Supports nested spans and context-manager usage.
     """
     
     def __init__(
@@ -196,7 +196,7 @@ class PipelineTracer:
     @contextmanager
     def span(self, name: str):
         """
-        Context manager 方式记录一个环节。
+        Record a stage via context manager.
         
         Usage:
             with tracer.span("embed") as s:
@@ -225,7 +225,7 @@ class PipelineTracer:
                 err_tag = f" ERROR={s.error}" if s.error else ""
                 out_tag = ""
                 if s.output:
-                    # 简短版输出
+                    # Condensed output
                     short_out = {k: v for k, v in s.output.items() if not isinstance(v, (list, dict)) or len(str(v)) < 100}
                     if short_out:
                         out_tag = f" → {short_out}"
@@ -235,7 +235,7 @@ class PipelineTracer:
     
     def start_span(self, name: str) -> Span:
         """
-        手动 start/end 方式 (不用 with 时使用)
+        Manual start/end style (used without with)
         
         Usage:
             s = tracer.start_span("embed")
@@ -250,7 +250,7 @@ class PipelineTracer:
         return s
     
     def end_span(self, s: Span) -> None:
-        """结束一个手动 span"""
+        """End a manually started span."""
         s.end_time = time.perf_counter()
         s.end_ms = (s.end_time - self._start_time) * 1000
         self._spans.append(s)
@@ -263,11 +263,11 @@ class PipelineTracer:
             )
     
     def set_output(self, data: Dict[str, Any]) -> None:
-        """设置请求级的输出摘要"""
+        """Set the request-level output summary."""
         self._output_summary.update(data)
     
     def set_error(self, error: str) -> None:
-        """设置请求级错误"""
+        """Set the request-level error."""
         self._error = error
     
     @property
@@ -275,7 +275,7 @@ class PipelineTracer:
         return (time.perf_counter() - self._start_time) * 1000
     
     def to_dict(self) -> Dict[str, Any]:
-        """生成完整的 trace JSON"""
+        """Build the complete trace JSON."""
         return {
             "trace_id": self.trace_id,
             "operation": self.operation,
@@ -292,7 +292,7 @@ class PipelineTracer:
         }
     
     def to_summary_line(self) -> str:
-        """生成一行人类可读的 trace 摘要"""
+        """Build a one-line human-readable trace summary."""
         spans_info = " → ".join(
             f"{s.name}({s.duration_ms:.0f}ms)" for s in self._spans
         )
@@ -304,13 +304,13 @@ class PipelineTracer:
     
     def finish(self, *, write_file: bool = False) -> Dict[str, Any]:
         """
-        结束 trace。
+        Finish the trace.
 
-        请求级 timeline 由 writer 写入 SQLite（WRITE_TIMELINE，Inspector 用）。
-        默认不再写 uid 维度旧 trace 文件；write_file=True 时保留兼容行为。
+        The request-level timeline goes to SQLite via the writer (WRITE_TIMELINE, used by the Inspector).
+        By default the old per-uid trace file is not written; write_file=True keeps the legacy behavior.
 
         Returns:
-            完整的 trace dict
+            the complete trace dict
         """
         if self._finished:
             return self.to_dict()
@@ -327,29 +327,29 @@ class PipelineTracer:
     
     def _write_to_file(self, trace_data: Dict[str, Any]) -> None:
         """
-        写入 JSONL 日志文件。
+        Write the JSONL log file.
         
-        文件路径格式:
+        File path format:
             {TRACE_LOG_DIR}/{uid}/{uid}_{agent_id}_{date}.log
 
-        示例:
+        Example:
             /memory/logs/traces/user_123/user_123_chat_scene_2026-03-17.log
 
-        每行一条 JSON trace，按天滚动。
+        One JSON trace per line, rotated daily.
         """
         try:
             uid = self.uid or "_unknown"
             agent_id = self.agent_id or "_default"
             date_str = self._start_datetime.strftime("%Y-%m-%d")
 
-            # 目录: {trace_log_dir}/{uid}/
+            # Directory: {trace_log_dir}/{uid}/
             log_dir = Path(_TRACE_LOG_DIR) / uid
             log_dir.mkdir(parents=True, exist_ok=True)
             
-            # 文件: {uid}_{agent_id}_{date}.log
+            # File: {uid}_{agent_id}_{date}.log
             log_file = log_dir / f"{uid}_{agent_id}_{date_str}.log"
             
-            # append 一行 JSON
+            # Append one JSON line
             line = json.dumps(trace_data, ensure_ascii=False, default=str)
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
@@ -367,10 +367,10 @@ def create_tracer(
     content_preview: str = "",
 ) -> PipelineTracer:
     """
-    创建一个 PipelineTracer 的便捷工厂函数。
+    Convenience factory for creating a PipelineTracer.
 
-    如果 MEMORY_TRACE_ENABLED=false，返回的 tracer 仍然可用，
-    只是不输出日志和写文件。
+    With MEMORY_TRACE_ENABLED=false the returned tracer still works;
+    it simply emits no logs and writes no files.
     """
     return PipelineTracer(
         operation=operation,

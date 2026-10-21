@@ -13,7 +13,7 @@ function memory(
     user_id: "local",
     kind: "chat",
     status: "confirmed",
-    content: `记忆 ${id}`,
+    content: `Memory ${id}`,
     scopes: ["all-apps"],
     evidence_ids: [`ev-${id}`],
     origin: "extracted",
@@ -26,42 +26,45 @@ function memory(
   };
 }
 
-describe("主题标签的用量", () => {
-  it("按用得多的排在前面，一样多就按名字定序", () => {
+describe("topic tag usage", () => {
+  it("sorts by most used, and breaks ties by name", () => {
     const counted = tagCounts([
-      memory("a", ["排期", "工作习惯"]),
-      memory("b", ["排期"]),
-      memory("c", ["前端"]),
+      memory("a", ["scheduling", "work habits"]),
+      memory("b", ["scheduling"]),
+      memory("c", ["frontend"]),
     ]);
 
     expect(counted).toEqual([
-      ["排期", 2],
-      ["前端", 1],
-      ["工作习惯", 1],
+      ["scheduling", 2],
+      ["frontend", 1],
+      ["work habits", 1],
     ]);
   });
 
-  it("删掉和被取代的记忆不给标签撑数", () => {
+  it("deleted and superseded memories do not inflate tag counts", () => {
     const counted = tagCounts([
-      memory("a", ["排期"]),
-      memory("b", ["排期"], { status: "deleted" }),
-      memory("c", ["排期"], { status: "superseded" }),
-      memory("d", ["前端"]),
+      memory("a", ["scheduling"]),
+      memory("b", ["scheduling"], { status: "deleted" }),
+      memory("c", ["scheduling"], { status: "superseded" }),
+      memory("d", ["frontend"]),
     ]);
 
     expect(counted).toEqual([
-      ["前端", 1],
-      ["排期", 1],
+      ["frontend", 1],
+      ["scheduling", 1],
     ]);
   });
 
-  it("只用过一次的挑出来，这是度量不是判决", () => {
+  it("picks out tags used only once; this is a measure, not a verdict", () => {
     expect(
-      singletonTags([memory("a", ["排期", "工作习惯"]), memory("b", ["排期"])]),
-    ).toEqual(["工作习惯"]);
+      singletonTags([
+        memory("a", ["scheduling", "work habits"]),
+        memory("b", ["scheduling"]),
+      ]),
+    ).toEqual(["work habits"]);
   });
 
-  it("一条标签都没有的库不报任何东西", () => {
+  it("a library with no tags at all reports nothing", () => {
     expect(tagCounts([memory("a", [])])).toEqual([]);
     expect(singletonTags([])).toEqual([]);
   });

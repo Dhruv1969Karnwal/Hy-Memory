@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-UPDATE 原地更新旧节点（chroma 后端，驱动 writer._reconcile_and_store）。
+UPDATE updates the old node in place (chroma backend, driving writer._reconcile_and_store).
 
-UPDATE 语义 = 合并精炼同一主题，本质同一条记忆延续。改为原地更新后：
-- node_id 不变（不再删旧建新）；
-- content + embedding 被替换；
-- access_count / last_accessed_at 保留（不打回冷启动）；
-- 不产生 SHADOW 垃圾节点。
+UPDATE semantics = merge and refine the same topic, essentially one continuing memory. After switching to in-place updates:
+- node_id is unchanged (no more delete-old-create-new);
+- content + embedding are replaced;
+- access_count / last_accessed_at are preserved (not reset to cold start);
+- no SHADOW garbage nodes are produced.
 """
 
 import asyncio
@@ -61,9 +61,9 @@ class TestUpdateInPlace:
 
         shared = _emb()
         new_vec = _emb()
-        # 旧节点：已积累 access_count=7
+        # old node: has accumulated access_count=7
         old = MemoryNode(node_id="m1", user_id="u1", agent_id="default_agent",
-                         session_id="s1", content="用户在学吉他",
+                         session_id="s1", content="The user is learning guitar",
                          layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
                          is_latest=True)
         old.embedding = list(shared)
@@ -82,7 +82,7 @@ class TestUpdateInPlace:
                 return list(new_vec)
         writer._embed_service = _FakeEmbed()
 
-        new_content = "用户会弹吉他并在开放麦表演"
+        new_content = "The user can play guitar and performs at open mics"
         async def _fake_reconcile(*args, **kwargs):
             return ReconcileResult(ops=[
                 ReconcileOp(op="UPDATE", memory_id="m1", content=new_content,
@@ -97,24 +97,24 @@ class TestUpdateInPlace:
             request=req, vector_store=store, req_id="rq1",
         ))
         assert err is None
-        assert stored_ids == ["m1"], "原地更新应复用 m1，不产生新 node_id"
+        assert stored_ids == ["m1"], "in-place update should reuse m1 and produce no new node_id"
         assert ops["update"] == 1
         assert ops["total"] == ops["add"] + ops["supersede"] + ops["update"]
         assert set(tok) == {"prompt", "completion", "total"}
 
-        # m1 仍在，content/embedding 已换，access_count 保留，仍 ACTIVE+is_latest
+        # m1 still present, content/embedding replaced, access_count preserved, still ACTIVE+is_latest
         node = run(store.get_by_id("m1"))
         assert node is not None
         assert node.content == new_content
         assert node.status == MemoryStatus.ACTIVE
         assert node.is_latest is True
-        assert node.access_count == 7, "access_count 必须保留（不打回冷启动）"
-        # embedding 已换成 new_vec（与 new_vec 点积≈1）
+        assert node.access_count == 7, "access_count must be preserved (not reset to cold start)"
+        # embedding replaced with new_vec (dot product with new_vec ~1)
         embs = run(store.get_embeddings(["m1"]))
         dot = sum(a * b for a, b in zip(embs["m1"], new_vec))
-        assert dot > 0.99, f"embedding 应已更新为 new_vec, dot={dot}"
+        assert dot > 0.99, f"embedding should have been updated to new_vec, dot={dot}"
 
-        # 不产生 SHADOW 垃圾：ACTIVE 仍只有 m1
+        # no SHADOW garbage: ACTIVE still only has m1
         active = run(store.search(query_embedding=list(new_vec), user_id="u1",
                                   layers=[MemoryLayer.L2_FACT], limit=10,
                                   status_filter=[MemoryStatus.ACTIVE]))

@@ -233,22 +233,22 @@ def test_correcting_a_memory_updates_hy_in_place(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-            hy.index[memory_id] = "用户的花名是麒麟"
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+            hy.index[memory_id] = "The user's alias is Qilin"
 
             corrected = await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
 
             assert corrected.status_code == 200
-            assert hy.updates == [(memory_id, "用户的花名是白泽")]
-            assert hy.index[memory_id] == "用户的花名是白泽"
+            assert hy.updates == [(memory_id, "The user's alias is Baize")]
+            assert hy.index[memory_id] == "The user's alias is Baize"
             # The boundary: never delete-and-re-add, which would change the id
             # and break every reference already handed out.
             assert hy.deletes == []
@@ -266,21 +266,21 @@ def test_search_follows_the_correction(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-            hy.index[memory_id] = "用户的花名是麒麟"
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+            hy.index[memory_id] = "The user's alias is Qilin"
 
             await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
 
-            assert await hy.search_ids("白泽") == (memory_id,)
-            assert await hy.search_ids("麒麟") == ()
+            assert await hy.search_ids("Baize") == (memory_id,)
+            assert await hy.search_ids("Qilin") == ()
 
     asyncio.run(scenario())
 
@@ -297,8 +297,8 @@ def test_a_correction_is_not_lost_when_hy_is_down(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-            hy.index[memory_id] = "用户的花名是麒麟"
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+            hy.index[memory_id] = "The user's alias is Qilin"
             hy.available = False
 
             corrected = await client.post(
@@ -306,13 +306,13 @@ def test_a_correction_is_not_lost_when_hy_is_down(tmp_path) -> None:
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
 
             assert corrected.status_code == 200
-            assert corrected.json()["content"] == "用户的花名是白泽"
+            assert corrected.json()["content"] == "The user's alias is Baize"
             detail = await client.get(f"/api/v1/memories/{memory_id}")
             sync = detail.json()["index_sync"]
             assert sync["status"] == "pending"
@@ -334,15 +334,15 @@ def test_the_app_can_tell_the_user_the_index_is_current(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-            hy.index[memory_id] = "用户的花名是麒麟"
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+            hy.index[memory_id] = "The user's alias is Qilin"
 
             await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
@@ -366,15 +366,15 @@ def test_a_retry_after_hy_returns_reaches_consistency(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-            hy.index[memory_id] = "用户的花名是麒麟"
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+            hy.index[memory_id] = "The user's alias is Qilin"
             hy.available = False
             await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
@@ -383,7 +383,7 @@ def test_a_retry_after_hy_returns_reaches_consistency(tmp_path) -> None:
                 json={
                     "request_id": "correct-2",
                     "expected_revision": 2,
-                    "content": "用户的花名是白泽，读作 bái zé",
+                    "content": "The user's alias is Baize, read as bái zé",
                     "scopes": ["all-apps"],
                 },
             )
@@ -393,7 +393,7 @@ def test_a_retry_after_hy_returns_reaches_consistency(tmp_path) -> None:
 
             assert retried.status_code == 200
             assert retried.json()["status"] == "synced"
-            assert hy.index[memory_id] == "用户的花名是白泽，读作 bái zé"
+            assert hy.index[memory_id] == "The user's alias is Baize, read as bái zé"
             assert len(hy.updates) == 1
             # Both failed corrections and the retry that worked: the count is
             # how anyone tells a downstream that is slow from one that is
@@ -417,14 +417,14 @@ def test_a_pending_sync_outlives_the_process(tmp_path) -> None:
         app = create_app(settings)
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
             hy.available = False
             await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
@@ -454,14 +454,14 @@ def test_undoing_a_correction_syncs_hy_back_too(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-            hy.index[memory_id] = "用户的花名是麒麟"
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+            hy.index[memory_id] = "The user's alias is Qilin"
             await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
@@ -472,9 +472,9 @@ def test_undoing_a_correction_syncs_hy_back_too(tmp_path) -> None:
             )
 
             assert undone.status_code == 200
-            assert undone.json()["content"] == "用户的花名是麒麟"
-            assert hy.index[memory_id] == "用户的花名是麒麟"
-            assert await hy.search_ids("白泽") == ()
+            assert undone.json()["content"] == "The user's alias is Qilin"
+            assert hy.index[memory_id] == "The user's alias is Qilin"
+            assert await hy.search_ids("Baize") == ()
             detail = await client.get(f"/api/v1/memories/{memory_id}")
             assert detail.json()["index_sync"]["status"] == "synced"
 
@@ -495,7 +495,7 @@ def test_an_untouched_memory_has_nothing_to_sync(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
 
             detail = await client.get(f"/api/v1/memories/{memory_id}")
 
@@ -508,18 +508,18 @@ def test_an_untouched_memory_has_nothing_to_sync(tmp_path) -> None:
 async def _stale_memory(app, client: AsyncClient, hy: FakeHy) -> str:
     """A memory the user corrected while HY was unreachable.
 
-    The state this whole section is about: the app reads 白泽, HY still
-    matches on 麒麟, and nothing has caught up.
+    The state this whole section is about: the app reads Baize, HY still
+    matches on Qilin, and nothing has caught up.
     """
-    memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
-    hy.index[memory_id] = "用户的花名是麒麟"
+    memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
+    hy.index[memory_id] = "The user's alias is Qilin"
     hy.available = False
     await client.post(
         f"/api/v1/memories/{memory_id}/correct",
         json={
             "request_id": "correct-1",
             "expected_revision": 1,
-            "content": "用户的花名是白泽",
+            "content": "The user's alias is Baize",
             "scopes": ["all-apps"],
         },
     )
@@ -545,12 +545,12 @@ def test_a_recall_that_returns_a_stale_memory_catches_hy_up(tmp_path) -> None:
 
             recalled = await client.post(
                 "/api/v1/recall",
-                json={"query": "白泽", "scope": "all-apps"},
+                json={"query": "Baize", "scope": "all-apps"},
             )
 
             assert recalled.status_code == 200
             assert recalled.json()["state"] == "grounded"
-            assert hy.index[memory_id] == "用户的花名是白泽"
+            assert hy.index[memory_id] == "The user's alias is Baize"
             detail = await client.get(f"/api/v1/memories/{memory_id}")
             assert detail.json()["index_sync"]["status"] == "synced"
 
@@ -572,12 +572,12 @@ def test_the_recall_itself_does_not_wait_on_hy_being_back(tmp_path) -> None:
 
             recalled = await client.post(
                 "/api/v1/recall",
-                json={"query": "白泽", "scope": "all-apps"},
+                json={"query": "Baize", "scope": "all-apps"},
             )
 
             assert recalled.status_code == 200
             assert recalled.json()["state"] == "grounded"
-            assert recalled.json()["hits"][0]["content"] == "用户的花名是白泽"
+            assert recalled.json()["hits"][0]["content"] == "The user's alias is Baize"
             detail = await client.get(f"/api/v1/memories/{memory_id}")
             sync = detail.json()["index_sync"]
             assert sync["status"] == "pending"
@@ -603,7 +603,7 @@ def test_a_memory_no_recall_returned_is_left_alone(tmp_path) -> None:
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
             stale_id = await _stale_memory(app, client, hy)
-            await _confirmed_memory(app, client, "用户在用 Cursor 写代码", tag="2")
+            await _confirmed_memory(app, client, "The user codes with Cursor", tag="2")
 
             recalled = await client.post(
                 "/api/v1/recall",
@@ -614,7 +614,7 @@ def test_a_memory_no_recall_returned_is_left_alone(tmp_path) -> None:
             assert recalled.json()["state"] == "grounded"
             assert stale_id not in {hit["memory_id"] for hit in recalled.json()["hits"]}
             assert hy.updates == []
-            assert hy.index[stale_id] == "用户的花名是麒麟"
+            assert hy.index[stale_id] == "The user's alias is Qilin"
 
     asyncio.run(scenario())
 
@@ -638,7 +638,7 @@ def test_the_recall_answers_before_the_catch_up_runs(tmp_path) -> None:
             background = BackgroundTasks()
 
             receipt = await recall(
-                RecallRequest(query="白泽", scope="all-apps"),
+                RecallRequest(query="Baize", scope="all-apps"),
                 background,
                 Request({"type": "http", "headers": []}),
             )
@@ -649,7 +649,7 @@ def test_the_recall_answers_before_the_catch_up_runs(tmp_path) -> None:
 
             await background()
 
-            assert hy.index[memory_id] == "用户的花名是白泽"
+            assert hy.index[memory_id] == "The user's alias is Baize"
 
     asyncio.run(scenario())
 
@@ -667,14 +667,14 @@ def test_a_retry_hy_can_never_accept_is_not_made_on_every_recall(tmp_path) -> No
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
             hy.rejects = True
             await client.post(
                 f"/api/v1/memories/{memory_id}/correct",
                 json={
                     "request_id": "correct-1",
                     "expected_revision": 1,
-                    "content": "用户的花名是白泽",
+                    "content": "The user's alias is Baize",
                     "scopes": ["all-apps"],
                 },
             )
@@ -682,7 +682,7 @@ def test_a_retry_hy_can_never_accept_is_not_made_on_every_recall(tmp_path) -> No
 
             await client.post(
                 "/api/v1/recall",
-                json={"query": "白泽", "scope": "all-apps"},
+                json={"query": "Baize", "scope": "all-apps"},
             )
 
             assert hy.updates == []
@@ -707,11 +707,11 @@ def test_recall_touches_hy_for_nothing_when_no_memory_is_behind(tmp_path) -> Non
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            await _confirmed_memory(app, client, "用户的花名是麒麟")
+            await _confirmed_memory(app, client, "The user's alias is Qilin")
 
             recalled = await client.post(
                 "/api/v1/recall",
-                json={"query": "麒麟", "scope": "all-apps"},
+                json={"query": "Qilin", "scope": "all-apps"},
             )
 
             assert recalled.json()["state"] == "grounded"
@@ -728,7 +728,7 @@ def test_deletion_still_cascades_the_way_it_did(tmp_path) -> None:
         hy = FakeHy()
         async with app.router.lifespan_context(app), _client(app) as client:
             _attach(app, hy)
-            memory_id = await _confirmed_memory(app, client, "用户的花名是麒麟")
+            memory_id = await _confirmed_memory(app, client, "The user's alias is Qilin")
 
             deleted = await client.post(
                 f"/api/v1/memories/{memory_id}/actions/delete",

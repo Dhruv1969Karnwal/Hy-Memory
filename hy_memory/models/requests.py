@@ -1,8 +1,8 @@
 """
-Agent Memory V2 - 请求/响应模型
+Agent Memory V2 - Request/response models
 
-定义 API 接口的请求和响应数据结构。
-适配 V2 数据模型 (MemoryNode, MemoryContextPackage 等)。
+Defines the request and response data structures of the API.
+Aligned with the V2 data model (MemoryNode, MemoryContextPackage, etc.).
 """
 
 from typing import Optional, Dict, Any, List, Union
@@ -19,11 +19,11 @@ from .memory import (
 
 
 # ============================================================
-# 枚举
+# Enums
 # ============================================================
 
 class DeleteScope(str, Enum):
-    """删除范围"""
+    """Deletion scope."""
     MEMORY = "memory"
     SCENE = "scene"
     USER = "user"
@@ -31,14 +31,14 @@ class DeleteScope(str, Enum):
 
 
 class MemoryInputType(str, Enum):
-    """记忆输入类型"""
+    """Memory input type."""
     TEXT = "text"
     QA = "qa"
     DIALOGUE = "dialogue"
 
 
 class TaskStatus(str, Enum):
-    """异步任务状态"""
+    """Async task status."""
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -46,18 +46,18 @@ class TaskStatus(str, Enum):
 
 
 class AgentProcessMode(str, Enum):
-    """Agent 处理模式"""
-    DISABLED = "disabled"    # 关闭 Agent 处理
-    FULL = "full"            # 完整处理 (提取+摘要+冲突检测)
+    """Agent processing mode."""
+    DISABLED = "disabled"    # Agent processing disabled
+    FULL = "full"            # Full processing (extraction + summary + conflict detection)
 
 
 # ============================================================
-# 添加记忆
+# Add memory
 # ============================================================
 
 @dataclass
 class QAPair:
-    """问答对"""
+    """Question/answer pair."""
     question: str = ""
     answer: str = ""
 
@@ -75,43 +75,43 @@ class QAPair:
 @dataclass
 class AddRequest:
     """
-    添加记忆请求
+    Add memory request
 
-    参数职责分离：
-    - agent_mode: 控制 MemAgent 处理深度 (disabled / full)
+    Separation of parameter responsibilities:
+    - agent_mode: controls MemAgent processing depth (disabled / full)
     """
-    # 必填 - 身份信息
+    # Required - identity
     uid: str = ""
     agent_id: str = ""
 
-    # 会话信息 (V2 新增)
+    # Session info (new in V2)
     session_id: str = ""
 
-    # 输入内容
+    # Input content
     input_type: MemoryInputType = MemoryInputType.TEXT
     content: Optional[str] = None
     qa_pair: Optional[QAPair] = None
 
-    # 记忆层
+    # Memory layer
     layer: Optional[Union[MemoryLayer, str]] = None
 
-    # 时间
+    # Time
     event_time: Optional[datetime] = None
     ttl_seconds: Optional[int] = None
 
-    # 权重
+    # Weight
     importance: float = 1.0
 
-    # 扩展
+    # Extensions
     tags: List[str] = field(default_factory=list)
     custom: Dict[str, Any] = field(default_factory=dict)
     source: Optional[str] = None
 
-    # Agent 处理选项
+    # Agent processing options
     agent_mode: AgentProcessMode = AgentProcessMode.FULL
     async_process: bool = False
 
-    # V1 兼容
+    # V1 compatibility
     auto_extract: bool = False
     store_raw: bool = True
     infer: bool = False
@@ -165,18 +165,18 @@ class AddRequest:
 
 @dataclass
 class AddResponse:
-    """添加记忆响应（同步模式）"""
+    """Add memory response (synchronous mode)."""
     success: bool = False
     memory_id: str = ""
     node_ids: List[str] = field(default_factory=list)
     layer: Optional[MemoryLayer] = None
     message: str = ""
 
-    # System 1 提取的额外节点
+    # Extra nodes extracted by System 1
     extracted_fact_ids: List[str] = field(default_factory=list)
     extracted_intention_ids: List[str] = field(default_factory=list)
 
-    # V1 兼容
+    # V1 compatibility
     extracted_ids: List[str] = field(default_factory=list)
     abstract_key_ids: List[str] = field(default_factory=list)
 
@@ -194,7 +194,7 @@ class AddResponse:
 
 @dataclass
 class AsyncAddResponse:
-    """异步添加记忆响应"""
+    """Async add memory response."""
     success: bool = False
     task_id: str = ""
     status: TaskStatus = TaskStatus.PENDING
@@ -213,13 +213,13 @@ class AsyncAddResponse:
 
 @dataclass
 class TaskStatusRequest:
-    """查询任务状态请求"""
+    """Query task status request."""
     task_id: str = ""
 
 
 @dataclass
 class TaskStatusResponse:
-    """任务状态响应"""
+    """Task status response."""
     success: bool = False
     task_id: str = ""
     status: TaskStatus = TaskStatus.PENDING
@@ -248,7 +248,7 @@ class TaskStatusResponse:
 
 @dataclass
 class AsyncTask:
-    """异步任务"""
+    """Async task."""
     task_id: str = ""
     uid: str = ""
     agent_id: str = ""
@@ -272,43 +272,43 @@ class AsyncTask:
 
 
 # ============================================================
-# 召回记忆
+# Retrieve memory
 # ============================================================
 
 @dataclass
 class RecallRequest:
     """
-    召回记忆请求
+    Retrieve memory request
 
-    V2 适配：
-    - 新增 session_id (用于 reconsolidation)
-    - 新增 include_context_package (默认 True，返回 MemoryContextPackage)
-    - 新增 token_budget (Token 预算)
+    V2 adaptations:
+    - adds session_id (used for reconsolidation)
+    - adds include_context_package (default True, returns a MemoryContextPackage)
+    - adds token_budget (token budget)
     """
     query: str = ""
     uid: str = ""
 
-    # 会话信息
+    # Session info
     session_id: Optional[str] = None
     agent_id: Optional[str] = None
     agent_ids: List[str] = field(default_factory=list)
     layers: List[MemoryLayer] = field(default_factory=list)
 
-    # 数量限制
+    # Result limits
     limit: int = 10
     limit_per_layer: Optional[int] = None
 
-    # 跨场景
+    # Cross-scene
     cross_scene: bool = False
 
-    # 过滤条件
+    # Filters
     tags: List[str] = field(default_factory=list)
     time_range_start: Optional[datetime] = None
     time_range_end: Optional[datetime] = None
     min_importance: float = 0.0
     min_confidence: float = 0.0
 
-    # V2: Context Package 选项
+    # V2: Context Package options
     include_context_package: bool = True
     token_budget: int = 2000
     include_meta_cognition: bool = True
@@ -316,13 +316,13 @@ class RecallRequest:
     include_schemas: bool = True
     include_temporal: bool = True
 
-    # V1 兼容: 评分权重
+    # V1 compatibility: scoring weights
     semantic_weight: float = 0.5
     recency_weight: float = 0.3
     importance_weight: float = 0.15
     access_weight: float = 0.05
 
-    # 返回选项
+    # Return options
     include_score: bool = True
     include_metadata: bool = True
 
@@ -330,9 +330,9 @@ class RecallRequest:
 @dataclass
 class RecallResponse:
     """
-    召回记忆响应
+    Retrieve memory response
 
-    V2: 核心返回 MemoryContextPackage。memories 保留用于 V1 兼容。
+    V2: the core return value is MemoryContextPackage; memories is kept for V1 compatibility.
     """
     success: bool = False
     context_package: Optional[MemoryContextPackage] = None
@@ -358,18 +358,18 @@ class RecallResponse:
 
 
 # ============================================================
-# 获取记忆
+# Get memory
 # ============================================================
 
 @dataclass
 class GetRequest:
-    """获取单条记忆请求"""
+    """Get a single memory request."""
     memory_id: str = ""
 
 
 @dataclass
 class GetResponse:
-    """获取单条记忆响应"""
+    """Get a single memory response."""
     success: bool = False
     memory: Optional[MemoryNode] = None
     message: str = ""
@@ -383,12 +383,12 @@ class GetResponse:
 
 
 # ============================================================
-# 列出记忆
+# List memories
 # ============================================================
 
 @dataclass
 class ListRequest:
-    """列出记忆请求"""
+    """List memories request."""
     uid: str = ""
     agent_id: Optional[str] = None
     layers: List[MemoryLayer] = field(default_factory=list)
@@ -400,7 +400,7 @@ class ListRequest:
 
 @dataclass
 class ListResponse:
-    """列出记忆响应"""
+    """List memories response."""
     success: bool = False
     memories: List[MemoryNode] = field(default_factory=list)
     total_count: int = 0
@@ -420,12 +420,12 @@ class ListResponse:
 
 
 # ============================================================
-# 更新记忆
+# Update memory
 # ============================================================
 
 @dataclass
 class UpdateRequest:
-    """更新记忆请求"""
+    """Update memory request."""
     memory_id: str = ""
     content: Optional[str] = None
     importance: Optional[float] = None
@@ -436,7 +436,7 @@ class UpdateRequest:
 
 @dataclass
 class UpdateResponse:
-    """更新记忆响应"""
+    """Update memory response."""
     success: bool = False
     memory_id: str = ""
     message: str = ""
@@ -452,18 +452,18 @@ class UpdateResponse:
 
 
 # ============================================================
-# 删除记忆
+# Delete memory
 # ============================================================
 
 @dataclass
 class DeleteRequest:
-    """删除单条记忆请求"""
+    """Delete a single memory request."""
     memory_id: str = ""
 
 
 @dataclass
 class DeleteResponse:
-    """删除记忆响应"""
+    """Delete memory response."""
     success: bool = False
     deleted_count: int = 0
     message: str = ""
@@ -478,7 +478,7 @@ class DeleteResponse:
 
 @dataclass
 class BatchDeleteRequest:
-    """批量删除记忆请求"""
+    """Batch delete memories request."""
     scope: DeleteScope = DeleteScope.MEMORY
     memory_ids: List[str] = field(default_factory=list)
     uid: Optional[str] = None
@@ -490,7 +490,7 @@ class BatchDeleteRequest:
 
 @dataclass
 class BatchDeleteResponse:
-    """批量删除响应"""
+    """Batch delete response."""
     success: bool = False
     deleted_count: int = 0
     message: str = ""
@@ -504,12 +504,12 @@ class BatchDeleteResponse:
 
 
 # ============================================================
-# 用户画像
+# User profile
 # ============================================================
 
 @dataclass
 class UserProfile:
-    """用户画像"""
+    """User profile."""
     uid: str = ""
     basic_info: Dict[str, Any] = field(default_factory=dict)
     preferences: Dict[str, Any] = field(default_factory=dict)
@@ -519,7 +519,7 @@ class UserProfile:
     updated_at: datetime = field(default_factory=datetime.now)
     version: int = 1
 
-    # V2 新增字段
+    # New in V2
     schemas: List[str] = field(default_factory=list)
     gotchas: List[str] = field(default_factory=list)
     personality: str = ""
@@ -544,14 +544,14 @@ class UserProfile:
 
 @dataclass
 class GetProfileRequest:
-    """获取用户画像请求"""
+    """Get user profile request."""
     uid: str = ""
     include_history: bool = False
 
 
 @dataclass
 class GetProfileResponse:
-    """获取用户画像响应"""
+    """Get user profile response."""
     success: bool = False
     profile: Optional[UserProfile] = None
     message: str = ""
@@ -566,7 +566,7 @@ class GetProfileResponse:
 
 @dataclass
 class UpdateProfileRequest:
-    """更新用户画像请求"""
+    """Update user profile request."""
     uid: str = ""
     updates: Dict[str, Any] = field(default_factory=dict)
     merge: bool = True
@@ -574,7 +574,7 @@ class UpdateProfileRequest:
 
 @dataclass
 class UpdateProfileResponse:
-    """更新用户画像响应"""
+    """Update user profile response."""
     success: bool = False
     profile: Optional[UserProfile] = None
     message: str = ""
@@ -589,14 +589,14 @@ class UpdateProfileResponse:
 
 @dataclass
 class RebuildProfileRequest:
-    """重建用户画像请求"""
+    """Rebuild user profile request."""
     uid: str = ""
     force: bool = False
 
 
 @dataclass
 class RebuildProfileResponse:
-    """重建用户画像响应"""
+    """Rebuild user profile response."""
     success: bool = False
     profile: Optional[UserProfile] = None
     memories_processed: int = 0
@@ -612,12 +612,12 @@ class RebuildProfileResponse:
 
 
 # ============================================================
-# 异步任务管理
+# Async task management
 # ============================================================
 
 @dataclass
 class SubmitTaskRequest:
-    """提交异步任务请求"""
+    """Submit async task request."""
     task_type: str = ""
     payload: Dict[str, Any] = field(default_factory=dict)
     priority: int = 0
@@ -626,7 +626,7 @@ class SubmitTaskRequest:
 
 @dataclass
 class SubmitTaskResponse:
-    """提交异步任务响应"""
+    """Submit async task response."""
     success: bool = False
     task_id: str = ""
     status: str = "pending"
@@ -645,13 +645,13 @@ class SubmitTaskResponse:
 
 @dataclass
 class GetTaskRequest:
-    """查询任务状态请求"""
+    """Query task status request."""
     task_id: str = ""
 
 
 @dataclass
 class GetTaskResponse:
-    """查询任务状态响应"""
+    """Query task status response."""
     success: bool = False
     task_id: str = ""
     task_type: str = ""
@@ -690,13 +690,13 @@ class GetTaskResponse:
 
 @dataclass
 class CancelTaskRequest:
-    """取消任务请求"""
+    """Cancel task request."""
     task_id: str = ""
 
 
 @dataclass
 class CancelTaskResponse:
-    """取消任务响应"""
+    """Cancel task response."""
     success: bool = False
     task_id: str = ""
     message: str = ""
@@ -711,7 +711,7 @@ class CancelTaskResponse:
 
 @dataclass
 class ListTasksRequest:
-    """列出任务请求"""
+    """List tasks request."""
     uid: Optional[str] = None
     task_type: Optional[str] = None
     status: Optional[str] = None
@@ -721,7 +721,7 @@ class ListTasksRequest:
 
 @dataclass
 class ListTasksResponse:
-    """列出任务响应"""
+    """List tasks response."""
     success: bool = False
     tasks: List[Dict[str, Any]] = field(default_factory=list)
     total_count: int = 0

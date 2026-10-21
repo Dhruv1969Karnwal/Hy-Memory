@@ -5,6 +5,7 @@ import {
   diagnosticLogFiles,
   readDiagnosticEvents,
 } from "@one-memory/runtime-control";
+import { countLabel } from "./count-label.js";
 
 export interface LogQuery {
   since?: Date;
@@ -232,8 +233,11 @@ export function renderLogText(
     ].filter(Boolean);
     return `[${event.timestamp}] ${event.level.toUpperCase()} ${event.service}/${event.component} ${event.event} ${event.outcome}${ids.length ? ` ${ids.join(" ")}` : ""}`;
   });
-  if (invalidLines) lines.push(`跳过 ${invalidLines} 行损坏的诊断记录。`);
-  if (!lines.length) lines.push("没有匹配的诊断记录。");
+  if (invalidLines)
+    lines.push(
+      `Skipped ${countLabel(invalidLines, "corrupt diagnostic record")}.`,
+    );
+  if (!lines.length) lines.push("No matching diagnostic records.");
   return `${lines.join("\n")}\n`;
 }
 

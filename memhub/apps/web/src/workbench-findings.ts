@@ -3,6 +3,7 @@ import type {
   MemoryProcessingSummary,
   SourceResponse,
 } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 /** One row of the left column: a topic, with what is actually under it. */
 export interface Matter {
@@ -34,7 +35,7 @@ const TOPIC = "topic:";
  * Grouped by tag, not by scope. A scope is an authorisation — which apps may
  * read the memory — and in a real library it reads
  * `workspace:v1:<sha256>`, so a column built on it listed nine rows of hash
- * under the heading 事项. It was the wrong axis wearing the right label.
+ *  under the heading Matters. It was the wrong axis wearing the right label.
  *
  * A memory with several tags belongs under each of them: a tag is what the
  * memory is about, not a folder it was filed into. */
@@ -54,7 +55,7 @@ export function mattersOf(
   const matters: Matter[] = [
     {
       scope: EVERYTHING,
-      label: "全部",
+      label: "All",
       memoryCount: memories.length,
       sourceCount: countSources(memories, sources),
     },
@@ -109,7 +110,7 @@ function countSources(
 
 /** What the app noticed, without a generation model.
  *
- * Deliberately not the four in the prototype: "矛盾" needs a model to read
+ * Deliberately not the four in the prototype: "Contradiction" needs a model to read
  * two memories and judge that they disagree, and asserting it from text
  * overlap alone would be a guess dressed as a finding. These four are each
  * computable from records that are already local, so every one of them can be
@@ -129,8 +130,8 @@ export function findingsOf({
     findings.push({
       id: `duplicate:${pair[0].memory_id}:${pair[1].memory_id}`,
       kind: "duplicate",
-      label: "出自同一句话",
-      text: `「${clip(pair[0].content)}」和「${clip(pair[1].content)}」是从同一句原话里抽出来的，分别挂在 ${scopesText(pair[0])} 和 ${scopesText(pair[1])} 下。看看是不是一回事。`,
+      label: "From the same sentence",
+      text: `"${clip(pair[0].content)}" and "${clip(pair[1].content)}" were extracted from the same source quote, filed under ${scopesText(pair[0])} and ${scopesText(pair[1])}. Check whether they are the same thing.`,
       memoryIds: [pair[0].memory_id, pair[1].memory_id],
     });
   }
@@ -143,8 +144,8 @@ export function findingsOf({
     findings.push({
       id: "dormant",
       kind: "dormant",
-      label: "很久没动过",
-      text: `${dormant.length} 条记忆两个月没再被改过也没再被提起。可能已经过时，值得回头看一眼。`,
+      label: "Not touched in a long time",
+      text: `${countLabel(dormant.length, "memory")} have not been changed or mentioned in two months. They may be out of date and worth another look.`,
       memoryIds: dormant.map((item) => item.memory_id),
     });
   }
@@ -155,8 +156,11 @@ export function findingsOf({
     findings.push({
       id: "blocked",
       kind: "blocked",
-      label: "卡住了",
-      text: `${blockedCount} 段对话排在队里，等的不是时间而是一个条件。原文已经在库里，随时搜得到。`,
+      label: "Stuck",
+      text:
+        blockedCount === 1
+          ? "1 conversation segment is queued on a condition rather than on time. Its source text is already stored and searchable any time."
+          : `${countLabel(blockedCount, "conversation segment")} are queued on a condition rather than on time. Their source text is already stored and searchable any time.`,
       memoryIds: [],
     });
   }
@@ -174,7 +178,7 @@ export function findingsOf({
  * The first version of this compared the memories' own wording — character
  * trigrams, Jaccard over 0.6 — and measuring it on real sentences killed it.
  * Four pairs that are plainly the same instruction scored 0.28 to 0.57, while
- * 「PersonaMem 的失败主要卡在提取层」and「PersonaMem 的检索层先放着不动」, which
+ * "PersonaMem failures are mostly stuck at the extraction layer" and "leave the PersonaMem retrieval layer alone for now", which
  * say opposite things, scored 0.346. Any cutoff that catches the first group
  * also catches that one, so no threshold exists. Chinese without spaces makes
  * the surface too similar; deciding two sentences mean the same thing needs a
@@ -216,8 +220,8 @@ function clip(text: string, limit = 18): string {
 
 function scopesText(memory: GovernedMemory): string {
   return memory.scopes.length
-    ? memory.scopes.map(scopeLabel).join("、")
-    : "未归类";
+    ? memory.scopes.map(scopeLabel).join(", ")
+    : "Uncategorized";
 }
 
 /** Say where a memory is authorised, in words.
@@ -229,9 +233,9 @@ function scopesText(memory: GovernedMemory): string {
  * is for. Printing `v1:0027abad1745330f1b57671635e0e9b3bd0cc3d2…` told the
  * reader nothing and filled the line. */
 function scopeLabel(scope: string): string {
-  if (scope === "all-apps") return "个人画像";
+  if (scope === "all-apps") return "Personal profile";
   if (scope.startsWith("workspace:v1:")) {
-    return `某个项目 ${scope.slice("workspace:v1:".length, "workspace:v1:".length + 8)}`;
+    return `Some project ${scope.slice("workspace:v1:".length, "workspace:v1:".length + 8)}`;
   }
   const [head, ...rest] = scope.split(":");
   if (rest.length) return rest.join(":");

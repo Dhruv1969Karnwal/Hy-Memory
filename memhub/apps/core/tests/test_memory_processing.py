@@ -142,7 +142,7 @@ class FakeBridge:
             else (
                 HyMemoryOutput(
                     memory_id="hy-memory-1",
-                    content="用户偏好本地优先的记忆处理。",
+                    content="The user prefers local-first memory processing.",
                     layer="L0_BASIC_INFO",
                 ),
             ),
@@ -327,11 +327,13 @@ def test_memory_task_logs_six_step_durations_without_content(tmp_path) -> None:
 
 
 def test_assistant_turns_reach_hy_so_references_can_be_resolved(tmp_path) -> None:
-    """助手那一侧要进抽取器，否则「就按你说的那个」指的是什么，没人知道。
+    """Assistant turns must reach the extractor, or nobody knows what "just do the one you \
+suggested" refers to.
 
-    HY 的抽取 prompt 自己就是为双向设计的：示例 1 明写「旧消息只用于指代消解」，
-    示例 2 叫「浓缩 agent 的长篇回复」。我们过去只喂用户那一侧，
-    等于把它这两条能力饿死了。
+    HY's own extraction prompt is designed for both directions: example 1 spells out
+    "old messages are only for coreference resolution" and example 2 is "condense the agent's \
+long reply". We used to feed only the user's side,
+    which starved exactly those two capabilities.
     """
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, _governance, _secrets, profile = stores
@@ -340,7 +342,7 @@ def test_assistant_turns_reach_hy_so_references_can_be_resolved(tmp_path) -> Non
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="前端网络请求应该怎么统一？",
+        content="How should frontend network requests be standardized?",
         workspace="workspace:v1:one-memory",
         created_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
     )
@@ -349,7 +351,7 @@ def test_assistant_turns_reach_hy_so_references_can_be_resolved(tmp_path) -> Non
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="建议统一走 axios 封装，不要裸调 fetch。",
+        content="Standardize on the axios wrapper, no bare fetch calls.",
         workspace="workspace:v1:one-memory",
         created_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
     )
@@ -358,7 +360,7 @@ def test_assistant_turns_reach_hy_so_references_can_be_resolved(tmp_path) -> Non
         message_id="u2",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="就按你说的那个来。",
+        content="just do the one you suggested.",
         workspace="workspace:v1:one-memory",
         created_at=datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC),
     )
@@ -369,13 +371,13 @@ def test_assistant_turns_reach_hy_so_references_can_be_resolved(tmp_path) -> Non
 
     # One turn per request; the next turn reaches HY with this one as history.
     assert [(turn.role, turn.content) for turn in bridge.requests[0].turns] == [
-        ("user", "前端网络请求应该怎么统一？"),
-        ("assistant", "建议统一走 axios 封装，不要裸调 fetch。"),
+        ("user", "How should frontend network requests be standardized?"),
+        ("assistant", "Standardize on the axios wrapper, no bare fetch calls."),
     ]
 
 
 def test_secrets_in_assistant_output_are_redacted_too(tmp_path) -> None:
-    """助手那一侧现在也会被送出去，所以脱敏必须一样管到它。"""
+    """The assistant's side is sent out now too, so redaction must cover it just as much."""
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, _governance, _secrets, profile = stores
     user = _put(
@@ -383,7 +385,7 @@ def test_secrets_in_assistant_output_are_redacted_too(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="帮我登录一下。",
+        content="Log me in.",
         created_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
     )
     _put(
@@ -391,7 +393,7 @@ def test_secrets_in_assistant_output_are_redacted_too(tmp_path) -> None:
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="执行：docker login --username kristinhe --password exposed-token-value",
+        content="Run: docker login --username kristinhe --password exposed-token-value",
         created_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
     )
     task = _task(tasks, profile, user)
@@ -405,10 +407,12 @@ def test_secrets_in_assistant_output_are_redacted_too(tmp_path) -> None:
 
 
 def test_agent_owned_memories_land_usable_but_marked_as_the_assistant(tmp_path) -> None:
-    """助手输出里的事实也直接可用，但来源标成助手。
+    """Facts in assistant output are usable directly too, but the source is marked as the assistant.
 
-    不再有「待确认」这道关：它让助手那侧的内容永远进不了召回。能区分的是
-    origin —— 召回和事项据此知道这句话是 AI 说的，不是本人的判断。
+    The "pending confirmation" gate is gone: it kept assistant-side content out of recall \
+forever. What still separates them is
+    origin -- recall and matters use it to know the line came from the AI, not the person's own \
+judgment.
     """
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
@@ -417,26 +421,31 @@ def test_agent_owned_memories_land_usable_but_marked_as_the_assistant(tmp_path) 
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="帮我写一篇远程办公的短文。",
+        content="Write me a short essay about remote work.",
     )
     _put(
         evidence,
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="好的，开头是……结尾是自主性带来更高产出。",
+        content="Sure, the opening is... and the close is autonomy brings higher output.",
     )
     task = _task(tasks, profile, user)
     bridge = FakeBridge(
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-user-1",
-                content="用户需要一篇论述远程办公提升效率的短文。",
+                content=(
+                    "The user needs a short essay arguing that remote work improves efficiency."
+                ),
                 owner="user",
             ),
             HyMemoryOutput(
                 memory_id="hy-agent-1",
-                content="assistant 为用户写了一篇短文，论点是远程办公提升效率。",
+                content=(
+                    "assistant wrote the user a short essay arguing that remote work improves "
+                    "efficiency."
+                ),
                 owner="agent",
             ),
         )
@@ -446,11 +455,13 @@ def test_agent_owned_memories_land_usable_but_marked_as_the_assistant(tmp_path) 
 
     landed = {item.content: item for item in governance.list(user_id="local")}
     assert set(landed) == {
-        "用户需要一篇论述远程办公提升效率的短文。",
-        "assistant 为用户写了一篇短文，论点是远程办公提升效率。",
+        "The user needs a short essay arguing that remote work improves efficiency.",
+        "assistant wrote the user a short essay arguing that remote work improves efficiency.",
     }
-    person = landed["用户需要一篇论述远程办公提升效率的短文。"]
-    agent = landed["assistant 为用户写了一篇短文，论点是远程办公提升效率。"]
+    person = landed["The user needs a short essay arguing that remote work improves efficiency."]
+    agent = landed[
+        "assistant wrote the user a short essay arguing that remote work improves efficiency."
+    ]
     assert person.origin is MemoryOrigin.EXTRACTED
     assert person.status is MemoryStatus.CONFIRMED
     assert agent.origin is MemoryOrigin.AGENT
@@ -458,7 +469,8 @@ def test_agent_owned_memories_land_usable_but_marked_as_the_assistant(tmp_path) 
 
 
 def test_an_agent_owned_memory_alone_is_still_usable(tmp_path) -> None:
-    """一批里只有助手那侧的记忆，也照样可用，不等人确认。"""
+    """A batch with only assistant-side memories is still usable, with no wait for human \
+confirmation."""
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     user = _put(
@@ -466,21 +478,21 @@ def test_an_agent_owned_memory_alone_is_still_usable(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="帮我排一个七天日本行程。",
+        content="Plan a seven-day Japan itinerary for me.",
     )
     _put(
         evidence,
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="东京—京都—奈良—大阪，关西机场离境。",
+        content="Tokyo-Kyoto-Nara-Osaka, departing through Kansai Airport.",
     )
     task = _task(tasks, profile, user)
     bridge = FakeBridge(
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-agent-1",
-                content="assistant 为用户制定了七天日本行程。",
+                content="assistant planned a seven-day Japan itinerary for the user.",
                 owner="agent",
             ),
         )
@@ -494,7 +506,8 @@ def test_an_agent_owned_memory_alone_is_still_usable(tmp_path) -> None:
 
 
 def test_memories_without_an_owner_still_land(tmp_path) -> None:
-    """正向对照：没标 owner 的照旧写下来，否则上面那条测的只是「什么都不写」。"""
+    """Positive control: entries without an owner still land, or the test above only measures \
+"nothing is written"."""
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     user = _put(
@@ -502,16 +515,22 @@ def test_memories_without_an_owner_still_land(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="周末不排评审会。",
+        content="No review meetings on weekends.",
     )
     task = _task(tasks, profile, user)
     bridge = FakeBridge(
-        outputs=(HyMemoryOutput(memory_id="hy-1", content="用户周末不安排评审会。"),)
+        outputs=(
+            HyMemoryOutput(
+                memory_id="hy-1", content="The user does not schedule review meetings on weekends."
+            ),
+        )
     )
 
     asyncio.run(_runner(tmp_path, stores, bridge).run(task.task_id))
 
-    assert [item.content for item in governance.list(user_id="local")] == ["用户周末不安排评审会。"]
+    assert [item.content for item in governance.list(user_id="local")] == [
+        "The user does not schedule review meetings on weekends."
+    ]
 
 
 def test_assistant_only_window_is_usable_and_attributed_to_the_assistant(tmp_path) -> None:
@@ -523,14 +542,14 @@ def test_assistant_only_window_is_usable_and_attributed_to_the_assistant(tmp_pat
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="我先总结一下刚才的方案。",
+        content="Let me first summarize the design from before.",
     )
     _put(
         evidence,
         message_id="a2",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="另外还有三个待办。",
+        content="There are also three to-dos.",
     )
     task = _task(tasks, profile, first)
     bridge = FakeBridge()
@@ -553,7 +572,7 @@ def test_what_lands_in_governance_still_comes_from_the_person(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="这个交互太绕了，我更喜欢一步完成。",
+        content="This interaction is too roundabout, I prefer finishing in one step.",
         workspace="workspace:v1:one-memory",
     )
     _put(
@@ -561,7 +580,7 @@ def test_what_lands_in_governance_still_comes_from_the_person(tmp_path) -> None:
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="明白，你偏好更直接的单步流程。",
+        content="Understood, you prefer a more direct single-step flow.",
         workspace="workspace:v1:one-memory",
     )
     task = _task(tasks, profile, user)
@@ -574,19 +593,20 @@ def test_what_lands_in_governance_still_comes_from_the_person(tmp_path) -> None:
     request = bridge.requests[0]
     assert request.agent_id.startswith(f"{UNIFIED_HY_AGENT_ID}:scope:")
     assert request.agent_id != UNIFIED_HY_AGENT_ID
-    # 助手那一句现在也送出去了，但落库的仍旧只有一条 —— FakeBridge 默认
-    # 不标 owner，所以这里测的是「多送不等于多记」。
+    # The assistant's line goes out now too, yet only one memory still lands -- FakeBridge
+    # sets no owner by default, so what this pins is "sending more is not storing more".
     assert [(turn.role, turn.content) for turn in request.turns] == [
         ("user", user.verbatim),
-        ("assistant", "明白，你偏好更直接的单步流程。"),
+        ("assistant", "Understood, you prefer a more direct single-step flow."),
     ]
     assert len(governance.list(user_id="local")) == 1
     memory = governance.list(user_id="local")[0]
     assert memory.status is MemoryStatus.CONFIRMED
-    assert memory.content == "用户偏好本地优先的记忆处理。"
+    assert memory.content == "The user prefers local-first memory processing."
     assert memory.scopes == ("all-apps", "workspace:v1:one-memory")
-    # 出处是这条记忆所在的那一段来回，不只是被抽中的那一句。
-    # 右栏点开要能读懂，而「明白，你偏好更直接的单步流程」正是读懂它的一半。
+    # The source is the whole exchange the memory came from, not only the line that was extracted.
+    # Opening it from the right pane has to make sense, and "Understood, you prefer a more
+    # direct single-step flow" is half of that.
     assert len(memory.evidence_ids) == 2
     assert user.evidence_id in memory.evidence_ids
 
@@ -620,11 +640,11 @@ def test_hy_output_is_not_rejected_by_one_memory_policy(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="请帮我审查这份方案。",
+        content="Please review this design for me.",
     )
     output = HyMemoryOutput(
         memory_id="hy-l1",
-        content="方案审查体现了用户重视可验证交付。",
+        content="The design review shows the user values verifiable delivery.",
         layer="L0_BASIC_INFO",
     )
     task = _task(tasks, profile, user)
@@ -679,13 +699,13 @@ def test_workspace_intention_reaches_every_app_and_keeps_its_project(tmp_path) -
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="明天完成 One Memory 的完整链路。",
+        content="Finish the full One Memory pipeline tomorrow.",
         workspace="workspace:v1:one-memory",
     )
     task = _task(tasks, profile, user)
     output = HyMemoryOutput(
         memory_id="hy-intention",
-        content="用户计划明天完成 One Memory 的完整链路。",
+        content="The user plans to finish the full One Memory pipeline tomorrow.",
         layer="L7_INTENTION",
     )
 
@@ -717,7 +737,7 @@ def test_what_hy_learns_about_the_person_reaches_every_app(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我是产品出身，叫 Kristin。",
+        content="I come from product, my name is Kristin.",
         workspace="workspace:v1:one-memory",
     )
     task = _task(tasks, profile, user)
@@ -725,14 +745,14 @@ def test_what_hy_learns_about_the_person_reaches_every_app(tmp_path) -> None:
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-fact",
-                content="用户偏好本地优先的记忆处理。",
+                content="The user prefers local-first memory processing.",
                 layer="L2_FACT",
             ),
         ),
         profile=(
             HyMemoryOutput(
                 memory_id="hy-profile",
-                content="The user's name is Kristin, occupation is 产品出身.",
+                content="The user's name is Kristin, occupation is product background.",
                 layer="L0_BASIC_INFO",
             ),
         ),
@@ -774,7 +794,7 @@ def test_the_same_unchanged_profile_is_not_recorded_again(tmp_path) -> None:
             message_id=f"u{index}",
             role="user",
             written_by=WrittenBy.PERSON,
-            content=f"第 {index} 轮。",
+            content=f"Turn {index}.",
             conversation_id=f"conversation-{index}",
         )
         task = _task(tasks, profile, record)
@@ -810,7 +830,7 @@ def test_the_profile_layers_are_the_ones_hy_calls_profile(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="任意内容。",
+        content="Any content.",
         workspace="workspace:v1:atlas",
     )
     chunk = (evidence.list_conversation(record.evidence_id)[0],)
@@ -837,7 +857,7 @@ def test_a_memory_from_one_app_is_readable_from_every_app(tmp_path, layer) -> No
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="任意内容。",
+        content="Any content.",
         workspace="workspace:v1:atlas",
     )
     chunk = (evidence.list_conversation(record.evidence_id)[0],)
@@ -846,7 +866,7 @@ def test_a_memory_from_one_app_is_readable_from_every_app(tmp_path, layer) -> No
         message_id="u2",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="没有工作区的对话。",
+        content="A conversation with no workspace.",
         conversation_id="empty-window",
     )
 
@@ -898,7 +918,7 @@ def test_hy_empty_result_is_a_successful_no_memory_decision(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="把按钮移到左边。",
+        content="Move the button to the left.",
     )
     task = _task(tasks, profile, user)
 
@@ -923,7 +943,7 @@ def test_memory_content_without_raw_uses_add_extracted_and_is_usable(tmp_path, a
         message_id="memory-1",
         role="memory",
         written_by=author,
-        content="用户偏好简洁直接的中文表达。",
+        content="The user prefers concise, direct Chinese phrasing.",
         content_kind=EvidenceContentKind.MEMORY_CONTENT,
     )
     task = _task(tasks, profile, imported)
@@ -1011,14 +1031,14 @@ def test_a_new_hy_memory_is_mirrored_under_its_own_id_even_when_the_text_repeats
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我周末不开评审会。",
+        content="I do not hold review meetings on weekends.",
         conversation_id="c1",
     )
     earlier = as_person(governance).create(
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="用户周末不安排评审会。",
+            content="The user does not schedule review meetings on weekends.",
             scopes=("all-apps",),
             evidence_ids=(first.evidence_id,),
         ),
@@ -1030,19 +1050,24 @@ def test_a_new_hy_memory_is_mirrored_under_its_own_id_even_when_the_text_repeats
         message_id="u2",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="再说一次，周末别排评审。",
+        content="Saying it again, no reviews on weekends.",
         conversation_id="c2",
     )
     task = _task(tasks, profile, second)
     bridge = FakeBridge(
-        outputs=(HyMemoryOutput(memory_id="hy-later", content="用户周末不安排评审会。"),)
+        outputs=(
+            HyMemoryOutput(
+                memory_id="hy-later",
+                content="The user does not schedule review meetings on weekends.",
+            ),
+        )
     )
 
     asyncio.run(_runner(tmp_path, stores, bridge).run(task.task_id))
 
     later = governance.get("hy-later", user_id="local")
     assert later is not None
-    assert later.content == "用户周末不安排评审会。"
+    assert later.content == "The user does not schedule review meetings on weekends."
     assert later.evidence_ids == (second.evidence_id,)
     assert governance.get(earlier.memory_id, user_id="local").evidence_ids == (first.evidence_id,)
 
@@ -1126,14 +1151,14 @@ def test_memory_content_with_raw_never_becomes_an_additional_user_turn(tmp_path)
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我喜欢更直接的回答。",
+        content="I like more direct answers.",
     )
     imported = _put(
         evidence,
         message_id="memory-1",
         role="memory",
         written_by=WrittenBy.AGENT,
-        content="用户偏好简洁表达。",
+        content="The user prefers concise phrasing.",
         content_kind=EvidenceContentKind.MEMORY_CONTENT,
     )
     task = _task(tasks, profile, user)
@@ -1148,7 +1173,10 @@ def test_memory_content_with_raw_never_becomes_an_additional_user_turn(tmp_path)
     assert [record.evidence_id for record in bridge.requests[0].source_context.current] == [
         user.evidence_id
     ]
-    assert governance.list(user_id="local")[0].content == "用户偏好本地优先的记忆处理。"
+    assert (
+        governance.list(user_id="local")[0].content
+        == "The user prefers local-first memory processing."
+    )
 
 
 def test_conversation_order_is_decided_by_time_not_by_hash(tmp_path) -> None:
@@ -1185,10 +1213,11 @@ def test_conversation_order_is_decided_by_time_not_by_hash(tmp_path) -> None:
 
 
 def test_host_envelopes_and_non_person_user_turns_still_never_reach_hy(tmp_path) -> None:
-    """助手轮次放行之后，被挡的那两类必须仍旧被挡。
+    """After assistant turns are allowed through, the two blocked categories must stay blocked.
 
-    这里挡的是「冒充本人」的东西：harness 替人打的字、宿主塞进 user 角色的
-    系统提示。助手轮次从不冒充谁，所以它进来不影响这条边界。
+    What is blocked here is anything "impersonating the person": text the harness
+    types for them and the system prompts a host slips into the user role. Assistant turns never \
+impersonate anyone, so letting them in does not move this boundary.
     """
     stores = _setup(tmp_path)
     evidence, *_rest = stores
@@ -1197,7 +1226,7 @@ def test_host_envelopes_and_non_person_user_turns_still_never_reach_hy(tmp_path)
         message_id="person",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="真实问题",
+        content="Real question",
         created_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
     )
     assistant = _put(
@@ -1242,7 +1271,7 @@ def test_unavailable_hy_keeps_task_waiting_for_same_model_snapshot(tmp_path) -> 
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="记住这段对话。",
+        content="Remember this conversation.",
     )
     task = _task(tasks, profile, user)
 
@@ -1267,7 +1296,7 @@ def test_backfill_creates_native_tasks_for_all_conversations(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="第一段普通对话。",
+        content="First ordinary conversation.",
         conversation_id="conversation-1",
         content_kind=EvidenceContentKind.MEMORY_CONTENT,
     )
@@ -1276,7 +1305,7 @@ def test_backfill_creates_native_tasks_for_all_conversations(tmp_path) -> None:
         message_id="u2",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="第二段普通对话。",
+        content="Second ordinary conversation.",
         conversation_id="conversation-2",
         content_kind=EvidenceContentKind.MEMORY_CONTENT,
     )
@@ -1333,7 +1362,7 @@ def test_payment_failure_stops_profile_until_successful_probe_resumes_it(tmp_pat
         message_id="payment-first",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="第一段历史。",
+        content="First history segment.",
         conversation_id="payment-1",
     )
     second = _put(
@@ -1341,7 +1370,7 @@ def test_payment_failure_stops_profile_until_successful_probe_resumes_it(tmp_pat
         message_id="payment-second",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="第二段历史。",
+        content="Second history segment.",
         conversation_id="payment-2",
     )
     first_task = _task(tasks, profile, first)
@@ -1473,7 +1502,7 @@ def test_cold_start_prioritizes_all_apps_before_workspace(tmp_path) -> None:
         message_id="personal",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我是一名产品经理，关注长期个人偏好。",
+        content="I am a product manager, focused on long-term personal preferences.",
         conversation_id="personal-conversation",
     )
     workspace = _put(
@@ -1481,7 +1510,7 @@ def test_cold_start_prioritizes_all_apps_before_workspace(tmp_path) -> None:
         message_id="workspace",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="修 bug。",
+        content="Fix a bug.",
         conversation_id="workspace-conversation",
         workspace="workspace:v1:project",
     )
@@ -1523,7 +1552,7 @@ def test_rewritten_turn_does_not_leave_the_old_claim_confirmed(tmp_path) -> None
         message_id="edited-turn",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我平时用 Windows 开发。",
+        content="I usually develop on Windows.",
     )
     asyncio.run(
         _runner(
@@ -1533,7 +1562,7 @@ def test_rewritten_turn_does_not_leave_the_old_claim_confirmed(tmp_path) -> None
                 outputs=(
                     HyMemoryOutput(
                         memory_id="hy-windows",
-                        content="用户平时用 Windows 开发。",
+                        content="The user usually develops on Windows.",
                         layer="L0_BASIC_INFO",
                     ),
                 )
@@ -1546,7 +1575,7 @@ def test_rewritten_turn_does_not_leave_the_old_claim_confirmed(tmp_path) -> None
         message_id="edited-turn",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我平时用 macOS 开发。",
+        content="I usually develop on macOS.",
     )
     assert rewritten.revision > original.revision
 
@@ -1558,7 +1587,7 @@ def test_rewritten_turn_does_not_leave_the_old_claim_confirmed(tmp_path) -> None
                 outputs=(
                     HyMemoryOutput(
                         memory_id="hy-macos",
-                        content="用户平时用 macOS 开发。",
+                        content="The user usually develops on macOS.",
                         layer="L0_BASIC_INFO",
                     ),
                 )
@@ -1569,9 +1598,9 @@ def test_rewritten_turn_does_not_leave_the_old_claim_confirmed(tmp_path) -> None
     confirmed = {
         memory.content for memory in governance.list(user_id="local", status=MemoryStatus.CONFIRMED)
     }
-    assert "用户平时用 macOS 开发。" in confirmed
+    assert "The user usually develops on macOS." in confirmed
     # The user never said this once they had edited the turn.
-    assert "用户平时用 Windows 开发。" not in confirmed
+    assert "The user usually develops on Windows." not in confirmed
 
 
 def test_keychain_denial_leaves_extraction_waiting_not_running(tmp_path, monkeypatch) -> None:
@@ -1584,7 +1613,7 @@ def test_keychain_denial_leaves_extraction_waiting_not_running(tmp_path, monkeyp
         message_id="keychain-denied",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="请保留这句话。",
+        content="Please keep this sentence.",
     )
     task = _task(tasks, profile, seed)
 
@@ -1595,7 +1624,7 @@ def test_keychain_denial_leaves_extraction_waiting_not_running(tmp_path, monkeyp
     result = asyncio.run(_runner(tmp_path, stores, FakeBridge(outputs=())).run(task.task_id))
     assert result.status is MemoryTaskStatus.WAITING_FOR_MODEL
     assert result.last_error_code == "secure_storage_unavailable"
-    assert evidence.get(seed.evidence_id).verbatim == "请保留这句话。"
+    assert evidence.get(seed.evidence_id).verbatim == "Please keep this sentence."
 
 
 def test_cancelled_debounce_does_not_remove_the_replacement_task(tmp_path) -> None:
@@ -1605,7 +1634,7 @@ def test_cancelled_debounce_does_not_remove_the_replacement_task(tmp_path) -> No
         message_id="debounce",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="同一会话连续到达的消息。",
+        content="Messages arriving back to back in one conversation.",
     )
     bridge = FakeBridge(outputs=())
     supervisor = MemoryProcessingSupervisor(
@@ -1651,7 +1680,7 @@ def test_workspace_attribution_change_creates_a_new_ingest_task(tmp_path) -> Non
         message_id="workspace-later",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目里的长期决定。",
+        content="A long-standing decision in the project.",
     )
     supervisor = MemoryProcessingSupervisor(
         tasks=tasks,
@@ -1667,7 +1696,7 @@ def test_workspace_attribution_change_creates_a_new_ingest_task(tmp_path) -> Non
         message_id="workspace-later",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目里的长期决定。",
+        content="A long-standing decision in the project.",
         workspace="workspace:v1:project",
     )
     second = supervisor._enqueue_chunk((attributed,), profile)
@@ -1685,7 +1714,7 @@ def test_debounce_keeps_two_workspaces_with_one_conversation_id_apart(tmp_path) 
         message_id="debounce-a",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目 A 的消息。",
+        content="Message from project A.",
         conversation_id="same-conversation",
         workspace="workspace:v1:project-a",
     )
@@ -1694,7 +1723,7 @@ def test_debounce_keeps_two_workspaces_with_one_conversation_id_apart(tmp_path) 
         message_id="debounce-b",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目 B 的消息。",
+        content="Message from project B.",
         conversation_id="same-conversation",
         workspace="workspace:v1:project-b",
     )
@@ -1752,14 +1781,14 @@ def test_process_records_bounds_a_hung_model_call_by_the_profile_timeout(
         message_id="hang-1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="这个调用会挂住。",
+        content="This call will hang.",
     )
     reply = _put(
         evidence,
         message_id="hang-2",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="收到。",
+        content="Noted.",
     )
     with sqlite3.connect(tmp_path / "one-memory.sqlite3") as db:
         db.executescript(
@@ -1886,7 +1915,7 @@ def test_process_records_does_not_create_a_task_for_a_tool_only_delivery(tmp_pat
 def test_oversized_single_turn_has_persistent_semantic_segments_after_restart(tmp_path) -> None:
     stores = _setup(tmp_path)
     evidence, profiles, tasks, governance, secrets, _profile = stores
-    paragraphs = [f"第 {index} 段。" + (chr(65 + index) * 4_500) for index in range(3)]
+    paragraphs = [f"Paragraph {index}. " + (chr(65 + index) * 4_500) for index in range(3)]
     original = "\n\n".join(paragraphs)
     record = _put(
         evidence,
@@ -1900,7 +1929,7 @@ def test_oversized_single_turn_has_persistent_semantic_segments_after_restart(tm
         message_id="oversized-segmented-answer",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="已收到这份长内容。",
+        content="Received this long content.",
     )
     with sqlite3.connect(tasks.database_path) as connection, connection:
         connection.execute(
@@ -1956,7 +1985,11 @@ def test_oversized_single_turn_has_persistent_semantic_segments_after_restart(tm
 def test_oversized_single_turn_segments_are_each_processed(tmp_path) -> None:
     stores = _setup(tmp_path)
     evidence, profiles, tasks, governance, secrets, _profile = stores
-    original = ("第一段内容。" + "甲" * 7_000) + "\n\n" + ("第二段内容。" + "乙" * 7_000)
+    original = (
+        ("First section content. " + "x" * 7_000)
+        + "\n\n"
+        + ("Second section content. " + "y" * 7_000)
+    )
     record = _put(
         evidence,
         message_id="oversized-run",
@@ -1996,7 +2029,7 @@ def test_oversized_single_turn_segments_are_each_processed(tmp_path) -> None:
                 memories=(
                     HyMemoryOutput(
                         memory_id=f"segment-{len(self.requests)}",
-                        content=f"第 {len(self.requests)} 段已整理",
+                        content=f"Section {len(self.requests)} organized",
                         layer="L2_FACT",
                     ),
                 ),
@@ -2029,9 +2062,9 @@ def test_oversized_assistant_segments_keep_the_question_as_context(tmp_path) -> 
         message_id="segment-question",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="请整理下面这份很长的方案。",
+        content="Please organize this very long design below.",
     )
-    answer_text = ("方案第一部分。" + "甲" * 7_000) + "\n\n" + ("方案第二部分。" + "乙" * 7_000)
+    answer_text = ("Design part one. " + "x" * 7_000) + "\n\n" + ("Design part two. " + "y" * 7_000)
     answer = _put(
         evidence,
         message_id="segment-answer",
@@ -2071,11 +2104,11 @@ def test_semantic_search_uses_a_bridge_independent_from_active_writes(tmp_path) 
     snapshot = profiles.snapshot(profile.profile_id, profile.revision)
     write_bridge = supervisor._bridge(snapshot, None, tmp_path)
 
-    assert asyncio.run(supervisor.semantic_search("独立读取")) == ()
+    assert asyncio.run(supervisor.semantic_search("independent read")) == ()
     assert len(made) == 1
 
     asyncio.run(supervisor._prewarm_write_bridges(("cursor",)))  # noqa: SLF001
-    found = asyncio.run(supervisor.semantic_search("独立读取"))
+    found = asyncio.run(supervisor.semantic_search("independent read"))
 
     assert found == (("read-1", 0.9),)
     assert len(made) == 2
@@ -2090,14 +2123,14 @@ def test_completed_write_refreshes_the_prewarmed_semantic_read_bridge(tmp_path) 
         message_id="semantic-refresh",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="用户偏爱蓝莓。",
+        content="The user is fond of blueberries.",
     )
     answer = _put(
         evidence,
         message_id="semantic-refresh-answer",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="我记下了。",
+        content="Noted it down.",
     )
     with sqlite3.connect(tasks.database_path) as connection, connection:
         connection.execute(
@@ -2159,12 +2192,14 @@ def test_completed_write_refreshes_the_prewarmed_semantic_read_bridge(tmp_path) 
     async def exercise() -> None:
         await supervisor._prewarm_write_bridges(("workbuddy",))  # noqa: SLF001
         old_read = supervisor._read_bridges[(profile.profile_id, profile.revision)]
-        assert await supervisor.semantic_search("偏爱哪种蓝色小浆果") == ()
+        assert await supervisor.semantic_search("which small blue berry is preferred") == ()
 
         completed = await supervisor.process_records((record, answer))
 
         assert completed[0].status is MemoryTaskStatus.COMPLETED
-        assert await supervisor.semantic_search("偏爱哪种蓝色小浆果") == (("hy-memory-1", 0.9),)
+        assert await supervisor.semantic_search("which small blue berry is preferred") == (
+            ("hy-memory-1", 0.9),
+        )
         assert supervisor._read_bridges[(profile.profile_id, profile.revision)] is not old_read
         assert old_read.closed is True
 
@@ -2205,7 +2240,9 @@ def test_failed_semantic_read_refresh_keeps_the_ready_bridge(tmp_path) -> None:
         await supervisor._refresh_read_bridge(profile)  # noqa: SLF001
 
         assert supervisor._read_bridges[(profile.profile_id, profile.revision)] is old_read
-        assert await supervisor.semantic_search("偏爱哪种蓝色小浆果") == (("read-1", 0.9),)
+        assert await supervisor.semantic_search("which small blue berry is preferred") == (
+            ("read-1", 0.9),
+        )
         assert old_read.closed is False
         assert made[-1].closed is True
 
@@ -2289,11 +2326,11 @@ def test_background_read_refresh_does_not_rebuild_for_later_writes(tmp_path, mon
     async def exercise() -> None:
         nonlocal collection_generation
         await supervisor._prewarm_write_bridges(("workbuddy",))  # noqa: SLF001
-        assert await supervisor.semantic_search("首次写入") == ()
+        assert await supervisor.semantic_search("first write") == ()
         collection_generation = 1
         supervisor._request_read_bridge_refresh(profile)  # noqa: SLF001
         await asyncio.sleep(0.05)
-        assert await supervisor.semantic_search("首次写入") == (("memory-1", 0.9),)
+        assert await supervisor.semantic_search("first write") == (("memory-1", 0.9),)
         collection_generation = 2
         for _ in range(20):
             supervisor._request_read_bridge_refresh(profile)  # noqa: SLF001
@@ -2301,7 +2338,7 @@ def test_background_read_refresh_does_not_rebuild_for_later_writes(tmp_path, mon
 
         assert supervisor._read_bridge_generations[(profile.profile_id, profile.revision)] == 1
         assert len(made) == 3
-        assert await supervisor.semantic_search("后续写入") == (("memory-2", 0.9),)
+        assert await supervisor.semantic_search("later write") == (("memory-2", 0.9),)
         await supervisor.shutdown()
 
     asyncio.run(exercise())
@@ -2315,7 +2352,7 @@ def test_unknown_task_is_reconciled_from_exact_hy_output_without_model_retry(tmp
         message_id="unknown-reconcile",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="用户偏好每周日上午攀岩。",
+        content="The user prefers rock climbing on Sunday mornings.",
     )
     task = tasks.create(
         request_id="unknown-reconcile-request",
@@ -2354,7 +2391,7 @@ def test_unknown_task_is_reconciled_from_exact_hy_output_without_model_retry(tmp
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-recovered",
-                content="用户偏好每周日上午攀岩。",
+                content="The user prefers rock climbing on Sunday mornings.",
                 layer="L2_FACT",
                 owner="user",
                 evidence_ids=(record.evidence_id,),
@@ -2392,7 +2429,7 @@ def test_two_workspaces_with_one_conversation_id_prepare_apart(tmp_path) -> None
         message_id="same-user",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目 A 的决定。",
+        content="A decision in project A.",
         conversation_id="same-conversation",
         workspace="workspace:v1:project-a",
     )
@@ -2401,7 +2438,7 @@ def test_two_workspaces_with_one_conversation_id_prepare_apart(tmp_path) -> None
         message_id="same-reply",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="项目 A 已记录。",
+        content="Project A recorded.",
         conversation_id="same-conversation",
         workspace="workspace:v1:project-a",
     )
@@ -2410,7 +2447,7 @@ def test_two_workspaces_with_one_conversation_id_prepare_apart(tmp_path) -> None
         message_id="second-user",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目 B 的决定。",
+        content="A decision in project B.",
         conversation_id="same-conversation",
         workspace="workspace:v1:project-b",
     )
@@ -2419,7 +2456,7 @@ def test_two_workspaces_with_one_conversation_id_prepare_apart(tmp_path) -> None
         message_id="second-reply",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="项目 B 已记录。",
+        content="Project B recorded.",
         conversation_id="same-conversation",
         workspace="workspace:v1:project-b",
     )
@@ -2477,21 +2514,21 @@ def _growing_conversation(tmp_path):
         message_id="ask",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="记住这个决定。",
+        content="Remember this decision.",
     )
     first_reply = _put(
         evidence,
         message_id="reply-1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="好的，第一步。",
+        content="OK, step one.",
     )
     second_reply = _put(
         evidence,
         message_id="reply-2",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="第二步完成。",
+        content="Step two done.",
     )
     supervisor = MemoryProcessingSupervisor(
         tasks=tasks,
@@ -2570,7 +2607,7 @@ def test_import_waits_for_the_file_boundary_before_queuing_a_turn(tmp_path, oper
         message_id="user-1",
         role="user",
         written_by=WrittenBy.PERSON,
-        verbatim="把完整一轮对话沉淀成记忆。",
+        verbatim="Settle a full conversation turn into memory.",
         origin_meta={EvidenceOrigin.FILE: OriginMetadata(raw_meta={"file_key": file_key})},
     )
     assistant = EvidenceInput(
@@ -2579,7 +2616,7 @@ def test_import_waits_for_the_file_boundary_before_queuing_a_turn(tmp_path, oper
         message_id="assistant-1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        verbatim="会等到回答完整后再开始。",
+        verbatim="It will wait until the answer is complete before starting.",
         origin_meta={EvidenceOrigin.FILE: OriginMetadata(raw_meta={"file_key": file_key})},
     )
 
@@ -2697,8 +2734,8 @@ def test_live_import_waits_for_an_open_user_turn_to_receive_its_reply(
             return supervisor.enqueue_evidence(record)
 
         for scanned in (
-            event("user", "user", "先等我这轮回答完整。", "byte:1"),
-            event("assistant", "assistant", "现在这一轮完整了。", "byte:2"),
+            event("user", "user", "Wait until my turn is answered in full.", "byte:1"),
+            event("assistant", "assistant", "Now this turn is complete.", "byte:2"),
         ):
             job = jobs.create(user_id="local", source_id="cursor", operation="sync")
             completed = await ImportRunner(
@@ -2740,7 +2777,7 @@ def test_preview_empty_is_the_open_turn_contract_not_a_preview_regression(tmp_pa
         message_id="open-user",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="先记下这个计划。",
+        content="Note down this plan first.",
     )
     supervisor = MemoryProcessingSupervisor(
         tasks=tasks,
@@ -2763,7 +2800,7 @@ def test_preview_empty_is_the_open_turn_contract_not_a_preview_regression(tmp_pa
             message_id="closing-assistant",
             role="assistant",
             written_by=WrittenBy.AGENT,
-            content="收到，计划已记下。",
+            content="Noted, the plan is written down.",
         )
         created = supervisor.prepare_conversation(assistant)
         assert len(created) == 1
@@ -2788,7 +2825,7 @@ def test_digest_skips_scopes_whose_source_write_permission_is_withdrawn(tmp_path
         message_id="revoked-scope",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         conversation_id="revoked-conversation",
         workspace="workspace:v1:project",
     )
@@ -2839,7 +2876,7 @@ def test_digest_rechecks_revoked_source_after_the_supervisor_is_open(tmp_path) -
         message_id="real-revoked-scope",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="撤销之后不应再进入 digest。",
+        content="After revocation this must no longer enter digest.",
         conversation_id="real-revoked-conversation",
         workspace="workspace:v1:project",
     )
@@ -2892,7 +2929,7 @@ def test_frozen_harness_refuses_new_processing_before_a_task_or_model_call(tmp_p
         message_id="frozen-user",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="Harness Freeze 后不能创建新的记忆任务。",
+        content="After a Harness Freeze no new memory task may be created.",
         conversation_id="frozen-conversation",
         workspace="workspace:v1:project",
     )
@@ -2901,7 +2938,7 @@ def test_frozen_harness_refuses_new_processing_before_a_task_or_model_call(tmp_p
         message_id="frozen-reply",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="收到。",
+        content="Noted.",
         conversation_id="frozen-conversation",
         workspace="workspace:v1:project",
     )
@@ -2968,7 +3005,7 @@ def test_revoked_grant_refuses_new_processing(tmp_path) -> None:
         message_id="revoked-user",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="撤销后不能进入记忆。",
+        content="After revocation this must not enter memory.",
         conversation_id="revoked-conversation",
         workspace="workspace:v1:project",
     )
@@ -2977,7 +3014,7 @@ def test_revoked_grant_refuses_new_processing(tmp_path) -> None:
         message_id="revoked-reply",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="收到。",
+        content="Noted.",
         conversation_id="revoked-conversation",
         workspace="workspace:v1:project",
     )
@@ -3042,7 +3079,7 @@ def test_thawed_harness_processes_a_complete_turn(tmp_path) -> None:
         message_id="write-on-user",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="Harness Thaw 后应进入记忆流程。",
+        content="After a Harness Thaw this should enter the memory pipeline.",
         conversation_id="write-on-conversation",
     )
     reply = _put(
@@ -3050,7 +3087,7 @@ def test_thawed_harness_processes_a_complete_turn(tmp_path) -> None:
         message_id="write-on-reply",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="收到。",
+        content="Noted.",
         conversation_id="write-on-conversation",
     )
     callback_threads: list[int] = []
@@ -3063,7 +3100,7 @@ def test_thawed_harness_processes_a_complete_turn(tmp_path) -> None:
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-write-on",
-                content="Harness 已 Thaw。",
+                content="The Harness has thawed.",
                 layer="L2_FACT",
             ),
         )
@@ -3118,7 +3155,7 @@ def test_digest_targets_stable_scopes_and_skips_quarantined_conversations(
         message_id="workspace",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         conversation_id="workspace-conversation",
         workspace="workspace:v1:project",
     )
@@ -3127,7 +3164,7 @@ def test_digest_targets_stable_scopes_and_skips_quarantined_conversations(
         message_id="quarantined",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="尚未确定归属的对话。",
+        content="A conversation whose owner is not settled yet.",
         conversation_id="unknown-conversation",
     )
     imported_memory = _put(
@@ -3135,7 +3172,7 @@ def test_digest_targets_stable_scopes_and_skips_quarantined_conversations(
         message_id="imported-memory",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="用户偏好简洁的回答。",
+        content="The user prefers concise answers.",
         conversation_id="memory-conversation",
         content_kind=EvidenceContentKind.MEMORY_CONTENT,
     )
@@ -3144,7 +3181,7 @@ def test_digest_targets_stable_scopes_and_skips_quarantined_conversations(
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content=f"记忆 {index}",
+                content=f"memory {index}",
                 scopes=("all-apps",),
                 evidence_ids=(record.evidence_id,),
             ),
@@ -3308,7 +3345,7 @@ def _confirmed_from(governance, evidence_id: str, *, index: int = 0) -> None:
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content=f"记忆 {index}",
+            content=f"memory {index}",
             scopes=("workspace:v1:project",),
             evidence_ids=(evidence_id,),
         ),
@@ -3331,7 +3368,7 @@ def test_what_system_2_induces_is_written_down_rather_than_returned(tmp_path) ->
         message_id="m1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         workspace="workspace:v1:project",
     )
     _confirmed_from(governance, record.evidence_id)
@@ -3346,7 +3383,7 @@ def test_what_system_2_induces_is_written_down_rather_than_returned(tmp_path) ->
                 layer="l6_schema",
             ),
             # Relations and facts share the graph; only schemas are profile.
-            HyGraphNode(node_id="fact-1", content="一条普通事实。", layer="l2_fact"),
+            HyGraphNode(node_id="fact-1", content="An ordinary fact.", layer="l2_fact"),
         ),
     )
     supervisor = MemoryProcessingSupervisor(
@@ -3383,11 +3420,17 @@ def test_the_same_schema_is_not_written_twice_by_the_next_digest(tmp_path) -> No
         message_id="m1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         workspace="workspace:v1:project",
     )
     _confirmed_from(governance, record.evidence_id)
-    nodes = (HyGraphNode(node_id="schema-1", content="用户偏好可验证的结论。", layer="l6_schema"),)
+    nodes = (
+        HyGraphNode(
+            node_id="schema-1",
+            content="The user prefers verifiable conclusions.",
+            layer="l6_schema",
+        ),
+    )
     supervisor = MemoryProcessingSupervisor(
         tasks=tasks,
         profiles=profiles,
@@ -3418,11 +3461,11 @@ def test_a_schema_is_mirrored_under_its_node_id_even_when_another_memory_has_its
         message_id="m1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         workspace="workspace:v1:project",
     )
     _confirmed_from(governance, record.evidence_id)
-    text = "用户偏好可验证的结论。"
+    text = "The user prefers verifiable conclusions."
     as_person(governance).create(
         MemoryDraft(
             user_id="local",
@@ -3463,7 +3506,11 @@ def test_a_scope_with_no_local_evidence_left_records_no_schema(tmp_path) -> None
     bridge = FakeBridge(
         outputs=(),
         graph_nodes=(
-            HyGraphNode(node_id="schema-1", content="无从追溯的归纳。", layer="l6_schema"),
+            HyGraphNode(
+                node_id="schema-1",
+                content="An induction with nothing to trace it to.",
+                layer="l6_schema",
+            ),
         ),
     )
     bridge.stored_agent_ids = ("one-memory:scope:vanished",)
@@ -3491,7 +3538,7 @@ def test_digest_also_covers_scopes_only_hy_still_knows_about(tmp_path) -> None:
         message_id="workspace",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="项目范围内的事实。",
+        content="A fact inside the project scope.",
         conversation_id="workspace-conversation",
         workspace="workspace:v1:project",
     )
@@ -3499,7 +3546,7 @@ def test_digest_also_covers_scopes_only_hy_still_knows_about(tmp_path) -> None:
         MemoryDraft(
             user_id="local",
             kind=MemoryKind.CHAT,
-            content="记忆",
+            content="memory",
             scopes=("all-apps",),
             evidence_ids=(workspace.evidence_id,),
         ),
@@ -3541,7 +3588,7 @@ def test_host_injected_text_is_not_treated_as_the_person_speaking(tmp_path) -> N
         message_id="prefixed",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="<system_notification>我喜欢深色主题。</system_notification>",
+        content="<system_notification>I like the dark theme.</system_notification>",
     )
     # The envelope does not have to start the turn to be an envelope.
     wrapped = _put(
@@ -3551,7 +3598,7 @@ def test_host_injected_text_is_not_treated_as_the_person_speaking(tmp_path) -> N
         written_by=WrittenBy.PERSON,
         content=(
             "<timestamp>2026-09-04</timestamp>\n"
-            "<system_notification>我喜欢深色主题。</system_notification>"
+            "<system_notification>I like the dark theme.</system_notification>"
         ),
     )
     # A harness may also hand us its raw request payload.
@@ -3560,14 +3607,14 @@ def test_host_injected_text_is_not_treated_as_the_person_speaking(tmp_path) -> N
         message_id="payload",
         role="user",
         written_by=WrittenBy.PERSON,
-        content='{"request_id": "r-1", "steps": [{"text": "我喜欢深色主题。"}]}',
+        content='{"request_id": "r-1", "steps": [{"text": "I like the dark theme."}]}',
     )
     spoken = _put(
         evidence,
         message_id="spoken",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我喜欢深色主题。",
+        content="I like the dark theme.",
     )
     assert _is_hy_input_turn(spoken)
     assert not any(_is_hy_input_turn(record) for record in (prefixed, wrapped, payload))
@@ -3586,14 +3633,16 @@ def test_harness_instruction_blocks_never_reach_extraction(tmp_path) -> None:
         message_id="agents-md",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="# AGENTS.md instructions\n\n统一用 axios 封装，不用 fetch 裸调。",
+        content=(
+            "# AGENTS.md instructions\n\nUse the axios wrapper everywhere, no bare fetch calls."
+        ),
     )
     spoken = _put(
         evidence,
         message_id="spoken",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我喜欢深色主题。",
+        content="I like the dark theme.",
     )
 
     assert _conversation_chunks([injected]) == []
@@ -3638,7 +3687,7 @@ def test_the_pipeline_leaves_the_loop_free_to_answer(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我更希望记忆处理都在本地完成。",
+        content="I would rather all memory processing happen locally.",
     )
     task = _task(tasks, profile, record)
     # A fifth of a second per call, so a dozen of them on the loop is seconds
@@ -3653,9 +3702,13 @@ def test_the_pipeline_leaves_the_loop_free_to_answer(tmp_path) -> None:
         data_dir=tmp_path,
         bridge_factory=lambda _profile, _secret, _data_dir: FakeBridge(
             outputs=(
-                HyMemoryOutput(memory_id="m1", content="偏好本地处理。", layer="L2_FACT"),
-                HyMemoryOutput(memory_id="m2", content="偏好可追溯。", layer="L2_FACT"),
-                HyMemoryOutput(memory_id="m3", content="偏好一步完成。", layer="L2_FACT"),
+                HyMemoryOutput(
+                    memory_id="m1", content="Prefers local processing.", layer="L2_FACT"
+                ),
+                HyMemoryOutput(memory_id="m2", content="Prefers traceability.", layer="L2_FACT"),
+                HyMemoryOutput(
+                    memory_id="m3", content="Prefers one-step completion.", layer="L2_FACT"
+                ),
             )
         ),
     )
@@ -3687,7 +3740,7 @@ def test_the_pipeline_leaves_the_loop_free_to_answer(tmp_path) -> None:
     # Over a dozen calls at a fifth of a second each: on the loop that is
     # seconds, so the gap between pass and fail is an order of magnitude and
     # this does not become a test of how busy the machine is.
-    assert longest < delay * 3, f"事件循环被堵住 {longest:.3f}s"
+    assert longest < delay * 3, f"the event loop was blocked for {longest:.3f}s"
 
 
 def test_live_sync_enqueueing_leaves_the_loop_free_to_answer(tmp_path) -> None:
@@ -3704,7 +3757,7 @@ def test_live_sync_enqueueing_leaves_the_loop_free_to_answer(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="我希望同步是实时的。",
+        content="I want syncing to be real time.",
         conversation_id="conversation-1",
     )
     _put(
@@ -3712,7 +3765,7 @@ def test_live_sync_enqueueing_leaves_the_loop_free_to_answer(tmp_path) -> None:
         message_id="a1",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="同步会保持实时。",
+        content="Sync will stay real time.",
         conversation_id="conversation-1",
     )
     delay = 0.2
@@ -3765,8 +3818,10 @@ def test_live_sync_enqueueing_leaves_the_loop_free_to_answer(tmp_path) -> None:
 
     # It really enqueued, so this cannot pass by doing nothing.
     assert created == 1
-    assert ticks > 1, "心跳没有真的在跑"
-    assert longest < delay * 2, f"实时入队期间循环被堵住 {longest:.3f}s"
+    assert ticks > 1, "the heartbeat was not actually running"
+    assert longest < delay * 2, (
+        f"the loop was blocked for {longest:.3f}s while real-time enqueueing"
+    )
 
 
 def test_work_left_unfinished_by_the_last_run_is_taken_up_again(tmp_path) -> None:
@@ -3784,7 +3839,7 @@ def test_work_left_unfinished_by_the_last_run_is_taken_up_again(tmp_path) -> Non
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="上一轮没跑完的对话。",
+        content="A conversation the previous run left unfinished.",
         conversation_id="conversation-1",
         content_kind=EvidenceContentKind.MEMORY_CONTENT,
     )
@@ -3834,7 +3889,8 @@ def test_work_left_unfinished_by_the_last_run_is_taken_up_again(tmp_path) -> Non
 
 
 def test_hy_topic_tags_reach_the_library(tmp_path) -> None:
-    """HY 打的主题标签要一路走到库里，而不是在边界上被丢掉。"""
+    """Topic tags set by HY must travel all the way into the library, not be dropped at the \
+boundary."""
     stores = _setup(tmp_path)
     evidence, _profiles, tasks, governance, _secrets, profile = stores
     user = _put(
@@ -3842,22 +3898,22 @@ def test_hy_topic_tags_reach_the_library(tmp_path) -> None:
         message_id="u1",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="周末不排评审会。",
+        content="No review meetings on weekends.",
     )
     task = _task(tasks, profile, user)
     bridge = FakeBridge(
         outputs=(
             HyMemoryOutput(
                 memory_id="hy-1",
-                content="用户周末不安排评审会。",
-                tags=("排期", "工作习惯"),
+                content="The user does not schedule review meetings on weekends.",
+                tags=("scheduling", "work habits"),
             ),
         )
     )
 
     asyncio.run(_runner(tmp_path, stores, bridge).run(task.task_id))
 
-    assert governance.list(user_id="local")[0].tags == ("排期", "工作习惯")
+    assert governance.list(user_id="local")[0].tags == ("scheduling", "work habits")
 
 
 class _GatedDigestBridge(FakeBridge):
@@ -4027,7 +4083,7 @@ def test_a_task_past_its_budget_surfaces_as_hy_memory_timeout(tmp_path) -> None:
         message_id="u-budget",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="预算测试的一句话。",
+        content="One sentence for the budget test.",
         conversation_id="conversation-budget",
     )
     task = _task(tasks, profile, record)
@@ -4063,7 +4119,7 @@ def test_without_a_budget_a_slow_task_is_not_cut_off(tmp_path) -> None:
         message_id="u-budget",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="预算测试的一句话。",
+        content="One sentence for the budget test.",
         conversation_id="conversation-budget",
     )
     task = _task(tasks, profile, record)
@@ -4097,7 +4153,7 @@ def test_a_timed_out_task_becomes_unknown_and_is_not_left_running(tmp_path) -> N
         message_id="u-timeout",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="超时测试的一句话。",
+        content="One sentence for the timeout test.",
         conversation_id="conversation-timeout",
     )
     task = _task(tasks, profile, record)
@@ -4133,7 +4189,7 @@ def test_client_initialization_failure_retries_without_marking_hy_invoked(tmp_pa
         message_id="init-retry",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="初始化失败不应变成结果未知。",
+        content="An initialization failure must not become an unknown outcome.",
         conversation_id="conversation-init-retry",
     )
     task = _task(tasks, profile, record)
@@ -4181,7 +4237,7 @@ def test_binding_change_before_hy_is_cancelled_for_immediate_replacement(tmp_pat
         message_id="binding-replacement",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="开关切换后应使用最新授权重新整理。",
+        content="After the switch flips, organize again with the newest authorization.",
         conversation_id="binding-replacement",
     )
     task = _task(tasks, profile, record)
@@ -4234,7 +4290,7 @@ def test_runtime_maintenance_recovers_an_orphan_while_the_queue_is_idle(
         message_id="orphan-running",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="这条任务的 worker 已经消失。",
+        content="The worker for this task has already disappeared.",
         conversation_id="orphan-running",
     )
     task = _task(tasks, profile, record)
@@ -4272,7 +4328,7 @@ def test_runtime_maintenance_does_not_reclaim_a_direct_durable_task(tmp_path, mo
         message_id="durable-running",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="这条直接队列任务仍由当前进程执行。",
+        content="This direct-queue task is still executed by the current process.",
         conversation_id="durable-running",
     )
     answer = _put(
@@ -4280,7 +4336,7 @@ def test_runtime_maintenance_does_not_reclaim_a_direct_durable_task(tmp_path, mo
         message_id="durable-running-answer",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="开始执行。",
+        content="Starting execution.",
         conversation_id="durable-running",
     )
     entered = asyncio.Event()
@@ -4338,7 +4394,7 @@ def test_second_supervisor_does_not_reclaim_a_direct_task_owned_by_the_first(
         message_id="durable-running-cross-supervisor",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="这条直接队列任务由另一个 supervisor 执行。",
+        content="This direct-queue task is executed by another supervisor.",
         conversation_id="durable-running-cross-supervisor",
     )
     answer = _put(
@@ -4346,7 +4402,7 @@ def test_second_supervisor_does_not_reclaim_a_direct_task_owned_by_the_first(
         message_id="durable-running-cross-supervisor-answer",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="开始执行。",
+        content="Starting execution.",
         conversation_id="durable-running-cross-supervisor",
     )
     entered = asyncio.Event()
@@ -4418,7 +4474,7 @@ def test_policy_refusals_are_counted_apart_from_real_failures(tmp_path) -> None:
         message_id="u-policy",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="策略失效测试的一句话。",
+        content="One sentence for the stale-policy test.",
         conversation_id="conversation-policy",
     )
     task = _task(tasks, profile, record)
@@ -4444,7 +4500,7 @@ def test_a_real_failure_is_not_counted_as_a_policy_refusal(tmp_path) -> None:
         message_id="u-real",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="真实失败测试的一句话。",
+        content="One sentence for the real-failure test.",
         conversation_id="conversation-real",
     )
     task = _task(tasks, profile, record)

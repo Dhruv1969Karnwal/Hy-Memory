@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-search() / async_search() 的 scene 参数 + queries-rewrite 路由测试。
+Routing tests for the scene parameter and queries-rewrite in search() / async_search().
 
-覆盖三分支：
-  1) scene 显式 ("coding"|"chat") → 不调 LLM
-  2) search_mode=default + 没 scene → 固定 chat/normal，零 LLM
-  3) search_mode=agentic + 没 scene → 三分类 + query rewrite
+Covers the three branches:
+  1) Explicit scene ("coding"|"chat") -> no LLM call
+  2) search_mode=default + no scene -> fixed chat/normal, zero LLM
+  3) search_mode=agentic + no scene -> three-way classification + query rewrite
 
-外加：
-  - LLM 失败 / 解析失败 → fail-safe 走 chat
-  - scene 非法值 → ValueError
-  - scene=coding 但 coding.enable=False → fall back chat
-  - classify_and_rewrite_queries 单元测试
+Plus:
+  - LLM failure / parse failure -> fail-safe falls back to chat
+  - Invalid scene value -> ValueError
+  - scene=coding but coding.enable=False -> falls back to chat
+  - Unit tests for classify_and_rewrite_queries
 """
 
 import asyncio
@@ -23,36 +23,36 @@ from tests.coding._helpers import MockLLMProvider, FailingLLMProvider
 
 
 # ================================================================
-# Phase 1: classify_and_rewrite_queries 单元测试（不需要真实 client）
+# Phase 1: unit tests for classify_and_rewrite_queries (no real client needed)
 # ================================================================
 
 class TestClassifyAndRewrite:
 
     def test_coding_with_rewrite(self):
         async def _run():
-            llm = MockLLMProvider("1\n如何把 hy_memory 项目发布到私有包索引")
+            llm = MockLLMProvider("1\nHow do I publish the hy_memory project to a private package index")
             result = await classify_and_rewrite_queries(
-                ["怎么发布", "用 twine 还是手动？", "我说的是发布到私有包索引"],
+                ["How do I publish it", "With twine or manually?", "I mean publishing to a private package index"],
                 llm,
             )
             assert result["ok"] is True
             assert result["is_coding"] is True
-            assert result["rewrite_query"] == "如何把 hy_memory 项目发布到私有包索引"
+            assert result["rewrite_query"] == "How do I publish the hy_memory project to a private package index"
         asyncio.run(_run())
 
     def test_chat_with_rewrite(self):
         async def _run():
-            llm = MockLLMProvider("0\n用户最喜欢什么颜色")
+            llm = MockLLMProvider("0\nWhat is the user's favorite color")
             result = await classify_and_rewrite_queries(
-                ["你喜欢什么颜色", "我呢"], llm,
+                ["What is your favorite color", "And mine?"], llm,
             )
             assert result["ok"] is True
             assert result["is_coding"] is False
-            assert result["rewrite_query"] == "用户最喜欢什么颜色"
+            assert result["rewrite_query"] == "What is the user's favorite color"
         asyncio.run(_run())
 
     def test_no_rewrite_keeps_target(self):
-        """LLM 返回 0/1 但没给 rewrite → 用原 target"""
+        """LLM returns 0/1 but no rewrite -> the original target is used"""
         async def _run():
             llm = MockLLMProvider("1")
             result = await classify_and_rewrite_queries(["foo"], llm)
@@ -62,7 +62,7 @@ class TestClassifyAndRewrite:
         asyncio.run(_run())
 
     def test_unrecognized_head_falls_back(self):
-        """LLM 输出不是 0/1 → ok=False 但仍给 rewrite"""
+        """LLM output is not 0/1 -> ok=False but the rewrite is still returned"""
         async def _run():
             llm = MockLLMProvider("maybe\nthe rewrite")
             result = await classify_and_rewrite_queries(["foo"], llm)
@@ -98,13 +98,13 @@ class TestClassifyAndRewrite:
 
 
 # ================================================================
-# Phase 2: scene 参数路由 — 用最小 SimpleNamespace 模拟 client，
-# 直接覆盖 async_search 入口的路由逻辑（不依赖完整 client init）
+# Phase 2: scene parameter routing -- a minimal SimpleNamespace stand-in client,
+# covering the routing logic at the async_search entry directly (no full client init)
 # ================================================================
 #
-# 此处复用现有 search_ctx fixture（含真实 store + mock embed）；scene 路由
-# 在 client.async_search 顶部，store 是否被实际调用由我们在 mock client 中
-# 短路掉。
+# This reuses the existing search_ctx fixture (real store + mock embed); the scene routing
+# lives at the top of client.async_search, and whether the store is actually called is
+# short-circuited by us inside the mock client.
 # ================================================================
 
 import time
@@ -119,7 +119,7 @@ from hy_memory.coding.types import CodingMemory
 
 @pytest.fixture
 async def search_ctx_with_llm(tmp_data_dir, mock_embed):
-    """复用 test_search_e2e 的 ctx 思路：真实 store + mock embed + 可注入 mock LLM"""
+    """Reuses the test_search_e2e ctx idea: real store + mock embed + injectable mock LLM"""
     import os, uuid
     from hy_memory.config import MemoryConfig
     from hy_memory.coding.store import CodingMemoryStore
@@ -136,32 +136,32 @@ async def search_ctx_with_llm(tmp_data_dir, mock_embed):
     store = CodingMemoryStore(cfg, embed_service=mock_embed)
     await store.initialize()
 
-    # mock client-like ns（覆盖 async_search 用到的字段）
+    # Mock client-like namespace (covers the fields async_search uses)
     ns = SimpleNamespace(
         _config=cfg,
         _embed_service=mock_embed,
         _coding_store=store,
-        _coding_writer=object(),  # 占位
+        _coding_writer=object(),  # Placeholder
         _coding_llm_provider=None,
         _coding_init_lock=asyncio.Lock(),
-        _history_store=None,        # 用于 record_search
+        _history_store=None,        # Used by record_search
         _enable_history_record=False,
         _build_isolation_key=lambda u, a: f"{u}:{a}",
     )
 
-    # 把 HyMemoryClient._search_coding 当 self=ns 来用
-    # 收 **kwargs：这里只是把 self 绑成 ns，阈值类参数原样透传，
-    # 以后再加新的不用跟着改
+    # Use HyMemoryClient._search_coding with self bound to ns
+    # Accepts **kwargs: only self is bound to ns here, threshold-like args pass through,
+    # so new ones added later need no change here
     async def _search_coding_bound(target_query, **kw):
         return await HyMemoryClient._search_coding(ns, target_query=target_query, **kw)
     ns._search_coding = _search_coding_bound
 
-    # 短路 chat 路径需要的内部 reader：返回 fixed 空结果
+    # Short-circuit the internal reader the chat path needs: return a fixed empty result
     async def _stub_get_coding_writer():
         return ns._coding_writer
     ns._get_coding_writer = _stub_get_coding_writer
 
-    # 短路 chat 路径：直接返回空 memories（因为我们这里只测路由是否走对）
+    # Short-circuit the chat path: return empty memories (only the routing is tested here)
     async def _stub_chat_search(read_req):
         return type("Resp", (), {
             "memories": [], "total": 0, "elapsed_ms": 1.0,
@@ -169,9 +169,9 @@ async def search_ctx_with_llm(tmp_data_dir, mock_embed):
 
     ns._reader = SimpleNamespace(read=_stub_chat_search)
 
-    # async_search 现在只是薄壳：设置 embed_override contextvar 后转发给
-    # _async_search_impl（真实实现）。SimpleNamespace 上必须挂这个方法，
-    # 否则壳转发时报 AttributeError。绑定成 bound method 形式。
+    # async_search is now a thin shell: it sets the embed_override contextvar and forwards
+    # to _async_search_impl (the real implementation). The SimpleNamespace must expose it,
+    # otherwise forwarding raises AttributeError. Bind it in bound-method form.
     ns._async_search_impl = HyMemoryClient._async_search_impl.__get__(ns, type(ns))
 
     yield ns
@@ -180,28 +180,28 @@ async def search_ctx_with_llm(tmp_data_dir, mock_embed):
 
 @pytest.mark.asyncio
 class TestSceneRouting:
-    """async_search 的 scene/queries/query 三分支路由"""
+    """Three-branch routing over scene/queries/query in async_search"""
 
-    # async_search 被 _route_to_internal_loop 装饰；测试时直接调原函数
+    # async_search is decorated by _route_to_internal_loop; tests call the raw function
     _async_search = staticmethod(HyMemoryClient.async_search.__wrapped__)
 
     async def _seed_coding_memory(self, ns):
         await ns._coding_store.insert(CodingMemory(
-            experience_id="e_pub", user_id="u1", task="发布到私有包索引",
+            experience_id="e_pub", user_id="u1", task="Publish to a private package index",
             search_keys=["twine upload"], solution="...", confidence=0.9,
         ))
 
     async def test_explicit_scene_coding_no_llm(self, search_ctx_with_llm):
-        """scene='productivity' 显式 + 单 query → 走 coding 路径，不调 LLM"""
+        """Explicit scene='productivity' + single query -> coding path, no LLM call"""
         ns = search_ctx_with_llm
         await self._seed_coding_memory(ns)
-        # 注入 LLM —— 如果被调，会留 calls 记录
+        # Inject an LLM -- if it gets called, calls records it
         sentinel_llm = MockLLMProvider("0\nshould not be called")
         ns._coding_llm_provider = sentinel_llm
 
         resp = await self._async_search(
             ns,
-            query="发布到私有包索引",
+            query="Publish to a private package index",
             scene="productivity",
             user_ids=["u1"],
             workspace_id=None, branch=None,
@@ -210,38 +210,38 @@ class TestSceneRouting:
         assert resp["scene"] == "productivity"
         assert "facts" in resp
         assert "experiences" in resp
-        # LLM 不应被调
+        # The LLM must not be called
         assert len(sentinel_llm.calls) == 0
 
     async def test_explicit_scene_chat_no_llm(self, search_ctx_with_llm):
-        """scene='normal' 显式 + 多 queries → 走 chat 路径，不调 LLM（即使 queries 多条）"""
+        """Explicit scene='normal' + multiple queries -> chat path, no LLM call (even with several queries)"""
         ns = search_ctx_with_llm
         sentinel_llm = MockLLMProvider("1\nshould not be called")
         ns._coding_llm_provider = sentinel_llm
 
-        # chat 路径需要 _reader.read；让它跑通
-        # 直接 mock async_search 结尾依赖，模拟空结果走完
-        # 这里只验证不进 coding 分支 + LLM 没被调
+        # The chat path needs _reader.read; let it run through
+        # Mock the tail dependencies of async_search to finish with an empty result
+        # Only verifying that the coding branch is skipped and the LLM stays uncalled
         try:
             resp = await self._async_search(
                 ns,
-                queries=["a", "b", "你帮我发布一下"],
+                queries=["a", "b", "Please publish it for me"],
                 scene="normal",
                 user_ids=["u1"],
             )
-            # 走到 chat 分支会需要更多 client 内部依赖；我们这里用 try 兜底，
-            # 重点验证 LLM 没被调（短路了 LLM）
+            # The chat branch needs more client internals; the try block is a fallback,
+            # the point is that the LLM stays uncalled (short-circuited)
         except Exception:
             pass
-        assert len(sentinel_llm.calls) == 0  # ← 关键断言
+        assert len(sentinel_llm.calls) == 0  # <- key assertion
 
     async def test_default_single_query_no_llm(self, search_ctx_with_llm):
-        """默认 light search：scene=None + 单 query 固定 normal，零 LLM。"""
+        """Default light search: scene=None + single query is fixed normal, zero LLM."""
         ns = search_ctx_with_llm
         sentinel = MockLLMProvider('{"scene":"working"}')
         ns._coding_llm_provider = sentinel
         try:
-            await self._async_search(ns, query="发布到私有包索引", user_ids=["u1"])
+            await self._async_search(ns, query="Publish to a private package index", user_ids=["u1"])
         except Exception:
             pass
         assert len(sentinel.calls) == 0
@@ -249,7 +249,7 @@ class TestSceneRouting:
     async def test_default_multi_queries_keep_previous_rewrite_logic(self, search_ctx_with_llm):
         ns = search_ctx_with_llm
         ns._config.llm.enable_query_rewrite = True
-        llm = MockLLMProvider("coding\n修复 auth.py\nSINCE: NONE")
+        llm = MockLLMProvider("coding\nFix auth.py\nSINCE: NONE")
         ns._coding_llm_provider = llm
         seen = {}
 
@@ -264,11 +264,11 @@ class TestSceneRouting:
 
         ns._search_coding = _capture
         await self._async_search(
-            ns, queries=["auth.py 报错", "修一下"], user_ids=["u1"],
+            ns, queries=["auth.py errors", "Fix it"], user_ids=["u1"],
         )
         assert len(llm.calls) == 1
         assert seen["variant"] == "coding"
-        assert seen["query"] == "修复 auth.py"
+        assert seen["query"] == "Fix auth.py"
 
     async def test_default_multi_queries_with_features_disabled_no_llm(self, search_ctx_with_llm):
         ns = search_ctx_with_llm
@@ -278,34 +278,34 @@ class TestSceneRouting:
         ns._coding_llm_provider = sentinel
         try:
             await self._async_search(
-                ns, queries=["上下文", "目标问题"], user_ids=["u1"],
+                ns, queries=["Context", "Target question"], user_ids=["u1"],
             )
         except Exception:
             pass
         assert len(sentinel.calls) == 0
 
     async def test_no_scene_multi_queries_calls_llm_rewrite_used(self, search_ctx_with_llm):
-        """没 scene + 多 queries → 调 LLM；若 is_coding=1 + 有 rewrite，effective query = rewrite"""
+        """No scene + multiple queries -> LLM called; is_coding=1 + rewrite -> effective query = rewrite"""
         ns = search_ctx_with_llm
         await self._seed_coding_memory(ns)
-        # LLM 返回 1 + rewrite
-        llm = MockLLMProvider("1\n如何发布到私有包索引（改写后）")
+        # The LLM returns 1 + a rewrite
+        llm = MockLLMProvider("1\nHow to publish to a private package index (rewritten)")
         ns._coding_llm_provider = llm
 
         resp = await self._async_search(
             ns,
-            queries=["发布", "用 twine？", "我说的是私有包索引"],
+            queries=["Publish it", "With twine?", "I mean the private package index"],
             user_ids=["u1"],
             workspace_id=None, branch=None,
             limit=10, min_score=0.0,
         )
         assert resp["scene"] == "productivity"
-        assert len(llm.calls) == 1  # 调了一次 LLM
+        assert len(llm.calls) == 1  # The LLM was called once
 
     async def test_no_scene_auto_coding_uses_coding_variant(self, search_ctx_with_llm):
         ns = search_ctx_with_llm
         ns._coding_llm_provider = MockLLMProvider(
-            "coding\n修复 auth.py 的 traceback"
+            "coding\nFix the traceback in auth.py"
         )
         seen = {}
 
@@ -320,13 +320,13 @@ class TestSceneRouting:
         ns._search_coding = _capture
         await self._async_search(
             ns,
-            queries=["auth.py 报错", "帮我修掉这个 traceback"],
+            queries=["auth.py errors", "Help me fix this traceback"],
             user_ids=["u1"],
         )
         assert seen["variant"] == "coding"
 
     async def test_no_scene_multi_queries_chat_classification(self, search_ctx_with_llm):
-        """没 scene + 多 queries + LLM 判 chat → 走 chat 路径"""
+        """No scene + multiple queries + LLM classifies chat -> chat path"""
         ns = search_ctx_with_llm
         llm = MockLLMProvider("0\nrewrite for chat")
         ns._coding_llm_provider = llm
@@ -334,31 +334,31 @@ class TestSceneRouting:
         try:
             await self._async_search(
                 ns,
-                queries=["你喜欢", "什么颜色", "猫还是狗"],
+                queries=["You like", "what color", "cats or dogs"],
                 user_ids=["u1"],
             )
         except Exception:
             pass
-        # LLM 被调 1 次
+        # The LLM was called once
         assert len(llm.calls) == 1
 
     async def test_no_scene_llm_failure_falls_back_chat(self, search_ctx_with_llm):
-        """没 scene + 多 queries + LLM 失败 → fail-safe 走 chat"""
+        """No scene + multiple queries + LLM failure -> fail-safe chat path"""
         ns = search_ctx_with_llm
         ns._coding_llm_provider = FailingLLMProvider()
 
         try:
             await self._async_search(
                 ns,
-                queries=["debug", "我那个错"],
+                queries=["debug", "my error"],
                 user_ids=["u1"],
             )
         except Exception:
             pass
-        # 没异常向上抛即可（fail-safe）
+        # No exception may propagate upwards (fail-safe)
 
     async def test_invalid_scene_raises(self, search_ctx_with_llm):
-        """scene 非法值 → ValueError"""
+        """Invalid scene value -> ValueError"""
         ns = search_ctx_with_llm
         with pytest.raises(ValueError, match="scene must be"):
             await self._async_search(
@@ -376,7 +376,7 @@ class TestSceneRouting:
             )
 
     async def test_explicit_coding_but_disabled_falls_back(self, search_ctx_with_llm):
-        """scene='productivity' 但 config.coding.enable=False → fall back chat"""
+        """scene='productivity' but config.coding.enable=False -> falls back to chat"""
         ns = search_ctx_with_llm
         ns._config.coding.enable = False
         sentinel_llm = MockLLMProvider("0\n")
@@ -391,60 +391,60 @@ class TestSceneRouting:
             )
         except Exception:
             pass
-        # 即使 scene='productivity'，coding 关闭时应该回退 chat（不会调 LLM）
+        # Even with scene='productivity', coding off must fall back to chat (no LLM call)
         assert len(sentinel_llm.calls) == 0
 
 
 @pytest.mark.asyncio
 class TestRequestIdPassthrough:
-    """search()/async_search() 的 request_id：传入则复用，不传/空白则自生成。"""
+    """request_id in search()/async_search(): reused when passed, generated when missing or blank."""
 
     _async_search = staticmethod(HyMemoryClient.async_search.__wrapped__)
 
     async def _seed_coding_memory(self, ns):
         await ns._coding_store.insert(CodingMemory(
-            experience_id="m_pub", user_id="u1", task="发布到私有包索引",
+            experience_id="m_pub", user_id="u1", task="Publish to a private package index",
             search_keys=["twine upload"], solution="...",
             confidence=0.9,
         ))
 
     async def test_explicit_request_id_reused(self, search_ctx_with_llm):
-        """传入 request_id → 原样出现在返回结果里"""
+        """A passed-in request_id shows up unchanged in the result"""
         ns = search_ctx_with_llm
         await self._seed_coding_memory(ns)
 
         resp = await self._async_search(
             ns,
-            query="发布到私有包索引",
+            query="Publish to a private package index",
             scene="productivity",
             user_ids=["u1"],
-            request_id="app-预生成-req-123",
+            request_id="app-pregenerated-req-123",
         )
-        assert resp["request_id"] == "app-预生成-req-123"
+        assert resp["request_id"] == "app-pregenerated-req-123"
 
     async def test_missing_request_id_autogenerated(self, search_ctx_with_llm):
-        """不传 request_id → SDK 自生成一个合法 uuid"""
+        """No request_id -> the SDK generates a valid uuid itself"""
         ns = search_ctx_with_llm
         await self._seed_coding_memory(ns)
 
         resp = await self._async_search(
             ns,
-            query="发布到私有包索引",
+            query="Publish to a private package index",
             scene="productivity",
             user_ids=["u1"],
         )
         assert resp["request_id"]
-        uuid.UUID(resp["request_id"])  # 不抛异常即为合法 uuid
+        uuid.UUID(resp["request_id"])  # No exception means it is a valid uuid
 
     async def test_blank_request_id_autogenerated(self, search_ctx_with_llm):
-        """空白 request_id（空串 / 纯空格）→ 视为未传，自生成"""
+        """A blank request_id (empty string / spaces only) is treated as absent and regenerated"""
         ns = search_ctx_with_llm
         await self._seed_coding_memory(ns)
 
         for blank in ("", "   "):
             resp = await self._async_search(
                 ns,
-                query="发布到私有包索引",
+                query="Publish to a private package index",
                 scene="productivity",
                 user_ids=["u1"],
                 request_id=blank,
@@ -453,28 +453,28 @@ class TestRequestIdPassthrough:
             uuid.UUID(resp["request_id"])
 
     async def test_each_call_without_request_id_gets_distinct_id(self, search_ctx_with_llm):
-        """不同调用各自生成不同的 request_id"""
+        """Separate calls each generate a different request_id"""
         ns = search_ctx_with_llm
         await self._seed_coding_memory(ns)
 
         resp1 = await self._async_search(
-            ns, query="发布到私有包索引", scene="productivity", user_ids=["u1"],
+            ns, query="Publish to a private package index", scene="productivity", user_ids=["u1"],
         )
         resp2 = await self._async_search(
-            ns, query="发布到私有包索引", scene="productivity", user_ids=["u1"],
+            ns, query="Publish to a private package index", scene="productivity", user_ids=["u1"],
         )
         assert resp1["request_id"] != resp2["request_id"]
 
 
 @pytest.mark.asyncio
 class TestQueryRewriteRouting:
-    """search_mode=agentic 的 query rewrite 与 working memory 组合路由。"""
+    """Combined routing of query rewrite and working memory under search_mode=agentic."""
 
     _async_search = staticmethod(HyMemoryClient.async_search.__wrapped__)
 
     async def test_agentic_single_query_classifies_and_rewrites(self, search_ctx_with_llm):
         ns = search_ctx_with_llm
-        llm = MockLLMProvider("coding\n修复 auth.py 的异常\nSINCE: NONE")
+        llm = MockLLMProvider("coding\nFix the exception in auth.py\nSINCE: NONE")
         ns._coding_llm_provider = llm
         seen = {}
 
@@ -489,17 +489,17 @@ class TestQueryRewriteRouting:
 
         ns._search_coding = _capture
         await self._async_search(
-            ns, query="修一下这个异常", search_mode="agentic", user_ids=["u1"],
+            ns, query="Fix this exception", search_mode="agentic", user_ids=["u1"],
         )
         assert len(llm.calls) == 1
         assert seen["variant"] == "coding"
-        assert seen["query"] == "修复 auth.py 的异常"
+        assert seen["query"] == "Fix the exception in auth.py"
 
     async def test_agentic_without_working_memory_still_classifies_and_rewrites(self, search_ctx_with_llm):
-        """agentic 不受 working-memory 开关影响：仍做三分类、rewrite 和时间解析。
+        """agentic ignores the working-memory switch: classification, rewrite and time parsing still run.
 
-        chat 路径尾部依赖完整 client（_registry 等），此处只验证 LLM 被正确调用
-        （单 query 也走、prompt 不含判类），rewrite 解析细节由 analyze_queries 单测覆盖。
+        The tail of the chat path depends on a full client (_registry and friends); only the LLM call
+        is checked here (single queries go through too); rewrite parsing is covered by analyze_queries tests.
         """
         ns = search_ctx_with_llm
         ns._config.coding.enable = False
@@ -510,63 +510,63 @@ class TestQueryRewriteRouting:
 
         try:
             await self._async_search(
-                ns, query="我上周说了什么重要的事", search_mode="agentic",
+                ns, query="What important thing did I say last week", search_mode="agentic",
                 user_ids=["u1"],
             )
         except Exception:
             pass
-        assert len(llm.calls) == 1                        # 单 query 也调了 LLM
+        assert len(llm.calls) == 1                        # A single query also calls the LLM
         assert "Classify the target" in llm.calls[0]["prompt"]
 
     async def test_agentic_classifies_and_rewrites_in_one_call(self, search_ctx_with_llm):
-        """agentic + working memory：一次 LLM 完成三分类、改写与时间解析。"""
+        """agentic + working memory: one LLM call does classification, rewrite and time parsing."""
         ns = search_ctx_with_llm
         ns._config.coding.enable = True
         await TestSceneRouting()._seed_coding_memory(ns)
-        llm = MockLLMProvider("1\n如何发布到私有包索引\nSINCE: NONE")
+        llm = MockLLMProvider("1\nHow to publish to a private package index\nSINCE: NONE")
         ns._coding_llm_provider = llm
 
         resp = await self._async_search(
-            ns, queries=["怎么发布", "我说的是私有包索引"],
+            ns, queries=["How do I publish it", "I mean the private package index"],
             search_mode="agentic",
             user_ids=["u1"], workspace_id=None, branch=None,
             limit=10, min_score=0.0,
         )
-        assert len(llm.calls) == 1                        # 只调一次 LLM（合并）
-        assert "Classify the target" in llm.calls[0]["prompt"]  # 判类在同一 prompt
+        assert len(llm.calls) == 1                        # Only one merged LLM call
+        assert "Classify the target" in llm.calls[0]["prompt"]  # Classification shares the prompt
         assert resp["scene"] == "productivity"
 
     async def test_agentic_long_queries_still_classify_and_rewrite(self, search_ctx_with_llm):
-        """agentic 使用有界 query 视图；原始 queries 超长也不关闭 rewrite。"""
+        """agentic uses a bounded query view; oversized raw queries do not disable rewrite."""
         ns = search_ctx_with_llm
         ns._config.coding.enable = True
-        ns._config.llm.query_rewrite_max_chars = 20  # 故意调低
-        llm = MockLLMProvider("chat\n重写后的查询\nSINCE: NONE")
+        ns._config.llm.query_rewrite_max_chars = 20  # Deliberately low
+        llm = MockLLMProvider("chat\nRewritten query\nSINCE: NONE")
         ns._coding_llm_provider = llm
 
         try:
             resp = await self._async_search(
-                ns, queries=["这是一段非常非常长的查询" * 5, "还有更多内容拼接起来超过阈值"],
+                ns, queries=["This is a very very long query" * 5, "More content appended past the threshold"],
                 search_mode="agentic",
                 user_ids=["u1"],
             )
             assert resp["rewrite"]["used"] is True
-            assert resp["rewrite"]["effective_query"] == "重写后的查询"
+            assert resp["rewrite"]["effective_query"] == "Rewritten query"
         except Exception:
             pass
         assert len(llm.calls) == 1
 
     async def test_agentic_long_queries_without_wm_still_use_llm(self, search_ctx_with_llm):
-        """agentic 总是启用 judge/rewrite，即使 working memory 关闭且原始 query 很长。"""
+        """agentic always enables judge/rewrite, even with working memory off and a long query."""
         ns = search_ctx_with_llm
         ns._config.coding.enable = False
         ns._config.llm.query_rewrite_max_chars = 10
-        llm = MockLLMProvider("chat\n重写后的长查询\nSINCE: NONE")
+        llm = MockLLMProvider("chat\nRewritten long query\nSINCE: NONE")
         ns._coding_llm_provider = llm
 
         try:
             resp = await self._async_search(
-                ns, query="这是一段超过十个字符的查询内容",
+                ns, query="This query runs past ten characters",
                 search_mode="agentic", user_ids=["u1"],
             )
             assert resp["rewrite"]["used"] is True
@@ -575,7 +575,7 @@ class TestQueryRewriteRouting:
         assert len(llm.calls) == 1
 
     async def test_default_mode_no_llm(self, search_ctx_with_llm):
-        """默认模式不受旧配置影响，固定 normal 且零 LLM。"""
+        """The default mode ignores legacy settings: fixed normal and zero LLM."""
         ns = search_ctx_with_llm
         ns._config.coding.enable = False
         ns._config.llm.enable_query_rewrite = False
@@ -583,7 +583,7 @@ class TestQueryRewriteRouting:
         ns._coding_llm_provider = sentinel
 
         try:
-            await self._async_search(ns, query="随便问一句", user_ids=["u1"])
+            await self._async_search(ns, query="Just asking something", user_ids=["u1"])
         except Exception:
             pass
         assert len(sentinel.calls) == 0

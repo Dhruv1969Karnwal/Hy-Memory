@@ -85,7 +85,7 @@ def _conversations(
                     message_id=f"c{conversation}-t{turn}",
                     role="user",
                     written_by=WrittenBy.PERSON,
-                    verbatim=f"第 {conversation} 段对话的第 {turn} 句。",
+                    verbatim=f"Conversation {conversation} line {turn}.",
                     conversation_id=f"conversation-{conversation}",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
@@ -96,7 +96,7 @@ def _conversations(
                     message_id=f"c{conversation}-t{turn}-answer",
                     role="assistant",
                     written_by=WrittenBy.AGENT,
-                    verbatim=f"第 {conversation} 段对话第 {turn} 句的回复。",
+                    verbatim=f"Reply to conversation {conversation} line {turn}.",
                     conversation_id=f"conversation-{conversation}",
                     origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
                 )
@@ -155,7 +155,7 @@ def test_two_turns_of_one_conversation_are_never_in_the_model_together(tmp_path)
             message_id=f"same-{turn}",
             role="user",
             written_by=WrittenBy.PERSON,
-            content=f"同一段对话的第 {turn} 句，说的是同一件事的不同版本。",
+            content=f"Line {turn} of one conversation, a different version of the same thing.",
             conversation_id="the-one-conversation",
         )
     bridge = WatchedBridge()
@@ -207,7 +207,7 @@ def test_durable_drain_and_scheduler_share_one_source_lock(tmp_path) -> None:
         message_id="scheduled",
         role="user",
         written_by=WrittenBy.PERSON,
-        content="后台调度中的 WorkBuddy 对话。",
+        content="WorkBuddy conversation under background scheduling.",
         conversation_id="scheduled-conversation",
         source_id="workbuddy",
     )
@@ -216,7 +216,7 @@ def test_durable_drain_and_scheduler_share_one_source_lock(tmp_path) -> None:
         message_id="scheduled-answer",
         role="assistant",
         written_by=WrittenBy.AGENT,
-        content="后台调度中的 WorkBuddy 回复。",
+        content="WorkBuddy reply under background scheduling.",
         conversation_id="scheduled-conversation",
         source_id="workbuddy",
     )
@@ -264,7 +264,7 @@ def test_durable_drain_and_scheduler_share_one_source_lock(tmp_path) -> None:
             message_id="direct",
             role="user",
             written_by=WrittenBy.PERSON,
-            content="durable drain 同时送来的 WorkBuddy 对话。",
+            content="WorkBuddy conversation delivered at the same time by the durable drain.",
             conversation_id="direct-conversation",
             source_id="workbuddy",
         )
@@ -273,7 +273,7 @@ def test_durable_drain_and_scheduler_share_one_source_lock(tmp_path) -> None:
             message_id="direct-answer",
             role="assistant",
             written_by=WrittenBy.AGENT,
-            content="durable drain 同时送来的 WorkBuddy 回复。",
+            content="WorkBuddy reply delivered at the same time by the durable drain.",
             conversation_id="direct-conversation",
             source_id="workbuddy",
         )

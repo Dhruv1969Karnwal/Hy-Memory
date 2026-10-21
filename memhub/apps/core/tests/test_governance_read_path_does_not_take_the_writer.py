@@ -38,7 +38,7 @@ def _store(tmp_path):
                 correlation_id="m1",
                 role="user",
                 written_by=WrittenBy.PERSON,
-                verbatim="发布窗口是周五上午。",
+                verbatim="The release window is Friday morning.",
                 origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
             )
         )
@@ -54,7 +54,7 @@ def test_a_recall_read_does_not_check_out_the_global_writer(tmp_path):
             draft=MemoryDraft(
                 user_id="local",
                 kind="schema",
-                content="发布窗口是周五上午",
+                content="The release window is Friday morning",
                 scopes=("all-apps",),
                 evidence_ids=(evidence_id,),
             ),
@@ -66,9 +66,9 @@ def test_a_recall_read_does_not_check_out_the_global_writer(tmp_path):
     )
     db = main_database(database)
     # Warm once so any lazy one-time initialization is not attributed to the read.
-    store.find_confirmed_matching_terms(user_id="local", terms=["发布"], limit=10)
+    store.find_confirmed_matching_terms(user_id="local", terms=["release"], limit=10)
     before = db.stats()
-    store.find_confirmed_matching_terms(user_id="local", terms=["发布"], limit=10)
+    store.find_confirmed_matching_terms(user_id="local", terms=["release"], limit=10)
     after = db.stats()
     assert after.reader_checkouts - before.reader_checkouts >= 1
     assert after.writer_checkouts - before.writer_checkouts == 0, (
@@ -84,7 +84,7 @@ def test_a_missing_shadow_still_fails_closed_without_taking_the_writer(tmp_path)
     db = main_database(database)
     before = db.stats()
     with pytest.raises(Exception, match="governance_schema_missing"):
-        store.find_confirmed_matching_terms(user_id="local", terms=["发布"], limit=10)
+        store.find_confirmed_matching_terms(user_id="local", terms=["release"], limit=10)
     after = db.stats()
     assert after.writer_checkouts - before.writer_checkouts == 0, (
         "a broken schema must fail closed on a read connection, not write"

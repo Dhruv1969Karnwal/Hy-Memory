@@ -23,7 +23,8 @@ from tests.test_four_app_live_ingest import eventually, write_turn
 
 INJECTED = (
     '<system-reminder data-role="hook"><memhub_memory_context>\n'
-    "以下是 MemHub 按当前消息自动检索到的历史记忆\n[1] 旧记忆\n"
+    "The following is historical memory that MemHub auto-retrieved for the current "
+    "message\n[1] Old memory\n"
     "</memhub_memory_context></system-reminder>"
 )
 
@@ -51,7 +52,7 @@ def test_file_sync_brings_in_a_prompt_the_hook_lost_and_never_doubles_one_it_kep
         root = home / ".workbuddy/projects"
         root.mkdir(parents=True)
         transcript = root / "rollout-native.jsonl"
-        write_turn(transcript, "workbuddy", "initial", "user", "开场原话")
+        write_turn(transcript, "workbuddy", "initial", "user", "opening source text")
         settings = Settings(
             data_dir=tmp_path / "data",
             source_home=home,
@@ -89,12 +90,12 @@ def test_file_sync_brings_in_a_prompt_the_hook_lost_and_never_doubles_one_it_kep
             await asyncio.sleep(0.2)
 
             # 1. The hook's capture was lost: only the file has the words.
-            lost = "钩子没采到的这句：表头要固定"
+            lost = "the line the hook missed: freeze the table header"
             write_turn(transcript, "workbuddy", "turn-lost", "user", f"{lost}\n{INJECTED}")
             await eventually(lambda: len(_rows(database, lost)) == 1, timeout=10)
 
             # 2. The hook kept the words first; the file's copy is the same line.
-            kept = "钩子采到的这句：列宽可拖动"
+            kept = "the line the hook captured: column widths are draggable"
             assert capture_hook(
                 "workbuddy",
                 {"hook_event_name": "UserPromptSubmit", "session_id": "native", "prompt": kept},
@@ -106,7 +107,7 @@ def test_file_sync_brings_in_a_prompt_the_hook_lost_and_never_doubles_one_it_kep
 
             # Positive control for the count above: a hook row the file cannot
             # match to (another session id) does stay a second copy.
-            other = "会话号对不上的这句：底色换浅灰"
+            other = "the line whose session id does not match: switch the background to light gray"
             assert capture_hook(
                 "workbuddy",
                 {"hook_event_name": "UserPromptSubmit", "session_id": "elsewhere", "prompt": other},

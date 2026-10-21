@@ -33,7 +33,9 @@ from one_memory.model_profiles import ModelProfileSnapshot, ProviderKind
 
 #: A common shape: an English traceback pasted in, with
 #: the question asked in Chinese. Measured CJK ratio 0.09.
-CHINESE_QUESTION_WITH_ENGLISH_ERROR = """这个报错是什么意思，我该怎么修？
+CHINESE_QUESTION_WITH_ENGLISH_ERROR = """\
+\u8fd9\u4e2a\u62a5\u9519\u662f\u4ec0\u4e48\u610f\u601d\uff0c\
+\u6211\u8be5\u600e\u4e48\u4fee\uff1f
 Traceback (most recent call last):
   File "/Users/example/one-memory/apps/core/src/one_memory/recall.py", line 177, in _recall
     for memory in self.governance.list(user_id=user_id, status=MemoryStatus.CONFIRMED, limit=500):
@@ -102,9 +104,17 @@ def _reads_as_chinese(prompt: str) -> bool:
     return _chinese_char_ratio(prompt) > 0.2
 
 
+def _reworded(prompt: str, needles: tuple[str, ...]) -> str:
+    """Rewrite every wording HY has ever used for the rule MemHub replaces."""
+    for needle in needles:
+        prompt = prompt.replace(needle, "* HY changed the wording of the language rule")
+    return prompt
+
+
 def _follows_the_input_language(prompt: str) -> bool:
     return (
-        "输出语言必须与输入语言一致" in prompt
+        "* \u8f93\u51fa\u8bed\u8a00\u5fc5\u987b\u4e0e\u8f93\u5165\u8bed\u8a00\u4e00\u81f4" in prompt
+        or "The output language must match the input language" in prompt
         or "Output language must match input language" in prompt
     )
 
@@ -140,7 +150,7 @@ def test_the_extractor_is_told_to_write_chinese_even_when_the_input_reads_as_eng
     assert not _follows_the_input_language(llm.system_prompt()), (
         "the prompt still hands the language decision back to the input"
     )
-    assert "始终" in llm.system_prompt() and "中文" in llm.system_prompt()
+    assert "always" in llm.system_prompt() and "Simplified Chinese" in llm.system_prompt()
 
 
 @pytest.mark.parametrize("ratio", [0.05, 0.3, 0.7])
@@ -151,7 +161,7 @@ def test_the_memory_language_does_not_depend_on_the_cjk_ratio(ratio: float, tmp_
     each says whether the outcome still moves with the ratio.
     """
     chinese_length = max(1, round(40 * ratio))
-    content = "我" * chinese_length + "x" * (40 - chinese_length)
+    content = "\u6211" * chinese_length + "x" * (40 - chinese_length)
     llm = _extract(content, tmp_path)
 
     assert _reads_as_chinese(llm.system_prompt()), (
@@ -178,8 +188,8 @@ def test_the_input_reaches_hy_untouched(tmp_path) -> None:
 def test_hys_own_chinese_prompt_hands_the_language_back_to_the_input(tmp_path) -> None:
     """Why shipping HY's Chinese prompt as-is is not the fix.
 
-    Both of HY's extraction system prompts carry one rule — "输出语言必须与输入
-    语言一致" / "Output language must match input language" — so a Chinese
+    Both of HY's extraction system prompts carry one rule -- the output language has to match
+    the input language / "Output language must match input language" -- so a Chinese
     prompt over an English-reading input still asks for English. Serving HY's
     text verbatim would have made every assertion about the *prompt* pass
     while the memory came out in English anyway. Green before and after: it
@@ -203,8 +213,22 @@ def test_the_english_traceback_is_still_not_to_be_translated(tmp_path) -> None:
     """
     llm = _extract(CHINESE_QUESTION_WITH_ENGLISH_ERROR, tmp_path)
 
-    assert "保留原始术语、品牌名、公式、代码" in llm.system_prompt()
-    assert "不要转写或翻译专有名词" in llm.system_prompt()
+    # These two are the installed SDK's own bytes, not this repository's translated copy:
+    # Core pins hy-memory==2.0.3, and the published artifact is still Chinese, so a needle
+    # translated to match this branch's prompts_zh.py asserts against text nothing runs.
+    # They flip to English the day the SDK ships translated and version-bumped together.
+    installed = llm.system_prompt()
+    first_needle = (
+        "\u4fdd\u7559\u539f\u59cb\u672f\u8bed\u3001\u54c1"
+        "\u724c\u540d\u3001\u516c\u5f0f\u3001\u4ee3\u7801"
+    )
+    assert first_needle in installed
+    second_needle = (
+        "\u4e0d\u8981\u8f6c\u5199\u6216"
+        "\u7ffb\u8bd1\u4e13\u6709\u540d\u8bcd"
+    )
+    assert second_needle in installed
+
 
 
 def test_a_reworded_sdk_prompt_still_gets_a_chinese_instruction(
@@ -221,8 +245,8 @@ def test_a_reworded_sdk_prompt_still_gets_a_chinese_instruction(
     from hy_memory.agent.prompts_zh import EXTRACT_SYSTEM_PROMPT_ZH as native_prompt
 
     class RewordedPrompts:
-        EXTRACT_SYSTEM_PROMPT_ZH = native_prompt.replace(
-            "* 输出语言必须与输入语言一致", "* HY 换了语言规则的措辞"
+        EXTRACT_SYSTEM_PROMPT_ZH = _reworded(
+            native_prompt, hy_memory_bridge._HY_FOLLOWS_THE_INPUT_LANGUAGE
         )
 
     real_import = hy_memory_bridge.import_module
@@ -233,7 +257,7 @@ def test_a_reworded_sdk_prompt_still_gets_a_chinese_instruction(
     )
     config = build_hy_memory_config(_profile(), api_key=None, data_dir=tmp_path)
 
-    assert "始终是简体中文" in config.llm.extract_system_prompt_en
+    assert "always be Simplified Chinese" in config.llm.extract_system_prompt_en
     assert "hy_language_rule_not_found" in caplog.text
 
 
@@ -248,9 +272,9 @@ def test_setting_only_the_chinese_override_would_not_have_fixed_it(tmp_path) -> 
     config = build_hy_memory_config(_profile(), api_key=None, data_dir=tmp_path)
     llm = RecordingLLM()
     config.llm.extract_system_prompt_en = None
-    config.llm.extract_system_prompt_zh = "只用中文写记忆。"
+    config.llm.extract_system_prompt_zh = "Write memories only in Chinese."
     extractor = Extractor(llm_provider=llm, llm_config=config.llm)
 
     asyncio.run(extractor.extract(content=CHINESE_QUESTION_WITH_ENGLISH_ERROR))
 
-    assert llm.system_prompt() != "只用中文写记忆。"
+    assert llm.system_prompt() != "Write memories only in Chinese."

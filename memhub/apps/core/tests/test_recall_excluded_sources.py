@@ -44,7 +44,7 @@ def excluded_source(tmp_path):
         message_id="one",
         role="user",
         written_by=WrittenBy.PERSON,
-        verbatim="codex 第 0 条真实对话内容。",
+        verbatim="codex entry 0 of real conversation content.",
         origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
     )
     record = evidence.put(value).record
@@ -53,7 +53,7 @@ def excluded_source(tmp_path):
             draft=MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.CHAT,
-                content="codex 第 0 条真实对话内容。",
+                content="codex entry 0 of real conversation content.",
                 scopes=("all-apps",),
                 evidence_ids=(record.evidence_id,),
                 origin=MemoryOrigin.EXTRACTED,
@@ -127,7 +127,7 @@ def test_a_readable_source_is_not_named_unreadable(excluded_source):
 
     target = GovernedRecallTarget(MemoryGovernanceStore(excluded_source))
     target.filter_memories = SourceReadAccess(excluded_source).memories
-    receipt = target.recall(RecallRequest(query="真实对话内容", scope="all-apps"))
+    receipt = target.recall(RecallRequest(query="real conversation content", scope="all-apps"))
 
     assert receipt.hits != ()
     assert receipt.excluded_sources == ()

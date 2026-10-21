@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-CodingWriter - 写入端协调器
+CodingWriter - write-side coordinator
 
-把 judge / preproc / extractor / 两个 reconciler / store 串成一条端到端流程：
+Chains judge / preproc / extractor / the two reconcilers / store into one end-to-end flow:
 
     classify_messages_scene(messages, llm)
-        ├── chat → caller 把 messages strip_tool_messages 后走 chat 链
+        ├── chat → the caller applies strip_tool_messages to messages and uses the chat pipeline
         └── working / coding
-             ├── recent history: 最近 K 个 user-turn（只作上下文）
-             ├── new messages: 本次全部 turn（只做单条限长）
-             ├── extractor.extract(...)            ← 一次 LLM 产出双层草稿
-             ├── reconciler.reconcile(经验草稿)     ← ADD/UPDATE/DELETE/SKIP
-             ├── fact_reconciler.reconcile(事实草稿) ← INSERT/SUPERSEDE
-             └── _crosslink(...)                   ← 同批全互链回填
+             ├── recent history: the last K user-turns (context only)
+             ├── new messages: every turn of this call (per-message length cap only)
+             ├── extractor.extract(...)            ← one LLM call producing drafts for both layers
+             ├── reconciler.reconcile(experience drafts) ← ADD/UPDATE/DELETE/SKIP
+             ├── fact_reconciler.reconcile(fact drafts)  ← INSERT/SUPERSEDE
+             └── _crosslink(...)                   ← full cross-linking across the batch
 """
 
 import logging
@@ -36,9 +36,9 @@ logger = logging.getLogger(__name__)
 
 class CodingWriter:
     """
-    Coding 写入端协调器。
+    Coding write-side coordinator.
 
-    生命周期：依赖外部传入的 store / extractor / reconciler；不负责 initialize/close。
+    Lifecycle: store / extractor / reconciler are injected from outside; it does not own initialize/close.
     """
 
     def __init__(
@@ -59,7 +59,7 @@ class CodingWriter:
         self.fact_reconciler = fact_reconciler or WorkingFactReconciler(
             store, embed_service, llm_provider
         )
-        # cache 仅用于把 request_id 串给各阶段（各阶段自己打点）；writer 不集中打点。
+        # The cache only carries request_id through the stages (each stage traces itself); the writer does not trace centrally.
         self.cache = cache
 
     async def write(
@@ -75,7 +75,7 @@ class CodingWriter:
         source: str = "default",
     ) -> Dict[str, Any]:
         """
-        working/coding 段写入端到端。返回响应 dict（兼容 client.add 返回结构）：
+        End-to-end write for a working/coding segment. Returns a response dict (compatible with the client.add shape):
             {
                 "success": True,
                 "scene": "productivity",
@@ -85,12 +85,12 @@ class CodingWriter:
                     {"action": "ADD", "draft_idx": 0, "target_experience_id": "...", "reason": ...},
                     ...
                 ],
-                "experience_ids": ["..."],   # 所有 ADD/UPDATE 涉及的 experience_id
+                "experience_ids": ["..."],   # every experience_id touched by ADD/UPDATE
                 "fact_ops": [
                     {"action": "INSERT", "draft_idx": 0, "fact_id": "...", ...},
                     ...
                 ],
-                "fact_ids": ["..."],         # 这趟真正落库的 fact_id
+                "fact_ids": ["..."],         # the fact_ids this run actually persisted
             }
         """
         request_id = request_id or str(uuid.uuid4())
@@ -103,9 +103,9 @@ class CodingWriter:
             getattr(self.store.config.coding, "tool_result_max_bytes", 2048) or 2048
         )
 
-        # 1. 历史与新输入分离。
-        #    - history_messages：之前 write 的最近 5 个 user-turn，仅作上下文
-        #    - current_messages：本次 write 的全部 turn，只限制单条消息体积，不裁 turn
+        # 1. Separate history from the new input.
+        #    - history_messages: the last 5 user-turns of earlier writes, context only
+        #    - current_messages: every turn of this write, capped per message size only, never trimmed by turn count
         history_turns = int(
             getattr(self.store.config.extractor, "history_turns", 5) or 5
         )
@@ -123,12 +123,12 @@ class CodingWriter:
             messages, tool_max_bytes=tool_max_bytes,
         )
 
-        # 2. 抽取双层 drafts（一次 LLM 调用）
+        # 2. Extract the two-layer drafts (one LLM call)
         #
-        # 刻意不给 extractor 看用户已有的 task。抽取只该忠实读这一段发生了什么，
-        # 跟库里已有的什么关系是 reconcile 的事。把已有 task 摆到它面前，它会把
-        # 一个其实不同的任务往清单里某个措辞上靠，reconciler 随后判成 UPDATE 合并
-        # 掉，那个区别就没了——措辞对不上顶多多存一条，措辞被带偏是直接写错。
+        # Deliberately hide the user's existing tasks from the extractor. Extraction should faithfully read what happened in
+        # this segment; how it relates to what is already stored is reconcile's job. Shown the existing tasks, the extractor
+        # bends a genuinely different task towards one of those wordings, the reconciler then judges it an UPDATE and merges
+        # it away, and the difference is gone -- mismatched wording costs at most one extra row, biased wording writes it wrong.
         try:
             drafts, fact_drafts = await self.extractor.extract(
                 messages,
@@ -142,7 +142,7 @@ class CodingWriter:
                 request_id=request_id,
             )
         finally:
-            # 历史服务于下一次 write；即使本次没跨过价值门槛，也不能丢掉上下文。
+            # History serves the next write; context must survive even when this call crosses no value threshold.
             try:
                 await self.store.append_trace(
                     current_messages,
@@ -163,11 +163,11 @@ class CodingWriter:
             )
             return self._empty_response(request_id, t0)
 
-        # extractor 只负责内容；调用来源由 SDK 入口注入，不能交给 LLM 生成。
+        # The extractor only produces content; the call source is injected by the SDK entry point and must not be LLM-generated.
         for draft in drafts:
             draft.source = source
 
-        # 3. 经验层 reconcile + 持久化
+        # 3. Experience-layer reconcile + persistence
         ops: List[ReconcileOp] = (
             await self.reconciler.reconcile(
                 drafts,
@@ -179,7 +179,7 @@ class CodingWriter:
             if drafts else []
         )
 
-        # 4. 事实层 reconcile + 持久化（独立链路，不受经验层结果影响）
+        # 4. Fact-layer reconcile + persistence (independent path, unaffected by experience-layer results)
         facts: List[WorkingFact] = []
         fact_ops: List[FactReconcileOp] = []
         if fact_drafts:
@@ -197,7 +197,7 @@ class CodingWriter:
                           if op.action in ("ADD", "UPDATE") and op.target_experience_id]
         fact_ids = [f.fact_id for f in facts]
 
-        # 5. 同批全互链
+        # 5. Full cross-linking within the batch
         await self._crosslink(experience_ids, facts, user_id=user_id)
 
         add_cnt = sum(1 for op in ops if op.action == "ADD")
@@ -232,7 +232,7 @@ class CodingWriter:
         }
 
     # ------------------------------------------------------------
-    # 互链
+    # Cross-linking
     # ------------------------------------------------------------
 
     async def _crosslink(
@@ -242,17 +242,17 @@ class CodingWriter:
         *,
         user_id: str,
     ) -> None:
-        """把同一批落库的经验与事实两两连起来。
+        """Link the experiences and facts persisted in the same batch to each other.
 
-        只连真入库的：经验取 ADD/UPDATE 的 id，事实取真正 INSERT 的；SKIP 和
-        DELETE 天然不在名单里。两边都取并集——UPDATE 的旧链要保留，事实那边可能
-        已经从 SUPERSEDE 过继来一批经验，不能覆盖掉。
+        Only real writes are linked: experiences take the ADD/UPDATE ids, facts take the ones actually INSERTed; SKIP and
+        DELETE are naturally absent from the list. Both sides take a union -- the older chain of an UPDATE must survive, since the
+        fact side may already have adopted a batch of experiences through SUPERSEDE, which must not be overwritten.
         """
         if not experience_ids and not facts:
             return
         fact_ids = [f.fact_id for f in facts]
 
-        # 正向：经验 ← 事实
+        # Forward: experience ← fact
         if fact_ids:
             for eid in experience_ids:
                 try:
@@ -265,7 +265,7 @@ class CodingWriter:
                 except Exception as e:
                     logger.warning(f"[coding-write] crosslink experience {eid} failed: {e}")
 
-        # 反向：事实 ← 经验
+        # Reverse: fact ← experience
         if experience_ids:
             for f in facts:
                 try:
@@ -295,7 +295,7 @@ class CodingWriter:
 
 
 def _union(base: List[str], extra: List[str]) -> List[str]:
-    """保序并集。"""
+    """Order-preserving union."""
     out = list(base)
     seen = set(out)
     for x in extra:
@@ -306,7 +306,7 @@ def _union(base: List[str], extra: List[str]) -> List[str]:
 
 
 # ================================================================
-# Top-level helper（client.async_add 用）
+# Top-level helper (used by client.async_add)
 # ================================================================
 
 async def is_coding_segment(
@@ -314,7 +314,7 @@ async def is_coding_segment(
     llm_provider: LLMProvider,
 ) -> bool:
     """
-    判定整段 messages 是否 coding 场景。无 tool 消息直接 False（O(1) 短路）。
+    Decide whether the whole message list is a coding scenario. Without tool messages this is False immediately (O(1) short circuit).
     """
     if not has_any_tool_message(messages):
         return False

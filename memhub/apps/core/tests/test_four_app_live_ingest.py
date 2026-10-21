@@ -127,9 +127,9 @@ def test_each_primary_source_imports_the_last_burst_and_stops_on_revocation(
                 else root / "rollout-native.jsonl"
             )
         )
-        baseline_text = "已有原话：预算<5，不能变成预算>5。"
-        fresh_text = "新增用户原话：只允许这个来源。"
-        last_text = "新增助手报告：建议周三复核，尚未验收。"
+        baseline_text = "Existing source text: budget<5, which must not become budget>5."
+        fresh_text = "New user source text: only this source is allowed."
+        last_text = "New assistant report: suggests a review on Wednesday, not accepted yet."
         write_turn(filename, source, "initial", "user", baseline_text)
         settings = Settings(
             data_dir=tmp_path / "data",
@@ -227,7 +227,13 @@ def test_each_primary_source_imports_the_last_burst_and_stops_on_revocation(
                     assert app.state.evidence_store.count() == 3
                     entered.clear()
                     release.clear()
-                    write_turn(filename, source, "pending", "user", "节流期间尚未读取的原话")
+                    write_turn(
+                        filename,
+                        source,
+                        "pending",
+                        "user",
+                        "source text not yet read during throttling",
+                    )
                     await asyncio.wait_for(entered.wait(), 5)
                     assert source in watch._pending
                     assert app.state.evidence_store.count() == 3
@@ -241,7 +247,13 @@ def test_each_primary_source_imports_the_last_burst_and_stops_on_revocation(
                     assert dispatched == [source], "revoked pending work reached the real drain"
                 finally:
                     release.set()
-            write_turn(filename, source, "denied", "user", "撤权后的原话不可导入")
+            write_turn(
+                filename,
+                source,
+                "denied",
+                "user",
+                "source text after revocation must not be imported",
+            )
             await asyncio.sleep(1.1)
             assert app.state.evidence_store.count() == 3
             assert (await client.get(f"/api/v1/sources/{source}/import-receipt")).status_code == 403
@@ -270,10 +282,10 @@ def test_automatic_native_ingest_reaches_hy_and_a_failed_hy_never_fabricates_mem
             if source == "cursor"
             else root / "rollout-native.jsonl"
         )
-        user_text = "新会话用户原话：预算<5。"
-        agent_text = "助手只提出建议，尚未获得确认。"
-        next_text = "用户补充：先做本地验证。"
-        next_agent_text = "助手确认：先做本地验证。"
+        user_text = "New session user source text: budget<5."
+        agent_text = "The assistant only suggests; not confirmed yet."
+        next_text = "The user adds: verify locally first."
+        next_agent_text = "The assistant confirms: verify locally first."
         write_turn(filename, source, "user", "user", user_text)
         write_turn(filename, source, "assistant", "assistant", agent_text)
         requests = []

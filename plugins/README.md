@@ -1,27 +1,27 @@
 # Hy Memory Plugins
 
-各 Agent / 编辑器平台的集成代码。记忆能力由仓库根目录的 Python SDK（`hy_memory/`，PyPI: `hy-memory`）提供；插件层负责对接宿主框架（HTTP、hooks、MCP 等）。
+Integration code for agent and editor platforms. Memory capabilities come from the Python SDK in the repository root (`hy_memory/`, PyPI: `hy-memory`); the plugin layer adapts it to the host framework (HTTP, hooks, MCP and so on).
 
-## 布局
+## Layout
 
-| 目录 | 说明 | 发布 |
+| Directory | Description | Published as |
 |------|------|------|
-| `openclaw/` | OpenClaw 记忆插件（TypeScript，拉起 Python `hy_memory.server`） | npm: `openclaw-hy-memory` |
-| `hook/` | Claude Code 等 hook 集成（预留） | — |
-| `mcp/` | MCP Server 集成（预留） | — |
+| `openclaw/` | OpenClaw memory plugin (TypeScript, starts the Python `hy_memory.server`) | npm: `openclaw-hy-memory` |
+| `hook/` | hook integration for Claude Code and similar (reserved) | -- |
+| `mcp/` | MCP Server integration (reserved) | -- |
 
-与 [Mem0](https://github.com/mem0ai/mem0) 的差异：Mem0 的 OpenClaw 插件依赖 **TypeScript SDK**（`mem0ai` npm）；本仓库插件依赖 **Python SDK**，通过本地 HTTP 服务通信。
+Difference from [Mem0](https://github.com/mem0ai/mem0): the Mem0 OpenClaw plugin depends on the **TypeScript SDK** (`mem0ai` npm); the plugins in this repository depend on the **Python SDK** and talk to it over a local HTTP service.
 
-## 开发
+## Development
 
 ```bash
-# OpenClaw 插件
+# OpenClaw plugin
 cd plugins/openclaw
 npm install
 npm run build
 ```
 
-发布到 npmjs：
+Publish to npmjs:
 
 ```bash
 bash scripts/publish_npmjs.sh <version>

@@ -31,15 +31,15 @@ interface Snapshot {
   trigger: HTMLElement;
 }
 const statusNames: Record<SyncHookStatus["state"], string> = {
-  unsupported: "此应用暂不支持同步 Hook",
-  "connection-required": "需要重新关联 MCP 连接",
-  "not-installed": "同步 Hook 未安装",
-  installed: "同步 Hook 已安装",
-  modified: "同步 Hook 文件已变化",
-  unavailable: "同步 Hook 状态暂不可用",
+  unsupported: "This app does not support the sync Hook yet",
+  "connection-required": "The MCP connection needs to be relinked",
+  "not-installed": "Sync Hook not installed",
+  installed: "Sync Hook installed",
+  modified: "Sync Hook files have changed",
+  unavailable: "Sync Hook status is unavailable right now",
 };
 const changedMessage =
-  "连接已变化，请关闭后重新打开核对。本次确认不会用于变化后的连接。";
+  "The connection has changed. Close and reopen it to verify again. This confirmation will not be used for the changed connection.";
 const focusSelector =
   'button:not(:disabled), input:not(:disabled), [tabindex="0"]';
 
@@ -239,24 +239,26 @@ export function SyncHookControl({
     <section
       ref={control}
       className="sync-hook-control"
-      aria-label={`${host.label} 同步 Hook`}
+      aria-label={`${host.label} Sync Hook`}
       tabIndex={-1}
     >
       {visible && (
         <>
           <p role="status" className="sync-hook-status">
             {current?.loading
-              ? "正在读取同步 Hook 状态…"
+              ? "Loading the sync Hook status..."
               : current?.status
                 ? statusNames[current.status.state]
-                : "同步 Hook 状态待核对"}
+                : "Sync Hook status pending verification"}
           </p>
           <p className="sync-hook-note">
-            插件只通知新对话；读取与持续同步仍由来源权限控制。
+            The plug-in only announces new conversations; reading and continuous
+            sync stay controlled by source permissions.
           </p>
           {installed && current?.status?.reason !== null && (
             <p className="sync-hook-note">
-              MCP 连接需要核对；仍可移除已有同步 Hook。
+              The MCP connection needs verification; an existing sync Hook can
+              still be removed.
             </p>
           )}
           <div className="sync-hook-actions">
@@ -272,7 +274,7 @@ export function SyncHookControl({
                 ) : (
                   <Download size={16} aria-hidden="true" />
                 )}
-                {installed ? "更新同步 Hook" : "安装同步 Hook"}
+                {installed ? "Update Sync Hook" : "Install Sync Hook"}
               </button>
             )}
             {installed && (
@@ -285,14 +287,14 @@ export function SyncHookControl({
                 onClick={(event) => open("uninstall", event.currentTarget)}
               >
                 <Trash2 size={16} aria-hidden="true" />
-                卸载同步 Hook
+                Uninstall Sync Hook
               </button>
             )}
             <button
               type="button"
               className="quiet sync-hook-icon"
-              title="刷新同步 Hook 状态"
-              aria-label="刷新同步 Hook 状态"
+              title="Refresh sync Hook status"
+              aria-label="Refresh sync Hook status"
               disabled={disabled || !!snapshot || current?.loading}
               onClick={() => void refresh()}
             >
@@ -301,7 +303,8 @@ export function SyncHookControl({
           </div>
           {current?.error && (
             <p role="alert" className="sync-hook-error">
-              未能读取同步 Hook 状态，请刷新核对。未更改连接。
+              Could not read the sync Hook status. Refresh to verify again. No
+              connection was changed.
             </p>
           )}
         </>
@@ -367,10 +370,10 @@ function HookDialog({
   const noChanges = preview !== null && preview.files.length === 0;
   const action =
     snapshot.operation === "uninstall"
-      ? "卸载"
+      ? "Uninstall"
       : snapshot.updating
-        ? "更新"
-        : "安装";
+        ? "Update"
+        : "Install";
   const active = useCallback(
     (token: number) => mounted.current && sequence.current === token,
     [],
@@ -406,7 +409,9 @@ function HookDialog({
     } catch {
       if (active(token)) {
         setPreview(null);
-        setError("未能核对文件变更，请重新预览。未提交本次操作。");
+        setError(
+          "Could not verify the file changes. Preview again. This operation was not submitted.",
+        );
       }
     } finally {
       if (active(token)) {
@@ -476,11 +481,13 @@ function HookDialog({
       if (!active(token) || !usable()) return;
       onStatus(value);
       if (value.state !== resultRef.current.state)
-        setError("本次操作已成功；当前文件状态已有变化，请关闭后重新核对。");
+        setError(
+          "This operation succeeded; the file status has since changed. Close and verify again.",
+        );
     } catch {
       if (active(token))
         setError(
-          `${action}已成功，但状态刷新失败。刷新状态不会重复${action}。`,
+          `${action} succeeded, but the status refresh failed. Refreshing the status will not run ${action} again.`,
         );
     } finally {
       if (active(token)) {
@@ -531,7 +538,9 @@ function HookDialog({
       if (usable()) await refreshStatus();
     } catch {
       if (active(token)) {
-        setError(`${action}结果尚未确认。请重新预览并核对后重试。`);
+        setError(
+          `${action} result is not confirmed yet. Preview and verify again, then retry.`,
+        );
         setNeedsPreview(true);
         setConfirmed(false);
       }
@@ -589,13 +598,13 @@ function HookDialog({
         <header className="sync-hook-heading">
           <div>
             <p className="eyebrow">{snapshot.host.label}</p>
-            <h2 id={`${id}-title`}>{action}同步 Hook</h2>
+            <h2 id={`${id}-title`}>{action} Sync Hook</h2>
           </div>
           <button
             type="button"
             className="quiet sync-hook-icon"
-            title="关闭"
-            aria-label="关闭"
+            title="Close"
+            aria-label="Close"
             disabled={pending === "write"}
             onClick={close}
           >
@@ -604,31 +613,36 @@ function HookDialog({
         </header>
         <div className="sync-hook-body">
           <p id={`${id}-scope`}>
-            插件只通知新对话；读取与持续同步仍由来源权限控制。安装不会开启同步或授予模型处理权限。
+            The plug-in only announces new conversations; reading and continuous
+            sync stay controlled by source permissions. Installing does not
+            enable sync or grant model processing permission.
           </p>
           {snapshot.operation === "uninstall" && (
-            <p>不会关闭独立持续同步，也不会断开 MCP 记忆连接。</p>
+            <p>
+              This does not turn off standalone continuous sync and does not
+              disconnect the MCP memory connection.
+            </p>
           )}
           {preview && (
             <>
               <p className="sync-hook-note">
-                安装身份 <code>{preview.installationId}</code> · 版本{" "}
-                {preview.revision}
+                Install identity <code>{preview.installationId}</code> -
+                revision {preview.revision}
               </p>
               {!noChanges && (
-                <ul className="sync-hook-files" aria-label="文件变更">
+                <ul className="sync-hook-files" aria-label="File changes">
                   {preview.files.map((file) => (
                     <li key={file.path}>
                       <span>
                         {
-                          { create: "新增", update: "更新", remove: "移除" }[
+                          { create: "Add", update: "Update", remove: "Remove" }[
                             file.action
                           ]
                         }{" "}
                         ·{" "}
                         {file.owner === "host"
-                          ? `${snapshot.host.label} 配置`
-                          : "MemHub 文件"}
+                          ? `${snapshot.host.label} configuration`
+                          : "MemHub file"}
                       </span>
                       <code>{file.path}</code>
                     </li>
@@ -640,8 +654,8 @@ function HookDialog({
           {noChanges && (
             <p role="status">
               {snapshot.operation === "install" && snapshot.updating
-                ? "同步 Hook 已是当前版本，无需修改。"
-                : "没有需要修改的文件，未提交操作。"}
+                ? "The sync Hook is already current; no changes are needed."
+                : "No files need to change; no operation was submitted."}
             </p>
           )}
           {preview && !noChanges && !result && (
@@ -652,23 +666,23 @@ function HookDialog({
                 disabled={!!pending || disabled || changed || needsPreview}
                 onChange={(event) => setConfirmed(event.target.checked)}
               />
-              我确认以上文件变更
+              I confirm the file changes above
             </label>
           )}
           {result && (
             <p className="sync-hook-receipt" role="status">
               {snapshot.operation === "uninstall"
-                ? "同步 Hook 已卸载。独立持续同步和 MCP 连接未改变。"
-                : `同步 Hook 已${action}。来源持续同步设置未改变。`}
+                ? "Sync Hook uninstalled. Standalone continuous sync and the MCP connection are unchanged."
+                : `Sync Hook ${action} complete. The source continuous sync settings are unchanged.`}
             </p>
           )}
           {pending && (
             <p role="status">
               {pending === "preview"
-                ? "正在核对文件变更…"
+                ? "Verifying file changes..."
                 : pending === "write"
-                  ? `正在${action}同步 Hook…`
-                  : "正在刷新状态…"}
+                  ? `${action} sync Hook in progress...`
+                  : "Refreshing status..."}
             </p>
           )}
           {(changed || error) && (
@@ -684,7 +698,7 @@ function HookDialog({
             disabled={pending === "write"}
             onClick={close}
           >
-            {result || noChanges ? "完成" : "取消"}
+            {result || noChanges ? "Done" : "Cancel"}
           </button>
           {error && !result && !changed && (
             <button
@@ -694,7 +708,7 @@ function HookDialog({
               onClick={() => void loadPreview()}
             >
               <RefreshCw size={16} aria-hidden="true" />
-              重新预览
+              Re-preview
             </button>
           )}
           {result && error && !changed && (
@@ -705,7 +719,7 @@ function HookDialog({
               onClick={() => void refreshStatus()}
             >
               <RefreshCw size={16} aria-hidden="true" />
-              刷新状态
+              Refresh status
             </button>
           )}
           {preview && !noChanges && !result && (
@@ -723,7 +737,7 @@ function HookDialog({
               ) : (
                 <Download size={16} aria-hidden="true" />
               )}
-              确认{action}
+              Confirm {action}
             </button>
           )}
         </footer>

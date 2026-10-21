@@ -1,6 +1,6 @@
 # OpenClaw Hy Memory Plugin
 
-由腾讯混元团队研发的 [OpenClaw](https://github.com/nicepkg/openclaw) 插件，专注于为 AI Agent 提供智能长期记忆能力。
+An [OpenClaw](https://github.com/nicepkg/openclaw) plugin built by the Tencent Hunyuan team, focused on giving AI agents intelligent long-term memory.
 
 ## Features
 
@@ -19,13 +19,13 @@
 openclaw plugin install openclaw-hy-memory --dangerously-force-unsafe-install
 ```
 
-> **为什么必须加 `--dangerously-force-unsafe-install`？**
+> **Why is `--dangerously-force-unsafe-install` required?**
 >
-> Hy-Memory 以 Python 子进程的方式随插件启动来提供服务。OpenClaw 出于安全考虑默认拒绝安装会启动外部进程的插件，因此需要显式加上该参数以确认你知晓并允许此行为。
+> Hy-Memory serves the plugin by starting a Python subprocess alongside it. For security reasons OpenClaw refuses to install plugins that start external processes by default, so this flag must be passed explicitly to confirm you are aware of and allow that behaviour.
 
 ### Windows
 
-插件会自动使用 `~/.openclaw/hy-memory-venv`（venv 内为 `Scripts\python.exe`）。请确保系统已安装 **Python 3.9+** 且 `python` 在 PATH 中。一般无需改 `pythonPath`；若使用自定义解释器，填完整路径，例如 `D:\Python311\python.exe`。
+The plugin automatically uses `~/.openclaw/hy-memory-venv` (`Scripts\python.exe` inside the venv). Make sure **Python 3.9+** is installed and `python` is on your PATH. You normally do not need to change `pythonPath`; for a custom interpreter give the full path, for example `D:\Python311\python.exe`.
 
 ### 2. Run the setup wizard
 
@@ -50,7 +50,7 @@ openclaw gateway restart
 openclaw hy-memory status
 ```
 
-确认 VDB、Embed、LLM 三项服务均为 `ok` 状态。
+Confirm that the VDB, Embed and LLM services all report `ok`.
 
 ## Manual Configuration
 

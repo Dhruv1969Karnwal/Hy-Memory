@@ -61,7 +61,7 @@ const silent = (state: ClaudeEventResult["state"]): ClaudeEventResult => ({
 });
 const digest = (values: unknown[]) =>
   createHash("sha256").update(JSON.stringify(values)).digest("hex");
-const notice = "正在使用 MemHub 查询记忆";
+const notice = "Using MemHub to query memories";
 
 function queryFromPrompt(prompt: unknown): string | null {
   if (typeof prompt !== "string" || Buffer.byteLength(prompt) > 16_384)

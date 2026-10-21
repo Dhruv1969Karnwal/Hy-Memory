@@ -1,6 +1,7 @@
 import type { GovernedMemory } from "@one-memory/contracts";
 import { type CoreReader, RESERVED_MEMORY_SEGMENTS } from "./core-client.js";
 import { validateMemoryDetail, validateMemoryPage } from "./core-responses.js";
+import { counted, countLabel } from "./count-label.js";
 import { PRODUCT } from "./version.js";
 
 /** Output budget: a long memory is shortened visibly, never dropped silently. */
@@ -145,24 +146,25 @@ export function renderMemoryPageText(document: MemoryPageDocument): string {
   const page = document.page;
   if (page.state !== "ok") {
     if (page.state === "unavailable") {
-      return "后台正忙，记忆列表这次没查完，不代表没有记忆，请稍后再试\n";
+      return "The backend is busy, so the memory list did not finish this time. That does not mean there are no memories. Try again later.\n";
     }
-    return `记忆查询未完成：${page.state}（${page.code}）\n`;
+    return `Memory query incomplete: ${page.state} (${page.code})\n`;
   }
   const lines = [
-    `共 ${page.total} 条，本页 ${page.returned} 条（offset=${page.offset} limit=${page.limit}）${
-      page.has_more ? "，还有更多，请用 --offset 继续" : ""
+    `Total ${page.total}, this page ${page.returned} (offset=${page.offset} limit=${page.limit})${
+      page.has_more ? ", more remain, continue with --offset" : ""
     }`,
   ];
   for (const memory of document.memories) {
     lines.push(
       `- ${memory.memory_id}  ${memory.status}/${memory.kind}  rev ${memory.revision}  scopes=${
-        (memory.scopes as string[]).join(",") || "无"
+        (memory.scopes as string[]).join(",") || "none"
       }`,
-      `  ${memory.content}${memory.content_truncated ? ` …（共 ${memory.content_characters} 字）` : ""}`,
+      `  ${memory.content}${memory.content_truncated ? ` ... (${countLabel(counted(memory.content_characters), "character")} total)` : ""}`,
     );
   }
-  if (document.memories.length === 0) lines.push("（没有符合条件的记忆）");
+  if (document.memories.length === 0)
+    lines.push("(no memories match the filters)");
   lines.push("");
   return lines.join("\n");
 }
@@ -171,37 +173,39 @@ export function renderMemoryDetailText(document: MemoryDetailDocument): string {
   const memory = document.memory;
   if (memory.state !== "ok") {
     if (memory.state === "unavailable") {
-      return "后台正忙，记忆详情这次没查完，不代表没有这条记忆，请稍后再试\n";
+      return "The backend is busy, so this memory's detail did not finish this time. That does not mean the memory is missing. Try again later.\n";
     }
-    return `记忆读取未完成：${memory.state}（${memory.code}）\n`;
+    return `Memory read incomplete: ${memory.state} (${memory.code})\n`;
   }
   const lines = [
-    `记忆 ${memory.memory_id}`,
-    `状态：${memory.status}  类型：${memory.kind}  来源方式：${memory.origin}  版本：${memory.revision}`,
-    `授权范围：${(memory.scopes as string[]).join(",") || "无"}`,
-    `证据：${(memory.evidence_ids as string[]).join(",") || "无"}`,
-    `更新时间：${memory.updated_at}`,
+    `Memory ${memory.memory_id}`,
+    `status: ${memory.status}  kind: ${memory.kind}  origin: ${memory.origin}  revision: ${memory.revision}`,
+    `scopes: ${(memory.scopes as string[]).join(",") || "none"}`,
+    `evidence: ${(memory.evidence_ids as string[]).join(",") || "none"}`,
+    `updated: ${memory.updated_at}`,
     "",
     String(memory.content),
-    memory.content_truncated ? `…（共 ${memory.content_characters} 字）` : "",
+    memory.content_truncated
+      ? `... (${countLabel(counted(memory.content_characters), "character")} total)`
+      : "",
     "",
-    "原文摘录：",
+    "Source excerpt:",
   ];
   for (const item of document.evidence) {
     lines.push(
-      `- ${item.evidence_id}  来源=${item.source_id ?? "未知"}  作者=${item.written_by ?? "未知"}  可读=${item.available}`,
-      `  ${item.excerpt}${item.excerpt_truncated ? ` …（共 ${item.excerpt_characters} 字）` : ""}`,
+      `- ${item.evidence_id}  source=${item.source_id ?? "unknown"}  author=${item.written_by ?? "unknown"}  readable=${item.available}`,
+      `  ${item.excerpt}${item.excerpt_truncated ? ` ... (${countLabel(counted(item.excerpt_characters), "character")} total)` : ""}`,
     );
   }
-  if (document.evidence.length === 0) lines.push("（无可读原文）");
-  lines.push("", "版本历史：");
+  if (document.evidence.length === 0) lines.push("(no readable source text)");
+  lines.push("", "Revision history:");
   for (const item of document.history) {
     lines.push(
       `- rev ${item.revision}  ${item.action}  ${item.status}  scopes=${(item.scopes as string[]).join(",")}`,
-      `  ${item.content}${item.content_truncated ? ` …（共 ${item.content_characters} 字）` : ""}`,
+      `  ${item.content}${item.content_truncated ? ` ... (${countLabel(counted(item.content_characters), "character")} total)` : ""}`,
     );
   }
-  if (document.history.length === 0) lines.push("（无）");
+  if (document.history.length === 0) lines.push("(none)");
   lines.push("");
   return lines.join("\n");
 }

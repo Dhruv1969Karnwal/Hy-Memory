@@ -28,15 +28,16 @@ import { R6Button } from "./R6Controls";
 import { traceUiAction } from "./ui-trace";
 import { isDefiniteRefusal } from "./write-outcome";
 import "./call-history.css";
+import { countLabel, groupedCountLabel } from "./count-label";
 
 const PAGE_SIZE = 20;
 const stateLabels: Record<CallEvent["state"], string> = {
-  grounded: "查询成功",
-  empty: "查询成功，没有找到相关记忆",
-  partial: "查询成功，部分内容还在整理中",
-  timed_out: "查询超时，没有提供记忆",
-  unavailable: "One Memory 暂时不可用",
-  denied: "当前未授权查询",
+  grounded: "Query succeeded",
+  empty: "Query succeeded, no related memory found",
+  partial: "Query succeeded, some content is still being organized",
+  timed_out: "Query timed out, no memory was provided",
+  unavailable: "One Memory is unavailable right now",
+  denied: "The current authorization does not allow this query",
 };
 
 function toolName(tool: CallEvent["tool"]) {
@@ -44,7 +45,7 @@ function toolName(tool: CallEvent["tool"]) {
 }
 
 function sourceLabel(id: string | null) {
-  return id === null ? "未记录" : (CALL_HOSTS[id] ?? id);
+  return id === null ? "Not recorded" : (CALL_HOSTS[id] ?? id);
 }
 
 function CallReferences({
@@ -101,26 +102,30 @@ function CallReferences({
   return (
     <section
       className="call-history-references"
-      aria-label="相关内容"
+      aria-label="Related content"
       aria-busy={loading}
     >
-      <h3>相关内容</h3>
-      {loading && <p role="status">正在读取相关内容</p>}
-      {failed && <p role="alert">相关内容暂时无法读取，请刷新重试。</p>}
+      <h3>Related content</h3>
+      {loading && <p role="status">Loading related content</p>}
+      {failed && (
+        <p role="alert">
+          Related content can't be read right now. Refresh and try again.
+        </p>
+      )}
       {event.references.length ? (
         <ul>
           {Array.from(references, ([key, { reference, current }]) => (
             <li key={key}>
               <div>
                 <h4>
-                  {reference.kind === "raw" ? "原文" : "记忆"} ·{" "}
+                  {reference.kind === "raw" ? "Source text" : "Memory"} ·{" "}
                   {current?.available && current.reason === null
                     ? current.title
                     : current?.reason === "changed"
-                      ? "版本已变更"
+                      ? "Version changed"
                       : loading
-                        ? "待核对"
-                        : "不可用"}
+                        ? "Pending verification"
+                        : "Unavailable"}
                 </h4>
                 {reference.source_id && (
                   <p>{sourceLabel(reference.source_id)}</p>
@@ -160,23 +165,29 @@ function CallReferences({
                       });
                   }}
                 >
-                  {reference.kind === "raw" ? "查看原文" : "查看记忆"}
+                  {reference.kind === "raw"
+                    ? "View source text"
+                    : "View memory"}
                 </R6Button>
               )}
             </li>
           ))}
         </ul>
       ) : (
-        <p>没有找到相关内容</p>
+        <p>No related content found</p>
       )}
       {transcript && (
         <aside
-          aria-label="原文正文"
+          aria-label="Source text body"
           aria-busy={transcript.status === "loading"}
         >
-          {transcript.status === "loading" && <p role="status">正在读取原文</p>}
+          {transcript.status === "loading" && (
+            <p role="status">Loading source text</p>
+          )}
           {transcript.status === "failed" && (
-            <p role="alert">原文已不可用或版本已变更。</p>
+            <p role="alert">
+              The source text is no longer available or its version changed.
+            </p>
           )}
           {transcript.status === "ready" &&
             transcript.messages.map((message) => (
@@ -233,7 +244,7 @@ function ClearConfirmation({
       <p id={descriptionId}>{description}</p>
       <div className="call-history-actions">
         <R6Button disabled={pending} onClick={onCancel}>
-          取消
+          Cancel
         </R6Button>
         <R6Button variant="primary" pending={pending} onClick={onConfirm}>
           {confirmLabel}
@@ -341,7 +352,9 @@ export function CallHistory({
       else await clearCallEvents([...confirmation.ids], trace.traceId);
       trace.done("succeeded");
       if (!mounted.current) return;
-      setClearNotice(clearingAll ? "已清空全部记录。" : "已清除所选记录。");
+      setClearNotice(
+        clearingAll ? "All records cleared." : "Selected records cleared.",
+      );
     } catch (reason) {
       // A 4xx (e.g. `409 call_history_disabled`) is Core answering and
       // refusing: nothing was deleted, so it is a definite failure, not an
@@ -361,9 +374,9 @@ export function CallHistory({
       setClearNotice(
         refused
           ? clearingAll
-            ? "未能清空使用记录，当前记录保持不变。请核对后重试。"
-            : "未能清除所选记录，当前记录保持不变。请核对后重试。"
-          : "清除结果未确认，请核对重新读取的记录。未自动重试清除。",
+            ? "Couldn't clear the usage records. The existing records are unchanged. Check them and try again."
+            : "Couldn't clear the selected records. The existing records are unchanged. Check them and try again."
+          : "The clear result is unconfirmed. Check the records after rereading. The clear was not retried automatically.",
       );
     } finally {
       clearFlight.current = false;
@@ -384,7 +397,7 @@ export function CallHistory({
     <section className="call-history" aria-labelledby={titleId}>
       <header className="call-history-heading">
         <h1 id={titleId} ref={heading} tabIndex={-1}>
-          {selectedId === null ? "使用记录" : "这次查记忆"}
+          {selectedId === null ? "Usage records" : "This memory lookup"}
         </h1>
         <R6Button
           className="call-history-back"
@@ -392,7 +405,7 @@ export function CallHistory({
           onClick={selectedId === null ? onBack : () => setSelectedId(null)}
         >
           <ArrowLeft size={16} aria-hidden="true" />
-          {selectedId === null ? "返回应用" : "返回记录"}
+          {selectedId === null ? "Back to apps" : "Back to records"}
         </R6Button>
       </header>
       <div
@@ -401,7 +414,7 @@ export function CallHistory({
         {selectedId === null ? (
           <div className="call-history-filter">
             <label className="call-history-sr-only" htmlFor={filterId}>
-              按应用筛选
+              Filter by app
             </label>
             <select
               id={filterId}
@@ -416,7 +429,7 @@ export function CallHistory({
                 }));
               }}
             >
-              <option value="">全部应用</option>
+              <option value="">All apps</option>
               {Object.entries(CALL_HOSTS).map(([host, label]) => (
                 <option key={host} value={host}>
                   {label}
@@ -428,12 +441,12 @@ export function CallHistory({
           <span />
         )}
         <div className="call-history-actions">
-          {selectedId === null && <span>最近记录</span>}
+          {selectedId === null && <span>Recent records</span>}
           <R6Button
             className="call-history-icon"
             variant="quiet"
-            title="刷新记录"
-            aria-label="刷新记录"
+            title="Refresh records"
+            aria-label="Refresh records"
             disabled={clearing}
             onClick={refresh}
           >
@@ -444,8 +457,8 @@ export function CallHistory({
               <R6Button
                 className="call-history-icon"
                 variant="quiet"
-                title="清除本页记录"
-                aria-label="清除本页记录"
+                title="Clear this page"
+                aria-label="Clear this page"
                 disabled={!events.length || clearing}
                 onClick={() =>
                   setConfirmation({
@@ -458,12 +471,12 @@ export function CallHistory({
               </R6Button>
               <R6Button
                 variant="quiet"
-                title="清空全部记录"
-                aria-label="清空全部记录"
+                title="Clear all records"
+                aria-label="Clear all records"
                 disabled={!page?.total || clearing}
                 onClick={() => setConfirmation({ kind: "all" })}
               >
-                清空全部
+                Clear all
               </R6Button>
             </>
           )}
@@ -477,45 +490,48 @@ export function CallHistory({
       <div aria-busy={loading || clearing}>
         {loading && (
           <p className="call-history-state" role="status">
-            正在读取使用记录
+            Loading usage records
           </p>
         )}
         {clearing && (
           <p className="call-history-state" role="status">
-            正在清除所选记录
+            Clearing the selected records
           </p>
         )}
         {failed && (
           <p className="call-history-state" role="alert">
-            记录读取失败，请刷新重试。
+            Couldn't read the records. Refresh and try again.
           </p>
         )}
         {page && !page.available && (
           <p className="call-history-state" role="alert">
-            使用记录暂不可用，请稍后刷新。
+            Usage records are unavailable right now. Refresh in a moment.
           </p>
         )}
         {page?.recording_error && (
           <p className="call-history-notice" role="alert">
-            有几次调用没被记下来，列表可能不全。
+            Some calls weren't recorded, so the list may be incomplete.
           </p>
         )}
         {page?.available &&
           (selectedId !== null ? (
             selected ? (
-              <article className="call-history-detail" aria-label="调用详情">
+              <article
+                className="call-history-detail"
+                aria-label="Call details"
+              >
                 <h2>{`${sourceLabel(selected.host_id)} · ${shortTime(selected.occurred_at)}`}</h2>
                 <p className="call-history-summary">
                   {callDetailHeadline(selected)}
-                  {returnedFrom ? ` · 来源 ${sourceLabel(returnedFrom)}` : ""}
+                  {returnedFrom ? ` · From ${sourceLabel(returnedFrom)}` : ""}
                 </p>
                 <p className="call-history-stage">
                   {stateLabels[selected.state]}
                 </p>
                 <p className="call-history-stage">
-                  找到原文 {selected.raw_count} 段 · 记忆{" "}
-                  {selected.memory_count} 条 · 用时{" "}
-                  {(selected.elapsed_ms / 1000).toFixed(1)} 秒
+                  Found {countLabel(selected.raw_count, "source excerpt")} ·
+                  memories {selected.memory_count} · elapsed{" "}
+                  {(selected.elapsed_ms / 1000).toFixed(1)} seconds
                 </p>
                 {callDeliveryLabel(selected) && (
                   <p className="call-history-stage">
@@ -534,15 +550,16 @@ export function CallHistory({
                 )}
                 <section
                   className="call-history-metadata"
-                  aria-label="记录详情"
+                  aria-label="Record details"
                 >
-                  <h3>记录详情</h3>
+                  <h3>Record details</h3>
                   <p>
-                    为保护隐私，这里不保存你问的原话和回答，只保存时间、来源和结果。
+                    For privacy, this doesn't keep the words you asked or the
+                    answer, only the time, source and result.
                   </p>
                   <dl>
                     <div>
-                      <dt>准确时间</dt>
+                      <dt>Exact time</dt>
                       <dd>
                         <time dateTime={selected.occurred_at}>
                           {selected.occurred_at}
@@ -550,17 +567,17 @@ export function CallHistory({
                       </dd>
                     </div>
                     <div>
-                      <dt>应用</dt>
+                      <dt>App</dt>
                       <dd>{sourceLabel(selected.host_id)}</dd>
                     </div>
                     <div>
-                      <dt>类型</dt>
+                      <dt>Type</dt>
                       <dd>{toolName(selected.tool)}</dd>
                     </div>
                     <div>
-                      <dt>结果状态</dt>
+                      <dt>Result state</dt>
                       {/* The tool above is already humanized in this same
-                        panel ("查记忆", never `om_recall`); printing the raw
+                        panel ("Memory lookup", never `om_recall`); printing the raw
                         `grounded`/`partial` enum here leaks the internal state
                         vocabulary the rest of the page translates. */}
                       <dd>{stateLabels[selected.state]}</dd>
@@ -570,7 +587,8 @@ export function CallHistory({
               </article>
             ) : (
               <p className="call-history-state" role="status">
-                这条记录已不在当前页，请返回记录查看。
+                This record is no longer on the current page. Go back to the
+                records to view it.
               </p>
             )
           ) : (
@@ -578,7 +596,7 @@ export function CallHistory({
               <ul
                 ref={list}
                 className="call-history-list"
-                aria-label="调用记录"
+                aria-label="Call records"
               >
                 {events.map((item) => (
                   <li key={item.event_id}>
@@ -602,13 +620,18 @@ export function CallHistory({
               </ul>
               {!events.length && (
                 <p className="call-history-state" role="status">
-                  {request.offset ? "本页暂无记录" : "暂无使用记录"}
+                  {request.offset
+                    ? "No records on this page"
+                    : "No usage records yet"}
                 </p>
               )}
-              <nav className="call-history-pagination" aria-label="记录分页">
+              <nav
+                className="call-history-pagination"
+                aria-label="Record pagination"
+              >
                 <R6Button
-                  aria-label="上一页"
-                  title="上一页"
+                  aria-label="Previous page"
+                  title="Previous page"
                   disabled={request.offset === 0}
                   onClick={() =>
                     setRequest((current) => ({
@@ -626,8 +649,8 @@ export function CallHistory({
                   / {page.total}
                 </span>
                 <R6Button
-                  aria-label="下一页"
-                  title="下一页"
+                  aria-label="Next page"
+                  title="Next page"
                   disabled={
                     page.offset + PAGE_SIZE >= page.total || !events.length
                   }
@@ -648,24 +671,26 @@ export function CallHistory({
         page.retention_days !== null &&
         page.max_events !== null && (
           <p className="call-history-policy">
-            保留 {page.retention_days} 天，最多{" "}
-            {new Intl.NumberFormat("zh-CN").format(page.max_events)} 条记录
+            Retained for {countLabel(page.retention_days, "day")}, up to{" "}
+            {groupedCountLabel(page.max_events, "record")}
           </p>
         )}
       {confirmation && (
         <ClearConfirmation
           title={
             confirmation.kind === "all"
-              ? "清空全部使用记录？"
-              : `清除本页 ${confirmation.ids.length} 条记录？`
+              ? "Clear all usage records?"
+              : `Clear ${countLabel(confirmation.ids.length, "record")} on this page?`
           }
           description={
             confirmation.kind === "all"
-              ? "将删除当前保留的全部调用记录，不限于本页或当前筛选。不删除原文或记忆，不更改授权与留存规则。此操作无法撤销。"
-              : "仅清除这批调用记录，不删除原文或记忆，不更改授权与留存规则。此操作无法撤销。"
+              ? "This deletes every retained call record, not just this page or the current filter. It doesn't delete source text or memories, and it doesn't change authorization or retention rules. This can't be undone."
+              : "This clears only these call records. It doesn't delete source text or memories, and it doesn't change authorization or retention rules. This can't be undone."
           }
           confirmLabel={
-            confirmation.kind === "all" ? "确认清空全部" : "确认清除"
+            confirmation.kind === "all"
+              ? "Confirm clearing all"
+              : "Confirm clearing"
           }
           pending={clearing}
           onCancel={() => setConfirmation(null)}

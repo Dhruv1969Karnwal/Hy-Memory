@@ -5,7 +5,7 @@
  * and only knows the default `~/.one-memory`. Without a receipt, a new login
  * shell with no environment variables would attach to the default directory
  * and report a running Runtime as stopped — the exact opposite of the product
- * requirement "装完即短指令可用".
+ * requirement "short commands work right after install".
  *
  * The receipt lives next to the data directory's parent home so that:
  *   - it is per-user and never shared across installs;

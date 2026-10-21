@@ -407,7 +407,7 @@ def test_importing_leaves_the_loop_free_to_answer(tmp_path) -> None:
     assert evidence_store.count() == 6
     # Six records at three-odd slow calls each; on the loop that is most of a
     # second in a row with nobody served.
-    assert longest < delay * 3, f"导入期间循环被堵住 {longest:.3f}s"
+    assert longest < delay * 3, f"the loop was blocked for {longest:.3f}s during the import"
 
 
 def test_job_lifecycle_does_not_run_storage_calls_on_the_event_loop(tmp_path):
@@ -491,8 +491,8 @@ def test_the_heartbeat_leaves_the_loop_free_to_answer(tmp_path) -> None:
 
     longest, ticks = asyncio.run(beat_while_watching_the_loop())
 
-    assert ticks > 1, "心跳没有真的在跑"
-    assert longest < delay, f"保活期间循环被堵住 {longest:.3f}s"
+    assert ticks > 1, "the heartbeat never actually ran"
+    assert longest < delay, f"the loop was blocked for {longest:.3f}s during keepalive"
 
 
 # --- stable-evidence dispatch must actually run an awaitable callback ---------

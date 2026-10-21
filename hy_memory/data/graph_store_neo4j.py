@@ -1,11 +1,11 @@
 """
 Agent Memory V2 - Neo4jGraphStore
 
-基于 Neo4j 图数据库的图存储层实现。
+Graph storage layer implemented on the Neo4j graph database.
 
-使用 **同步** neo4j Python driver + asyncio.to_thread 包装为异步，
-彻底避免 AsyncGraphDatabase.driver 的 event loop 绑定问题
-（与 Qdrant 存储层同一策略）。
+Uses the **synchronous** neo4j Python driver wrapped as async with asyncio.to_thread,
+which fully avoids the event loop binding problem of AsyncGraphDatabase.driver
+(same strategy as the Qdrant storage layer).
 """
 
 from typing import Optional, List, Dict, Any, Sequence, Tuple
@@ -27,7 +27,7 @@ from .graph_store_base import (
 
 logger = logging.getLogger(__name__)
 
-# Graph 独立线程池（不与 VDB/SQLite 竞争）
+# Dedicated Graph thread pool (does not compete with VDB/SQLite)
 _GRAPH_POOL_SIZE = 64
 _graph_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=_GRAPH_POOL_SIZE, thread_name_prefix="graph"
@@ -35,14 +35,14 @@ _graph_executor = concurrent.futures.ThreadPoolExecutor(
 
 
 def _run_in_graph_pool(func, *args, **kwargs):
-    """在 Graph 独立线程池中执行同步函数"""
+    """Run a synchronous function in the dedicated Graph thread pool."""
     import functools
     loop = asyncio.get_event_loop()
     if args or kwargs:
         return loop.run_in_executor(_graph_executor, functools.partial(func, *args, **kwargs))
     return loop.run_in_executor(_graph_executor, func)
 
-# Neo4j Schema 初始化 Cypher (约束 + 索引)
+# Neo4j schema initialization Cypher (constraints + indexes)
 _NEO4J_SCHEMA_STATEMENTS = [
     "CREATE CONSTRAINT IF NOT EXISTS FOR (u:User) REQUIRE u.isolation_key IS UNIQUE",
     "CREATE CONSTRAINT IF NOT EXISTS FOR (m:Memory) REQUIRE m.node_id IS UNIQUE",
@@ -61,16 +61,16 @@ _NEO4J_SCHEMA_STATEMENTS = [
 
 
 def _make_vector_index_statements(dims: int) -> List[str]:
-    """生成向量索引 DDL（依赖 embedding_dims）"""
+    """Generate vector index DDL (depends on embedding_dims)."""
     return [
-        # V_con 内容向量索引
+        # V_con content vector index
         f"""CREATE VECTOR INDEX memory_content_idx IF NOT EXISTS
 FOR (m:Memory) ON (m.embedding)
 OPTIONS {{indexConfig: {{
     `vector.dimensions`: {dims},
     `vector.similarity_function`: 'cosine'
 }}}}""",
-        # V_beh 行为向量索引
+        # V_beh behavior vector index
         f"""CREATE VECTOR INDEX memory_behavior_idx IF NOT EXISTS
 FOR (m:Memory) ON (m.beh_embedding)
 OPTIONS {{indexConfig: {{
@@ -82,10 +82,10 @@ OPTIONS {{indexConfig: {{
 
 class Neo4jGraphStore(GraphStoreBase):
     """
-    Neo4j 图存储（推荐后端）
+    Neo4j graph store (recommended backend)
 
-    使用 **同步** neo4j GraphDatabase.driver + asyncio.to_thread，
-    彻底绕开 AsyncGraphDatabase event loop 绑定问题。
+    Uses the **synchronous** neo4j GraphDatabase.driver + asyncio.to_thread,
+    fully sidestepping the AsyncGraphDatabase event loop binding problem.
     """
 
     _supports_batch_topic_tags = True
@@ -96,9 +96,9 @@ class Neo4jGraphStore(GraphStoreBase):
 
     def __init__(self, config: MemoryConfig):
         super().__init__(config)
-        self._driver = None  # 同步 driver
+        self._driver = None  # Synchronous driver
 
-        # embedding 维度
+        # Embedding dimensions
         vs_dims = getattr(getattr(config, 'vector_store', None), 'embedding_dims', None)
         emb_dims = getattr(getattr(config, 'embedder', None), 'embedding_dims', None)
         self._embedding_dims = vs_dims or emb_dims or 1536
@@ -110,7 +110,7 @@ class Neo4jGraphStore(GraphStoreBase):
         self._database = getattr(graph_config, 'database', None) or "neo4j"
 
     async def initialize(self) -> None:
-        """初始化 Neo4j 连接并创建 Schema + 双向量索引"""
+        """Initialize the Neo4j connection and create the Schema plus both vector indexes."""
         try:
             import neo4j
         except ImportError:
@@ -127,10 +127,10 @@ class Neo4jGraphStore(GraphStoreBase):
             connection_acquisition_timeout=120,
         )
         logger.info(f"[neo4j] pool_size={_neo4j_pool_size}")
-        # 验证连接
+        # Verify connectivity
         await _run_in_graph_pool(self._driver.verify_connectivity)
 
-        # 创建约束和索引
+        # Create constraints and indexes
         def _init_schema():
             with self._driver.session(database=self._database) as session:
                 for stmt in _NEO4J_SCHEMA_STATEMENTS:
@@ -139,7 +139,7 @@ class Neo4jGraphStore(GraphStoreBase):
                     except Exception as e:
                         logger.debug(f"Neo4j schema DDL note: {e}")
 
-                # 创建双向量 HNSW 索引
+                # Create both vector HNSW indexes
                 dims = self._embedding_dims
                 for stmt in _make_vector_index_statements(dims):
                     try:
@@ -155,7 +155,7 @@ class Neo4jGraphStore(GraphStoreBase):
         )
 
     async def _run(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """执行 Cypher 查询并返回结果列表 (每行是一个 dict)"""
+        """Run a Cypher query and return the result list (one dict per row)."""
         if self._driver is None:
             return []
         def _exec():
@@ -165,12 +165,12 @@ class Neo4jGraphStore(GraphStoreBase):
         return await _run_in_graph_pool(_exec)
 
     async def _run_single(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """执行查询并返回第一行 (或 None)"""
+        """Run a query and return the first row (or None)."""
         rows = await self._run(query, params)
         return rows[0] if rows else None
 
     async def _run_write(self, query: str, params: Optional[Dict[str, Any]] = None) -> None:
-        """执行写入操作"""
+        """Run a write operation."""
         if self._driver is None:
             return
         def _exec():
@@ -179,18 +179,18 @@ class Neo4jGraphStore(GraphStoreBase):
         await _run_in_graph_pool(_exec)
 
     # ================================================================
-    # 生命周期
+    # Lifecycle
     # ================================================================
 
     async def close(self) -> None:
-        """关闭连接"""
+        """Close the connection."""
         if self._driver:
             self._driver.close()
             self._driver = None
         logger.info("Neo4jGraphStore closed")
 
     async def get_stats(self) -> Dict[str, Any]:
-        """获取图统计"""
+        """Return graph statistics."""
         try:
             mc = await self._run_single("MATCH (m:Memory) RETURN count(m) AS cnt")
             uc = await self._run_single("MATCH (u:User) RETURN count(u) AS cnt")
@@ -205,12 +205,12 @@ class Neo4jGraphStore(GraphStoreBase):
             return {"backend": "neo4j", "error": str(e)}
 
     # ================================================================
-    # User 节点管理
+    # User node management
     # ================================================================
 
     async def ensure_user_node(self, isolation_key: str, user_id: str = "",
                                 agent_id: str = "") -> None:
-        """确保 User 节点存在"""
+        """Ensure the User node exists."""
         try:
             await self._run_write(
                 "MERGE (u:User {isolation_key: $ik}) "
@@ -222,7 +222,7 @@ class Neo4jGraphStore(GraphStoreBase):
             logger.warning(f"ensure_user_node failed: {e}")
 
     # ================================================================
-    # Memory 节点 CRUD
+    # Memory node CRUD
     # ================================================================
 
     @staticmethod
@@ -262,7 +262,7 @@ class Neo4jGraphStore(GraphStoreBase):
         }
 
     async def upsert_memory_node(self, node: MemoryNode) -> str:
-        """创建或更新 Memory 节点 + User→Memory 边"""
+        """Create or update a Memory node plus the User→Memory edge."""
         isolation_key = node.get_isolation_key()
         await self.ensure_user_node(
             isolation_key, node.user_id, node.agent_id
@@ -271,11 +271,11 @@ class Neo4jGraphStore(GraphStoreBase):
         params = self._memory_node_params(node)
         now = params["now"]
 
-        # embedding SET 子句（仅在有值时写入，避免覆盖已有 embedding 为 NULL）
+        # embedding SET clause (written only when present, so existing embeddings are not overwritten with NULL)
         emb_set_create = ", m.embedding = $emb" if params["emb"] else ""
         emb_set_match = ", m.embedding = $emb" if params["emb"] else ""
 
-        # MERGE 保证幂等
+        # MERGE keeps this idempotent
         await self._run_write(
             f"""
             MERGE (m:Memory {{node_id: $nid}})
@@ -304,7 +304,7 @@ class Neo4jGraphStore(GraphStoreBase):
             params,
         )
 
-        # 确保 HAS_MEMORY 边
+        # Ensure the HAS_MEMORY edge
         try:
             await self._run_write(
                 """
@@ -610,7 +610,7 @@ class Neo4jGraphStore(GraphStoreBase):
         return len(source_nodes)
 
     async def get_node(self, node_id: str) -> Optional[MemoryNode]:
-        """获取单个 Memory 节点"""
+        """Fetch a single Memory node."""
         row = await self._run_single(
             "MATCH (m:Memory {node_id: $nid}) RETURN m",
             {"nid": node_id},
@@ -620,7 +620,7 @@ class Neo4jGraphStore(GraphStoreBase):
         return self._record_to_memory_node(row["m"])
 
     async def get_nodes_by_ids(self, node_ids: List[str]) -> List[MemoryNode]:
-        """批量获取"""
+        """Fetch nodes in batch."""
         if not node_ids:
             return []
         rows = await self._run(
@@ -636,7 +636,7 @@ class Neo4jGraphStore(GraphStoreBase):
         status: Optional[MemoryStatus] = None,
         limit: int = 100,
     ) -> List[MemoryNode]:
-        """按条件获取节点列表"""
+        """Fetch a node list matching the given filters."""
         conditions = ["m.isolation_key = $ik"]
         params: Dict[str, Any] = {"ik": isolation_key, "lim": limit}
 
@@ -680,7 +680,7 @@ class Neo4jGraphStore(GraphStoreBase):
         return [self._record_to_memory_node(r["m"]) for r in rows]
 
     async def get_profile(self, isolation_key: str) -> Optional[MemoryNode]:
-        """获取 L5 Identity Profile 节点"""
+        """Fetch the L5 Identity Profile node."""
         row = await self._run_single(
             "MATCH (m:Memory) WHERE m.isolation_key = $ik AND m.layer = $layer "
             "AND m.status = 'active' RETURN m LIMIT 1",
@@ -691,7 +691,7 @@ class Neo4jGraphStore(GraphStoreBase):
         return self._record_to_memory_node(row["m"])
 
     async def update_node(self, node_id: str, updates: Dict[str, Any]) -> bool:
-        """更新节点属性"""
+        """Update node properties."""
         if not updates:
             return True
         set_clauses = []
@@ -713,7 +713,7 @@ class Neo4jGraphStore(GraphStoreBase):
             return False
 
     async def delete_node(self, node_id: str) -> bool:
-        """删除 Memory 节点及其关联边"""
+        """Delete a Memory node together with its edges."""
         try:
             await self._run_write(
                 "MATCH (m:Memory {node_id: $nid}) DETACH DELETE m",
@@ -725,7 +725,7 @@ class Neo4jGraphStore(GraphStoreBase):
             return False
 
     async def delete_all_nodes(self, isolation_key: str) -> int:
-        """删除某隔离键下所有 Memory 节点"""
+        """Delete all Memory nodes under one isolation key."""
         try:
             count_row = await self._run_single(
                 "MATCH (m:Memory) WHERE m.isolation_key = $ik RETURN count(m) AS cnt",
@@ -749,7 +749,7 @@ class Neo4jGraphStore(GraphStoreBase):
         *,
         layer: str = "l2_fact",
     ) -> Dict[str, int]:
-        """见基类。按 layer 收窄，避免连带删掉 System 2 的 l6_schema。"""
+        """See base class. Narrowed by layer so System 2's l6_schema is not deleted as well."""
         out = {"memories": 0, "topics": 0, "entities": 0}
         try:
             cond = "m.layer = $layer AND m.user_id = $uid"
@@ -766,15 +766,15 @@ class Neo4jGraphStore(GraphStoreBase):
                 f"MATCH (m:Memory) WHERE {cond} DETACH DELETE m", params
             )
 
-            # 清掉目标 user/agent scope 内真正的孤儿 Topic。旧实现无 scope
-            # 条件，会在一次用户回填时删除全库其他 namespace 的历史孤儿节点。
+            # Delete only genuinely orphan Topics inside the target user/agent scope. The old implementation had no scope
+            # condition and wiped historical orphans from other namespaces across the whole database during a single user backfill.
             topic_scope = (
                 f"{user_id}::{agent_id}" if agent_id else f"{user_id}::"
             )
             topic_condition = (
                 "t.isolation_key = $scope OR t.isolation_key STARTS WITH $prefix"
             )
-            # Memory 成员，只要仍有 SUBTOPIC_OF 子节点就必须保留。
+            # A Topic without Memory members must still be kept as long as it has SUBTOPIC_OF children.
             row = await self._run_single(
                 f"""
                 MATCH (t:Topic) WHERE ({topic_condition})
@@ -824,7 +824,7 @@ class Neo4jGraphStore(GraphStoreBase):
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> int:
-        """按 metadata 字段组合删除 Memory 节点"""
+        """Delete Memory nodes by a combination of metadata fields."""
         try:
             conditions = ["m.user_id = $uid"]
             params: Dict[str, Any] = {"uid": user_id}
@@ -832,9 +832,9 @@ class Neo4jGraphStore(GraphStoreBase):
                 conditions.append("m.agent_id = $aid")
                 params["aid"] = agent_id
             if session_id is not None:
-                # Graph store Memory 节点不直接存 session_id，
-                # 但 isolation_key = "user_id::agent_id::session_id"，
-                # 构建精确的 isolation_key 来过滤
+                # Memory nodes in the Graph store do not carry session_id directly,
+                # but isolation_key = "user_id::agent_id::session_id",
+                # so the exact isolation_key is built to filter on
                 ik = f"{user_id}::{agent_id or 'default_agent'}::{session_id}"
                 conditions.append("m.isolation_key = $ik")
                 params["ik"] = ik
@@ -916,7 +916,7 @@ class Neo4jGraphStore(GraphStoreBase):
             return 0
 
     # ================================================================
-    # 边操作
+    # Edge operations
     # ================================================================
 
     async def add_edge(
@@ -926,7 +926,7 @@ class Neo4jGraphStore(GraphStoreBase):
         edge_type: str,
         properties: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """添加 Memory→Memory 关系边 (RELATED_TO)，自动建双向边"""
+        """Add a Memory→Memory relation edge (RELATED_TO), building both directions automatically."""
         props = properties or {}
         now = datetime.now().isoformat()
 
@@ -943,17 +943,17 @@ class Neo4jGraphStore(GraphStoreBase):
         }
 
         try:
-            # 正向 A→B + 反向 B→A，一条 Cypher 搞定。
+            # Forward A→B plus reverse B→A, all in one Cypher statement.
             #
-            # 必须用 MERGE 而不是 CREATE：同一对节点之间会**反复**建同类型边 ——
-            # UPDATE 是原地更新（node_id 不变），一条记忆被合并多次就会多次参与投影，
-            # 两条老节点若再次同批出现，co_occurs 就会重复建；System 2 的 agent 循环
-            # 更是可能对同一对反复调用（线上实测 `related` 有 20 万对重复、最严重 32 份）。
+            # MERGE is mandatory, not CREATE: the same node pair gets the same edge type **repeatedly** --
+            # UPDATE is in place (node_id unchanged), so a memory merged several times takes part in projection several times,
+            # and if two old nodes land in the same batch again co_occurs would be created twice; the System 2 agent loop
+            # may even be called repeatedly for one pair (measured in production: `related` had 200k duplicate pairs, up to 32 copies).
             #
-            # 重复边不会放大打分（build_adjacency 会折叠成最强的一条），但会吃掉
-            # get_related_edges 的 max_edges 预算 —— Cypher 的 LIMIT 先截断，
-            # 去重在 Python 侧，于是重复边挤掉了本该返回的真实边。
-            # ON MATCH 取较大权重，与读侧"折叠成最强"的语义一致。
+            # Duplicate edges do not inflate scoring (build_adjacency folds them into the strongest one), but they consume
+            # the max_edges budget of get_related_edges -- Cypher's LIMIT truncates first,
+            # deduplication happens on the Python side, so duplicates crowd out the real edges that should have been returned.
+            # ON MATCH keeps the larger weight, matching the read-side "fold into the strongest" semantics.
             await self._run_write(
                 """
                 MATCH (a:Memory {node_id: $src}), (b:Memory {node_id: $tgt})
@@ -1025,26 +1025,26 @@ class Neo4jGraphStore(GraphStoreBase):
         embed_service=None,
         similarity_threshold: float = 0.85,
     ) -> str:
-        """记忆节点关联主题 (Memory→Topic)，支持 Tag 归一化
+        """Attach a memory node to a topic (Memory→Topic), with tag normalization
 
-        如果传入 embed_service：
-          1. embed 新 tag
-          2. 和已有 Topic（同 isolation_key）做 cosine 比对
-          3. 超过 similarity_threshold → 复用已有 Topic
-          4. 否则新建 Topic（带 embedding）
+        When embed_service is provided:
+          1. embed the new tag
+          2. cosine-compare it with existing Topics (same isolation_key)
+          3. above similarity_threshold → reuse the existing Topic
+          4. otherwise create a new Topic (with embedding)
 
-        不传 embed_service 时退化为原始行为（按 name 精确匹配）。
+        Without embed_service it degrades to the original behaviour (exact match on name).
         """
         import uuid as _uuid
         import numpy as np
         now = datetime.now().isoformat()
 
-        # --- Tag 归一化 ---
+        # --- Tag normalization ---
         if embed_service is not None:
             try:
                 tag_embedding = await embed_text_for_graph(embed_service, topic_name)
 
-                # 拉取已有 Topic
+                # Fetch existing Topics
                 existing = await self.get_all_topics(isolation_key)
                 best_match = None
                 best_sim = 0.0
@@ -1064,14 +1064,14 @@ class Neo4jGraphStore(GraphStoreBase):
                             best_match = t
 
                 if best_match and best_sim >= similarity_threshold:
-                    # 复用已有 Topic
+                    # Reuse an existing Topic
                     topic_id = best_match["topic_id"]
                     logger.debug(
                         f"[tag-normalize] '{topic_name}' → reuse '{best_match['name']}' "
                         f"(sim={best_sim:.3f})"
                     )
                 else:
-                    # 新建 Topic（带 embedding）
+                    # Create a new Topic (with embedding)
                     topic_id = f"topic_{_uuid.uuid5(_uuid.NAMESPACE_URL, f'{isolation_key}:{topic_name}').hex[:12]}"
                     await self._run_write(
                         """
@@ -1084,7 +1084,7 @@ class Neo4jGraphStore(GraphStoreBase):
                     )
                     logger.debug(f"[tag-normalize] '{topic_name}' → new Topic (no match >= {similarity_threshold})")
 
-                # 建 TAGGED_WITH 边（MERGE 防重复）
+                # Create the TAGGED_WITH edge (MERGE prevents duplicates)
                 await self._run_write(
                     """
                     MATCH (m:Memory {node_id: $mid}), (t:Topic {topic_id: $tid})
@@ -1096,9 +1096,9 @@ class Neo4jGraphStore(GraphStoreBase):
 
             except Exception as e:
                 logger.warning(f"[tag-normalize] failed, fallback to exact match: {e}")
-                # fallback 到下面的原始逻辑
+                # Fallback to the original logic below
 
-        # --- 原始逻辑（无 embed_service 时） ---
+        # --- Original logic (when embed_service is absent) ---
         topic_id = f"topic_{_uuid.uuid5(_uuid.NAMESPACE_URL, f'{isolation_key}:{topic_name}').hex[:12]}"
         try:
             await self._run_write(
@@ -1108,10 +1108,10 @@ class Neo4jGraphStore(GraphStoreBase):
                 """,
                 {"tid": topic_id, "ik": isolation_key, "name": topic_name, "now": now},
             )
-            # ⚠️ 这里曾经多传了一个 params dict（`_run_write` 只收一个），
-            # 导致 TypeError 被下面的 except 静默吞掉 → **TAGGED_WITH 边从来没建出来**。
-            # 后果是走 fallback 的 tag 全部变成孤立 Topic：get_topic_memories 返回空、
-            # Topic 摘要不触发、时序脊找不到同 Topic 成员、tag 桥接也捞不到东西。
+            # ⚠️ This once passed an extra params dict (`_run_write` accepts only one),
+            # so the TypeError was silently swallowed by the except below → **TAGGED_WITH edges were never created**.
+            # As a result every tag going through the fallback became an isolated Topic: get_topic_memories returned nothing,
+            # Topic summaries never triggered, the temporal spine found no same-Topic members, and tag bridging found nothing either.
             await self._run_write(
                 """
                 MATCH (m:Memory {node_id: $mid}), (t:Topic {topic_id: $tid})
@@ -1459,7 +1459,7 @@ class Neo4jGraphStore(GraphStoreBase):
         label: str,
         isolation_key: str,
     ) -> str:
-        """Memory -[:MENTIONS]-> Entity。"""
+        """Memory -[:MENTIONS]-> Entity."""
         if not memory_node_id or not name:
             return ""
         name_disp = str(name).strip()
@@ -1604,15 +1604,15 @@ class Neo4jGraphStore(GraphStoreBase):
             return []
 
     # ================================================================
-    # Topic 检索 (Tag 收敛 + Tag 桥接召回)
+    # Topic retrieval (tag convergence + tag bridging recall)
     # ================================================================
 
     async def get_all_topics(self, isolation_key: str) -> List[Dict[str, Any]]:
-        """获取某 isolation_key 下的所有 Topic 节点（含度数）。
+        """Return every Topic node under an isolation_key (with degree).
 
-        `degree` = 挂在该 Topic 上的 active 记忆数，画像聚合要用
-        （Topic 度数 + 新鲜度排序 ≈ "用户是什么样的人"，零 LLM 成本）。
-        两个后端的返回形状必须一致，否则该能力会在某个后端上静默失效。
+        `degree` = number of active memories attached to the Topic, which profile aggregation needs
+        (Topic degree + freshness ordering ≈ "what kind of person the user is", at zero LLM cost).
+        Both backends must return the same shape, otherwise the feature fails silently on one of them.
         """
         try:
             rows = await self._run(
@@ -1643,7 +1643,7 @@ class Neo4jGraphStore(GraphStoreBase):
         topic_ids: List[str],
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
-        """Tag 桥接召回：从 Topic 反向查 TAGGED_WITH → Memory"""
+        """Tag bridging recall: look up TAGGED_WITH from a Topic back to Memory."""
         if not topic_ids:
             return []
         try:
@@ -1668,7 +1668,7 @@ class Neo4jGraphStore(GraphStoreBase):
     # ================================================================
 
     async def ensure_vdbref(self, node_id: str, layer: str) -> None:
-        """确保 VdbRef 影子节点存在"""
+        """Ensure the VdbRef shadow node exists."""
         try:
             await self._run_write(
                 "MERGE (v:VdbRef {node_id: $nid}) ON CREATE SET v.layer = $layer",
@@ -1678,7 +1678,7 @@ class Neo4jGraphStore(GraphStoreBase):
             logger.debug(f"ensure_vdbref note: {e}")
 
     async def add_derived_from(self, memory_node_id: str, vdbref_node_id: str) -> bool:
-        """添加 DERIVED_FROM 边: Memory → VdbRef"""
+        """Add a DERIVED_FROM edge: Memory → VdbRef."""
         try:
             now = datetime.now().isoformat()
             await self._run_write(
@@ -1701,7 +1701,7 @@ class Neo4jGraphStore(GraphStoreBase):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """反向查找: VDB node_id → 引用它的 Graph Memory 节点"""
+        """Reverse lookup: VDB node_id → the Graph Memory nodes referencing it."""
         if not vdb_node_ids:
             return []
         results = []
@@ -1742,7 +1742,7 @@ class Neo4jGraphStore(GraphStoreBase):
         return results[:limit]
 
     async def get_evidence_vdbrefs(self, memory_node_id: str) -> List[Dict[str, Any]]:
-        """获取一个 Graph Memory 的全部 DERIVED_FROM evidence VdbRef"""
+        """Return every DERIVED_FROM evidence VdbRef of one Graph Memory."""
         try:
             rows = await self._run(
                 """
@@ -1757,18 +1757,18 @@ class Neo4jGraphStore(GraphStoreBase):
             return []
 
     # ================================================================
-    # 图检索
+    # Graph retrieval
     # ================================================================
 
     async def get_topic_memories(
         self, topic_id: str, *, limit: int = 200,
     ) -> List[Dict[str, Any]]:
-        """列出某 Topic 下的 active 记忆（按 created_at）。语义见基类。
+        """List active memories under a Topic (ordered by created_at). Semantics in the base class.
 
-        ⚠️ `ORDER BY` 必须用**投影出来的别名**（`created_at`），不能写 `m.created_at`：
-        Neo4j 在 `RETURN DISTINCT` 之后只认投影里的变量，否则整条查询报 SyntaxError。
-        而本方法的异常是 `logger.debug` 吞掉 + `return []`，表面无声 ——
-        实际后果是 `MEMORY_TOPIC_SUMMARY_ENABLED=true` 时永远拿不到成员记忆、摘要全不生成。
+        ⚠️ `ORDER BY` must use the **projected alias** (`created_at`), never `m.created_at`:
+        after `RETURN DISTINCT` Neo4j only recognizes variables present in the projection, otherwise the whole query is a SyntaxError.
+        The exception here is swallowed by `logger.debug` + `return []`, so it stays quiet --
+        in practice `MEMORY_TOPIC_SUMMARY_ENABLED=true` never gets member memories and no summary is ever produced.
         """
         if not topic_id:
             return []
@@ -1784,7 +1784,7 @@ class Neo4jGraphStore(GraphStoreBase):
                 """,
                 {"tid": topic_id, "lim": int(limit)},
             )
-            # created_at 只为排序而投影，不进返回体 —— 与 Kuzu 后端保持同样的形状
+            # created_at is projected only for ordering and stays out of the payload -- same shape as the Kuzu backend
             return [
                 {"node_id": r.get("node_id"), "content": r.get("content")}
                 for r in rows if r.get("node_id")
@@ -1796,7 +1796,7 @@ class Neo4jGraphStore(GraphStoreBase):
     async def add_temporal_edge(
         self, prev_id: str, next_id: str, topic_id: str = "",
     ) -> bool:
-        """建 Topic 内时序脊边（TEMPORAL_NEXT，有向 prev→next）。语义见基类。"""
+        """Create intra-Topic temporal spine edges (TEMPORAL_NEXT, directed prev→next). Semantics in the base class."""
         if not prev_id or not next_id or prev_id == next_id:
             return False
         try:
@@ -1855,11 +1855,11 @@ class Neo4jGraphStore(GraphStoreBase):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """取一端落在 node_ids 里的 RELATED_TO（+ 可选 TEMPORAL_NEXT）边。语义见基类。"""
+        """Return RELATED_TO (plus optional TEMPORAL_NEXT) edges with one end inside node_ids. Semantics in the base class."""
         if not node_ids:
             return []
 
-        # add_edge 建的是双向边，只查正向即可覆盖两个方向；无向去重在 Python 侧做
+        # add_edge creates bidirectional edges, so querying the forward direction covers both; undirected dedup happens on the Python side
         rtype_filter = ""
         params: Dict[str, Any] = {"ids": list(node_ids), "lim": int(max_edges) * 2}
         if relation_types:
@@ -1891,9 +1891,9 @@ class Neo4jGraphStore(GraphStoreBase):
                 src, tgt = row.get("source_id"), row.get("target_id")
                 if not src or not tgt or src == tgt:
                     continue
-                # 去重 key 必须带 relation_type：add_edge 建的是双向边，需要把
-                # A→B / B→A 折叠成一条；但同一对节点之间**可以有多种关系**
-                # （既 co_occurs 又 causes），那是两条不同的边，不能合并。
+                # The dedup key must include relation_type: add_edge creates bidirectional edges, so
+                # A→B / B→A must fold into one; but one node pair **can carry several relations**
+                # (both co_occurs and causes), which are two distinct edges and must not be merged.
                 pair = (frozenset((src, tgt)), row.get("relation_type") or "related")
                 if pair in seen_pairs:
                     continue
@@ -1913,8 +1913,8 @@ class Neo4jGraphStore(GraphStoreBase):
         except Exception as e:
             logger.debug(f"get_related_edges: {e}")
 
-        # ── 时序脊：TEMPORAL_NEXT 是有向边（source=更早，target=更晚）──
-        # 一端落在 node_ids 里就要取（两个方向都查），否则"X 之前发生了什么"走不通。
+        # ── Temporal spine: TEMPORAL_NEXT is directed (source = earlier, target = later) ──
+        # Take the edge when either end lies in node_ids (both directions queried), otherwise "what happened before X" never works.
         if include_temporal and (
             not relation_types or "temporal_next" in relation_types
         ):
@@ -1981,7 +1981,7 @@ class Neo4jGraphStore(GraphStoreBase):
         hop: int = 1,
         max_nodes: int = 50,
     ) -> List[Dict[str, Any]]:
-        """从锚点节点出发，沿图边扩展 N 跳"""
+        """Expand from anchor nodes along graph edges for N hops."""
         if not anchor_ids:
             return []
 
@@ -1990,7 +1990,7 @@ class Neo4jGraphStore(GraphStoreBase):
 
         for anchor_id in anchor_ids:
             try:
-                # 正向边
+                # Outgoing edges
                 rows = await self._run(
                     """
                     MATCH (a:Memory {node_id: $aid})-[r]->(b:Memory)
@@ -2016,7 +2016,7 @@ class Neo4jGraphStore(GraphStoreBase):
                             "source": "graph_expand",
                         })
 
-                # 反向边
+                # Incoming edges
                 rows2 = await self._run(
                     """
                     MATCH (b:Memory)-[r]->(a:Memory {node_id: $aid})
@@ -2057,15 +2057,15 @@ class Neo4jGraphStore(GraphStoreBase):
         max_nodes: int = 500,
         isolation_key: str = "",
     ) -> List[Dict[str, Any]]:
-        """BFS 展开：RELATED_TO + CROSS_ABSTRACTS_TO + TAGGED_WITH，N 跳。
+        """BFS expansion: RELATED_TO + CROSS_ABSTRACTS_TO + TAGGED_WITH, N hops.
 
-        每一跳同时查：
-        1. Memory -[RELATED_TO]- Memory（双向）
-        2. Memory -[CROSS_ABSTRACTS_TO]- Memory（双向，basic↔abstract）
-        3. Memory -[TAGGED_WITH]-> Topic <-[TAGGED_WITH]- Memory（经 Topic 桥接）
+        Every hop queries at the same time:
+        1. Memory -[RELATED_TO]- Memory (both directions)
+        2. Memory -[CROSS_ABSTRACTS_TO]- Memory (both directions, basic↔abstract)
+        3. Memory -[TAGGED_WITH]-> Topic <-[TAGGED_WITH]- Memory (bridged through Topic)
 
-        所有结果必须是 Memory 节点（不返回 Topic/VdbRef 等中间节点）。
-        isolation_key 非空时只展开属于同一 isolation_key 的节点。
+        Every result must be a Memory node (no Topic/VdbRef or other intermediate nodes).
+        When isolation_key is non-empty, only nodes with the same isolation_key are expanded.
         """
         if not anchor_ids:
             return []
@@ -2074,7 +2074,7 @@ class Neo4jGraphStore(GraphStoreBase):
         all_expanded = []
         frontier = list(anchor_ids)
 
-        # isolation_key 过滤条件
+        # isolation_key filter condition
         ik_filter = "AND m.isolation_key = $ik" if isolation_key else ""
         params_base = {"ik": isolation_key} if isolation_key else {}
 
@@ -2084,7 +2084,7 @@ class Neo4jGraphStore(GraphStoreBase):
 
             next_frontier = []
 
-            # --- RELATED_TO + CROSS_ABSTRACTS_TO 邻居（双向，合并查询）---
+            # --- RELATED_TO + CROSS_ABSTRACTS_TO neighbours (both directions, merged query) ---
             try:
                 rows = await self._run(
                     f"""
@@ -2114,7 +2114,7 @@ class Neo4jGraphStore(GraphStoreBase):
             except Exception as e:
                 logger.debug(f"expand_with_tags RELATED_TO|CROSS_ABSTRACTS_TO hop {current_hop}: {e}")
 
-            # --- TAGGED_WITH 桥接（Memory→Topic→Memory）---
+            # --- TAGGED_WITH bridging (Memory→Topic→Memory) ---
             try:
                 rows = await self._run(
                     f"""
@@ -2149,7 +2149,7 @@ class Neo4jGraphStore(GraphStoreBase):
         return all_expanded[:max_nodes]
 
     # ================================================================
-    # 向量检索 (HNSW 双索引)
+    # Vector retrieval (dual HNSW indexes)
     # ================================================================
 
     async def vector_search(
@@ -2163,31 +2163,31 @@ class Neo4jGraphStore(GraphStoreBase):
         include_sources: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """V_con 向量检索 Graph Memory 节点 — **Pre-Filter 模式**
+        """V_con vector retrieval over Graph Memory nodes — **Pre-Filter mode**
 
-        使用 Neo4j 5.18+ 的 ``vector.similarity.cosine()`` 函数，
-        先按 isolation_key / layer / status 做 MATCH 过滤，
-        再在过滤后的子集上计算向量相似度。
+        Uses the Neo4j 5.18+ ``vector.similarity.cosine()`` function:
+        MATCH filtering by isolation_key / layer / status first,
+        then vector similarity is computed on the filtered subset.
 
-        与旧的 ``db.index.vector.queryNodes()`` 方案相比：
-        - queryNodes 是全局 HNSW top-K → post-filter，稀疏用户召回率极低
-        - 本方案是 pre-filter → brute-force cosine，保证 100% 召回率
-        - 性能差异 <10ms（用户级节点数通常 <100），完全可接受
+        Compared with the old ``db.index.vector.queryNodes()`` approach:
+        - queryNodes is a global HNSW top-K → post-filter, giving very low recall for sparse users
+        - this approach is pre-filter → brute-force cosine, guaranteeing 100% recall
+        - the performance gap is <10ms (per-user node counts are usually <100), entirely acceptable
 
-        当 isolation_key 为空但 user_id 非空时，执行跨 agent 搜索
-        （匹配 isolation_key 以 user_id + "::" 为前缀的所有节点）。
+        When isolation_key is empty but user_id is not, a cross-agent search runs
+        (matching every node whose isolation_key starts with user_id + "::").
         """
         if self._driver is None or not query_embedding:
             return []
 
         try:
-            # layer 过滤
+            # layer filter
             layer_filter = ""
             if layers:
                 layer_list = ", ".join(f"'{l}'" for l in layers)
                 layer_filter = f"AND m.layer IN [{layer_list}]"
 
-            # 隔离过滤：精确 ik 或 user_id 前缀
+            # Isolation filter: exact ik or user_id prefix
             if isolation_key:
                 ik_filter = "m.isolation_key = $ik"
             elif user_id:
@@ -2219,15 +2219,15 @@ class Neo4jGraphStore(GraphStoreBase):
                 {
                     "vec": query_embedding,
                     "ik": isolation_key,
-                    "threshold": (1.0 + score_threshold) / 2.0,  # 原始 cosine → Neo4j (1+cos)/2 尺度
+                    "threshold": (1.0 + score_threshold) / 2.0,  # raw cosine → Neo4j (1+cos)/2 scale
                     "lim": limit,
                     "include_sources": list(include_sources or []),
                     "exclude_sources": list(exclude_sources or []),
                 },
             )
 
-            # Neo4j vector.similarity.cosine() 返回 (1+cos)/2 ∈ [0,1]，
-            # 转换为原始 cosine similarity [-1,1]（与 Qdrant 统一尺度）：
+            # Neo4j vector.similarity.cosine() returns (1+cos)/2 ∈ [0,1],
+            # converted back to raw cosine similarity [-1,1] (same scale as Qdrant):
             #   raw_cosine = 2 * neo4j_score - 1
             return [
                 {
@@ -2253,10 +2253,10 @@ class Neo4jGraphStore(GraphStoreBase):
         isolation_key: str,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        """V_beh 向量检索 L6 basic 节点 — **Pre-Filter 模式**
+        """V_beh vector retrieval over L6 basic nodes — **Pre-Filter mode**
 
-        使用 ``vector.similarity.cosine()`` 对 beh_embedding 做
-        isolation_key pre-filter 后的精确向量搜索。
+        Uses ``vector.similarity.cosine()`` on beh_embedding for an exact
+        vector search after the isolation_key pre-filter.
         """
         if self._driver is None or not query_beh_embedding:
             return []
@@ -2281,8 +2281,8 @@ class Neo4jGraphStore(GraphStoreBase):
                 },
             )
 
-            # beh_score 是 Neo4j 的 (1+cos)/2 ∈ [0,1]
-            # distance = 1 - similarity，保持 0~1 尺度
+            # beh_score is Neo4j's (1+cos)/2 ∈ [0,1]
+            # distance = 1 - similarity, keeping the 0~1 scale
             return [
                 {
                     "node_id": r["node_id"],
@@ -2303,9 +2303,9 @@ class Neo4jGraphStore(GraphStoreBase):
         embedding: Optional[List[float]] = None,
         beh_embedding: Optional[List[float]] = None,
     ) -> bool:
-        """更新节点的 embedding / beh_embedding 向量属性
+        """Update the embedding / beh_embedding vector properties of a node
 
-        Neo4j 允许 SET 被向量索引的属性，索引自动更新。
+        Neo4j allows SET on properties covered by a vector index, and the index updates itself.
         """
         if self._driver is None:
             return False
@@ -2331,11 +2331,11 @@ class Neo4jGraphStore(GraphStoreBase):
             return False
 
     # ================================================================
-    # 跨域归纳 (Cross-Domain)
+    # Cross-domain induction (Cross-Domain)
     # ================================================================
 
     async def add_cross_abstracts_to(self, basic_id: str, core_id: str) -> bool:
-        """添加 CROSS_ABSTRACTS_TO 边: L6 basic → L6 core (单向)"""
+        """Add a CROSS_ABSTRACTS_TO edge: L6 basic → L6 core (directed)."""
         if self._driver is None:
             return False
         try:
@@ -2357,7 +2357,7 @@ class Neo4jGraphStore(GraphStoreBase):
         basic_ids: List[str],
         max_hops: int = 2,
     ) -> List[Dict[str, Any]]:
-        """从 L6 节点出发，沿 CROSS_ABSTRACTS_TO 找 higher-level 节点"""
+        """From an L6 node, follow CROSS_ABSTRACTS_TO to higher-level nodes."""
         if self._driver is None or not basic_ids:
             return []
 
@@ -2388,7 +2388,7 @@ class Neo4jGraphStore(GraphStoreBase):
             return []
 
     async def get_cross_abstracts_targets(self, basic_id: str) -> List[str]:
-        """查询某个 L6 basic 已有的 CROSS_ABSTRACTS_TO → core node_id 列表"""
+        """Return the CROSS_ABSTRACTS_TO → core node_ids already attached to one L6 basic node."""
         if self._driver is None:
             return []
         try:
@@ -2405,13 +2405,13 @@ class Neo4jGraphStore(GraphStoreBase):
             return []
 
     # ================================================================
-    # 内部工具
+    # Internal helpers
     # ================================================================
 
     @staticmethod
     def _record_to_memory_node(node_data: Any) -> MemoryNode:
-        """将 Neo4j Node 转为 MemoryNode"""
-        # Neo4j driver 返回的 Node 对象支持 dict-like 访问
+        """Convert a Neo4j Node into a MemoryNode."""
+        # Node objects returned by the Neo4j driver support dict-like access
         if hasattr(node_data, 'items'):
             d = dict(node_data)
         elif isinstance(node_data, dict):
@@ -2419,7 +2419,7 @@ class Neo4jGraphStore(GraphStoreBase):
         else:
             d = {}
 
-        # 解析 JSON 字段
+        # Parse JSON fields
         evidence_chain = d.get("evidence_chain", "[]")
         if isinstance(evidence_chain, str):
             try:
@@ -2441,7 +2441,7 @@ class Neo4jGraphStore(GraphStoreBase):
             except (json.JSONDecodeError, TypeError):
                 tags = []
 
-        # 处理时间字段 - Neo4j 可能返回 ISO 字符串或 datetime
+        # Time fields - Neo4j may return an ISO string or a datetime
         def _parse_dt(val):
             if val is None:
                 return None

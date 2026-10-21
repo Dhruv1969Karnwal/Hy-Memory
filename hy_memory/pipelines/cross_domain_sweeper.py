@@ -1,19 +1,19 @@
 """
 Cross-Domain Schema Induction Sweeper
 
-跨域突破性归纳：从用户的 L6 basic Schema 中发现深层行为同构，生成 L6 core Schema。
+Cross-domain breakthrough induction: discovers deep behavioural isomorphisms in the user's L6 basic Schemas and produces L6 core Schemas.
 
-算法三部曲：
-  Step 1: 行为升维打标 — 对 L6 basic 调 LLM 生成行为心理学抽象 → embed → V_beh
-  Step 2: 碰撞扫描 — 矩阵化 cosine 碰撞 + Union-Find 聚类 + Core 融合
-  Step 3: LLM 突破性归纳 — 对碰撞 cluster 调 LLM 生成 L6 core
+The algorithm in three steps:
+  Step 1: behavioural dimension lift — call the LLM on L6 basic to produce a behavioural-psychology abstraction → embed → V_beh
+  Step 2: collision scan — matrix cosine collisions + Union-Find clustering + Core merge
+  Step 3: LLM breakthrough induction — call the LLM on each collision cluster to produce an L6 core
 
-触发时机：evolve() 流程末尾，System2 Agent 执行完毕后
-触发条件：用户 L6 basic 节点数 >= MIN_BASIC_FOR_SWEEP（默认 5）
+Trigger point: at the end of the evolve() flow, once the System2 Agent finishes
+Trigger condition: the user has >= MIN_BASIC_FOR_SWEEP L6 basic nodes (default 5)
 
-Trace 设计：
-  - 与 System2 Agent 共用同一个 request_id，从 write request 可穿起全链路
-  - 每个 trace 带 memory_ids，从任意 memory_id 可反查经过的所有 step
+Trace design:
+  - Shares one request_id with the System2 Agent, so a write request links the whole pipeline
+  - Every trace carries memory_ids, so any memory_id can be traced back through all the steps it passed
   - pipeline_log steps: SWEEPER_SUMMARY / SWEEPER_BEH_EMBED / SWEEPER_COLLISION / SWEEPER_CORE_CREATE / SWEEPER_CORE_MERGE
   - memory_operation ops: SWEEPER_BEH_EMBED / SWEEPER_CORE_CREATE / SWEEPER_CROSS_EDGE / SWEEPER_CORE_MERGE
 """
@@ -33,7 +33,7 @@ from ..utils.source_filter import merge_sources
 logger = logging.getLogger(__name__)
 
 # ====================================================================
-# 配置
+# Configuration
 # ====================================================================
 
 _CROSS_DOMAIN_ENABLE = os.getenv("MEMORY_CROSS_DOMAIN_ENABLE", "true").lower() == "true"
@@ -110,7 +110,7 @@ class UnionFind:
 # ====================================================================
 
 class CrossDomainSweeper:
-    """跨域突破性归纳扫描器"""
+    """Cross-domain breakthrough induction scanner."""
 
     def __init__(
         self,
@@ -140,7 +140,7 @@ class CrossDomainSweeper:
         parsed: Optional[Dict] = None, memory_ids: Optional[List[str]] = None,
         elapsed_ms: float = 0,
     ) -> None:
-        """写 pipeline_log（best-effort）"""
+        """Write pipeline_log (best-effort)."""
         if not self._cache or not self.request_id:
             return
         try:
@@ -162,7 +162,7 @@ class CrossDomainSweeper:
         self, op: str, memory_id: str, content: str = "",
         reason: str = "",
     ) -> None:
-        """写 memory_operation（best-effort）"""
+        """Write memory_operation (best-effort)."""
         if not self._cache or not self.request_id:
             return
         try:
@@ -184,13 +184,13 @@ class CrossDomainSweeper:
     # ================================================================
 
     async def sweep(self) -> Dict[str, Any]:
-        """执行一次跨域扫描，返回统计信息"""
+        """Run one cross-domain scan and return statistics."""
         _t_start = datetime.now()
 
         if not _CROSS_DOMAIN_ENABLE:
             return {"skipped": True, "reason": "disabled"}
 
-        # 获取所有 L6 basic 节点
+        # Fetch all L6 basic nodes
         all_basics = await self.graph_store.get_all_nodes(
             isolation_key=self._isolation_key,
             layer=MemoryLayer.L6_SCHEMA,
@@ -199,7 +199,7 @@ class CrossDomainSweeper:
         )
         basics = [
             n for n in all_basics
-            # 不再排除 core — 所有 L6 节点都参与碰撞（支持递归升级）
+            # Core is no longer excluded — every L6 node takes part in collisions (supports recursive lifting)
         ]
 
         if not basics:
@@ -207,10 +207,10 @@ class CrossDomainSweeper:
 
         logger.info(f"[sweeper] Starting cross-domain sweep: {len(basics)} L6 basics")
 
-        # Step 1: 确保所有 basic 都有 beh_embedding（无论数量多少都要做）
+        # Step 1: make sure every basic has a beh_embedding (done regardless of how many there are)
         new_beh_count = await self._ensure_beh_embeddings(basics)
 
-        # Step 2: 碰撞扫描（需要足够数量才有意义）
+        # Step 2: collision scan (only meaningful with enough nodes)
         if len(basics) < _MIN_BASIC_FOR_SWEEP:
             result = {
                 "basics_count": len(basics),
@@ -228,7 +228,7 @@ class CrossDomainSweeper:
 
         collision_clusters, collision_details = await self._scan_collisions(basics)
 
-        # Step 2 trace: 碰撞详情
+        # Step 2 trace: collision details
         if collision_details:
             await self._log_pipeline(
                 step="SWEEPER_COLLISION",
@@ -256,7 +256,7 @@ class CrossDomainSweeper:
             )
             return result
 
-        # Step 3: LLM 归纳 + 图写入
+        # Step 3: LLM induction + graph writes
         cores_created = 0
         cores_merged = 0
         created_memory_ids = []
@@ -285,11 +285,11 @@ class CrossDomainSweeper:
         return result
 
     # ================================================================
-    # Step 1: 行为升维打标
+    # Step 1: behavioural dimension lift
     # ================================================================
 
     async def _ensure_beh_embeddings(self, basics: List[MemoryNode]) -> int:
-        """确保每个 L6 basic 都有 beh_embedding，没有的就生成"""
+        """Ensure every L6 basic has a beh_embedding, generating one where it is missing."""
         count = 0
         for node in basics:
             custom = getattr(node, "custom", None) or {}
@@ -297,14 +297,14 @@ class CrossDomainSweeper:
                 continue
 
             try:
-                # LLM 行为升维
+                # LLM behavioural lift
                 prompt = _BEHAVIOR_ABSTRACTION_PROMPT.format(content=node.content)
                 llm_response = await self.llm_call(prompt)
-                # 兼容 LLM 返回 markdown code fence 包裹的 JSON
+                # Tolerate LLM responses with JSON wrapped in a markdown code fence
                 _resp_text = llm_response.strip()
                 if _resp_text.startswith("```"):
                     _lines = _resp_text.split("\n")
-                    _lines = _lines[1:]  # 去掉 ```json
+                    _lines = _lines[1:]  # Drop ```json
                     if _lines and _lines[-1].strip() == "```":
                         _lines = _lines[:-1]
                     _resp_text = "\n".join(_lines).strip()
@@ -318,19 +318,19 @@ class CrossDomainSweeper:
                     abstraction
                 )
 
-                # 写入 Graph 节点
+                # Write the Graph node
                 await self.graph_store.update_embedding(
                     node.node_id, beh_embedding=beh_embedding
                 )
 
-                # 标记已生成 + 保存行为抽象文本
+                # Mark as generated + store the behaviour abstraction text
                 custom["_has_beh"] = True
                 custom["beh_abstraction"] = abstraction
                 await self.graph_store.update_node(
                     node.node_id, {"custom_json": json.dumps(custom, ensure_ascii=False)}
                 )
 
-                # Trace: 每个 beh_embedding 写入记 memory_operation
+                # Trace: one memory_operation per beh_embedding write
                 await self._log_mem_op(
                     op="SWEEPER_BEH_EMBED",
                     memory_id=node.node_id,
@@ -341,7 +341,7 @@ class CrossDomainSweeper:
                     reason="behavior abstraction → beh_embedding",
                 )
 
-                # Trace: pipeline_log 记 LLM prompt/response
+                # Trace: pipeline_log records the LLM prompt/response
                 await self._log_pipeline(
                     step="SWEEPER_BEH_EMBED",
                     prompt=prompt,
@@ -362,11 +362,11 @@ class CrossDomainSweeper:
         return count
 
     async def _fetch_basics_with_beh(self) -> List[Dict[str, Any]]:
-        """获取所有有 beh_embedding 的 L6 basic 节点（统一接口，支持 Neo4j / Kuzu）"""
+        """Return all L6 basic nodes that have a beh_embedding (uniform interface, supports Neo4j / Kuzu)."""
         gs = self.graph_store
         results = []
 
-        # Neo4j 后端
+        # Neo4j backend
         if hasattr(gs, '_run'):
             rows = await gs._run(
                 "MATCH (m:Memory) WHERE m.isolation_key = $ik "
@@ -385,7 +385,7 @@ class CrossDomainSweeper:
                 })
             return results
 
-        # Kuzu 后端
+        # Kuzu backend
         if hasattr(gs, '_execute') and hasattr(gs, '_available') and gs._available:
             r = gs._execute(
                 "MATCH (m:Memory) WHERE m.isolation_key = $ik "
@@ -408,17 +408,17 @@ class CrossDomainSweeper:
         return []
 
     # ================================================================
-    # Step 2: 碰撞扫描
+    # Step 2: collision scan
     # ================================================================
 
     async def _scan_collisions(
         self,
         basics: List[MemoryNode],
     ) -> Tuple[List[List[str]], Dict[str, Any]]:
-        """矩阵化碰撞扫描 + Union-Find 聚类。返回 (clusters, details)"""
+        """Matrix collision scan + Union-Find clustering. Returns (clusters, details)."""
         import numpy as np
 
-        # 从 Graph 取所有有 beh_embedding 的 L6 basic（统一走抽象接口）
+        # Take all L6 basic nodes with a beh_embedding from the Graph (always through the abstract interface)
         all_with_beh = []
         try:
             all_with_beh = await self._fetch_basics_with_beh()
@@ -430,7 +430,7 @@ class CrossDomainSweeper:
         if N < 2:
             return [], {"total_with_beh": N}
 
-        # 构建矩阵
+        # Build the matrix
         beh_matrix = np.array(
             [np.array(d["beh_embedding"], dtype=np.float32) for d in all_with_beh]
         )
@@ -438,7 +438,7 @@ class CrossDomainSweeper:
             [np.array(d["embedding"], dtype=np.float32) for d in all_with_beh]
         )
 
-        # L2 归一化
+        # L2 normalization
         beh_norms = np.linalg.norm(beh_matrix, axis=1, keepdims=True) + 1e-10
         con_norms = np.linalg.norm(con_matrix, axis=1, keepdims=True) + 1e-10
         beh_normed = beh_matrix / beh_norms
@@ -448,7 +448,7 @@ class CrossDomainSweeper:
         beh_sim = beh_normed @ beh_normed.T
         con_sim = con_normed @ con_normed.T
 
-        # 碰撞条件
+        # Collision condition
         mask = (beh_sim > _BEH_THRESHOLD) & (con_sim < _CON_THRESHOLD) & ~np.eye(N, dtype=bool)
         hit_indices = np.argwhere(mask)
 
@@ -456,7 +456,7 @@ class CrossDomainSweeper:
             logger.debug(f"[sweeper] No collisions found (N={N})")
             return [], {"total_with_beh": N}
 
-        # 预加载所有节点的 CROSS_ABSTRACTS_TO 目标（用于过滤已有关系的对）
+        # Preload the CROSS_ABSTRACTS_TO targets of all nodes (to filter pairs that already have a relation)
         node_ids = [d["node_id"] for d in all_with_beh]
         targets_map: Dict[str, set] = {}  # node_id → set of target_ids
         for nid in node_ids:
@@ -466,8 +466,8 @@ class CrossDomainSweeper:
             except Exception:
                 targets_map[nid] = set()
 
-        # 收集碰撞对详情（用于 trace）
-        # 过滤掉已有直接 CROSS_ABSTRACTS_TO 关系的对（A→B 或 B→A）
+        # Collect collision pair details (for tracing)
+        # Filter out pairs already linked by a direct CROSS_ABSTRACTS_TO relation (A→B or B→A)
         pairs_detail = []
         uf = UnionFind()
         for i, j in hit_indices:
@@ -475,15 +475,15 @@ class CrossDomainSweeper:
                 nid_i = all_with_beh[i]["node_id"]
                 nid_j = all_with_beh[j]["node_id"]
 
-                # 跳过已有直接边关系的对（防止 parent-child 再碰撞）
+                # Skip pairs with an existing direct edge (prevents parent-child re-collision)
                 if nid_j in targets_map.get(nid_i, set()):
-                    continue  # A→B 已存在
+                    continue  # A→B already exists
                 if nid_i in targets_map.get(nid_j, set()):
-                    continue  # B→A 已存在
-                # 跳过共享同一 target 的对（已被合成过）
+                    continue  # B→A already exists
+                # Skip pairs sharing the same target (already synthesized)
                 shared_targets = targets_map.get(nid_i, set()) & targets_map.get(nid_j, set())
                 if shared_targets:
-                    continue  # A→C, B→C 都存在
+                    continue  # both A→C and B→C exist
 
                 uf.union(nid_i, nid_j)
                 pairs_detail.append({
@@ -502,14 +502,14 @@ class CrossDomainSweeper:
 
         details = {
             "total_with_beh": N,
-            "pairs": pairs_detail[:50],  # 截断防止 trace 过大
+            "pairs": pairs_detail[:50],  # Truncated so the trace does not grow too large
             "beh_threshold": _BEH_THRESHOLD,
             "con_threshold": _CON_THRESHOLD,
         }
         return result_clusters, details
 
     # ================================================================
-    # Step 3: LLM 归纳 + 图写入
+    # Step 3: LLM induction + graph writes
     # ================================================================
 
     async def _process_cluster(
@@ -517,21 +517,21 @@ class CrossDomainSweeper:
         cluster_ids: List[str],
         all_basics: List[MemoryNode],
     ) -> Tuple[int, int, List[str]]:
-        """处理一个碰撞 cluster，返回 (cores_created, cores_merged, created_memory_ids)"""
+        """Process one collision cluster; returns (cores_created, cores_merged, created_memory_ids)."""
         basic_map = {n.node_id: n for n in all_basics}
-        # 查已有 core
+        # Look up existing core
         existing_core_ids = set()
         for nid in cluster_ids:
             targets = await self.graph_store.get_cross_abstracts_targets(nid)
             existing_core_ids.update(targets)
 
         if existing_core_ids:
-            # 已有 Core → 融合（把 cluster 中未连接的节点补边到已有 core）
+            # Existing Core → merge (connect the unconnected cluster nodes to the existing core)
             core_id = list(existing_core_ids)[0]
             core_node = await self.graph_store.get_node(core_id)
             merged_ids = []
             for nid in cluster_ids:
-                # 防止自环：节点本身就是 core 时不加边
+                # Prevent self-loops: no edge when the node is itself the core
                 if nid == core_id:
                     continue
                 targets = await self.graph_store.get_cross_abstracts_targets(nid)
@@ -539,7 +539,7 @@ class CrossDomainSweeper:
                     await self.graph_store.add_cross_abstracts_to(nid, core_id)
                     merged_ids.append(nid)
 
-                    # Trace: 每条边记 memory_operation（basic_id + core_id 都可追溯）
+                    # Trace: one memory_operation per edge (both basic_id and core_id stay traceable)
                     await self._log_mem_op(
                         op="SWEEPER_CORE_MERGE",
                         memory_id=nid,
@@ -547,7 +547,7 @@ class CrossDomainSweeper:
                         reason=f"merged basic → existing core {core_id[:12]}",
                     )
 
-            # Trace: pipeline_log 记融合总览
+            # Trace: pipeline_log records a merge overview
             await self._log_pipeline(
                 step="SWEEPER_CORE_MERGE",
                 parsed={
@@ -570,7 +570,7 @@ class CrossDomainSweeper:
             logger.debug(f"[sweeper] Merged {len(merged_ids)} basics → existing core {core_id[:12]}")
             return 0, 1, []
 
-        # 新建 Core
+        # Create a new Core
         patterns_text = ""
         for i, nid in enumerate(cluster_ids):
             node = basic_map.get(nid)
@@ -586,7 +586,7 @@ class CrossDomainSweeper:
                 logger.info("[sweeper] LLM returned null — no compelling cross-domain pattern")
                 return 0, 0, []
 
-            # 兼容 LLM 返回 markdown code fence 包裹的 JSON
+            # Tolerate LLM responses with JSON wrapped in a markdown code fence
             _resp_text = llm_response.strip()
             if _resp_text.startswith("```"):
                 _lines = _resp_text.split("\n")
@@ -608,7 +608,7 @@ class CrossDomainSweeper:
                 core_content
             )
 
-            # 创建 L6 core 节点
+            # Create the L6 core node
             core_id = str(uuid.uuid4())
             core_node = MemoryNode(
                 node_id=core_id,
@@ -630,7 +630,7 @@ class CrossDomainSweeper:
                 core_node._graph_embedding = core_embedding
             await self.graph_store.upsert_memory_node(core_node)
 
-            # Trace: core 创建记 memory_operation
+            # Trace: core creation recorded as memory_operation
             await self._log_mem_op(
                 op="SWEEPER_CORE_CREATE",
                 memory_id=core_id,
@@ -642,12 +642,12 @@ class CrossDomainSweeper:
                 reason=f"cross-domain induction from {len(cluster_ids)} basics",
             )
 
-            # 创建 CROSS_ABSTRACTS_TO 边 + 继承 evidence
+            # Create CROSS_ABSTRACTS_TO edges + inherit evidence
             inherited_evidence_ids: set = set()
             for nid in cluster_ids:
                 await self.graph_store.add_cross_abstracts_to(nid, core_id)
 
-                # 收集源节点的 evidence VdbRef（用于继承）
+                # Collect the source nodes' evidence VdbRefs (for inheritance)
                 try:
                     evidence_refs = await self.graph_store.get_evidence_vdbrefs(nid)
                     for ref in evidence_refs:
@@ -657,7 +657,7 @@ class CrossDomainSweeper:
                 except Exception as e:
                     logger.debug(f"[sweeper] get_evidence for {nid[:12]} failed: {e}")
 
-                # Trace: 每条边记 memory_operation（两端 node_id 都可追溯）
+                # Trace: one memory_operation per edge (both endpoint node_ids traceable)
                 await self._log_mem_op(
                     op="SWEEPER_CROSS_EDGE",
                     memory_id=nid,
@@ -665,7 +665,7 @@ class CrossDomainSweeper:
                     reason=f"basic → core {core_id[:12]}",
                 )
 
-            # Trace: pipeline_log 记 LLM prompt/response + 完整上下文
+            # Trace: pipeline_log records the LLM prompt/response plus the full context
             await self._log_pipeline(
                 step="SWEEPER_CORE_CREATE",
                 prompt=prompt,
@@ -680,7 +680,7 @@ class CrossDomainSweeper:
                 memory_ids=[core_id] + cluster_ids,
             )
 
-            # 继承源节点的 evidence：为 core 建立 DERIVED_FROM 边到所有源的 VdbRef
+            # Inherit evidence from the source nodes: give the core DERIVED_FROM edges to every source VdbRef
             if inherited_evidence_ids:
                 for vid in inherited_evidence_ids:
                     try:

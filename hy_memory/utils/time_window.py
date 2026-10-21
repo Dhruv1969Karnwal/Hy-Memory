@@ -1,7 +1,7 @@
 """
-Agent Memory - 时间窗口管理
+Agent Memory - Time window management
 
-实现滚动时间窗口删除功能
+Implements rolling time window deletion
 """
 
 import threading
@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 class TimeWindowManager:
     """
-    时间窗口管理器
+    Time window manager
     
-    提供滚动时间窗口删除功能：
-    - 自动删除过期记忆
-    - 支持按层配置不同的窗口
-    - 后台线程定期检查
+    Provides rolling time window deletion:
+    - deletes expired memories automatically
+    - supports a different window per layer
+    - a background thread checks periodically
     """
     
     def __init__(
@@ -32,11 +32,11 @@ class TimeWindowManager:
         delete_callback: Optional[Callable] = None
     ):
         """
-        初始化时间窗口管理器
+        Initialise the time window manager
         
         Args:
-            config: 时间窗口配置
-            delete_callback: 删除回调函数
+            config: time window configuration
+            delete_callback: deletion callback function
         """
         self.config = config or TimeWindowConfig()
         self.delete_callback = delete_callback
@@ -46,7 +46,7 @@ class TimeWindowManager:
         self._lock = threading.Lock()
     
     def start(self):
-        """启动后台检查线程"""
+        """Start the background check thread."""
         if not self.config.enable_rolling_delete:
             logger.info("Rolling delete is disabled")
             return
@@ -65,7 +65,7 @@ class TimeWindowManager:
         logger.info("TimeWindowManager started")
     
     def stop(self):
-        """停止后台检查线程"""
+        """Stop the background check thread."""
         self._running = False
         if self._thread:
             self._thread.join(timeout=5)
@@ -73,24 +73,24 @@ class TimeWindowManager:
         logger.info("TimeWindowManager stopped")
     
     def _check_loop(self):
-        """后台检查循环"""
+        """Background check loop."""
         while self._running:
             try:
                 self._check_and_delete()
             except Exception as e:
                 logger.error(f"Error in time window check: {e}")
             
-            # 等待下一次检查
+            # wait for the next check
             time.sleep(self.config.rolling_check_interval)
     
     def _check_and_delete(self):
-        """检查并删除过期记忆"""
+        """Check for and delete expired memories."""
         if not self.delete_callback:
             return
         
         now = datetime.now()
         
-        # 按层检查
+        # check layer by layer
         for layer_value, window_days in self.config.layer_windows.items():
             try:
                 layer = MemoryLayer.from_string(layer_value)
@@ -103,7 +103,7 @@ class TimeWindowManager:
                 f"Checking layer {layer_value} for memories before {cutoff_time}"
             )
             
-            # 调用删除回调
+            # invoke the deletion callback
             try:
                 deleted_count = self.delete_callback(
                     layer=layer,
@@ -119,13 +119,13 @@ class TimeWindowManager:
     
     def get_window_for_layer(self, layer: MemoryLayer) -> int:
         """
-        获取指定层的时间窗口（天）
+        Get the time window (in days) for a given layer
         
         Args:
-            layer: 记忆层
+            layer: memory layer
         
         Returns:
-            时间窗口（天）
+            time window (in days)
         """
         return self.config.layer_windows.get(
             layer.value,
@@ -134,11 +134,11 @@ class TimeWindowManager:
     
     def set_window_for_layer(self, layer: MemoryLayer, days: int):
         """
-        设置指定层的时间窗口
+        Set the time window for a given layer
         
         Args:
-            layer: 记忆层
-            days: 时间窗口（天）
+            layer: memory layer
+            days: time window (in days)
         """
         with self._lock:
             self.config.layer_windows[layer.value] = days
@@ -150,15 +150,15 @@ class TimeWindowManager:
         reference_time: Optional[datetime] = None
     ) -> bool:
         """
-        检查记忆是否过期
+        Check whether a memory has expired
         
         Args:
-            layer: 记忆层
-            event_time: 事件时间
-            reference_time: 参考时间
+            layer: memory layer
+            event_time: event time
+            reference_time: reference time
         
         Returns:
-            是否过期
+            whether it has expired
         """
         if reference_time is None:
             reference_time = datetime.now()

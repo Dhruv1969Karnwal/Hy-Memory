@@ -10,11 +10,11 @@ EXPORT_DESCRIPTORS = tuple(
     SourceDescriptor(
         source_id=f"{vendor}-export",
         display_name=(
-            "手工提供的对话"
+            "Manually provided conversations"
             if vendor == "generic"
-            else "手工提供的已有记忆"
+            else "Manually provided existing memories"
             if vendor == "memory-content"
-            else f"{label} 历史包"
+            else f"{label} history export"
         ),
         storage_kinds=frozenset({StorageKind.JSONL}),
         capabilities=SourceCapabilities(
@@ -27,8 +27,8 @@ EXPORT_DESCRIPTORS = tuple(
     for vendor, label in (
         ("chatgpt", "ChatGPT"),
         ("claude", "Claude"),
-        ("generic", "手工提供"),
-        ("memory-content", "已有记忆"),
+        ("generic", "Manually provided"),
+        ("memory-content", "Existing memories"),
     )
 )
 

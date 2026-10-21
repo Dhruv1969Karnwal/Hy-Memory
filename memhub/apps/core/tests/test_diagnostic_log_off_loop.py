@@ -1,13 +1,17 @@
-"""诊断日志不得在调用线程上做磁盘 I/O。
+"""The diagnostic log must not do disk I/O on the calling thread
 
-真机证据：`~/.one-memory/logs/core.log` 六次 `loop_watchdog event loop blocked`
-里有三次 MainThread 栈顶就在 `diagnostic_log.write` —— 两次卡在那把全局锁上，
-一次卡在 `os.open`。事件是从事件循环上发出来的，写一条日志要走一遍目录扫描
-加一次整盘刷新，磁盘一忙，整个进程就没人应答。
+Real-machine evidence: of the six `loop_watchdog event loop blocked` lines in \
+`~/.one-memory/logs/core.log`, three had MainThread blocked at
+the top of the stack in `diagnostic_log.write` -- twice on that global lock,
+once on `os.open`. The events are emitted from the event loop, and writing one line costs a \
+directory scan
+plus a full flush; once the disk gets busy, nothing in the process answers any more.
 
-这些守卫按「先证明它本该发生」写：每条都先在旧实现上跑红，再翻成断言。
-其中前三条是行为红（旧实现确实会做 I/O、确实会卡住调用方），
-不是靠新 API 缺席才红的。
+These guards are written as 'first prove it should fail': each one was made red on the old \
+implementation first, then turned into an assertion.
+The first three are red by behavior (the old implementation really did the I/O and really did \
+block the caller),
+not because some new API is missing.
 """
 
 from __future__ import annotations
@@ -25,20 +29,22 @@ import pytest
 import one_memory.diagnostic_log as module
 from one_memory.diagnostic_log import DiagnosticLog
 
-# 注入的「慢盘」单次写入耗时。比任何合理的事件循环预算都大，
-# 所以只要还在调用线程上写，测量就一定看得见。
+# Injected 'slow disk' cost of a single write. Larger than any sane event loop budget,
+# so while the calling thread still writes, the measurement is bound to see it.
 SLOW_WRITE_SECONDS = 0.5
-# 事件循环允许的最大滞后。真机 watchdog 的门限是 2.0s，这里收紧一个量级，
-# 留给 CI 抖动的余量仍然远大于一次慢写。
+# Maximum tolerated event loop lag. The real watchdog threshold is 2.0s; this tightens it by an
+# order of magnitude,
+# and the slack left for CI jitter is still far larger than one slow write.
 MAX_LOOP_LAG_SECONDS = 0.3
 LINE_PREFIX = b'{"schema_version"'
 
 
 class FilesystemSpy:
-    """记录每一次落在日志目录上的文件系统动作是由哪个线程发起的。
+    """Records which thread issued every filesystem action that lands in the log directory.
 
-    只认日志目录下的路径，避免把 pytest 自己的 stat 算进来 —— 否则调用线程
-    永远「有 I/O」，断言就成了永远红的假守卫。
+    Only paths under the log directory count, so pytest's own stats are not included -- \
+otherwise the calling thread
+    always 'has I/O' and the assertion becomes a fake guard that is red forever.
     """
 
     def __init__(self, root: Path) -> None:
@@ -152,10 +158,11 @@ def _read_events(path: Path) -> list[dict[str, object]]:
 
 
 def _wait_for_events(path: Path, expected: int, timeout: float = 10.0) -> list[dict[str, object]]:
-    """等到磁盘上出现 expected 条为止。
+    """Wait until expected events show up on disk.
 
-    不用它来「猜」时间，只用它避免把守卫写成「不写就永远绿」：
-    没落盘就是失败，落盘慢也是失败。
+    This does not guess at time; it only keeps the guard from being written as 'never write and \
+stay green':
+    nothing on disk is a failure, and so is slow output.
     """
     deadline = time.monotonic() + timeout
     events: list[dict[str, object]] = []
@@ -168,7 +175,8 @@ def _wait_for_events(path: Path, expected: int, timeout: float = 10.0) -> list[d
 
 
 def test_emitting_an_event_does_no_disk_io_on_the_caller_thread(tmp_path, monkeypatch):
-    """旧实现下必红：write() 就在调用线程上 glob / stat / open / fsync。"""
+    """Red on the old implementation: write() globbed, stated, opened and fsynced on the calling \
+thread."""
     log = DiagnosticLog(tmp_path)
     spy = FilesystemSpy(tmp_path / "logs")
     spy.install(monkeypatch)
@@ -176,20 +184,25 @@ def test_emitting_an_event_does_no_disk_io_on_the_caller_thread(tmp_path, monkey
 
     for index in range(8):
         _emit(log, index)
-    # 在本测试自己去读文件之前取样，否则读取动作会被算进调用线程头上。
+    # Sample before this test reads the file itself, otherwise its own reads are charged to the
+    # calling thread.
     on_caller = spy.names_for_thread(caller)
 
     events = _wait_for_events(log.path, 8)
-    # 先证明确实写出去了，否则「调用线程没有 I/O」只是因为什么都没干。
-    assert len(events) == 8, f"只落盘 {len(events)} 条，守卫会变成永远绿"
+    # Prove the events really were written first; otherwise 'no I/O on the calling thread' would
+    # only mean nothing happened.
+    assert len(events) == 8, (
+        f"only {len(events)} events reached disk, the guard would be green forever"
+    )
     assert spy.count("os.write") >= 1
 
-    assert not on_caller, f"调用线程仍在做日志磁盘 I/O：{on_caller}"
+    assert not on_caller, f"the calling thread is still doing log disk I/O: {on_caller}"
     log.close()
 
 
 def test_no_fsync_per_event_on_any_thread(tmp_path, monkeypatch):
-    """每条事件一次整盘刷新是这条路径最贵的一步，诊断日志不需要这种耐久性。"""
+    """One full flush per event is the most expensive step on this path, and a diagnostic log \
+needs no such durability."""
     log = DiagnosticLog(tmp_path)
     spy = FilesystemSpy(tmp_path / "logs")
     spy.install(monkeypatch)
@@ -199,12 +212,13 @@ def test_no_fsync_per_event_on_any_thread(tmp_path, monkeypatch):
 
     events = _wait_for_events(log.path, 20)
     assert len(events) == 20
-    assert spy.count("os.fsync") < 20, "仍然是每条事件一次 fsync"
+    assert spy.count("os.fsync") < 20, "still one fsync per event"
     log.close()
 
 
 def test_directory_scan_is_not_repeated_for_every_event(tmp_path, monkeypatch):
-    """_prune() 的 glob 原本每条事件跑一次，目录一大就是每条事件一次全目录扫描。"""
+    """_prune() globbed once per event, so a large directory meant a full directory scan per \
+event."""
     log = DiagnosticLog(tmp_path)
     spy = FilesystemSpy(tmp_path / "logs")
     spy.install(monkeypatch)
@@ -213,12 +227,13 @@ def test_directory_scan_is_not_repeated_for_every_event(tmp_path, monkeypatch):
         _emit(log, index)
 
     assert len(_wait_for_events(log.path, 20)) == 20
-    assert spy.count("Path.glob") < 20, "仍然是每条事件一次目录扫描"
+    assert spy.count("Path.glob") < 20, "still one directory scan per event"
     log.close()
 
 
 def test_an_event_emitted_on_the_event_loop_does_not_stall_it(tmp_path, monkeypatch):
-    """旧实现下必红：注入慢盘后，循环上每发一条事件就停 0.5s。"""
+    """Red on the old implementation: with the slow disk injected, every event emitted on the \
+loop stopped it for 0.5s."""
     log = DiagnosticLog(tmp_path)
     spy = FilesystemSpy(tmp_path / "logs")
     spy.install(monkeypatch, slow_write=True)
@@ -248,14 +263,17 @@ def test_an_event_emitted_on_the_event_loop_does_not_stall_it(tmp_path, monkeypa
 
     worst = asyncio.run(scenario())
     assert len(_wait_for_events(log.path, 5, timeout=20.0)) == 5
-    assert worst < MAX_LOOP_LAG_SECONDS, f"事件循环被日志写入卡了 {worst:.2f}s"
+    assert worst < MAX_LOOP_LAG_SECONDS, (
+        f"the event loop was stalled by log writes for {worst:.2f}s"
+    )
     log.close()
 
 
 def test_caller_never_waits_on_a_slow_disk_even_when_the_queue_overflows(tmp_path, monkeypatch):
-    """旧实现下必红：调用方每条都要等满一次慢写。
+    """Red on the old implementation: the caller waited for a full slow write on every event.
 
-    新实现下队列满了要丢，丢了要留痕，但任何情况下都不许把调用方按住。
+    The new implementation drops when the queue is full and leaves a trace, but it must never \
+hold the caller back.
     """
     monkeypatch.setattr(module, "MAX_QUEUED_EVENTS", 4, raising=False)
     log = DiagnosticLog(tmp_path)
@@ -267,22 +285,26 @@ def test_caller_never_waits_on_a_slow_disk_even_when_the_queue_overflows(tmp_pat
         started = time.monotonic()
         _emit(log, index)
         slowest = max(slowest, time.monotonic() - started)
-    assert slowest < 0.05, f"最慢的一次 write() 花了 {slowest:.3f}s，调用方被磁盘按住了"
+    assert slowest < 0.05, (
+        f"the slowest write() took {slowest:.3f}s; the caller was held by the disk"
+    )
 
     log.close()
     events = _read_events(log.path)
-    assert len(events) < 40, "队列上限没有生效"
+    assert len(events) < 40, "the queue limit did not take effect"
     dropped = [item for item in events if item["event"] == "diagnostic.events_dropped"]
-    assert dropped, "丢了事件却没有留下任何记录"
+    assert dropped, "events were dropped without leaving any record"
     assert int(dropped[-1]["details"]["count"]) > 0  # type: ignore[index]
 
 
 def test_dropped_record_says_how_many_and_over_what_window(tmp_path, monkeypatch):
-    """只写条数不够：看日志的人得能判断「这段是空的」还是「这段被丢了」。
+    """A count alone is not enough: whoever reads the log must be able to tell 'this window is \
+empty' from 'this window was dropped'.
 
-    否则下一轮排查又会以缺席为结论 —— 看不到某个事件，分不清是没发生还是被丢了。
-    时间窗用 timestamp（窗口结束）减 duration_ms（窗口长度）表达，
-    两个都是 schema 里已有的字段，磁盘上的字段集不变。
+    Otherwise the next investigation again concludes from absence -- a missing event cannot be \
+told from a dropped one.
+    The window is timestamp (window end) minus duration_ms (window length);
+    both are fields the schema already has, so the field set on disk does not change.
     """
     monkeypatch.setattr(module, "MAX_QUEUED_EVENTS", 4, raising=False)
     log = DiagnosticLog(tmp_path)
@@ -294,7 +316,7 @@ def test_dropped_record_says_how_many_and_over_what_window(tmp_path, monkeypatch
         _emit(log, index)
         if index == 8 and first_drop_at is None:
             first_drop_at = time.time()
-    time.sleep(0.3)  # 让丢弃的时间窗有可测量的宽度
+    time.sleep(0.3)  # give the dropped time window a measurable width
     for index in range(40, 60):
         _emit(log, index)
     log.close()
@@ -302,18 +324,18 @@ def test_dropped_record_says_how_many_and_over_what_window(tmp_path, monkeypatch
     dropped = [
         item for item in _read_events(log.path) if item["event"] == "diagnostic.events_dropped"
     ]
-    assert dropped, "丢了事件却没有留下任何记录"
+    assert dropped, "events were dropped without leaving any record"
     record = dropped[-1]
     assert int(record["details"]["count"]) > 0  # type: ignore[index]
-    assert "duration_ms" in record, "只说了丢多少，没说丢的是哪一段时间"
+    assert "duration_ms" in record, "it says how many were dropped, not which span of time"
     window = int(record["duration_ms"])  # type: ignore[arg-type]
-    assert window >= 300, f"时间窗 {window} ms 没覆盖到实际的丢弃区间"
-    # 窗口结束点就是这条记录自己的时间戳，两者一起才定位得出区间。
+    assert window >= 300, f"the {window} ms window does not cover the actual drop interval"
+    # The window ends at this record's own timestamp; only the two together locate the interval.
     assert str(record["timestamp"]).endswith("Z")
 
 
 def test_close_drains_everything_that_was_queued(tmp_path):
-    """干净退出不许丢事件。"""
+    """A clean exit must not drop events."""
     log = DiagnosticLog(tmp_path)
     for index in range(200):
         _emit(log, index)
@@ -333,7 +355,7 @@ def test_order_and_line_format_are_unchanged(tmp_path):
     assert text.endswith("\n")
     events = [json.loads(line) for line in text.splitlines()]
     assert [int(item["details"]["count"]) for item in events] == list(range(50))  # type: ignore[index]
-    # 仍然是原来的紧凑 ASCII JSON：没有空格分隔符，没有非 ASCII 字面量。
+    # Still the original compact ASCII JSON: no space separators, no non-ASCII literals.
     for line in text.splitlines():
         assert ", " not in line and '": ' not in line
         assert line == line.encode("ascii", "strict").decode("ascii")
@@ -379,7 +401,7 @@ def test_symlinked_log_file_is_still_refused(tmp_path):
 
     _emit(log, 1)
 
-    assert not log.close(timeout=5), "拒绝写入之后不该报告已落盘"
+    assert not log.close(timeout=5), "refused writes must not be reported as flushed"
     assert outside.read_text() == "private"
 
 
@@ -391,15 +413,17 @@ def test_symlinked_log_directory_is_still_refused(tmp_path):
 
     _emit(log, 1)
 
-    assert not log.close(timeout=5), "拒绝写入之后不该报告已落盘"
+    assert not log.close(timeout=5), "refused writes must not be reported as flushed"
     assert list(elsewhere.iterdir()) == []
 
 
 def test_directory_and_file_permissions_are_still_owner_only(tmp_path):
-    """先把权限放宽，否则 open/mkdir 的 mode 就已经够了，断言等于没在守。
+    """Loosen the permissions first; otherwise the open/mkdir mode already suffices and the \
+assertion guards nothing.
 
-    变异验证第一轮就是这么抓出来的：删掉两处 chmod，测试照样绿，
-    因为新建文件本来就是 0600、新建目录本来就是 0700。
+    Mutation testing caught it exactly this way in the first round: with both chmod calls \
+deleted the test stayed green,
+    because a new file is already 0600 and a new directory is already 0700.
     """
     log = DiagnosticLog(tmp_path)
     log.path.parent.mkdir(parents=True)
@@ -422,7 +446,7 @@ def test_rotation_still_happens_when_the_file_grows_past_the_limit(tmp_path, mon
     log.close()
 
     rotated = log.path.with_suffix(log.path.suffix + ".1")
-    assert rotated.exists(), "超过上限后没有轮转"
+    assert rotated.exists(), "no rotation after the limit was exceeded"
     assert log.path.stat().st_size <= 4096 + 1024
 
 
@@ -437,11 +461,12 @@ def test_old_logs_are_still_pruned_on_the_first_write(tmp_path):
     _emit(log, 1)
     log.close()
 
-    assert not stale.exists(), "过期日志没有被清理"
+    assert not stale.exists(), "expired logs were not pruned"
 
 
 def test_invalid_input_is_still_rejected_on_the_caller_side(tmp_path):
-    """校验必须留在调用线程，否则错误会被吞进后台线程，调用方看不到。"""
+    """Validation must stay on the calling thread, or the error is swallowed by the background \
+thread and the caller never sees it."""
     log = DiagnosticLog(tmp_path)
     with pytest.raises(ValueError, match="diagnostic_detail_key_invalid"):
         log.write(
@@ -455,10 +480,12 @@ def test_invalid_input_is_still_rejected_on_the_caller_side(tmp_path):
 
 
 def test_a_failing_disk_never_reaches_the_caller(tmp_path, monkeypatch):
-    """调用方不该看见异常，但「什么都没做」不算通过。
+    """The caller must not see an exception, but 'nothing happened' is not a pass.
 
-    只验证 `_emit` 不抛异常的话，一个把所有事件直接扔掉的实现也能绿。
-    所以这里还要求：写线程确实试过落盘，并且它没有谎称关停成功。
+    Checking only that `_emit` does not raise would also let an implementation that throws every \
+event away pass.
+    So this also requires that the writer thread really tried to persist, and that it did not \
+claim a clean shutdown.
     """
     real_open = os.open
     attempts = []
@@ -474,5 +501,5 @@ def test_a_failing_disk_never_reaches_the_caller(tmp_path, monkeypatch):
     for index in range(10):
         _emit(log, index)
 
-    assert not log.close(timeout=5), "一个字节都没写进去，close() 却报告成功"
-    assert attempts, "写线程根本没试过打开文件，这条守卫是空的"
+    assert not log.close(timeout=5), "not one byte was written, yet close() reported success"
+    assert attempts, "the writer thread never even tried to open the file; this guard is empty"

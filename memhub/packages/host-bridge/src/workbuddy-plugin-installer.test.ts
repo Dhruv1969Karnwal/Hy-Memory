@@ -49,12 +49,16 @@ describe("WorkBuddy plugin recall installer", () => {
       );
       expect(skill).toBe(renderSkillContent("mcp", runtime()));
       expect(skill).toContain(`skill-version=${SKILL_VERSION}`);
-      expect(skill).toContain("成功使用 MemHub 回忆到相关记忆。");
-      expect(skill).toContain("已完成MemHub的记忆查询。");
       expect(skill).toContain(
-        "已从 MemHub 获取部分相关记忆，以下将补充这些信息继续。",
+        "Successfully recalled relevant memories from MemHub.",
       );
-      expect(skill).toContain("MemHub 暂时不可用，我将先依据当前对话继续。");
+      expect(skill).toContain("MemHub memory search completed.");
+      expect(skill).toContain(
+        "Partially relevant memories were fetched from MemHub; the following continues with this information.",
+      );
+      expect(skill).toContain(
+        "MemHub is temporarily unavailable; I will continue based on the current conversation.",
+      );
       expect(skill).toContain(
         "Never describe an error, denial, partial or unknown result as a completed successful lookup",
       );

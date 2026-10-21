@@ -54,10 +54,10 @@ export function SourceSnapshotStatus({
   return (
     <div className="source-snapshot-status" data-stale={snapshot.stale}>
       <div className="source-snapshot-copy" role="status" aria-live="polite">
-        {snapshot.stale && <strong>状态待核对</strong>}
+        {snapshot.stale && <strong>Status pending verification</strong>}
         {confirmed ? (
           <span>
-            {snapshot.stale ? "上次确认 " : "状态确认于 "}
+            {snapshot.stale ? "Last confirmed " : "Status confirmed at "}
             <time
               dateTime={confirmed}
               title={new Date(confirmed).toLocaleString()}
@@ -66,21 +66,21 @@ export function SourceSnapshotStatus({
             </time>
           </span>
         ) : (
-          <span>尚无已确认状态</span>
+          <span>No confirmed status yet</span>
         )}
         {failed && (
           <span role="alert">
             {snapshot.stale
-              ? "尚未取得新状态，已保留上次回执。"
-              : "刷新未成功，仍显示上次确认的状态。"}
+              ? "No new status yet; the last receipt was kept."
+              : "The refresh failed; the last confirmed status is still shown."}
           </span>
         )}
       </div>
       <button
         type="button"
         className="quiet source-snapshot-refresh"
-        title={pending ? "正在核对来源状态" : "刷新来源状态"}
-        aria-label="刷新来源状态"
+        title={pending ? "Checking source status" : "Refresh source status"}
+        aria-label="Refresh source status"
         aria-busy={pending}
         disabled={pending}
         onClick={() => void refresh()}

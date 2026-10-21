@@ -8,26 +8,28 @@ function Boom(): never {
   throw new Error("boom");
 }
 
-it("单卡渲染出错只塌这一张卡，兄弟区域不受影响", () => {
+it("a single card render error collapses only that card, sibling areas are unaffected", () => {
   const spy = vi.spyOn(console, "error").mockImplementation(() => {});
   render(
     <div>
-      <HomeCardBoundary label="记忆概览">
+      <HomeCardBoundary label="Memory overview">
         <Boom />
       </HomeCardBoundary>
-      <p>正常区域</p>
+      <p>normal area</p>
     </div>,
   );
-  expect(screen.getByText(/记忆概览暂时显示不了/)).toBeTruthy();
-  expect(screen.getByText("正常区域")).toBeTruthy();
+  expect(
+    screen.getByText(/Memory overview cannot be shown right now/),
+  ).toBeTruthy();
+  expect(screen.getByText("normal area")).toBeTruthy();
   spy.mockRestore();
 });
 
-it("正常卡片原样渲染", () => {
+it("a healthy card renders unchanged", () => {
   render(
-    <HomeCardBoundary label="运行状态">
-      <p>后台运行中</p>
+    <HomeCardBoundary label="Runtime status">
+      <p>Running in the background</p>
     </HomeCardBoundary>,
   );
-  expect(screen.getByText("后台运行中")).toBeTruthy();
+  expect(screen.getByText("Running in the background")).toBeTruthy();
 });

@@ -74,32 +74,32 @@ afterEach(() => {
 it("opens from the floating button and filters by text, level and source", async () => {
   render(<DebugLogPanel />);
   await userEvent.click(
-    screen.getByRole("button", { name: "打开 Debug 日志" }),
+    screen.getByRole("button", { name: "Open Debug logs" }),
   );
   const panel = await screen.findByRole("complementary", {
-    name: "Debug 日志",
+    name: "Debug logs",
   });
   await waitFor(() =>
     expect(within(panel).getByText(/source\.scanned/)).toBeTruthy(),
   );
 
   await userEvent.type(
-    within(panel).getByRole("searchbox", { name: "搜索日志" }),
+    within(panel).getByRole("searchbox", { name: "Search logs" }),
     "sync_failed",
   );
   expect(within(panel).getByText(/sync\.failed/)).toBeTruthy();
   expect(within(panel).queryByText(/source\.scanned/)).toBeNull();
 
   await userEvent.clear(
-    within(panel).getByRole("searchbox", { name: "搜索日志" }),
+    within(panel).getByRole("searchbox", { name: "Search logs" }),
   );
   await userEvent.click(within(panel).getByRole("button", { name: "Error" }));
   expect(within(panel).getByText(/sync\.failed/)).toBeTruthy();
   expect(within(panel).queryByText(/source\.scanned/)).toBeNull();
 
-  await userEvent.click(within(panel).getByRole("button", { name: "全部" }));
+  await userEvent.click(within(panel).getByRole("button", { name: "All" }));
   await userEvent.selectOptions(
-    within(panel).getByRole("combobox", { name: "日志来源" }),
+    within(panel).getByRole("combobox", { name: "Log source" }),
     "core",
   );
   expect(within(panel).getByText(/source\.scanned/)).toBeTruthy();
@@ -111,17 +111,17 @@ it("keeps the underlying page interactive while the log panel is open", async ()
   render(
     <>
       <button type="button" onClick={action}>
-        页面操作
+        Page action
       </button>
       <DebugLogPanel />
     </>,
   );
   await userEvent.click(
-    screen.getByRole("button", { name: "打开 Debug 日志" }),
+    screen.getByRole("button", { name: "Open Debug logs" }),
   );
-  await screen.findByRole("complementary", { name: "Debug 日志" });
+  await screen.findByRole("complementary", { name: "Debug logs" });
 
-  await userEvent.click(screen.getByRole("button", { name: "页面操作" }));
+  await userEvent.click(screen.getByRole("button", { name: "Page action" }));
 
   expect(action).toHaveBeenCalledOnce();
 });
@@ -132,7 +132,7 @@ it("shows renderer logs immediately and polls desktop logs while live", async ()
   if (!read) throw new Error("missing debug log reader");
   const readMock = vi.mocked(read);
   render(<DebugLogPanel />);
-  fireEvent.click(screen.getByRole("button", { name: "打开 Debug 日志" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open Debug logs" }));
   await act(async () => {
     await Promise.resolve();
   });
@@ -154,15 +154,15 @@ it("shows renderer logs immediately and polls desktop logs while live", async ()
 it("changes the Core and HY capture level independently from display filtering", async () => {
   render(<DebugLogPanel />);
   await userEvent.click(
-    screen.getByRole("button", { name: "打开 Debug 日志" }),
+    screen.getByRole("button", { name: "Open Debug logs" }),
   );
   const panel = await screen.findByRole("complementary", {
-    name: "Debug 日志",
+    name: "Debug logs",
   });
   await waitFor(() => expect(diagnosticLevel.get).toHaveBeenCalledOnce());
 
   await userEvent.selectOptions(
-    within(panel).getByRole("combobox", { name: "采集级别" }),
+    within(panel).getByRole("combobox", { name: "Capture level" }),
     "debug",
   );
 
@@ -172,13 +172,13 @@ it("changes the Core and HY capture level independently from display filtering",
   expect(
     (
       within(panel).getByRole("combobox", {
-        name: "采集级别",
+        name: "Capture level",
       }) as HTMLSelectElement
     ).value,
   ).toBe("debug");
   expect(
     within(panel)
-      .getByRole("button", { name: "全部" })
+      .getByRole("button", { name: "All" })
       .getAttribute("aria-pressed"),
   ).toBe("true");
 });

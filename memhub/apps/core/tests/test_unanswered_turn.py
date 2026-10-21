@@ -15,11 +15,11 @@ from one_memory.imports.storage import EvidenceStore, last_row_opens_an_unanswer
 
 
 def test_a_question_with_nothing_after_it_is_unanswered():
-    assert last_row_opens_an_unanswered_turn(("user", "person", "打包好了吗")) is True
+    assert last_row_opens_an_unanswered_turn(("user", "person", "Is the package built?")) is True
 
 
 def test_an_assistant_reply_closes_the_turn():
-    assert last_row_opens_an_unanswered_turn(("assistant", "agent", "已经好了")) is False
+    assert last_row_opens_an_unanswered_turn(("assistant", "agent", "It is done")) is False
 
 
 def test_a_tool_result_closes_the_turn():
@@ -35,7 +35,7 @@ def test_a_heartbeat_is_not_a_question():
 
 
 def test_a_message_written_by_the_agent_as_user_is_not_a_question():
-    assert last_row_opens_an_unanswered_turn(("user", "agent", "继续")) is False
+    assert last_row_opens_an_unanswered_turn(("user", "agent", "Continue")) is False
 
 
 def test_a_conversation_with_no_rows_is_not_unanswered():
@@ -51,7 +51,7 @@ def test_turn_page_does_not_use_a_reader_after_returning_it_to_the_pool(tmp_path
             message_id="question",
             role="user",
             written_by=WrittenBy.PERSON,
-            verbatim="打包好了吗",
+            verbatim="Is the package built?",
             created_at=datetime.now(UTC),
             origin_meta={EvidenceOrigin.FILE: OriginMetadata()},
         )

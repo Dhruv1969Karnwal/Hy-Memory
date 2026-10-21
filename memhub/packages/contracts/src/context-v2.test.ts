@@ -9,7 +9,7 @@ import type {
 
 it("keeps v2 explicit and v1 search unchanged at the type boundary", () => {
   const search: ContextSearchRequestV2 = {
-    query: "昨天的设计链接",
+    query: "yesterday's design link",
     enhancement: "local",
     intent: "artifact",
   };

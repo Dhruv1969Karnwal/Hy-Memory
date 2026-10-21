@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Neo4j 向量检索性能测试
+Neo4j vector retrieval performance tests
 
-验证迭代搜索的性能特性：
-1. 单轮查询的性能基准
-2. 多轮迭代的开销 < 10%
-3. 各种数据规模下的表现
+Verifies the performance characteristics of iterative search:
+1. Single-round query performance baseline
+2. Multi-round iteration overhead < 10%
+3. Behavior across various data scales
 
-这些测试帮助检测性能回归。
+These tests help detect performance regressions.
 """
 
 import pytest
@@ -18,19 +18,19 @@ import numpy as np
 
 @pytest.mark.integration
 class TestVectorSearchPerformance:
-    """向量搜索性能测试"""
+    """Vector search performance tests"""
 
     @pytest.mark.slow
     async def test_vector_search_single_round_baseline(self, graph_store_neo4j_fixture):
         """
-        建立单轮查询的性能基准
+        Establish the single-round query performance baseline
         
         Measure:
-        - 创建 1000 个节点
-        - 执行查询并计时
+        - Create 1000 nodes
+        - Run the query and time it
         
         Expected:
-        - 在正常硬件上，应在 1 秒以内完成
+        - On normal hardware, it should finish within 1 second
         """
         ik = "perf_baseline::default"
         
@@ -38,7 +38,7 @@ class TestVectorSearchPerformance:
         base_vec = np.random.randn(1536)
         base_vec = base_vec / np.linalg.norm(base_vec)
         
-        # 创建 1000 个节点
+        # Create 1000 nodes
         memories = []
         for i in range(1000):
             noise = np.random.randn(1536) * 0.1
@@ -54,7 +54,7 @@ class TestVectorSearchPerformance:
                 "confidence": 0.8,
             })
         
-        # 查询并计时
+        # Query and time it
         query_embedding = base_vec.tolist()
         
         start_time = time.time()
@@ -65,7 +65,7 @@ class TestVectorSearchPerformance:
         )
         elapsed = time.time() - start_time
         
-        # 验证
+        # Verify
         assert len(results) <= 20
         assert elapsed < 5.0, f"Query took {elapsed:.2f}s, should be < 5s"
         
@@ -74,14 +74,14 @@ class TestVectorSearchPerformance:
     @pytest.mark.slow
     async def test_vector_search_iteration_overhead(self, graph_store_neo4j_fixture):
         """
-        测试：迭代搜索的开销（相对于单轮）
+        Test: iteration overhead of iterative search (vs single round)
         
-        对比：
-        1. 单轮查询（大 K）
-        2. 多轮迭代查询（小 K → 增长）
+        Compare:
+        1. Single-round query (large K)
+        2. Multi-round iterative query (small K -> growing)
         
         Expected:
-        - 多轮迭代开销 < 10%（在多数情况下不需要迭代）
+        - Multi-round iteration overhead < 10% (most cases need no iteration)
         """
         ik = "perf_iteration::default"
         
@@ -89,7 +89,7 @@ class TestVectorSearchPerformance:
         base_vec = np.random.randn(1536)
         base_vec = base_vec / np.linalg.norm(base_vec)
         
-        # 创建充足的节点
+        # Create enough nodes
         memories = []
         for i in range(5000):
             noise = np.random.randn(1536) * 0.1
@@ -107,7 +107,7 @@ class TestVectorSearchPerformance:
         
         query_embedding = base_vec.tolist()
         
-        # 执行多次查询以减少噪声
+        # Run several queries to reduce noise
         times = []
         for _ in range(3):
             start_time = time.time()
@@ -121,7 +121,7 @@ class TestVectorSearchPerformance:
         
         avg_time = sum(times) / len(times)
         
-        # 验证合理的性能
+        # Verify reasonable performance
         assert avg_time < 2.0, f"Average query time {avg_time:.2f}s should be < 2s"
         
         print(f"✓ Iteration overhead: avg {avg_time:.3f}s over 3 queries (overhead acceptable)")
@@ -129,7 +129,7 @@ class TestVectorSearchPerformance:
     @pytest.mark.slow
     async def test_vector_search_limit_scaling(self, graph_store_neo4j_fixture):
         """
-        测试：不同 limit 大小的性能扩展
+        Test: performance scaling across different limit sizes
         
         Measure:
         - limit=5
@@ -138,8 +138,8 @@ class TestVectorSearchPerformance:
         - limit=50
         
         Expected:
-        - 性能应该基本线性扩展（或接近）
-        - 不应该因为迭代而出现突跳
+        - Performance should scale roughly linearly (or close to it)
+        - There should be no jumps caused by iteration
         """
         ik = "perf_limit_scaling::default"
         
@@ -147,7 +147,7 @@ class TestVectorSearchPerformance:
         base_vec = np.random.randn(1536)
         base_vec = base_vec / np.linalg.norm(base_vec)
         
-        # 创建充足的节点
+        # Create enough nodes
         memories = []
         for i in range(3000):
             noise = np.random.randn(1536) * 0.1
@@ -179,12 +179,12 @@ class TestVectorSearchPerformance:
             
             assert len(results) <= limit
         
-        # 验证近似线性扩展
+        # Verify approximate linear scaling
         ratios = []
         for i in range(1, len(limits)):
             time_ratio = times[limits[i]] / times[limits[i-1]]
             limit_ratio = limits[i] / limits[i-1]
-            # 时间比应该接近 limit 比（在 1.5 倍以内可接受）
+            # the time ratio should be close to the limit ratio (within 1.5x is acceptable)
             assert time_ratio < limit_ratio * 1.5, \
                 f"Time scaling issue: limit {limits[i-1]}->{limits[i]}, ratio {time_ratio:.2f} vs expected ~{limit_ratio:.2f}"
             ratios.append(time_ratio)
@@ -194,15 +194,15 @@ class TestVectorSearchPerformance:
     @pytest.mark.slow
     async def test_vector_search_layer_filter_cost(self, graph_store_neo4j_fixture):
         """
-        测试：layer 过滤的性能成本
+        Test: performance cost of layer filtering
         
-        对比：
-        1. 无 layer 过滤
-        2. 指定单个 layer
-        3. 指定多个 layer
+        Compare:
+        1. No layer filter
+        2. A single layer specified
+        3. Multiple layers specified
         
         Expected:
-        - layer 过滤不应该显著增加查询时间
+        - Layer filtering should not significantly increase query time
         """
         ik = "perf_layer::default"
         
@@ -210,7 +210,7 @@ class TestVectorSearchPerformance:
         base_vec = np.random.randn(1536)
         base_vec = base_vec / np.linalg.norm(base_vec)
         
-        # 创建多个 layer 的记忆
+        # Create memories across multiple layers
         memories = []
         for layer in ["l5_identity", "l6_schema", "l7_intention"]:
             for i in range(1000):
@@ -229,7 +229,7 @@ class TestVectorSearchPerformance:
         
         query_embedding = base_vec.tolist()
         
-        # 查询 1: 无 layer 过滤
+        # Query 1: no layer filter
         start_time = time.time()
         results_all = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
@@ -238,7 +238,7 @@ class TestVectorSearchPerformance:
         )
         time_all = time.time() - start_time
         
-        # 查询 2: 单个 layer
+        # Query 2: a single layer
         start_time = time.time()
         results_single = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
@@ -248,7 +248,7 @@ class TestVectorSearchPerformance:
         )
         time_single = time.time() - start_time
         
-        # 查询 3: 多个 layer
+        # Query 3: multiple layers
         start_time = time.time()
         results_multi = await graph_store_neo4j_fixture.vector_search(
             query_embedding=query_embedding,
@@ -258,7 +258,7 @@ class TestVectorSearchPerformance:
         )
         time_multi = time.time() - start_time
         
-        # 验证
+        # Verify
         assert time_single <= time_all * 1.2, "Single layer filter should not significantly increase time"
         assert time_multi <= time_all * 1.3, "Multiple layer filter should not significantly increase time"
         
@@ -267,14 +267,14 @@ class TestVectorSearchPerformance:
     @pytest.mark.slow
     async def test_beh_vector_search_performance(self, graph_store_neo4j_fixture):
         """
-        测试：行为向量搜索的性能
+        Test: performance of behavior vector search
         
         Measure:
-        - 创建 1000 个 L6 schema 节点（有 beh_embedding）
-        - 执行 beh_vector_search
+        - Create 1000 L6 schema nodes (with beh_embedding)
+        - Run beh_vector_search
         
         Expected:
-        - 性能与 vector_search 类似
+        - Performance similar to vector_search
         """
         ik = "perf_beh::default"
         
@@ -282,7 +282,7 @@ class TestVectorSearchPerformance:
         base_beh_vec = np.random.randn(512)
         base_beh_vec = base_beh_vec / np.linalg.norm(base_beh_vec)
         
-        # 创建 L6 schema 节点
+        # Create L6 schema nodes
         memories = []
         for i in range(1000):
             noise = np.random.randn(512) * 0.1

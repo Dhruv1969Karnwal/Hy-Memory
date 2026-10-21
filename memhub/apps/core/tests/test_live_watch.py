@@ -53,8 +53,10 @@ def test_a_new_turn_lands_well_inside_the_ten_second_target(tmp_path: Path) -> N
             await asyncio.sleep(0.05)
         elapsed = time.monotonic() - started
 
-        assert evidence.count() == baseline + 1, "追加的轮次没有被监听触发导入"
-        assert elapsed < 10, f"延迟 {elapsed:.2f}s 超过十秒硬指标"
+        assert evidence.count() == baseline + 1, (
+            "the appended turn never triggered the watched import"
+        )
+        assert elapsed < 10, f"latency {elapsed:.2f}s exceeds the ten-second hard limit"
         await watch.shutdown()
         await live.shutdown()
         await imports.shutdown()

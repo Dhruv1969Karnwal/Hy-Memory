@@ -35,6 +35,7 @@ import { traceUiAction } from "./ui-trace";
 import type { ImportSourcesController } from "./use-import-sources";
 import { isDefiniteRefusal } from "./write-outcome";
 import "./cold-start.css";
+import { countLabel } from "./count-label";
 
 export type OnboardingDestination = "memory" | "sources" | "settings";
 
@@ -42,7 +43,7 @@ export type OnboardingDestination = "memory" | "sources" | "settings";
 export const PLUGIN_CONSENT_KEY = "one-memory.consent.plugins";
 
 const SCOPE_CHANGED =
-  "来源位置、身份或状态已变化，请重新选择并核对。尚未提交本次授权。";
+  "Source location, identity, or status changed. Select and verify again. This authorization has not been submitted.";
 type LocationCheck = "idle" | "checking" | "ready" | "failed";
 
 function defaultConnectionDraft(
@@ -137,7 +138,7 @@ export function OnboardingFlow({
         if (capability.reason === "noncanonical_data_dir") {
           setConnectionAvailable(true);
           setHostConnectionAvailable(false);
-          setConnectionNote("测试实例不接入应用");
+          setConnectionNote("Test instance does not connect apps");
           return;
         }
         // An install made with `ditto` runs from wherever it was copied to,
@@ -148,7 +149,7 @@ export function OnboardingFlow({
           setConnectionAvailable(capability.available);
           setHostConnectionAvailable(false);
           setConnectionNote(
-            "请先把 MemHub 拖到“应用程序”并从那里重新打开，才能接入应用。",
+            "Drag MemHub to Applications and reopen it from there before apps can be connected.",
           );
           return;
         }
@@ -245,10 +246,10 @@ export function OnboardingFlow({
         if (failed.size && alive.current) {
           connectionQueueFailed.current = true;
           const names = [...failed].map(([name, reason]) =>
-            reason ? `${name}（${reason}）` : name,
+            reason ? `${name} (${reason})` : name,
           );
           setConnectionNote(
-            `${apps.size - failed.size} 个应用已接入，${failed.size} 个未完成：${names.join("、")}。可进入应用后单独处理。`,
+            `Apps connected: ${apps.size - failed.size}. Not finished: ${failed.size}: ${names.join(", ")}. You can handle them separately after entering the app.`,
           );
         }
         try {
@@ -265,7 +266,7 @@ export function OnboardingFlow({
           setConnectionNote(
             (current) =>
               current ||
-              "部分应用未能完成接入，已成功的设置会保留，可进入应用后单独处理。",
+              "Some apps were not connected. Successful settings are kept; you can handle the rest after entering the app.",
           );
       })
       .finally(() => {
@@ -311,7 +312,7 @@ export function OnboardingFlow({
     setItemErrors({});
     setError(
       connectSent.current
-        ? "来源位置、身份或状态已变化，正在等待本次提交回执。不会自动扩大已提交范围。"
+        ? "Source location, identity, or status changed. Waiting for this submission's receipt. The submitted scope will not grow automatically."
         : SCOPE_CHANGED,
     );
   }, [sources]);
@@ -413,8 +414,8 @@ export function OnboardingFlow({
           // assert a failure the UI cannot prove.
           setError(
             refused
-              ? "首次设置的完成状态未能保存。已确认的导入回执不受影响；下次启动可能再次出现此页。"
-              : "首次设置的完成状态尚未确认。已确认的导入回执不受影响；下次启动可能再次出现此页。",
+              ? "The first-run setup completion state was not saved. Confirmed import receipts are unaffected; this page may appear again on the next launch."
+              : "The first-run setup completion state is not confirmed. Confirmed import receipts are unaffected; this page may appear again on the next launch.",
           );
         }
         return;
@@ -461,7 +462,9 @@ export function OnboardingFlow({
     } catch {
       if (!alive.current) return;
       setLocationCheck("failed");
-      setError("位置检测未完成，尚未读取历史。可以重新检测，或先进入工作台。");
+      setError(
+        "Location check did not finish; no history was read. You can check again or go to the workspace first.",
+      );
     } finally {
       flight.current = false;
       if (alive.current) setBusy(null);
@@ -534,7 +537,9 @@ export function OnboardingFlow({
         current = (await imports.refresh()).sources;
       } catch {
         if (alive.current)
-          setError("暂时无法核对来源，尚未提交授权。选择已保留，可以重试。");
+          setError(
+            "Sources could not be verified right now; the authorization was not submitted. Your selection is kept; you can retry.",
+          );
         return;
       }
       if (!alive.current) return;
@@ -558,7 +563,7 @@ export function OnboardingFlow({
       if (result.accepted_source_ids.length === 0) {
         setStartingImport(null);
         setError(
-          "本次没有来源获准导入。请核对下方原因后重试，或到应用页查看状态。",
+          "No source was approved for import this time. Check the reasons below and retry, or view the status on the apps page.",
         );
         return;
       }
@@ -570,7 +575,7 @@ export function OnboardingFlow({
       if (alive.current) {
         setStartingImport(null);
         setError(
-          "开始导入的结果尚未确认，选择已保留。可以重试，或进入应用页核对。",
+          "The start-import result is not confirmed; your selection is kept. You can retry or verify on the apps page.",
         );
       }
     } finally {
@@ -582,18 +587,18 @@ export function OnboardingFlow({
 
   const count = selected.length;
   // D51 item 3: only a *confirmed* snapshot may show a number. A failed
-  // detection must read 未完成 even when sources are listed — otherwise the
+  // detection must read Incomplete even when sources are listed — otherwise the
   // number branch answered first and the summary claimed a count while the
-  // same screen said "检测未完成". The checking branch keeps showing the one
+  // same screen said "Check incomplete". The checking branch keeps showing the one
   // optimistically listed row, which is the intended first-paint state.
   const summaryCount =
     locationCheck === "ready"
       ? String(count)
       : locationCheck === "failed"
-        ? "未完成"
+        ? "Incomplete"
         : visibleApps.length > 0
           ? String(visibleApps.length)
-          : "核对中";
+          : "Verifying";
   if (reviewingImport) {
     const sourceIds =
       accepted?.accepted_source_ids ??
@@ -704,14 +709,14 @@ export function OnboardingFlow({
     );
   }
 
-  // 冷启动直接进入来源选择：引导欢迎页已按产品要求随教学链路一并下线，
-  // 仅保留保存失败时的恢复出口。
+  // Cold start goes straight to source selection: per product requirements the onboarding
+  // welcome page was retired along with the teaching flow; only the save-failure escape hatch remains.
   if (completionFailed && exitDestination)
     return (
       <R6ColdStartFrame
         step={1}
-        title="把熟悉的背景，带到这里"
-        eyebrow="你的记忆，从这里接上"
+        title="Bring the context you know in here"
+        eyebrow="Your memory starts connecting here"
         footer={
           <>
             <R6Button
@@ -719,14 +724,16 @@ export function OnboardingFlow({
               disabled={busy !== null}
               onClick={() => finishOnce(exitDestination)}
             >
-              {exitDestination === "sources" ? "仍进入应用页" : "仍进入工作台"}
+              {exitDestination === "sources"
+                ? "Go to apps anyway"
+                : "Go to workspace anyway"}
             </R6Button>
             <R6Button
               variant="primary"
               disabled={busy !== null}
               onClick={() => void leave(exitDestination)}
             >
-              重试保存并进入
+              Retry save and continue
             </R6Button>
           </>
         }
@@ -740,8 +747,8 @@ export function OnboardingFlow({
   return (
     <R6ColdStartFrame
       step={1}
-      title="把熟悉的背景，带到这里"
-      eyebrow="你的记忆，从这里接上"
+      title="Bring the context you know in here"
+      eyebrow="Your memory starts connecting here"
       footer={
         <>
           <R6Button
@@ -749,7 +756,7 @@ export function OnboardingFlow({
             disabled={locked}
             onClick={() => void leave("sources")}
           >
-            稍后添加，先进入
+            Add later, continue now
           </R6Button>
           {error && (
             <p className="onboarding-r6-error" role="alert">
@@ -762,7 +769,7 @@ export function OnboardingFlow({
             disabled={locked || count === 0}
             onClick={() => void startImport()}
           >
-            {busy === "submitting" ? "正在开始导入…" : "开始导入"}
+            {busy === "submitting" ? "Starting import..." : "Start import"}
           </R6Button>
         </>
       }
@@ -773,33 +780,39 @@ export function OnboardingFlow({
           aria-labelledby="cold-start-phase"
         >
           <div className="onboarding-r6-intro">
-            <p>不用从头介绍自己。从常用的 App 开始，把已有背景带过来。</p>
-            <p>确认前只检查应用信息，不读取对话，也不安装连接。</p>
+            <p>
+              No need to introduce yourself from scratch. Start with the apps
+              you use often and bring your existing context over.
+            </p>
+            <p>
+              Before you confirm, only app metadata is checked: no conversations
+              are read and no connections are installed.
+            </p>
           </div>
           <div className="onboarding-r6-list-heading">
             <h2 id="cold-start-phase" ref={heading} tabIndex={-1}>
-              本机 AI 应用
+              AI apps on this machine
             </h2>
             <button
               type="button"
               className="onboarding-r6-quiet"
-              aria-label="重新检测位置"
+              aria-label="Re-check locations"
               disabled={locked}
               onClick={() => void checkLocations()}
             >
-              {busy === "checking" ? "检测中…" : "重新检测"}
+              {busy === "checking" ? "Checking..." : "Re-check"}
             </button>
           </div>
           <SourceList
             className="onboarding-r6-list"
-            aria-label="候选应用"
+            aria-label="Candidate apps"
             aria-busy={busy === "checking"}
             count={visibleApps.length}
             status={
               locationCheck === "checking"
-                ? "正在检测其他应用…"
+                ? "Checking other apps..."
                 : locationCheck === "failed"
-                  ? "检测未完成"
+                  ? "Check incomplete"
                   : undefined
             }
             selection={
@@ -809,7 +822,7 @@ export function OnboardingFlow({
                 disabled={locked || allSelected || readableApps.length === 0}
                 onClick={selectAllSources}
               >
-                {allSelected ? "已全选" : "全选"}
+                {allSelected ? "All selected" : "Select all"}
               </button>
             }
           >
@@ -818,7 +831,7 @@ export function OnboardingFlow({
                 <label>
                   <input
                     type="checkbox"
-                    aria-label={`导入 ${visibleApps[0].display_name} 历史`}
+                    aria-label={`Import ${visibleApps[0].display_name} history`}
                     checked
                     disabled
                     readOnly
@@ -826,11 +839,11 @@ export function OnboardingFlow({
                   <R6SourceIcon id={visibleApps[0].source_id} />
                   <span className="onboarding-r6-row-info">
                     <strong>{visibleApps[0].display_name}</strong>
-                    <small>正在核对本机保存位置</small>
+                    <small>Verifying the local save location</small>
                   </span>
                   <span className="onboarding-r6-badge" data-found="true">
                     <i aria-hidden="true" />
-                    已发现
+                    Found
                   </span>
                 </label>
               </li>
@@ -853,7 +866,7 @@ export function OnboardingFlow({
                     <label>
                       <input
                         type="checkbox"
-                        aria-label={`导入 ${item.display_name} 历史`}
+                        aria-label={`Import ${item.display_name} history`}
                         checked={checked}
                         disabled={
                           locked || locationCheck !== "ready" || !canRead(item)
@@ -866,7 +879,7 @@ export function OnboardingFlow({
                       <span className="onboarding-r6-row-info">
                         <strong>{item.display_name}</strong>
                         <small title={note ?? item.candidate_path}>
-                          {item.candidate_path || "位置待核对"} ·{" "}
+                          {item.candidate_path || "Location unverified"} ·{" "}
                           {pathKind(item)}
                         </small>
                         {itemErrors[item.source_id] && (
@@ -907,14 +920,14 @@ export function OnboardingFlow({
             {!visibleApps.length && busy !== "checking" && (
               <li className="onboarding-r6-empty">
                 {locationCheck === "ready"
-                  ? "当前没有候选来源。可以稍后在应用页添加历史包。"
-                  : "候选来源尚未加载。可以检测位置，或先进入工作台。"}
+                  ? "No candidate sources right now. You can add a history package on the apps page later."
+                  : "Candidate sources are not loaded yet. You can check locations or go to the workspace first."}
               </li>
             )}
           </SourceList>
         </section>
-        <aside className="onboarding-r6-summary" aria-label="本次导入">
-          <p>本次导入</p>
+        <aside className="onboarding-r6-summary" aria-label="This import">
+          <p>This import</p>
           <p
             className="onboarding-r6-count"
             aria-live="polite"
@@ -922,13 +935,15 @@ export function OnboardingFlow({
           >
             {summaryCount}
           </p>
-          <p>个 App 的历史对话</p>
+          <p>apps' conversation history</p>
           <h2>
-            把零散的会话，
+            Scattered conversations,
             <br />
-            汇成完整的记忆
+            become one complete memory
           </h2>
-          <p className="onboarding-r6-signoff">少一些重复交代，多一些理解。</p>
+          <p className="onboarding-r6-signoff">
+            Less repeating yourself, more being understood.
+          </p>
         </aside>
       </div>
       {custom && (
@@ -1014,9 +1029,9 @@ function SourceList({
         <span data-scroll-hint={!status && more > 0 ? "true" : "false"}>
           {status ??
             (more > 0
-              ? `向下查看更多 · 还有 ${more} 个应用`
+              ? `Scroll down for more · ${more} not shown`
               : count > 3
-                ? `已显示全部 ${count} 个应用`
+                ? `All ${countLabel(count, "app")} shown`
                 : "")}
         </span>
         {selection}
@@ -1082,49 +1097,60 @@ function copySource(source: SourceResponse): SourceResponse {
 }
 
 function pathKind(source: SourceResponse) {
-  return source.candidate_kind === "default" ? "默认位置" : "自定义位置";
+  return source.candidate_kind === "default"
+    ? "Default location"
+    : "Custom location";
 }
 
 function locationLabel(source: SourceResponse, check: LocationCheck) {
-  if (check === "idle") return "尚未检测";
-  if (check === "checking") return "检测中";
-  if (check === "failed") return "检测未完成";
+  if (check === "idle") return "Not checked";
+  if (check === "checking") return "Checking";
+  if (check === "failed") return "Check incomplete";
   return source.location_state
     ? {
-        found: "已发现",
-        not_found: "未发现",
-        inaccessible: "无法访问",
-        invalid: "位置无效",
+        found: "Found",
+        not_found: "Not found",
+        inaccessible: "Inaccessible",
+        invalid: "Invalid location",
       }[source.location_state]
-    : "需要更新 Core";
+    : "Core update required";
 }
 
 function locationNote(source: SourceResponse) {
   if (source.location_state === "not_found")
-    return "候选位置不存在，可能尚无历史或路径不同。";
+    return "The candidate location does not exist; there may be no history yet or the path differs.";
   if (source.location_state === "inaccessible")
-    return "无法检查此位置，请核对目录访问权限后重试。";
+    return "This location cannot be checked; verify directory access permissions and retry.";
   if (source.location_state === "invalid")
-    return "此位置未通过安全检查，不能读取。";
+    return "This location failed the safety check and cannot be read.";
   if (!source.candidate_root_id?.trim() || !source.location_state)
-    return "当前 Core 未提供可确认的位置身份，需更新后再选择。";
+    return "The current Core does not provide a verifiable location identity; update it before selecting.";
   if (source.capabilities.historical_import !== "implemented")
-    return "暂不支持历史导入";
-  if (!source.available) return "当前来源不可读取，请重新检测。";
+    return "History import not supported yet";
+  if (!source.available)
+    return "This source is not readable right now; check again.";
   return null;
 }
 
 function failureLabel(reason: string) {
   const labels: Record<string, string> = {
-    source_unavailable: "来源目录暂时不可读取，请核对位置和权限。",
-    source_not_available: "来源目录暂时不可读取，请核对位置和权限。",
-    source_identity_changed: "来源目录身份已变化，请返回重新检测。",
-    source_permission_changed: "来源权限已变化，请返回重新确认。",
-    source_not_authorized: "此来源尚未获得读取授权。",
-    environment_override_confirmation_required: "自定义来源位置需要重新确认。",
-    imports_disabled: "当前 Core 未启用历史导入。",
+    source_unavailable:
+      "The source directory is not readable right now; check the location and permissions.",
+    source_not_available:
+      "The source directory is not readable right now; check the location and permissions.",
+    source_identity_changed:
+      "The source directory identity has changed; go back and check again.",
+    source_permission_changed:
+      "Source permissions have changed; go back and confirm again.",
+    source_not_authorized: "This source has no read authorization yet.",
+    environment_override_confirmation_required:
+      "The custom source location needs re-confirmation.",
+    imports_disabled: "The current Core does not enable history import.",
   };
-  return labels[reason] ?? `尚未获准导入（${reason}）。请核对来源后重试。`;
+  return (
+    labels[reason] ??
+    `Import was not approved (${reason}). Check the source and retry.`
+  );
 }
 
 // S1.3 supplied app marks; WorkBuddy keeps the source geometry with flat fills.
@@ -1233,12 +1259,12 @@ function CustomLocationDialog({
         tabIndex={-1}
       >
         <header>
-          <h2 id="cold-start-custom-title">确认自定义位置</h2>
+          <h2 id="cold-start-custom-title">Confirm custom location</h2>
           <button
             type="button"
             className="cold-start-icon-button"
-            aria-label="关闭位置确认"
-            title="关闭位置确认"
+            aria-label="Close location confirmation"
+            title="Close location confirmation"
             onClick={onCancel}
           >
             <X size={18} aria-hidden="true" />
@@ -1246,7 +1272,8 @@ function CustomLocationDialog({
         </header>
         <div className="cold-start-dialog-body">
           <p id="cold-start-custom-description">
-            此位置来自当前配置，并非应用默认目录。确认位置不会开始读取历史。
+            This location comes from your current configuration, not the app's
+            default directory. Confirming it does not start reading history.
           </p>
           <strong>{source.display_name}</strong>
           <code>{source.candidate_path}</code>
@@ -1256,7 +1283,9 @@ function CustomLocationDialog({
               checked={confirmed}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
-            <span>确认这是 {source.display_name} 的历史位置</span>
+            <span>
+              Confirm this is the history location for {source.display_name}
+            </span>
           </label>
         </div>
         <footer>
@@ -1265,7 +1294,7 @@ function CustomLocationDialog({
             className="cold-start-secondary"
             onClick={onCancel}
           >
-            取消
+            Cancel
           </button>
           <button
             type="button"
@@ -1275,7 +1304,7 @@ function CustomLocationDialog({
             }}
           >
             <Check size={16} aria-hidden="true" />
-            确认此位置
+            Confirm this location
           </button>
         </footer>
       </div>

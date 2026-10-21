@@ -41,18 +41,24 @@ export function MemoryDeleteDialog({
           }
         }}
       >
-        <p className="eyebrow">记忆管理</p>
+        <p className="eyebrow">Memory management</p>
         <h2 id="memory-delete-title">
-          删除{count === 1 ? "这条" : `这 ${count} 条`}记忆？
+          Delete{count === 1 ? " this memory" : ` these ${count} memories`}?
         </h2>
         <div className="delete-impact">
-          <h3>会删除</h3>
-          <p>所选记忆，以及对应的搜索向量和图关系。</p>
-          <h3>会保留</h3>
-          <p>仍被其他记忆引用的原始证据。来源应用中的对话不会被修改。</p>
+          <h3>Will be deleted</h3>
+          <p>
+            The selected memories, plus their search vectors and graph
+            relations.
+          </p>
+          <h3>Will be kept</h3>
+          <p>
+            Original evidence still referenced by other memories. Conversations
+            in the source app are not modified.
+          </p>
         </div>
         <p className="delete-alternative">
-          只是内容不准确，可以取消后选择“纠正”。
+          If only the content is wrong, cancel and choose "Correct" instead.
         </p>
         <div className="consent-actions">
           <button
@@ -60,14 +66,14 @@ export function MemoryDeleteDialog({
             className="secondary"
             onClick={() => onAnswer(false)}
           >
-            取消
+            Cancel
           </button>
           <button
             type="button"
             className="danger"
             onClick={() => onAnswer(true)}
           >
-            确认删除
+            Confirm Delete
           </button>
         </div>
       </section>

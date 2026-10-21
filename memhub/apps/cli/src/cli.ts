@@ -100,6 +100,7 @@ import {
   validateImportJob,
   validateSourceConnectionCandidates,
 } from "./core-responses.js";
+import { countLabel } from "./count-label.js";
 import { applyDataDeletion, planDataDeletion } from "./data-deletion.js";
 import {
   composeDoctorReport,
@@ -541,17 +542,19 @@ async function runCommand(
   environment = await environmentWithManagedDataDir(environment);
   const asJson = arguments_.includes("--json");
   const command = arguments_[0];
-  if (command === undefined) return reject(undefined, asJson, "缺少命令。");
+  if (command === undefined)
+    return reject(undefined, asJson, "Missing command.");
   if (command === "--help" || command === "-h" || command === "help") {
     return explain(arguments_.slice(1), asJson);
   }
   const named =
     command === "--version" || command === "-V" ? "version" : command;
   const descriptor = findCommand(named);
-  if (!descriptor) return reject(undefined, asJson, "未知命令。");
-  const usage = () => reject(descriptor, asJson, "参数无效。");
+  if (!descriptor) return reject(undefined, asJson, "Unknown command.");
+  const usage = () => reject(descriptor, asJson, "Invalid arguments.");
   const help = helpRequest(arguments_.slice(1));
-  if (help === "invalid") return reject(descriptor, asJson, "参数无效。");
+  if (help === "invalid")
+    return reject(descriptor, asJson, "Invalid arguments.");
   if (help === "help") {
     return emit(
       asJson
@@ -562,7 +565,7 @@ async function runCommand(
   if (named === "version") {
     return arguments_.length === (asJson ? 2 : 1)
       ? emit(asJson ? renderVersionDocument() : renderVersion())
-      : reject(descriptor, asJson, "参数无效。");
+      : reject(descriptor, asJson, "Invalid arguments.");
   }
   if (named === "models" && arguments_[1] === "setup") {
     if (
@@ -580,7 +583,7 @@ async function runCommand(
     });
     if (runtime.state !== "running") {
       emit(
-        `无法配置模型：${runtime.code}\n下一步：先运行 ${PRODUCT} start 启动 Runtime。\n`,
+        `Cannot configure the model: ${runtime.code}\nNext step: run ${PRODUCT} start to start the Runtime first.\n`,
       );
       return runtime.state === "stopped" ? EXIT_RUNTIME_STOPPED : EXIT_FAILED;
     }
@@ -666,7 +669,11 @@ async function runCommand(
     }
     const document = await readAdapters(attachment);
     if (document === null) {
-      return reject(descriptor, asJson, "adapters 端点不可用。");
+      return reject(
+        descriptor,
+        asJson,
+        "The adapters endpoint is unavailable.",
+      );
     }
     if (asJson) {
       process.stdout.write(`${JSON.stringify(document)}\n`);
@@ -683,7 +690,7 @@ async function runCommand(
         `  ${adapter.source_id}  available=${adapter.available} authorized=${adapter.authorized} ` +
         `live_sync=${adapter.capabilities.live_sync ?? "?"} recall=${adapter.capabilities.recall ?? "?"}`,
     );
-    process.stdout.write(`Harness 适配器：\n${lines.join("\n")}\n`);
+    process.stdout.write(`Harness adapters:\n${lines.join("\n")}\n`);
     return EXIT_OK;
   }
   // `path list` and `adapter list` are read-only: they have no plan to confirm,
@@ -708,14 +715,18 @@ async function runCommand(
     }
     const state = await resetOnboarding(attachment);
     if (state === null) {
-      return reject(descriptor, asJson, "引导状态端点不可用。");
+      return reject(
+        descriptor,
+        asJson,
+        "The onboarding state endpoint is unavailable.",
+      );
     }
     if (asJson) {
       process.stdout.write(`${JSON.stringify(state)}\n`);
       return EXIT_OK;
     }
     process.stdout.write(
-      `引导流程已回到首次运行（status=${state.status}），记忆数据未改动。\n`,
+      `The onboarding flow is back at first run (status=${state.status}); no memory data was changed.\n`,
     );
     return EXIT_OK;
   }
@@ -734,7 +745,11 @@ async function runCommand(
     }
     const document = await readScanRoots(attachment);
     if (document === null) {
-      return reject(descriptor, asJson, "scan-roots 端点不可用。");
+      return reject(
+        descriptor,
+        asJson,
+        "The scan-roots endpoint is unavailable.",
+      );
     }
     if (asJson) {
       process.stdout.write(`${JSON.stringify(document)}\n`);
@@ -747,7 +762,7 @@ async function runCommand(
       enabled: boolean;
     }>;
     if (roots.length === 0) {
-      process.stdout.write("尚未登记任何扫描目录。\n");
+      process.stdout.write("No scan directories are registered yet.\n");
       return EXIT_OK;
     }
     const lines = roots.map(
@@ -755,7 +770,7 @@ async function runCommand(
         `  ${root.path}  source=${root.source_id ?? "auto"} recursive=${root.recursive} enabled=${root.enabled}`,
     );
     process.stdout.write(
-      `已登记的扫描目录（revision ${document.revision}）：\n${lines.join("\n")}\n`,
+      `Registered scan directories (revision ${document.revision}):\n${lines.join("\n")}\n`,
     );
     return EXIT_OK;
   }
@@ -772,7 +787,7 @@ async function runCommand(
       process.stdout.write(
         asJson
           ? `${JSON.stringify(asPlanDocument(parsed.plan))}\n`
-          : `${describe(parsed.plan)}\n未执行：加 --yes 才会改动。\n`,
+          : `${describe(parsed.plan)}\nNot executed: nothing changes without --yes.\n`,
       );
       return EXIT_PLAN_BLOCKED;
     }
@@ -802,12 +817,12 @@ async function runCommand(
           verb: "restore" as const,
           state: "rejected" as const,
           code: "backup_restore_confirmation_required",
-          next_step: `再次运行，并把 --source 的路径逐字写到 --confirm：memhub backup restore --source ${parsed.plan.target} --yes --confirm ${parsed.plan.target}`,
+          next_step: `Run it again and write the --source path verbatim into --confirm: memhub backup restore --source ${parsed.plan.target} --yes --confirm ${parsed.plan.target}`,
         };
         emit(
           asJson
             ? `${JSON.stringify(document)}\n`
-            : `backup restore 被拒绝：${document.code}\n下一步：${document.next_step}\n`,
+            : `backup restore was rejected: ${document.code}\nNext step: ${document.next_step}\n`,
         );
         return EXIT_FAILED;
       }
@@ -825,12 +840,12 @@ async function runCommand(
           verb: "restore" as const,
           state: "rejected" as const,
           code: "backup_restore_runtime_running",
-          next_step: `先运行 ${PRODUCT} stop 停止 Runtime；恢复会覆盖现有数据，必须在停机时进行。`,
+          next_step: `Run ${PRODUCT} stop first; a restore overwrites existing data and has to be done while it is stopped.`,
         };
         emit(
           asJson
             ? `${JSON.stringify(document)}\n`
-            : `backup restore 被拒绝：${document.code}\n下一步：${document.next_step}\n`,
+            : `backup restore was rejected: ${document.code}\nNext step: ${document.next_step}\n`,
         );
         return EXIT_FAILED;
       }
@@ -847,12 +862,12 @@ async function runCommand(
           state: "rejected" as const,
           code: "backup_restore_runtime_state_unknown",
           next_step:
-            "Runtime 身份无法确认（receipt 缺失但仍有服务锁）。请先运行 memhub stop 并确认进程退出后重试。",
+            "The Runtime identity cannot be confirmed (receipt missing but a service lock is held). Run memhub stop, confirm the process exited, then retry.",
         };
         emit(
           asJson
             ? `${JSON.stringify(document)}\n`
-            : `backup restore 被拒绝：${document.code}\n下一步：${document.next_step}\n`,
+            : `backup restore was rejected: ${document.code}\nNext step: ${document.next_step}\n`,
         );
         return EXIT_FAILED;
       }
@@ -877,7 +892,7 @@ async function runCommand(
         emit(
           asJson
             ? `${JSON.stringify(document)}\n`
-            : `已恢复受管备份：${restored.result.restoredBytes} 字节；保护性备份 ${restored.result.previousBackupPath}\n`,
+            : `Managed backup restored: ${countLabel(restored.result.restoredBytes, "byte")}; protective backup at ${restored.result.previousBackupPath}\n`,
         );
         return EXIT_OK;
       }
@@ -890,13 +905,13 @@ async function runCommand(
         code: restored.code,
         next_step:
           restored.code === "backup_restore_contract_unavailable"
-            ? "当前 Core 不提供受管恢复端点；请升级到包含该合同的 Runtime。"
-            : "检查来源是否为受管 backups/ 目录中的 One Memory 备份后重试。",
+            ? "This Core does not offer the managed restore endpoint; upgrade to a Runtime that includes the contract."
+            : "Check that the source is a One Memory backup inside the managed backups/ directory, then retry.",
       };
       emit(
         asJson
           ? `${JSON.stringify(document)}\n`
-          : `backup restore 被拒绝：${document.code}\n下一步：${document.next_step}\n`,
+          : `backup restore was rejected: ${document.code}\nNext step: ${document.next_step}\n`,
       );
       return restored.code === "backup_restore_contract_unavailable"
         ? EXIT_PLAN_BLOCKED
@@ -905,7 +920,7 @@ async function runCommand(
     return reject(
       descriptor,
       asJson,
-      `${named} 的实际执行待 Runtime 接口就绪。`,
+      `Actual execution of ${named} waits for the Runtime interface to be ready.`,
     );
   }
   if (named === "write") {
@@ -985,7 +1000,7 @@ async function runCommand(
       process.stdout.write(
         asJson
           ? `${JSON.stringify({ schema_version: 1, write: null })}\n`
-          : "未找到该 request id。\n",
+          : "That request id was not found.\n",
       );
       return EXIT_OK;
     }
@@ -1036,7 +1051,7 @@ async function runCommand(
       process.stdout.write(
         asJson
           ? `${JSON.stringify({ schema_version: 1, command: "logs export", state: "exported", path: target, file_count: receipt.file_count })}\n`
-          : `日志已导出：${target}\n`,
+          : `Logs exported: ${target}\n`,
       );
       return EXIT_OK;
     }
@@ -1058,12 +1073,12 @@ async function runCommand(
               code: report.failure,
               exit_code: EXIT_FAILED,
               next_step:
-                "检查数据目录下的 logs 是否为可读目录；必要时运行 memhub doctor。",
+                "Check whether the logs directory under the data directory is readable; run memhub doctor if needed.",
             })}\n`,
           );
         } else {
           process.stderr.write(
-            `${PRODUCT}: 日志目录不可读（${report.failure}）。\n`,
+            `${PRODUCT}: the log directory is not readable (${report.failure}).\n`,
           );
         }
         return EXIT_FAILED;
@@ -1086,7 +1101,7 @@ async function runCommand(
       );
       if (report.invalid_lines) {
         process.stderr.write(
-          `${PRODUCT}: 跳过 ${report.invalid_lines} 行损坏的诊断记录。\n`,
+          `${PRODUCT}: skipped ${countLabel(report.invalid_lines, "corrupt diagnostic record")}.\n`,
         );
       }
       return EXIT_OK;
@@ -1147,11 +1162,11 @@ async function runCommand(
           })}\n`
         : state === "started"
           ? command === "restart"
-            ? "MemHub Runtime 已重启（用户服务）。\n"
-            : "MemHub Runtime 已启动（用户服务）。\n"
+            ? "MemHub Runtime restarted (user service).\n"
+            : "MemHub Runtime started (user service).\n"
           : state === "already_running"
-            ? "MemHub Runtime 已在运行。\n"
-            : "Runtime 服务已注册但未就绪；请运行 memhub logs 查看原因。\n";
+            ? "MemHub Runtime is already running.\n"
+            : "The Runtime service is registered but not ready; run memhub logs to see why.\n";
     // A launchd-managed Runtime must be driven through launchctl. Spawning a
     // second process while the service holds the data directory is exactly what
     // produced "Runtime exited before becoming ready".
@@ -1240,7 +1255,7 @@ async function runCommand(
                 state: "not-running",
                 code: "runtime_not_running",
               })}\n`
-            : "MemHub Runtime 原先未运行，将直接启动。\n",
+            : "MemHub Runtime was not running and will be started directly.\n",
         );
       }
     }
@@ -1352,10 +1367,10 @@ async function runCommand(
             code,
           })}\n`
         : state === "stopped"
-          ? "MemHub Runtime 已停止。\n"
+          ? "MemHub Runtime stopped.\n"
           : state === "still-running"
-            ? "Runtime 由用户服务托管，停用被拒绝或被立即拉起；请运行 memhub service-uninstall。\n"
-            : "MemHub Runtime 未运行。\n";
+            ? "The Runtime is managed by the user service; disabling was refused or it was relaunched immediately; run memhub service-uninstall.\n"
+            : "MemHub Runtime is not running.\n";
     // When the Runtime is a launchd-managed user service, a receipt-based stop
     // is wrong: SIGTERM to the receipt pid is immediately undone by KeepAlive,
     // and the receipts can be deleted while the daemon lives on. Stop through
@@ -1433,7 +1448,7 @@ async function runCommand(
             controls.platform,
             serviceId ?? undefined,
           ),
-        render: (report) => renderStatusText(report, "Runtime 状态"),
+        render: (report) => renderStatusText(report, "Runtime status"),
       });
     }
     if (named === "doctor") {
@@ -1452,7 +1467,7 @@ async function runCommand(
     emit(
       asJson
         ? `${JSON.stringify(report)}\n`
-        : renderStatusText(report, "Runtime 状态"),
+        : renderStatusText(report, "Runtime status"),
     );
     return statusExitCode(report);
   }
@@ -1489,22 +1504,22 @@ async function runCommand(
         asJson
           ? `${JSON.stringify(document)}\n`
           : result.state === "opened"
-            ? `已在系统浏览器打开 Web Console：${result.url}\n`
-            : `ui 未打开：${result.code}\n${detail === undefined ? "" : `下一步：${detail}\n`}`,
+            ? `Web Console opened in the system browser: ${result.url}\n`
+            : `ui did not open: ${result.code}\n${detail === undefined ? "" : `Next step: ${detail}\n`}`,
       );
       return uiExitCode(result);
     };
     if (attachment === null) {
       return emitUi(
         { state: "blocked", code: "runtime_not_running" },
-        `先运行 ${PRODUCT} start 启动 Runtime。`,
+        `Run ${PRODUCT} start to start the Runtime first.`,
       );
     }
     const exchange = await requestUiSession(attachment).catch(() => null);
     if (exchange === null) {
       return emitUi(
         { state: "blocked", code: "ui_session_transport_failed" },
-        "无法连接 Core 的 loopback session 端点；确认 Runtime 可用后重试。",
+        "The Core loopback session endpoint cannot be reached; confirm the Runtime is available and retry.",
       );
     }
     if ("code" in exchange) {
@@ -1515,7 +1530,9 @@ async function runCommand(
       opened
         ? { state: "opened", url: exchange.url }
         : { state: "failed", code: "ui_browser_open_failed" },
-      opened ? undefined : "无法调用系统默认浏览器；请手动打开上面的地址。",
+      opened
+        ? undefined
+        : "The system default browser could not be invoked; open the address above by hand.",
     );
   }
   if (named === "host") {
@@ -1814,8 +1831,8 @@ async function runCommand(
                 code: removed,
               })}\n`
             : removed === "active"
-              ? `删除失败：该模型配置正在使用中，请先停用后再删除。\n`
-              : `删除失败：未找到该模型配置。\n`,
+              ? `Delete failed: this model profile is in use, deactivate it before deleting it.\n`
+              : `Delete failed: this model profile was not found.\n`,
         );
         return EXIT_FAILED;
       }
@@ -1838,7 +1855,7 @@ async function runCommand(
               operation_id: "",
               receipt: { removed: parsed.profileId },
             })}\n`
-          : `已删除模型配置：${parsed.profileId}\n`,
+          : `Model profile deleted: ${parsed.profileId}\n`,
       );
       return EXIT_OK;
     }
@@ -1951,7 +1968,7 @@ async function runCommand(
               state: "unavailable",
               code: runtime.code,
             })}\n`
-          : `未接入：${runtime.code}\n下一步：先运行 ${PRODUCT} start 启动 Runtime。\n`,
+          : `Not connected: ${runtime.code}\nNext step: run ${PRODUCT} start to start the Runtime first.\n`,
       );
       return runtime.state === "stopped" ? 3 : 1;
     }
@@ -1967,7 +1984,7 @@ async function runCommand(
               state: "unavailable",
               code,
             })}\n`
-          : `未接入：${code}\n`,
+          : `Not connected: ${code}\n`,
       );
       return EXIT_FAILED;
     }
@@ -2005,12 +2022,14 @@ async function runCommand(
                 source_ids: detectedSourceIds(batch.candidates),
                 not_found_source_ids: batch.notFound,
                 next_step: parsed.dryRun
-                  ? "这是 dry-run，未接入也未导入；去掉 --dry-run 并加 --import 才会执行"
-                  : "加 --import 立即导入全部已检测来源的历史会话",
+                  ? "This is a dry run: nothing connected and nothing imported; drop --dry-run and add --import to execute"
+                  : "Add --import to import the history of every detected source right away",
               })}\n`
-            : `将接入 ${batch.candidates.length} 个来源：${detectedSourceIds(
+            : `Will connect ${countLabel(batch.candidates.length, "source")}: ${detectedSourceIds(
                 batch.candidates,
-              ).join("、")}\n未执行：加 --import 才会真正接入并导入。\n`,
+              ).join(
+                ", ",
+              )}\nNot executed: nothing is connected or imported without --import.\n`,
         );
         return EXIT_OK;
       }
@@ -2045,7 +2064,7 @@ async function runCommand(
                 state: "unavailable",
                 code,
               })}\n`
-            : `未接入：${code}\n`,
+            : `Not connected: ${code}\n`,
         );
         return EXIT_FAILED;
       }
@@ -2090,19 +2109,19 @@ async function runCommand(
         return EXIT_OK;
       }
       if (available.length === 0) {
-        emit("本机没有检测到可接入的来源。\n");
+        emit("No connectable source was detected on this machine.\n");
         return EXIT_OK;
       }
       const lines = available.map(
         (candidate) =>
           `  ${candidate.source_id}${
             candidate.requires_override_confirmation
-              ? "  （需 --confirm-overrides）"
+              ? "  (needs --confirm-overrides)"
               : ""
           }  ${candidate.display_name}`,
       );
       emit(
-        `可接入的来源：\n${lines.join("\n")}\n\n下一步：${PRODUCT} init --source <id> [--import]\n`,
+        `Connectable sources:\n${lines.join("\n")}\n\nNext step: ${PRODUCT} init --source <id> [--import]\n`,
       );
       return EXIT_OK;
     }
@@ -2128,12 +2147,12 @@ async function runCommand(
               plan,
               dry_run: parsed.dryRun,
               next_step: parsed.dryRun
-                ? "这是 dry-run，未接入也未导入；去掉 --dry-run 并加 --import 才会执行"
-                : "加 --import 立即导入历史会话",
+                ? "This is a dry run: nothing connected and nothing imported; drop --dry-run and add --import to execute"
+                : "Add --import to import the history right away",
             })}\n`
           : parsed.dryRun
-            ? "已生成接入计划（dry-run：未接入、未导入）。\n"
-            : "已生成接入计划。加 --import 可立即导入历史会话。\n",
+            ? "Connection plan created (dry run: nothing connected, nothing imported).\n"
+            : "Connection plan created. Add --import to import the history right away.\n",
       );
       return EXIT_OK;
     }
@@ -2347,7 +2366,7 @@ async function runCommand(
       emit(
         asJson
           ? `${JSON.stringify(document)}\n`
-          : `记忆读取未完成：${blocked?.state}（${blocked?.code}）\n`,
+          : `Memory read not completed: ${blocked?.state} (${blocked?.code})\n`,
       );
       return runtime.state === "stopped" ? 3 : 1;
     }
@@ -2582,7 +2601,8 @@ async function runCommand(
             state: "managed_by_app",
             code: "runtime_managed_by_memhub_app",
             apply: false,
-            message: "后台已由 MemHub App 管理，不会安装第二套服务。",
+            message:
+              "The background is already managed by the MemHub App, so no second service is installed.",
           },
           null,
           2,
@@ -2808,7 +2828,7 @@ async function runCommand(
       const unavailable = {
         status: "blocked",
         code: "local_experience_operation_unavailable",
-        reason: "体验版暂不支持",
+        reason: "Not supported in the preview build",
       };
       if (!parsed.confirmed) {
         process.stdout.write(
@@ -2909,7 +2929,7 @@ async function runCommand(
     const blockedCompanion = companionLinks.find(
       (link) => link.status === "blocked",
     );
-    // "装完即短指令可用": make the managed bin directory reachable from a new
+    // "short commands usable right after install": make the managed bin directory reachable from a new
     // shell. This is part of the same preview/apply transaction as the links
     // and service, so a user sees it before `--yes` and it rolls back with the
     // rest on failure.
@@ -3104,7 +3124,7 @@ async function runCommand(
         });
       }
       process.stdout.write(
-        `${JSON.stringify({ command: "uninstall", state: "cli_links_removed", cli: results, data_preserved: true, apply: true, next_step: "如需卸载 App，请将 MemHub 拖到废纸篓。" }, null, 2)}\n`,
+        `${JSON.stringify({ command: "uninstall", state: "cli_links_removed", cli: results, data_preserved: true, apply: true, next_step: "To uninstall the app, drag MemHub to the Trash." }, null, 2)}\n`,
       );
       return EXIT_OK;
     }
@@ -3259,7 +3279,7 @@ async function runCommand(
             status: "error",
             code: "data_deletion_confirmation_required",
             exit_code: EXIT_USAGE,
-            next_step: `再次运行并显式确认目标目录：memhub delete-data --data-dir ${dataDir} --yes --confirm ${dataDir}`,
+            next_step: `Run it again and confirm the target directory explicitly: memhub delete-data --data-dir ${dataDir} --yes --confirm ${dataDir}`,
           },
           null,
           2,
@@ -3287,7 +3307,8 @@ async function runCommand(
             code:
               error instanceof Error ? error.message : "data_deletion_failed",
             exit_code: EXIT_FAILED,
-            next_step: "未完成删除；请确认目标目录与确认参数一致后重试。",
+            next_step:
+              "The deletion did not complete; make sure the target directory and the confirmation argument match, then retry.",
           },
           null,
           2,
@@ -3467,7 +3488,8 @@ async function runCommand(
               command: "upgrade",
               status: "error",
               code: "upgrade_health_check_failed",
-              message: "新版本重启后未在限定时间内就绪，已回滚到上一版本。",
+              message:
+                "The new version was not ready within the time budget after restart and was rolled back to the previous version.",
             },
             null,
             2,
@@ -3628,12 +3650,12 @@ async function applyBackupCreate(
           message,
           exit_code: EXIT_FAILED,
           next_step:
-            "备份目标必须是数据目录内的绝对路径；确认 --target 后重试。",
+            "The backup target must be an absolute path inside the data directory; check --target and retry.",
         })}\n`,
       );
       return EXIT_FAILED;
     }
-    process.stderr.write(`备份失败：${message}\n`);
+    process.stderr.write(`Backup failed: ${message}\n`);
     return EXIT_FAILED;
   }
 }
@@ -3714,7 +3736,7 @@ async function applyScan(
     return reject(
       descriptor,
       asJson,
-      "scan 执行必须指定 --source <id>；Runtime 按来源扫描，不接受裸路径。",
+      "Running scan requires --source <id>; the Runtime scans per source and does not accept bare paths.",
     );
   }
   const attachment = await attachToRuntime(
@@ -3729,8 +3751,8 @@ async function applyScan(
     // this command. Saying so keeps "not synced" distinct from "command failed".
     process.stderr.write(
       asJson
-        ? `${JSON.stringify({ schema_version: 1, scan: null, code: "live_sync_unavailable", message: `来源 ${sourceId} 尚未开启持续同步或不支持增量同步。`, next_step: `先运行 memhub sources list 确认来源已连接，再运行 memhub sync resume --source ${sourceId} 并按提示确认。` })}\n`
-        : `来源 ${sourceId} 尚未开启持续同步或不支持增量同步。\n下一步：先运行 memhub sources list 确认来源已连接，再运行 memhub sync resume --source ${sourceId} 并按提示确认。\n`,
+        ? `${JSON.stringify({ schema_version: 1, scan: null, code: "live_sync_unavailable", message: `Source ${sourceId} has not enabled continuous sync or does not support incremental sync.`, next_step: `Run memhub sources list first to confirm the source is connected, then run memhub sync resume --source ${sourceId} and confirm as prompted.` })}\n`
+        : `Source ${sourceId} has not enabled continuous sync or does not support incremental sync.\nNext step: run memhub sources list to confirm the source is connected, then run memhub sync resume --source ${sourceId} and confirm as prompted.\n`,
     );
     return EXIT_FAILED;
   }
@@ -3773,7 +3795,9 @@ async function applyScanAll(
       code: runtime.code,
     };
     process.stderr.write(
-      asJson ? `${JSON.stringify(document)}\n` : `未完成：${runtime.code}\n`,
+      asJson
+        ? `${JSON.stringify(document)}\n`
+        : `Not completed: ${runtime.code}\n`,
     );
     return runtime.state === "stopped" ? EXIT_RUNTIME_STOPPED : EXIT_FAILED;
   }
@@ -3792,7 +3816,7 @@ async function applyScanAll(
       code,
     };
     process.stderr.write(
-      asJson ? `${JSON.stringify(document)}\n` : `未完成：${code}\n`,
+      asJson ? `${JSON.stringify(document)}\n` : `Not completed: ${code}\n`,
     );
     return EXIT_FAILED;
   }
@@ -4128,7 +4152,7 @@ function emitWatchEvent<T>(
   if (process.stdout.isTTY) {
     process.stdout.write("\x1b[2J\x1b[H");
     process.stdout.write(
-      `每 ${Math.round(intervalMs / 1000)} 秒刷新一次，按 Ctrl-C 退出观察，后台不会停止\n`,
+      `Refreshing every ${countLabel(Math.round(intervalMs / 1000), "second")}; press Ctrl-C to leave the watch, the background does not stop\n`,
     );
   }
   const clock = new Date(event.observed_at);
@@ -4142,7 +4166,7 @@ function emitWatchEvent<T>(
     process.stdout.write(render(event.data));
   } else {
     process.stdout.write(
-      `本轮读取未完成：${event.state ?? "unavailable"}（${event.code ?? "watch_failed"}）\n`,
+      `This read round did not complete: ${event.state ?? "unavailable"} (${event.code ?? "watch_failed"})\n`,
     );
   }
 }
@@ -4185,10 +4209,14 @@ async function runInteractiveInit(
       prompter,
     );
     if (outcome.state === "cancelled") {
-      return emitLine("已取消，未接入任何来源。\n");
+      return emitLine("Cancelled; no source was connected.\n");
     }
     if (outcome.state === "invalid") {
-      return reject(undefined, asJson, `交互失败：${outcome.code}`);
+      return reject(
+        undefined,
+        asJson,
+        `Interactive setup failed: ${outcome.code}`,
+      );
     }
     const selected = candidates.filter((candidate) =>
       outcome.answers.sourceIds.includes(candidate.source_id),
@@ -4224,7 +4252,7 @@ async function runInteractiveInit(
     }
     const identity = inspectExecutionPlan(plan.plan);
     if (identity === null || identity.kind !== "source_import") {
-      return reject(undefined, asJson, "交互计划无效。");
+      return reject(undefined, asJson, "The interactive plan is invalid.");
     }
     const fence = interactiveInitAttemptPath(dataDir, identity.operationId);
     const attempt = await claimPlanAttempt(fence, {
@@ -4233,7 +4261,7 @@ async function runInteractiveInit(
       plan_digest: identity.digest,
     });
     if (attempt === "invalid")
-      return reject(undefined, asJson, "交互计划无效。");
+      return reject(undefined, asJson, "The interactive plan is invalid.");
     const document =
       attempt === "prior"
         ? await readSourceReceipt(clients.reader, identity.operationId)
@@ -4244,7 +4272,7 @@ async function runInteractiveInit(
           );
     if (document.state === "committed" || document.state === "recovered") {
       process.stdout.write(
-        `已接入来源：${outcome.answers.sourceIds.join("、")}\n处理：已开启（历史待办与新会话会继续处理）\n操作状态：${document.state}\n`,
+        `Sources connected: ${outcome.answers.sourceIds.join(", ")}\nProcessing: enabled (backlog and new conversations keep being processed)\nOperation state: ${document.state}\n`,
       );
       const sourceCode = flowExitCode(document);
       if (sourceCode !== EXIT_OK || !prompter.askSecret) return sourceCode;
@@ -4280,10 +4308,10 @@ async function finishInteractiveOnboarding(
     {},
   );
   if (completed.state !== "committed") {
-    emitLine(`首次设置未完成：${completed.code}\n`);
+    emitLine(`First-time setup did not complete: ${completed.code}\n`);
     return EXIT_FAILED;
   }
-  emitLine("首次设置完成。\n");
+  emitLine("First-time setup complete.\n");
   return EXIT_OK;
 }
 
@@ -4311,10 +4339,11 @@ async function runInteractiveInitGrantOnly(
     }
   }
   const lines = [
-    `已接入来源：${granted.join("、") || "无"}`,
-    "处理：已冻结（不扫描新会话，pending Job 保留）",
+    `Sources connected: ${granted.join(", ") || "none"}`,
+    "Processing: frozen (new conversations are not scanned, pending jobs are kept)",
     ...failures.map(
-      (failure) => `接入未完成：${failure.source_id}（${failure.code}）`,
+      (failure) =>
+        `Connection not completed: ${failure.source_id} (${failure.code})`,
     ),
   ];
   emitLine(`${lines.join("\n")}\n`);
@@ -5975,7 +6004,7 @@ function explain(topics: readonly string[], asJson: boolean): number {
   const named = topics.filter((item) => item !== "--json");
   const help = findCommand("help");
   if (named.length > 1 || topics.length - named.length > 1) {
-    return reject(help, asJson, "参数无效。");
+    return reject(help, asJson, "Invalid arguments.");
   }
   const requested =
     named[0] === "--help" || named[0] === "-h" ? "help" : named[0];
@@ -5983,7 +6012,7 @@ function explain(topics: readonly string[], asJson: boolean): number {
     return emit(asJson ? renderCatalogDocument() : renderGeneralHelp());
   }
   const descriptor = findCommand(requested);
-  if (!descriptor) return reject(undefined, asJson, "未知命令。");
+  if (!descriptor) return reject(undefined, asJson, "Unknown command.");
   return emit(
     asJson ? renderCatalogDocument(descriptor) : renderCommandHelp(descriptor),
   );
@@ -6006,13 +6035,13 @@ function emitLocalExperienceUnavailable(
     command,
     status: "blocked",
     code: "local_experience_operation_unavailable",
-    reason: "体验版暂不支持",
+    reason: "Not supported in the preview build",
     apply: false,
     exit_code: exitCode,
   };
   const output = asJson
     ? `${JSON.stringify(document)}\n`
-    : `${command}: 体验版暂不支持 [local_experience_operation_unavailable]\n`;
+    : `${command}: not supported in the preview build [local_experience_operation_unavailable]\n`;
   (confirmed ? process.stderr : process.stdout).write(output);
   return exitCode;
 }
@@ -6052,14 +6081,14 @@ function runtimeUnavailable(
         status: "error",
         code: "runtime_not_running",
         exit_code: EXIT_RUNTIME_STOPPED,
-        message: "Runtime 未运行或身份校验未通过。",
-        next_step: "运行 memhub start 启动 Runtime。",
+        message: "The Runtime is not running or failed its identity check.",
+        next_step: "Run memhub start to start the Runtime.",
       })}\n`,
     );
     return EXIT_RUNTIME_STOPPED;
   }
   process.stderr.write(
-    `未完成：runtime_not_running\n下一步：运行 memhub start 启动 Runtime。\n`,
+    `Not completed: runtime_not_running\nNext step: run memhub start to start the Runtime.\n`,
   );
   return EXIT_RUNTIME_STOPPED;
 }
@@ -6112,54 +6141,54 @@ function serviceErrorDocument(
   const code = message.split(":", 1)[0];
   const nextSteps: Record<string, string> = {
     runtime_install_incomplete:
-      "先运行 memhub install --yes 安装受管 Runtime，再执行 service-install。",
+      "Run memhub install --yes to install the managed Runtime before service-install.",
     runtime_service_conflict_unmanaged_label:
-      "同名 LaunchAgent 不属于 MemHub；请先确认其来源，CLI 不会停止或覆盖它。",
+      "A LaunchAgent with the same name does not belong to MemHub; confirm where it comes from first. The CLI will not stop or overwrite it.",
     runtime_service_conflict_unmanaged_file:
-      "服务文件不属于当前 MemHub 安装；请保留文件并确认其来源后再处理。",
+      "The service file does not belong to the current MemHub installation; keep the file and confirm where it comes from before acting.",
     runtime_service_managed_upgrade_failed:
-      "新服务启动失败，旧 MemHub 服务已恢复；检查新安装日志后重试。",
+      "The new service failed to start and the old MemHub service was restored; check the new installation logs and retry.",
     runtime_service_managed_upgrade_rollback_failed:
-      "新服务启动失败且旧服务恢复失败；请运行 memhub doctor 检查服务状态。",
+      "The new service failed to start and restoring the old one failed too; run memhub doctor to check the service state.",
     runtime_service_file_modified:
-      "受管服务文件在注册后被改动，CLI 拒绝删除；请确认改动来源后重试或手工处理。",
+      "The managed service file was changed after registration and the CLI refuses to delete it; confirm who changed it, then retry or handle it by hand.",
     runtime_service_file_unmanaged:
-      "服务文件不属于当前 MemHub 安装，CLI 拒绝删除；请确认其来源。",
+      "The service file does not belong to the current MemHub installation and the CLI refuses to delete it; confirm where it comes from.",
     runtime_service_registration_changed:
-      "注册信息在操作期间发生变化，未继续执行；请重新运行以读取最新状态。",
+      "The registration changed during the operation, so nothing continued; run again to read the latest state.",
     runtime_service_activation_unverified:
-      "服务已注册但 Runtime 未在预算内就绪；请运行 memhub logs 查看启动失败原因。",
+      "The service is registered but the Runtime was not ready within the budget; run memhub logs to see why startup failed.",
     release_version_unavailable:
-      "当前 CLI 没有可用于定位 Runtime 的 SemVer；请安装正式 npm 包，或使用 --source 指定离线发行目录。",
+      "This CLI has no SemVer usable to locate a Runtime; install the official npm package or point --source at an offline distribution directory.",
     release_manifest_url_unavailable:
-      "当前发行构建没有内置 Release 下载源；请使用 --release-manifest-url、MEMHUB_RELEASE_MANIFEST_URL 或 MEMHUB_RELEASE_MANIFEST_URL_TEMPLATE 指定可信 HTTPS 地址。",
+      "This release build has no built-in Release download source; specify a trusted HTTPS address with --release-manifest-url, MEMHUB_RELEASE_MANIFEST_URL or MEMHUB_RELEASE_MANIFEST_URL_TEMPLATE.",
     release_manifest_invalid:
-      "Release manifest 无效；请确认 CLI 与 Release 版本一致，并检查上传的 release-manifest.json。",
+      "The Release manifest is invalid; confirm the CLI and Release versions match and check the uploaded release-manifest.json.",
     release_protocol_incompatible:
-      "当前 CLI 与该 Runtime 协议不兼容；请升级 CLI，或选择与当前 CLI 同版本的 Release。",
+      "This CLI is not compatible with the Runtime protocol; upgrade the CLI, or pick the Release with the same version as this CLI.",
     distribution_protocol_missing:
-      "Runtime 缺少兼容协议声明，已拒绝安装；请使用当前版本正式 Release 或重新构建离线包。",
+      "The Runtime is missing a compatible protocol declaration and the install was refused; use the official Release of this version or rebuild the offline package.",
     distribution_protocol_incompatible:
-      "当前 CLI 与该离线 Runtime 协议不兼容；请升级 CLI 或使用匹配版本的 --source 包。",
+      "This CLI is not compatible with the offline Runtime protocol; upgrade the CLI or use a --source package of the matching version.",
     release_artifact_unavailable:
-      "当前平台没有对应 Runtime 附件；请检查该版本 Release 的平台/架构资产。",
+      "There is no Runtime artifact for this platform; check the platform/architecture assets of that Release.",
     release_artifact_hash_mismatch:
-      "Runtime 下载校验失败，未进入安装事务；请重新下载或检查 Release 附件是否被替换。",
+      "Verification of the downloaded Runtime failed, so the install transaction never started; download again or check whether the Release artifact was replaced.",
     release_artifact_size_mismatch:
-      "Runtime 下载大小与 manifest 不一致，已拒绝安装；请检查 Release 附件。",
+      "The downloaded Runtime size does not match the manifest and the install was refused; check the Release artifact.",
     release_url_untrusted:
-      "Release 跳转到了未授权域名；请核对发布源，或显式配置 MEMHUB_RELEASE_ALLOWED_HOSTS。",
+      "The Release redirected to an unauthorized host; check the release source or set MEMHUB_RELEASE_ALLOWED_HOSTS explicitly.",
     release_download_timeout:
-      "Runtime 下载超时且临时内容已清理；请检查网络/代理后重试。",
+      "The Runtime download timed out and temporary content was cleaned up; check the network or proxy and retry.",
     release_disk_space_insufficient:
-      "磁盘空间不足，未下载或切换 Runtime；请释放空间后重试。",
+      "There was not enough disk space, so the Runtime was neither downloaded nor switched; free up space and retry.",
     ENOENT:
       command === "install" || command === "upgrade"
-        ? "离线发行目录不存在或不完整；请检查 --source 路径及其中的 manifest.json，或移除 --source 改用同版本 Release。"
-        : "目标文件不存在；请核对路径后重试。",
+        ? "The offline distribution directory is missing or incomplete; check the --source path and its manifest.json, or drop --source and use the Release of the same version."
+        : "The target file does not exist; check the path and retry.",
   };
   const releaseHttpNextStep = code.startsWith("release_http_status_")
-    ? "Release 请求失败；请确认同版本 Release 已发布、manifest URL 可访问且当前账号有权限。"
+    ? "The Release request failed; confirm the Release of the same version is published, the manifest URL is reachable, and the current account has access."
     : undefined;
   return {
     schema_version: 1,
@@ -6172,7 +6201,7 @@ function serviceErrorDocument(
     next_step:
       nextSteps[code] ??
       releaseHttpNextStep ??
-      "运行 memhub doctor 检查 Runtime 与用户服务状态，再按报告处理。",
+      "Run memhub doctor to check the Runtime and user service state, then act on the report.",
   };
 }
 
@@ -6351,7 +6380,7 @@ function emitJobDocument(document: JobFlowDocument, asJson: boolean): void {
     return;
   }
   if (document.state === "preview") {
-    process.stdout.write(`计划：${JSON.stringify(document.plan)}\n`);
+    process.stdout.write(`Plan: ${JSON.stringify(document.plan)}\n`);
     return;
   }
   process.stdout.write(`${JSON.stringify(document)}\n`);
@@ -6612,7 +6641,7 @@ function parseDataDeletionCommand(
  * The objective nonetheless names `memhub` AND `memhub-cli` as the primary
  * short entries (plus `one-memory` as a compatibility alias). The npm tarball
  * ships all three `bin` names; the managed installer must create the same set,
- * or "装完即短指令可用" is only true for whichever names the package happened
+ * or "short commands usable right after install" is only true for whichever names the package happened
  * to install. So the CLI always plans the ones runtime-control does not own.
  */
 const OBJECTIVE_CLI_ALIASES = ["memhub", "memhub-cli", "one-memory"] as const;

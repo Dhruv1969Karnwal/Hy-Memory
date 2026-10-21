@@ -133,9 +133,10 @@ class MatterModel:
                                 *messages,
                                 {
                                     "role": "user",
-                                    "content": "上次回复不是有效的 JSON 对象。"
-                                    "请只返回符合原要求的 JSON 对象，"
-                                    "不要Markdown或解释。原始资料和字段要求保持不变，不添加事实。",
+                                    "content": "The previous reply was not a valid JSON object. "
+                                    "Return only the JSON object the original request asked for, "
+                                    "with no Markdown and no explanation. The source material and "
+                                    "the field requirements stay unchanged, and add no facts.",
                                 },
                             ],
                         }

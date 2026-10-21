@@ -213,7 +213,9 @@ describe("CLI-22 shared output contract", () => {
       expect(streams.stdout()).toContain(
         "memhub backup restore --source <path> --yes --confirm <path>",
       );
-      expect(streams.stdout()).toContain("逐字重复 --source");
+      expect(streams.stdout()).toContain(
+        "repeating the --source path verbatim",
+      );
     });
 
     it("does not attach restore's confirmation flag to path", async () => {

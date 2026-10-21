@@ -1,11 +1,11 @@
 """
-Tool 抽象基类 + 注册表 + 调度器。
+Tool abstract base class + registry + dispatcher.
 
-设计原则：
-- Schema 用 OpenAI function calling 兼容结构（便于未来真正走原生 function calling）
-- ToolHandler.execute() 异步，接收 arguments + context（由调用方注入，含 user_id / agent_id
-  等业务隔离信息；handler 不得自己假设这些来自哪里）
-- 同一个 Tool 可以被多个 agent 共享，由调用方决定注册哪些工具到 LLM
+Design principles:
+- Schemas follow the OpenAI function calling shape (eases a future move to native function calling)
+- ToolHandler.execute() is async and takes arguments + context (injected by the caller, carrying user_id / agent_id
+  and other business isolation info; the handler must never assume on its own where they come from)
+- One Tool can be shared by many agents; the caller decides which tools to register with the LLM
 """
 
 from __future__ import annotations
@@ -20,15 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 # ================================================================
-# 数据结构
+# Data structures
 # ================================================================
 
 @dataclass
 class ToolDefinition:
     """
-    Tool 的 schema 定义。
+    The tool schema definition.
 
-    遵循 OpenAI function calling 风格：
+    Follows the OpenAI function calling style:
       {
         "name": "my_tool",
         "description": "...",
@@ -44,7 +44,7 @@ class ToolDefinition:
     parameters: Dict[str, Any] = field(default_factory=dict)
 
     def to_openai_schema(self) -> Dict[str, Any]:
-        """转为 OpenAI function calling tools 数组中的一项。"""
+        """Convert to one entry of the OpenAI function calling tools array."""
         return {
             "type": "function",
             "function": {
@@ -56,7 +56,7 @@ class ToolDefinition:
 
     def to_prompt_snippet(self) -> str:
         """
-        转为可嵌入 prompt 的简洁描述（用于 function-calling 不可用时的 prompt 模拟方案）。
+        Convert to a compact prompt-embeddable description (the prompt-simulation fallback when function-calling is unavailable).
         """
         params_json = json.dumps(self.parameters or {"type": "object", "properties": {}}, ensure_ascii=False, indent=2)
         return f"- **{self.name}**: {self.description}\n  parameters schema:\n{params_json}"
@@ -64,15 +64,15 @@ class ToolDefinition:
 
 @dataclass
 class ToolCall:
-    """LLM 发起的一次 tool 调用请求。"""
+    """One tool-call request issued by the LLM."""
     name: str
     arguments: Dict[str, Any] = field(default_factory=dict)
-    call_id: str = ""   # LLM function-calling API 返回的 call id，prompt 模拟时可为空
+    call_id: str = ""   # call id from the LLM function-calling API; empty under prompt simulation
 
 
 @dataclass
 class ToolResult:
-    """tool 执行结果。"""
+    """The tool execution result."""
     success: bool
     tool_name: str = ""
     call_id: str = ""
@@ -81,20 +81,20 @@ class ToolResult:
 
 
 # ================================================================
-# 抽象接口
+# Abstract interface
 # ================================================================
 
 class ToolHandler(ABC):
     """
-    Tool 执行器抽象接口。
+    Abstract interface for a tool executor.
 
-    子类需要实现：
-    - definition() → ToolDefinition（描述 schema）
+    Subclasses must implement:
+    - definition() → ToolDefinition (describes the schema)
     - execute(arguments, context) → ToolResult
 
-    execute 的 context 是调用方注入的 business context，通常包含：
+    The execute context is business context injected by the caller, typically containing:
       user_id / agent_id / session_id / request_id
-    handler 需要什么就取什么。
+    the handler takes whatever it needs.
     """
 
     @abstractmethod
@@ -111,15 +111,15 @@ class ToolHandler(ABC):
 
 
 # ================================================================
-# 注册表 + 调度器
+# Registry + dispatcher
 # ================================================================
 
 class ToolRegistry:
     """
-    Tool 注册表。
+    The tool registry.
 
-    一个 agent 按需创建一个 ToolRegistry 实例，注册所需的 tools，
-    然后把 schemas 传给 LLM，再用 dispatch() 执行 LLM 返回的 tool_calls。
+    Each agent creates a ToolRegistry instance on demand, registers the tools it needs,
+    passes the schemas to the LLM, and executes the returned tool_calls via dispatch().
     """
 
     def __init__(self):
@@ -144,17 +144,17 @@ class ToolRegistry:
         return [d.to_openai_schema() for d in self.definitions()]
 
     def prompt_snippets(self) -> str:
-        """拼接所有 tools 的 prompt snippet，用于 prompt 模拟方案。"""
+        """Join the prompt snippets of all tools, for the prompt-simulation path."""
         if not self._handlers:
             return ""
         return "\n".join(d.to_prompt_snippet() for d in self.definitions())
 
     async def dispatch(self, call: ToolCall, context: Dict[str, Any]) -> ToolResult:
         """
-        执行一次 tool_call。
+        Execute one tool_call.
 
-        未知 tool name → 返回 success=False 的 ToolResult，而不是抛异常；
-        由调用方自己决定要不要把错误回传给 LLM 或是吞掉 warning。
+        An unknown tool name -> a ToolResult with success=False instead of an exception;
+        the caller decides whether to feed the error back to the LLM or swallow the warning.
         """
         handler = self._handlers.get(call.name)
         if handler is None:
@@ -182,17 +182,17 @@ class ToolRegistry:
 
 
 # ================================================================
-# 解析工具：从 LLM 输出里提取 tool_calls
+# Parsing helper: extract tool_calls from LLM output
 # ================================================================
 
 def parse_tool_calls_from_json(raw: Any) -> List[ToolCall]:
     """
-    从 LLM JSON 输出里的 `tool_calls` 字段解析出 ToolCall 列表。
+    Parse ToolCall objects from the `tool_calls` field of LLM JSON output.
 
-    兼容两种常见格式：
-    1) OpenAI 风格：[{"id": "...", "type": "function", "function": {"name": "...", "arguments": "..."}}]
-       其中 arguments 可能是 JSON 字符串
-    2) 简化风格：[{"name": "...", "arguments": {...}}]
+    Supports two common formats:
+    1) OpenAI style: [{"id": "...", "type": "function", "function": {"name": "...", "arguments": "..."}}]
+       where arguments may be a JSON string
+    2) Simplified style: [{"name": "...", "arguments": {...}}]
     """
     calls: List[ToolCall] = []
     if not raw:
@@ -202,7 +202,7 @@ def parse_tool_calls_from_json(raw: Any) -> List[ToolCall]:
     for entry in raw:
         if not isinstance(entry, dict):
             continue
-        # OpenAI 风格
+        # OpenAI style
         if "function" in entry and isinstance(entry["function"], dict):
             fn = entry["function"]
             name = str(fn.get("name") or "").strip()
@@ -221,7 +221,7 @@ def parse_tool_calls_from_json(raw: Any) -> List[ToolCall]:
             if name:
                 calls.append(ToolCall(name=name, arguments=args, call_id=call_id))
             continue
-        # 简化风格
+        # Simplified style
         name = str(entry.get("name") or "").strip()
         args = entry.get("arguments") or {}
         if isinstance(args, str):

@@ -353,7 +353,7 @@ export interface HomeSummary {
     source_ids: string[];
   } | null;
   observed_at: string;
-  /** 2026-10-12: 本轮读取超时，数字不代表现状；调用方应保留上一次的数据。 */
+  /** 2026-10-12: this read timed out, so the numbers do not reflect current state; callers should keep the previous data. */
   stale?: boolean;
 }
 

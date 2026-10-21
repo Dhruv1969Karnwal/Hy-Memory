@@ -105,7 +105,7 @@ async def test_a_library_left_by_a_retired_profile_is_still_searchable(tmp_path)
     supervisor, _profiles, _secrets = _supervisor(tmp_path, hits=("memory-1",))
     _plant_store(tmp_path)
 
-    found = await supervisor.semantic_search("抽取")
+    found = await supervisor.semantic_search("extraction")
 
     assert found == (("memory-1", 0.9),)
 
@@ -121,7 +121,7 @@ async def test_no_store_on_disk_is_not_a_reason_to_build_one(tmp_path) -> None:
     """
     supervisor, _profiles, _secrets = _supervisor(tmp_path, hits=("memory-1",))
 
-    found = await supervisor.semantic_search("抽取")
+    found = await supervisor.semantic_search("extraction")
 
     assert found == ()
     assert not (tmp_path / "hy-memory").exists()
@@ -147,7 +147,7 @@ async def test_a_store_written_wider_is_left_to_the_width_prompt(tmp_path) -> No
 
     supervisor.bridge_factory = lambda snapshot, _secret, _data_dir: WiderStore(snapshot)
 
-    assert await supervisor.semantic_search("抽取") == ()
+    assert await supervisor.semantic_search("extraction") == ()
 
 
 @pytest.mark.anyio
@@ -156,7 +156,7 @@ async def test_retrieval_reaches_hy_as_a_local_encoder_needing_no_key(tmp_path) 
     supervisor, _profiles, _secrets = _supervisor(tmp_path, built=built)
     _plant_store(tmp_path)
 
-    await supervisor.semantic_search("抽取")
+    await supervisor.semantic_search("extraction")
 
     snapshot = built[0].snapshot
     assert snapshot.embedding_provider_kind is ProviderKind.LOCAL_ONNX
@@ -179,10 +179,10 @@ async def test_the_retrieval_bridge_does_not_occupy_a_real_profiles_cache_slot(
     supervisor, profiles, secrets = _supervisor(tmp_path, built=built)
     _plant_store(tmp_path)
 
-    await supervisor.semantic_search("抽取")
+    await supervisor.semantic_search("extraction")
     active = _activate(profiles, secrets)
     await supervisor._prewarm_write_bridges(("cursor",))  # noqa: SLF001
-    await supervisor.semantic_search("抽取")
+    await supervisor.semantic_search("extraction")
 
     assert len(built) == 3
     assert len({id(bridge) for bridge in built}) == 3

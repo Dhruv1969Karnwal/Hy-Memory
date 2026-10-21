@@ -7,7 +7,7 @@
  * and `start` then failed with "exited before ready" because the service was
  * already holding the data directory. This module makes the three commands
  * consult the real launchd state and act on it:
- *   - `stop` boots the service out (真正停用) and verifies it is gone;
+ *   - `stop` boots the service out (a real disable) and verifies it is gone;
  *   - `start` kickstarts an already-registered service instead of spawning a
  *     competing process;
  *   - `status` can report the service as running even without a receipt.
@@ -181,7 +181,7 @@ export async function stopManagedService(options: {
   // too short: a crash-looping service (`state = spawn scheduled`) came back
   // with a new pid a few seconds after bootout, and the CLI had already
   // reported success. 5s matches the acceptance criterion the verifier used
-  // ("label 连续 5s 计数 0").
+  // ("label count stays 0 for 5s in a row").
   const requiredAbsentSamples = options.sustainedAbsentSamples ?? 20;
   const pollMs = options.pollMs ?? 250;
   const deadline = Date.now() + (options.timeoutMs ?? 10_000);

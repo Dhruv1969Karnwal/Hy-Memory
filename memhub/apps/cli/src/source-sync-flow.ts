@@ -134,8 +134,8 @@ export function sourceSyncExitCode(document: SourceSyncFlowDocument): number {
 export function renderSourceSyncText(document: SourceSyncFlowDocument): string {
   if (document.state === "committed") {
     return `${
-      document.sync_enabled ? "已恢复" : "已暂停"
-    }来源 ${document.source_id} 的持续同步。\n`;
+      document.sync_enabled ? "Resumed" : "Paused"
+    } continuous sync for source ${document.source_id}.\n`;
   }
-  return `未变更：${document.code}\n`;
+  return `Unchanged: ${document.code}\n`;
 }

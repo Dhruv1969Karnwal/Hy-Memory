@@ -309,7 +309,7 @@ describe("notes / extraction / graph / manual extract", () => {
   it("adds a note from a bounded file and re-verifies content on apply", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "om-note-"));
     const content = path.join(directory, "note.txt");
-    await writeFile(content, "记住这个决定", { mode: 0o600 });
+    await writeFile(content, "Remember this decision", { mode: 0o600 });
     const preview = await capturedRun([
       "notes",
       "add",
@@ -327,7 +327,7 @@ describe("notes / extraction / graph / manual extract", () => {
       // is a malformed body, not a success.
       data: {
         evidence_id: NOTE,
-        text: "记住这个决定",
+        text: "Remember this decision",
         scope: "all-apps",
         created_at: "2026-09-19T00:00:00Z",
         state: "pending",
@@ -351,7 +351,7 @@ describe("notes / extraction / graph / manual extract", () => {
       string,
       unknown
     >;
-    expect(body.text).toBe("记住这个决定");
+    expect(body.text).toBe("Remember this decision");
     expect(body.scope).toBe("all-apps");
     expect(JSON.parse(applied.stdout).state).toBe("committed");
   });

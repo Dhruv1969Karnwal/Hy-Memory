@@ -195,8 +195,8 @@ class ModelProber:
                 return await asyncio.to_thread(
                     self._finish, profile, (endpoint,), ModelCapabilities()
                 )
-            # 网关没有列表接口时，这一步没有验证过任何东西，
-            # 模型可用性只能由后面的生成调用来证明。
+            # When the gateway has no listing endpoint this stage verified nothing;
+            # only the later generation call can prove that the model is usable.
             structured = await self._request_stage(
                 client,
                 "structured_output",
@@ -342,9 +342,9 @@ class ModelProber:
                 return _stage(stage, False, ProbeCode.MODEL_NOT_FOUND, started)
             return _stage(stage, False, ProbeCode.UNAUTHORIZED, started)
         if response.status_code == 402:
-            # 402 就是欠费，不看 body：网关常常只回这个状态码而不写字面量，
-            # 落进下面的兜底会变成 INVALID_RESPONSE，读起来像「接口坏了」，
-            # 指引人去改地址。地址错（404）与欠费（402）的修复动作完全不同。
+            # 402 means an unpaid balance and the body is not read: a gateway often returns
+            # only the status code, and the fallback below would report INVALID_RESPONSE,
+            # which reads as a broken endpoint and sends someone to the URL; 404 and 402 differ.
             return _stage(stage, False, ProbeCode.INSUFFICIENT_BALANCE, started)
         if response.status_code == 404:
             return _stage(stage, False, ProbeCode.MODEL_NOT_FOUND, started)
@@ -581,13 +581,13 @@ def _embedding_request(
 
 
 def _body_error_code(response: httpx.Response) -> ProbeCode | None:
-    """在 HTTP 2xx 响应体里识别网关级错误，返回归类后的 ProbeCode。
+    """Detect a gateway-level error inside an HTTP 2xx body and return the classified ProbeCode.
 
-    没有 error 字段就返回 None（正常响应）。
+    Returns None when there is no error field, which is a normal response.
 
-    分类顺序按"修复动作不同"排列，从最具体到最兜底：额度/限流要等或加配额、
-    鉴权要重新申请或绑定业务空间、模型不存在要换模型 ID。顺序颠倒会把
-    "额度耗尽"误报成"鉴权失败"，把排查带向错误方向。
+    The order follows the differing fix actions, from most specific to last resort: a quota or
+    rate limit means waiting or more quota, authentication means reapplying or binding a
+    workspace, and a missing model means a new model id. Reversing it reports an exhausted
     """
     try:
         body = response.json()
@@ -609,19 +609,20 @@ def _body_error_code(response: httpx.Response) -> ProbeCode | None:
         return None
     probe = code_text.lower()
 
-    # 1. 余额不足需要充值或换 key，不能误导成稍后再试的限流。
+    # 1. An insufficient balance needs top-up or another key; do not misreport it as a
+    # retry-later rate limit.
     if any(
         token in probe
         for token in (
             "insufficient balance",
             "insufficient_balance",
             "balance exhausted",
-            "余额不足",
-            "欠费",
+            "\u4f59\u989d\u4e0d\u8db3",
+            "\u6b20\u8d39",
         )
     ):
         return ProbeCode.INSUFFICIENT_BALANCE
-    # 2. 额度与限流
+    # 2. Quota and rate limits
     if any(
         token in probe
         for token in ("429", "rate_limit", "rate limit", "too many", "quota", "credit", "balance")
@@ -650,7 +651,7 @@ def _body_error_code(response: httpx.Response) -> ProbeCode | None:
             "does not exist",
             "unknown model",
             "no such model",
-            "不存在",
+            "\u4e0d\u5b58\u5728",
         )
     ):
         return ProbeCode.MODEL_NOT_FOUND

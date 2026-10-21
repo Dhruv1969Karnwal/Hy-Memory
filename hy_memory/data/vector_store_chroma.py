@@ -1,12 +1,12 @@
 """
 Agent Memory V2 - VectorStore (Chroma)
 
-基于 ChromaDB 的向量存储层。
+Vector storage layer built on ChromaDB.
 
-特点:
-- PersistentClient 本地嵌入式（默认，零外部依赖）
-- HttpClient 远程连接
-- 同步 API → _run_in_vdb_pool() 包装为异步
+Highlights:
+- PersistentClient local embedded (default, zero external dependencies)
+- HttpClient remote connection
+- Synchronous API → wrapped as async through _run_in_vdb_pool()
 """
 
 from typing import Optional, List, Dict, Any
@@ -21,12 +21,12 @@ from ..config import MemoryConfig
 from ..utils.async_executor import run_in_executor_guarded
 from .vector_store_base import VectorStoreBase, passes_created_after
 
-# created_after 走 post-filter，先按倍数扩池再过滤，避免过滤后不够 limit
+# created_after runs as a post-filter: the pool is widened by a multiplier first so filtering cannot drop below limit
 _CREATED_AFTER_POOL_MULTIPLIER = 4
 
 logger = logging.getLogger(__name__)
 
-# VDB 独立线程池（不与 Graph/SQLite 竞争）
+# Dedicated VDB thread pool (does not contend with Graph/SQLite)
 _VDB_POOL_SIZE = 64
 _vdb_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=_VDB_POOL_SIZE, thread_name_prefix="vdb"
@@ -41,10 +41,10 @@ async def _run_in_vdb_pool(func, *args, **kwargs):
 
 class ChromaVectorStore(VectorStoreBase):
     """
-    Chroma 向量存储实现
+    Chroma vector store implementation
 
-    使用 chromadb 的 PersistentClient (本地) 或 HttpClient (远程)。
-    Chroma 原生是同步 API，通过 _run_in_vdb_pool() 包装。
+    Uses chromadb's PersistentClient (local) or HttpClient (remote).
+    Chroma's native API is synchronous and is wrapped through _run_in_vdb_pool().
     """
 
     def __init__(self, config: MemoryConfig):
@@ -54,7 +54,7 @@ class ChromaVectorStore(VectorStoreBase):
         self._entity_collection = None  # lazy: {collection}_entities
 
     async def initialize(self) -> None:
-        """初始化 Chroma 客户端，确保集合存在"""
+        """Initialize the Chroma client and make sure the collection exists"""
         try:
             import chromadb
         except ImportError:
@@ -68,7 +68,7 @@ class ChromaVectorStore(VectorStoreBase):
         def _init():
             import chromadb
 
-            # 优先使用远程连接
+            # Prefer the remote connection
             if vs_config.host:
                 client = chromadb.HttpClient(
                     host=vs_config.host,
@@ -79,8 +79,8 @@ class ChromaVectorStore(VectorStoreBase):
                     path=vs_config.persist_directory,
                 )
 
-            # 获取或创建集合
-            # Chroma 内部管理向量维度，首次 add 时自动推断
+            # Get or create the collection
+            # Chroma manages vector dimensions internally, inferring them on the first add
             collection = client.get_or_create_collection(
                 name=self._collection_name,
                 metadata={"hnsw:space": "cosine"},
@@ -91,11 +91,11 @@ class ChromaVectorStore(VectorStoreBase):
         logger.debug(f"VectorStore initialized (Chroma), collection={self._collection_name}")
 
     # ================================================================
-    # 写入
+    # Writes
     # ================================================================
 
     async def upsert(self, node: MemoryNode) -> str:
-        """写入或更新一个 MemoryNode"""
+        """Insert or update one MemoryNode"""
         if node.embedding is None:
             raise ValueError(f"Node {node.node_id} has no embedding, cannot upsert to vector store")
 
@@ -120,7 +120,7 @@ class ChromaVectorStore(VectorStoreBase):
         return node.node_id
 
     async def upsert_batch(self, nodes: List[MemoryNode]) -> List[str]:
-        """批量写入"""
+        """Bulk write"""
         valid_nodes = [n for n in nodes if n.embedding is not None]
         if not valid_nodes:
             return []
@@ -152,11 +152,11 @@ class ChromaVectorStore(VectorStoreBase):
         return [n.node_id for n in valid_nodes]
 
     async def update_embedding(self, node_id: str, embedding: List[float]) -> bool:
-        """仅更新向量（payload 不变）"""
+        """Update only the vector (payload unchanged)"""
         point_id = self._node_id_to_point_id(node_id)
         try:
             def _update():
-                # Chroma 的 update 需要至少 embeddings
+                # Chroma's update requires at least embeddings
                 self._collection.update(
                     ids=[point_id],
                     embeddings=[embedding],
@@ -168,13 +168,13 @@ class ChromaVectorStore(VectorStoreBase):
             return False
 
     async def update_payload(self, node_id: str, updates: Dict[str, Any]) -> bool:
-        """更新 payload 字段；若 updates 含 'embedding'，同时更新向量与 documents。"""
+        """Update payload fields; if updates contains 'embedding', the vector and documents are updated too."""
         if not updates:
             return True
         point_id = self._node_id_to_point_id(node_id)
         updates = dict(updates)
-        new_embedding = updates.pop("embedding", None)  # 取出向量单独处理
-        # Chroma metadata 只支持 str/int/float/bool，序列化复杂类型
+        new_embedding = updates.pop("embedding", None)  # Pull the vector out and handle it separately
+        # Chroma metadata only supports str/int/float/bool, so complex types are serialized
         import json as _json_up
         chroma_updates = {}
         for k, v in updates.items():
@@ -195,7 +195,7 @@ class ChromaVectorStore(VectorStoreBase):
                     kwargs["metadatas"] = [chroma_updates]
                 if new_embedding is not None:
                     kwargs["embeddings"] = [new_embedding]
-                if "content" in updates:  # content 变更同步全文 documents
+                if "content" in updates:  # content changes are synced into the full-text documents
                     kwargs["documents"] = [updates["content"]]
                 self._collection.update(**kwargs)
             await _run_in_vdb_pool(_update)
@@ -209,7 +209,7 @@ class ChromaVectorStore(VectorStoreBase):
             return False
 
     # ================================================================
-    # 检索
+    # Retrieval
     # ================================================================
 
     async def search(
@@ -227,14 +227,14 @@ class ChromaVectorStore(VectorStoreBase):
         score_threshold: float = 0.0,
         status_filter: Optional[List[MemoryStatus]] = None,
         only_latest: bool = True,
-        tags_match_any: Optional[List[str]] = None,  # 兼容底层过滤能力；chroma 暂未实现
+        tags_match_any: Optional[List[str]] = None,  # compat with backend filter capabilities; chroma does not implement it yet
         created_after: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
-        """语义检索"""
-        # 构建 Chroma where 过滤条件
+        """Semantic retrieval"""
+        # Build the Chroma where filter
         where_conditions = []
 
-        # 隔离过滤: 精确 keys > 单 key > user_ids/user_id + agent 级
+        # Isolation filter: exact keys > single key > user_ids/user_id + agent level
         if isolation_keys:
             if len(isolation_keys) == 1:
                 where_conditions.append({"isolation_key": {"$eq": isolation_keys[0]}})
@@ -243,7 +243,7 @@ class ChromaVectorStore(VectorStoreBase):
         elif isolation_key:
             where_conditions.append({"isolation_key": {"$eq": isolation_key}})
         else:
-            # user_ids 优先于 user_id
+            # user_ids take precedence over user_id
             effective_uids = user_ids if user_ids else ([user_id] if user_id else [])
             if effective_uids:
                 if len(effective_uids) == 1:
@@ -277,7 +277,7 @@ class ChromaVectorStore(VectorStoreBase):
         else:
             where_conditions.append({"status": {"$eq": MemoryStatus.ACTIVE.value}})
 
-        # 只搜索演化链末端节点
+        # Search only evolution chain tip nodes
         if only_latest:
             where_conditions.append({"is_latest": {"$eq": True}})
 
@@ -286,9 +286,9 @@ class ChromaVectorStore(VectorStoreBase):
         else:
             where = {"$and": where_conditions}
 
-        # created_after 走 post-filter：语义是「事件时间 memory_at 优先，为空才回退
-        # gmt_created」，而 Chroma 的 where DSL 表达不了 null 判断（本后端把空值写成
-        # `""`，`$gte` 对空串无意义）。改为扩池召回后在 Python 侧精确过滤。
+        # created_after runs as a post-filter: its semantics are "event time memory_at first, falling back to
+        # gmt_created only when empty", and the Chroma where DSL cannot express a null check (this backend writes
+        # empty values as `""`, and `$gte` is meaningless on an empty string). The pool is widened instead, then filtered exactly in Python.
         _n_results = limit * _CREATED_AFTER_POOL_MULTIPLIER if created_after else limit
 
         def _query():
@@ -333,7 +333,7 @@ class ChromaVectorStore(VectorStoreBase):
         return output
 
     async def get_by_id(self, node_id: str) -> Optional[MemoryNode]:
-        """按 ID 获取"""
+        """Fetch by ID"""
         point_id = self._node_id_to_point_id(node_id)
         try:
             def _get():
@@ -358,11 +358,11 @@ class ChromaVectorStore(VectorStoreBase):
         return None
 
     # ================================================================
-    # 删除
+    # Deletes
     # ================================================================
 
     async def delete(self, node_id: str) -> bool:
-        """删除单个向量点"""
+        """Delete a single vector point"""
         point_id = self._node_id_to_point_id(node_id)
         try:
             def _delete():
@@ -374,10 +374,10 @@ class ChromaVectorStore(VectorStoreBase):
             return False
 
     async def delete_by_isolation_key(self, isolation_key: str) -> int:
-        """删除某隔离键下的所有向量"""
+        """Delete every vector under one isolation key"""
         try:
             def _delete():
-                # 先获取匹配的 ids，再按 ids 删除（Chroma where-delete 不返回数量）
+                # Fetch the matching ids first, then delete by id (Chroma where-delete returns no count)
                 results = self._collection.get(
                     where={"isolation_key": {"$eq": isolation_key}},
                     include=[],
@@ -397,7 +397,7 @@ class ChromaVectorStore(VectorStoreBase):
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> int:
-        """按 metadata 字段组合删除向量"""
+        """Delete vectors by a combination of metadata fields"""
         try:
             def _delete():
                 where_conditions = [{"user_id": {"$eq": user_id}}]
@@ -422,7 +422,7 @@ class ChromaVectorStore(VectorStoreBase):
             return 0
 
     # ================================================================
-    # 枚举
+    # Enumeration
     # ================================================================
 
     async def list_by_user(
@@ -440,9 +440,9 @@ class ChromaVectorStore(VectorStoreBase):
         with_vectors: bool = True,
         allow_raw_layer: bool = False,
     ) -> List[MemoryNode]:
-        """枚举用户的记忆节点，支持多 user / 多 agent
+        """Enumerate a user's memory nodes, supporting multiple users / multiple agents
 
-        allow_raw_layer: 默认 False，即不返回 L1_RAW（对外读路径）。
+        allow_raw_layer: defaults to False, i.e. L1_RAW is not returned (external read paths).
         """
         import asyncio
 
@@ -486,7 +486,7 @@ class ChromaVectorStore(VectorStoreBase):
                 elif layer_values:
                     where_conditions.append({"layer": {"$in": layer_values}})
                 else:
-                    # 只点名了 raw：补排除条件，结果必然为空集
+                    # Only raw was requested: add the exclusion condition, so the result is necessarily empty
                     where_conditions.append({"layer": {"$ne": MemoryLayer.L1_RAW.value}})
             elif not allow_raw_layer:
                 where_conditions.append({"layer": {"$ne": MemoryLayer.L1_RAW.value}})
@@ -526,11 +526,11 @@ class ChromaVectorStore(VectorStoreBase):
         return nodes
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     async def get_stats(self) -> Dict[str, Any]:
-        """获取集合统计"""
+        """Get collection statistics"""
         try:
             def _stats():
                 return self._collection.count()
@@ -545,12 +545,12 @@ class ChromaVectorStore(VectorStoreBase):
             return {"error": str(e)}
 
     async def count(self, isolation_key: str) -> int:
-        """统计某隔离键下的向量数量"""
+        """Count the vectors under one isolation key"""
         try:
             def _count():
                 results = self._collection.get(
                     where={"isolation_key": {"$eq": isolation_key}},
-                    include=[],  # 只要 ids
+                    include=[],  # only the ids are needed
                 )
                 return len(results["ids"]) if results and results["ids"] else 0
             return await _run_in_vdb_pool(_count)
@@ -559,8 +559,8 @@ class ChromaVectorStore(VectorStoreBase):
             return 0
 
     async def close(self) -> None:
-        """关闭客户端"""
-        # Chroma PersistentClient 无需显式关闭
+        """Close the client"""
+        # The Chroma PersistentClient needs no explicit close
         self._client = None
         self._collection = None
         self._entity_collection = None
@@ -623,26 +623,26 @@ class ChromaVectorStore(VectorStoreBase):
         exclude_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Chroma 不支持原生 BM25 / sparse 检索 —— 不提供关键词通道。
+        Chroma has no native BM25 / sparse retrieval -- the keyword channel is not offered.
 
-        之前的实现用 where_document=$contains 做子串匹配，命中返回 binary 1.0，
-        再靠 reader 端 normalize_bm25 sigmoid 归一。但该 sigmoid 是为"经典 BM25
-        原始分（0~20）"标定的，binary 1.0 会被压成 ~0.039，对融合几乎无贡献，
-        反而稀释强语义结果。与其用这种失真的假 BM25，不如老实退化：
+        The previous implementation matched substrings with where_document=$contains, returned a binary 1.0 on hits,
+        and relied on the reader-side normalize_bm25 sigmoid. That sigmoid is calibrated for "raw classic BM25
+        scores (0~20)", so a binary 1.0 is squashed to ~0.039, contributing almost nothing to fusion and instead
+        diluting strong semantic results. Rather than ship that distorted fake BM25, degrade honestly:
 
-          → keyword_search 返回 []，hybrid reader 自动退化为纯向量召回。
+          → keyword_search returns [] and the hybrid reader automatically falls back to pure vector recall.
 
-        如需真关键词检索，请使用支持 sparse/BM25 的后端（qdrant / tencent）。
+        For real keyword retrieval, use a backend that supports sparse/BM25 (qdrant / tencent).
         """
         return []
 
 
     # ================================================================
-    # Entity Store（独立 collection {collection}_entities）
+    # Entity Store (separate collection {collection}_entities)
     # ================================================================
 
     async def _get_entity_collection(self):
-        """Lazy 获取/创建 entity store collection。"""
+        """Lazily get or create the entity store collection."""
         if self._entity_collection is not None:
             return self._entity_collection
         from ..pipelines._retrieval.config import entity_collection_name
@@ -685,7 +685,7 @@ class ChromaVectorStore(VectorStoreBase):
         where = self._entity_where(user_id, [agent_id] if agent_id else None)
 
         def _do():
-            # 1) 查最相似的同 user entity
+            # 1) Find the most similar entity of the same user
             try:
                 res = coll.query(
                     query_embeddings=[embedding],
@@ -701,7 +701,7 @@ class ChromaVectorStore(VectorStoreBase):
                 dist = (res.get("distances") or [[None]])[0][0]
                 sim = (1.0 - dist) if dist is not None else 0.0
                 if sim >= merge_threshold:
-                    # 合并 linked_memory_ids
+                    # Merge linked_memory_ids
                     meta = (res.get("metadatas") or [[{}]])[0][0] or {}
                     try:
                         linked = json.loads(meta.get("linked_memory_ids") or "[]")
@@ -713,7 +713,7 @@ class ChromaVectorStore(VectorStoreBase):
                         coll.update(ids=[top_id], metadatas=[meta])
                     return top_id
 
-            # 2) 新建
+            # 2) Create a new record
             eid = str(_uuid.uuid4())
             meta = {
                 "data": entity_text,
@@ -835,19 +835,19 @@ class ChromaVectorStore(VectorStoreBase):
         return await _run_in_vdb_pool(_do)
 
     # ================================================================
-    # Chroma 特有：metadata 转换
+    # Chroma specific: metadata conversion
     # ================================================================
-    # Chroma metadata 只支持 str/int/float/bool，不支持 list/dict/None。
-    # 需要将 payload 中的复杂类型序列化。
+    # Chroma metadata supports only str/int/float/bool, not list/dict/None,
+    # so complex types in the payload have to be serialized.
 
     @staticmethod
     def _payload_to_chroma_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
-        """将通用 payload 转换为 Chroma 兼容的 metadata（扁平化）"""
+        """Convert the generic payload into Chroma-compatible metadata (flattened)"""
         import json
         meta = {}
         for k, v in payload.items():
             if v is None:
-                meta[k] = ""  # Chroma 不支持 None
+                meta[k] = ""  # Chroma does not support None
             elif isinstance(v, list):
                 meta[k] = json.dumps(v, ensure_ascii=False)
             elif isinstance(v, dict):
@@ -862,10 +862,10 @@ class ChromaVectorStore(VectorStoreBase):
 
     @staticmethod
     def _chroma_metadata_to_payload(meta: Dict[str, Any]) -> Dict[str, Any]:
-        """将 Chroma metadata 还原为通用 payload"""
+        """Restore Chroma metadata into the generic payload"""
         import json
         payload = {}
-        # 需要从 JSON string 还原为 list/dict 的字段
+        # Fields that must be restored from a JSON string into list/dict
         json_fields = {
             "meta_tags", "tags",
             "supersedes", "superseded_by",
@@ -878,7 +878,7 @@ class ChromaVectorStore(VectorStoreBase):
                 except (json.JSONDecodeError, ValueError):
                     payload[k] = v
             elif isinstance(v, str) and v == "":
-                # 可能是 None 的占位
+                # May be a placeholder for None
                 payload[k] = None
             else:
                 payload[k] = v

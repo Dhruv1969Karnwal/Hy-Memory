@@ -1,25 +1,25 @@
-## 变更
+## Changes
 
-<!-- 一句话说明为什么改 -->
+<!-- One sentence on why this change is needed -->
 
-## 用户影响
+## User Impact
 
-<!-- 用户会体验到什么；没有则写无 -->
+<!-- What users will experience; write "none" if there is nothing -->
 
-## 验证
+## Verification
 
-- [ ] 先写或更新验收
-- [ ] SDK 变更：`uv run pytest tests/`
-- [ ] MemHub 变更：`cd memhub && pnpm check`
-- [ ] 受影响端到端流程
-- [ ] 变异验证或说明不适用
+- [ ] Acceptance criteria written or updated first
+- [ ] SDK changes: `uv run pytest tests/`
+- [ ] MemHub changes: `cd memhub && pnpm check`
+- [ ] Affected end-to-end flows
+- [ ] Mutation verification, or a note that it does not apply
 
-## 隐私与安全
+## Privacy and Security
 
-- [ ] 不新增屏幕、AXTree、OCR、键鼠、剪贴板或后台录音采集
-- [ ] 不包含密钥、内部地址或真实用户数据
-- [ ] 新依赖已记录许可证
+- [ ] No new screen, AXTree, OCR, keyboard/mouse, clipboard, or background audio capture
+- [ ] Contains no keys, internal addresses, or real user data
+- [ ] License recorded for any new dependency
 
-## 回滚
+## Rollback
 
-<!-- 如何安全撤销 -->
+<!-- How to revert this safely -->

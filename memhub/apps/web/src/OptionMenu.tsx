@@ -60,7 +60,7 @@ export function OptionMenu(props: {
           }
         }}
       >
-        {selected?.label ?? "请选择"}
+        {selected?.label ?? "Select an option"}
       </button>
       {open && (
         <div className="om-option-menu-panel" role="listbox">

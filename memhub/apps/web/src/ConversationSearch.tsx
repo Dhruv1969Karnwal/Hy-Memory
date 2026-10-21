@@ -19,6 +19,7 @@ import {
 } from "./api";
 import { AppMark } from "./app-mark";
 import "./conversation-search.css";
+import { countLabel } from "./count-label";
 
 type OpenedConversation = {
   hit: ConversationSearchHit;
@@ -94,7 +95,9 @@ export function ConversationSearch({
         },
         () => {
           if (!cancelled && mounted.current)
-            setError("对话列表暂时无法读取，请重试。");
+            setError(
+              "The conversation list cannot be read at the moment. Please retry.",
+            );
         },
       );
     return () => {
@@ -183,7 +186,7 @@ export function ConversationSearch({
         setHits(null);
         setEmptyReason(null);
         setError(
-          "原文已不可读取，可能已撤回授权或记录已不可用。旧内容已收起，请重新搜索核对。",
+          "The source text can no longer be read; authorization may have been revoked or the record is unavailable. Old content was collapsed. Please search again to verify.",
         );
       } else {
         setOpened({
@@ -191,7 +194,7 @@ export function ConversationSearch({
           phase: "error",
           transcript: null,
           memories: [],
-          error: "原文读取未完成，请重试。",
+          error: "The source text read did not complete. Please retry.",
         });
       }
     } finally {
@@ -230,7 +233,11 @@ export function ConversationSearch({
       if (mounted.current && request === readVersion.current) {
         setOpened((current) =>
           current
-            ? { ...current, error: "更早的对话暂时无法读取，请重试。" }
+            ? {
+                ...current,
+                error:
+                  "Older conversations cannot be read at the moment. Please retry.",
+              }
             : current,
         );
       }
@@ -276,14 +283,14 @@ export function ConversationSearch({
           void run(query.trim());
         }}
       >
-        <label htmlFor={`${id}-query`}>搜索历史对话</label>
+        <label htmlFor={`${id}-query`}>Search conversation history</label>
         <div>
           <input
             id={`${id}-query`}
             name="conversation-query"
             autoComplete="off"
             value={query}
-            placeholder="例如：打包、抽取、周末"
+            placeholder="e.g. packaging, extraction, weekend"
             onChange={(event) => setQuery(event.target.value)}
           />
           <button
@@ -293,22 +300,23 @@ export function ConversationSearch({
             }
           >
             <Search size={16} aria-hidden="true" />
-            {busy ? "搜索中…" : "搜索"}
+            {busy ? "Searching..." : "Search"}
           </button>
         </div>
       </form>
 
       <p className="conversation-search-note">
-        这里搜的是你导入的原始对话，不是记忆。设置模型后，才会开始生成记忆。
+        This searches the original conversations you imported, not memories.
+        Memories start being generated once a model is configured.
       </p>
 
       <label className="conversation-source-filter">
-        <span>应用</span>
+        <span>App</span>
         <select
           value={sourceFilter}
           onChange={(event) => setSourceFilter(event.target.value)}
         >
-          <option value="">全部应用</option>
+          <option value="">All apps</option>
           {sourceOptions.map((source) => (
             <option value={source} key={source}>
               {source}
@@ -327,7 +335,7 @@ export function ConversationSearch({
             onClick={() => void run(lastQuery.current)}
           >
             <RefreshCw size={16} aria-hidden="true" />
-            重新搜索
+            Search again
           </button>
         </div>
       ) : null}
@@ -335,14 +343,20 @@ export function ConversationSearch({
       {emptyReason ? (
         <p className="conversation-search-empty" role="status">
           {emptyReason === "nothing_imported"
-            ? "先导入历史，然后就能搜了"
-            : "没有找到相关对话"}
+            ? "Import history first, then you can search"
+            : "No matching conversations were found"}
         </p>
       ) : null}
 
       {listedHits.length ? (
-        <section className="conversation-browser" aria-label="历史对话搜索结果">
-          <section className="conversation-browser-list" aria-label="会话列表">
+        <section
+          className="conversation-browser"
+          aria-label="Imported conversation search results"
+        >
+          <section
+            className="conversation-browser-list"
+            aria-label="Conversation list"
+          >
             {listedHits.map((hit) => (
               <article
                 key={`${hit.source_id}:${hit.conversation_id}:${hit.workspace ?? ""}`}
@@ -354,7 +368,9 @@ export function ConversationSearch({
                   type="button"
                   className="conversation-hit-open"
                   aria-label={
-                    sameHit(opened?.hit, hit) ? "收起原文" : "查看原文"
+                    sameHit(opened?.hit, hit)
+                      ? "Collapse source text"
+                      : "View source text"
                   }
                   aria-expanded={sameHit(opened?.hit, hit)}
                   aria-controls={`${id}-transcript`}
@@ -373,17 +389,19 @@ export function ConversationSearch({
                         {sourceLabel(hit.source_id)}
                       </span>
                       {hit.project ? <span>{hit.project}</span> : null}
-                      {hit.turn_count !== undefined ? (
-                        <span>{hit.turn_count} 轮</span>
+                      {typeof hit.turn_count === "number" ? (
+                        <span>{countLabel(hit.turn_count, "turn")}</span>
                       ) : null}
                       {hit.memory_count ? (
-                        <span>已沉淀 {hit.memory_count} 条记忆</span>
+                        <span>
+                          {countLabel(hit.memory_count, "memory")} distilled
+                        </span>
                       ) : null}
                       <OriginalTime value={hit.created_at} />
                     </small>
                   </span>
                   <ChevronRight size={16} aria-hidden="true" />
-                  <span className="sr-only">查看原文</span>
+                  <span className="sr-only">View source text</span>
                 </button>
               </article>
             ))}
@@ -391,11 +409,11 @@ export function ConversationSearch({
           <section
             id={`${id}-transcript`}
             className="conversation-transcript"
-            aria-label="完整原始对话"
+            aria-label="Complete original conversation"
             aria-busy={opened?.phase === "loading"}
           >
             {!opened ? (
-              <p className="conversation-search-empty">选择一段对话</p>
+              <p className="conversation-search-empty">Select a conversation</p>
             ) : null}
             {opened?.phase === "ready" ? (
               <button
@@ -405,11 +423,11 @@ export function ConversationSearch({
                 aria-controls={`${id}-memories`}
                 onClick={() => setMobileMemories((visible) => !visible)}
               >
-                关联记忆 {opened.memories.length}
+                Linked memories {opened.memories.length}
               </button>
             ) : null}
             {opened?.phase === "loading" ? (
-              <p role="status">正在读取原文…</p>
+              <p role="status">Reading the source text...</p>
             ) : null}
             {opened?.error ? (
               <div className="conversation-read-error">
@@ -420,7 +438,7 @@ export function ConversationSearch({
                   onClick={() => void read(opened.hit)}
                 >
                   <RefreshCw size={16} aria-hidden="true" />
-                  重试读取原文
+                  Retry reading the source text
                 </button>
               </div>
             ) : null}
@@ -430,7 +448,7 @@ export function ConversationSearch({
                 className="quiet"
                 onClick={() => void loadOlder()}
               >
-                加载更早的对话
+                Load older conversations
               </button>
             ) : null}
             {opened?.phase === "ready" ? (
@@ -442,7 +460,7 @@ export function ConversationSearch({
                         key={item.evidence_id}
                         className="conversation-system"
                       >
-                        <summary>系统上下文</summary>
+                        <summary>System context</summary>
                         <p>{item.verbatim}</p>
                       </details>
                     ))}
@@ -454,7 +472,7 @@ export function ConversationSearch({
                           key={item.evidence_id}
                           className="conversation-tool"
                         >
-                          <summary>工具记录</summary>
+                          <summary>Tool record</summary>
                           <p>{item.verbatim}</p>
                         </details>
                       ) : (
@@ -479,7 +497,8 @@ export function ConversationSearch({
                     {index === turns.length - 1 &&
                     opened.transcript?.trailing_turn_unanswered ? (
                       <p className="conversation-round-unanswered">
-                        这一回合还没等到回答，暂不参与记忆整理。
+                        This turn has not received an answer yet, so it is left
+                        out of memory processing.
                       </p>
                     ) : null}
                   </li>
@@ -490,13 +509,13 @@ export function ConversationSearch({
           <aside
             id={`${id}-memories`}
             className="conversation-memories"
-            aria-label="关联记忆"
+            aria-label="Linked memories"
             data-mobile-visible={mobileMemories}
           >
-            <h3>这段对话沉淀的记忆</h3>
-            {!opened ? <p>选择一段对话后查看</p> : null}
+            <h3>Memories distilled from this conversation</h3>
+            {!opened ? <p>Select a conversation to view</p> : null}
             {opened?.phase === "ready" && opened.memories.length === 0 ? (
-              <p>这段对话还没有沉淀成记忆</p>
+              <p>This conversation has not produced memories yet</p>
             ) : null}
             {opened?.memories.map((memory) => (
               <article key={memory.memory_id}>
@@ -588,11 +607,11 @@ function SourceIcon({ sourceId }: { sourceId: string }) {
 
 function failureWording(reason: unknown): string {
   if (permissionUnavailable(reason))
-    return "历史对话读取权限或记录已不可用，旧内容已收起。请重新搜索核对。";
+    return "Read permission or records for the conversation history are unavailable; old content was collapsed. Search again to verify.";
   if (apiErrorCode(reason) === "conversation_search_unavailable") {
-    return "搜索索引不可用，这不是没有搜到：本地检索没有建起来，请到运行状况里看看 Core 的状态。";
+    return "The search index is unavailable. This does not mean nothing was found: local search is not running, so check Core status in Health.";
   }
-  return "搜索没能完成，请再试一次。";
+  return "The search did not complete. Please try again.";
 }
 
 function OriginalTime({ value }: { value: string | null }) {
@@ -601,18 +620,18 @@ function OriginalTime({ value }: { value: string | null }) {
       {new Date(value).toLocaleString("zh-CN", { hour12: false })}
     </time>
   ) : (
-    <span>时间未知</span>
+    <span>Time unknown</span>
   );
 }
 
 function authorLabel(value: string) {
   return value === "person"
-    ? "用户原话"
+    ? "User's own words"
     : value === "agent"
-      ? "助手原话"
+      ? "Assistant's own words"
       : value === "tool"
-        ? "工具记录"
-        : "作者未知";
+        ? "Tool record"
+        : "Author unknown";
 }
 
 function sameHit(

@@ -34,7 +34,12 @@ function props(): OnboardingModelStepProps {
       context_window: "",
     },
     providers: [
-      { id: "fixture", label: "用户服务", keyRequired: true, supported: true },
+      {
+        id: "fixture",
+        label: "User service",
+        keyRequired: true,
+        supported: true,
+      },
     ],
     advancedOpen: false,
     onAdvancedChange: vi.fn(),
@@ -46,8 +51,8 @@ function props(): OnboardingModelStepProps {
     canSaveAndEnable: true,
     sourceNames: ["Source A"],
     importedConversationCount: 37,
-    generationRecipient: "用户服务 / 生成",
-    embeddingRecipient: "本机 / 向量",
+    generationRecipient: "User service / generation",
+    embeddingRecipient: "Local / embedding",
     onTest: vi.fn().mockResolvedValue(undefined),
     onSaveAndEnable: vi.fn().mockResolvedValue(undefined),
     onSaveDraft: vi.fn().mockResolvedValue(undefined),
@@ -59,23 +64,29 @@ it("renders step3 without engineering-only recipients, with unavailable enable f
   const p = props();
   render(<OnboardingModelStep {...p} />);
   expect(
-    screen.getByRole("heading", { name: "选好模型，让记忆开始沉淀" }),
+    screen.getByRole("heading", {
+      name: "Pick the model and start distilling memories",
+    }),
   ).toBeTruthy();
   expect(
     screen
-      .getByRole("navigation", { name: "首次设置进度" })
+      .getByRole("navigation", { name: "First-time setup progress" })
       .querySelector('[aria-current="step"]')?.textContent,
-  ).toContain("沉淀记忆");
-  fireEvent.click(screen.getByLabelText("模型服务商"));
-  expect(screen.getByRole("option", { name: "用户服务" })).toBeTruthy();
+  ).toContain("Distill memories");
+  fireEvent.click(screen.getByLabelText("Model provider"));
+  expect(screen.getByRole("option", { name: "User service" })).toBeTruthy();
   expect(screen.queryByRole("option", { name: "DeepSeek" })).toBeNull();
-  expect(screen.queryByText("用户服务 / 生成")).toBeNull();
-  expect(screen.queryByText("本机 / 向量")).toBeNull();
+  expect(screen.queryByText("User service / generation")).toBeNull();
+  expect(screen.queryByText("Local / embedding")).toBeNull();
   expect(screen.getByText("Source A")).toBeTruthy();
-  expect(screen.getAllByText(/当前不能在此启用模型/).length).toBeGreaterThan(0);
-  fireEvent.click(screen.getByRole("button", { name: "确认启用" }));
+  expect(
+    screen.getAllByText(/A model cannot be enabled here right now/).length,
+  ).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and enable" }));
   expect(p.onSaveAndEnable).not.toHaveBeenCalled();
-  expect(screen.queryByRole("checkbox", { name: /同意|允许发送/ })).toBeNull();
+  expect(
+    screen.queryByRole("checkbox", { name: /agree|allow sending/ }),
+  ).toBeNull();
 });
 it("keeps a real multi-source summary compact", () => {
   const p = props();
@@ -86,7 +97,7 @@ it("keeps a real multi-source summary compact", () => {
     />,
   );
   expect(
-    screen.getByText("WorkBuddy · Cursor · Codex 等 5 个应用"),
+    screen.getByText("WorkBuddy · Cursor · Codex and 5 apps in total"),
   ).toBeTruthy();
   expect(screen.queryByText("Pi")).toBeNull();
 });
@@ -103,8 +114,10 @@ it("guides first-run keychain authorization when a saved key is unreadable", () 
       }}
     />,
   );
-  expect(screen.getByText(/需要允许 MemHub 访问钥匙串/)).toBeTruthy();
-  expect(screen.getByText(/始终允许/)).toBeTruthy();
+  expect(
+    screen.getByText(/MemHub needs permission to access the keychain/),
+  ).toBeTruthy();
+  expect(screen.getByText(/Always allow/)).toBeTruthy();
 });
 it("draft edits and advanced mode are controlled; return never clears or saves values", () => {
   const p = props();
@@ -116,25 +129,35 @@ it("draft edits and advanced mode are controlled; return never clears or saves v
   expect((screen.getByLabelText("API Key") as HTMLInputElement).value).toBe(
     "secret",
   );
-  fireEvent.click(screen.getByRole("button", { name: "配置详情与高级设置" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Configuration details and advanced settings",
+    }),
+  );
   expect(p.onAdvancedChange).toHaveBeenCalledWith(true);
   view.rerender(<OnboardingModelStep {...p} advancedOpen />);
   expect(screen.getByLabelText("API Key")).toHaveProperty("value", "secret");
-  fireEvent.click(screen.getByRole("button", { name: "返回服务商选择" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Back to provider selection" }),
+  );
   expect(p.onAdvancedChange).toHaveBeenLastCalledWith(false);
   expect(
-    screen.getByRole("heading", { name: "配置详情，按需要调整" }),
+    screen.getByRole("heading", {
+      name: "Configuration details, adjust as needed",
+    }),
   ).toBeTruthy();
-  expect((screen.getByLabelText("超时（秒）") as HTMLInputElement).max).toBe(
-    "600",
+  expect(
+    (screen.getByLabelText("Timeout (seconds)") as HTMLInputElement).max,
+  ).toBe("600");
+  expect(
+    (screen.getByLabelText("Max concurrency") as HTMLInputElement).max,
+  ).toBe("32");
+  expect(
+    (screen.getByLabelText("Context window") as HTMLInputElement).min,
+  ).toBe("1024");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Skip and go to the app" }),
   );
-  expect((screen.getByLabelText("最大并发") as HTMLInputElement).max).toBe(
-    "32",
-  );
-  expect((screen.getByLabelText("上下文窗口") as HTMLInputElement).min).toBe(
-    "1024",
-  );
-  fireEvent.click(screen.getByRole("button", { name: "跳过，先进入应用" }));
   expect(p.onBack).toHaveBeenCalledTimes(1);
   expect(p.onSaveDraft).not.toHaveBeenCalled();
   expect(p.draft.api_key).toBe("secret");
@@ -147,24 +170,29 @@ it("keeps skip available while an uncertain write is reconciled", () => {
       advancedOpen
       inputsLocked
       capability={{ saveAndEnable: true }}
-      enableActionLabel="核对提交状态"
+      enableActionLabel="Verify submission status"
     />,
   );
-  expect((screen.getByLabelText("配置名称") as HTMLInputElement).disabled).toBe(
-    true,
-  );
+  expect(
+    (screen.getByLabelText("Configuration name") as HTMLInputElement).disabled,
+  ).toBe(true);
   expect(
     (
       screen.getByRole("button", {
-        name: "跳过，先进入应用",
+        name: "Skip and go to the app",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "跳过，先进入应用" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Skip and go to the app" }),
+  );
   expect(p.onBack).toHaveBeenCalledOnce();
   expect(
-    (screen.getByRole("button", { name: "核对提交状态" }) as HTMLButtonElement)
-      .disabled,
+    (
+      screen.getByRole("button", {
+        name: "Verify submission status",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(false);
 });
 it.each(["testing", "saving", "enabling"] as const)(
@@ -175,12 +203,18 @@ it.each(["testing", "saving", "enabling"] as const)(
     expect(
       (screen.getByLabelText("API Key") as HTMLInputElement).disabled,
     ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "跳过，先进入应用" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Skip and go to the app" }),
+    );
     expect(p.onBack).not.toHaveBeenCalled();
     if (phase === "saving")
-      expect(screen.queryByRole("status", { name: "模型提交状态" })).toBeNull();
+      expect(
+        screen.queryByRole("status", { name: "Model submission status" }),
+      ).toBeNull();
     else
-      expect(screen.getByRole("status", { name: "模型提交状态" })).toBeTruthy();
+      expect(
+        screen.getByRole("status", { name: "Model submission status" }),
+      ).toBeTruthy();
   },
 );
 it("one in-flight callback across double click, errors stay owner-controlled without exposing thrown secrets", async () => {
@@ -196,15 +230,15 @@ it("one in-flight callback across double click, errors stay owner-controlled wit
     <OnboardingModelStep
       {...p}
       capability={{ saveAndEnable: true }}
-      probe={{ state: "passed", message: "测试通过" }}
+      probe={{ state: "passed", message: "Test passed" }}
     />,
   );
-  const button = screen.getByRole("button", { name: "确认启用" });
+  const button = screen.getByRole("button", { name: "Confirm and enable" });
   fireEvent.click(button);
   fireEvent.click(button);
   expect(p.onSaveAndEnable).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole("button", { name: "测试连接" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "保存草稿" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
   await act(async () => reject(new Error("SECRET_TOKEN")));
   expect(p.onActionError).toHaveBeenCalledWith("save-and-enable");
   expect(screen.queryByText(/SECRET_TOKEN/)).toBeNull();
@@ -217,8 +251,8 @@ it("renders field errors with links and preserves custom embedding in advanced m
   const view = render(
     <OnboardingModelStep
       {...p}
-      error="配置已变化，请核对。"
-      fieldErrors={{ api_key: "密钥未通过验证" }}
+      error="The configuration changed; check it."
+      fieldErrors={{ api_key: "The key failed verification" }}
     />,
   );
   const key = screen.getByLabelText("API Key");
@@ -226,7 +260,7 @@ it("renders field errors with links and preserves custom embedding in advanced m
   expect(
     document.getElementById(key.getAttribute("aria-describedby") ?? "")
       ?.textContent,
-  ).toContain("密钥未通过验证");
+  ).toContain("The key failed verification");
   view.rerender(
     <OnboardingModelStep
       {...p}
@@ -240,38 +274,45 @@ it("renders field errors with links and preserves custom embedding in advanced m
     />,
   );
   expect(
-    (screen.getByLabelText("向量模型名称") as HTMLInputElement).value,
+    (screen.getByLabelText("Embedding model name") as HTMLInputElement).value,
   ).toBe("saved-vector");
-  expect(screen.queryByRole("button", { name: "收起高级配置" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Collapse advanced configuration" }),
+  ).toBeNull();
   expect(p.onDraftChange).not.toHaveBeenCalled();
 });
 
 it("discloses that testing does not send historical conversations", () => {
   render(<OnboardingModelStep {...props()} />);
 
-  expect(screen.getByText(/测试连接只发送测试内容/)).toBeTruthy();
-  expect(screen.getByText(/已导入 37 条对话/)).toBeTruthy();
-  expect(screen.getByText(/启用后会使用此模型整理/)).toBeTruthy();
+  expect(
+    screen.getByText(/Testing the connection only sends test content/),
+  ).toBeTruthy();
+  expect(screen.getByText(/Imported 37 conversations/)).toBeTruthy();
+  expect(screen.getByText(/Once enabled, this model organizes/)).toBeTruthy();
 });
 
 it("does not expose an extra backlog selector in the first-run model page", () => {
   const p = props();
   render(<OnboardingModelStep {...p} capability={{ saveAndEnable: true }} />);
-  fireEvent.click(screen.getByRole("button", { name: "确认启用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and enable" }));
   expect(p.onSaveAndEnable).not.toHaveBeenCalled();
-  expect(screen.getByText(/先测试模型连通性/)).toBeTruthy();
-  expect(screen.queryByLabelText("启用前积压")).toBeNull();
+  expect(screen.getByText(/Test the model connection first/)).toBeTruthy();
+  expect(screen.queryByLabelText("Backlog before enabling")).toBeNull();
 });
 it("separates connectivity testing from final enable", async () => {
   const p = props();
   render(<OnboardingModelStep {...p} capability={{ saveAndEnable: true }} />);
-  expect(screen.getByRole("button", { name: "测试模型连通性" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "保存草稿" })).toBeNull();
-  expect(screen.getByRole("button", { name: "确认启用" })).toHaveProperty(
-    "disabled",
-    true,
+  expect(
+    screen.getByRole("button", { name: "Test the model connection" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Confirm and enable" }),
+  ).toHaveProperty("disabled", true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Test the model connection" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "测试模型连通性" }));
   await act(async () => {});
   expect(p.onTest).toHaveBeenCalledTimes(1);
   expect(p.onSaveDraft).not.toHaveBeenCalled();
@@ -287,7 +328,7 @@ it("requires owner validation as well as policy capability and truthful recipien
       canSaveAndEnable={false}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "确认启用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and enable" }));
   view.rerender(
     <OnboardingModelStep
       {...p}
@@ -295,14 +336,16 @@ it("requires owner validation as well as policy capability and truthful recipien
       generationRecipient=""
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "确认启用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and enable" }));
   expect(p.onSaveAndEnable).not.toHaveBeenCalled();
 });
 
 it("opens the advanced design state with a route back to provider selection", () => {
   const p = props();
   const view = render(<OnboardingModelStep {...p} />);
-  const toggle = screen.getByRole("button", { name: "配置详情与高级设置" });
+  const toggle = screen.getByRole("button", {
+    name: "Configuration details and advanced settings",
+  });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(
     document.getElementById(toggle.getAttribute("aria-controls") ?? ""),
@@ -310,10 +353,14 @@ it("opens the advanced design state with a route back to provider selection", ()
   toggle.focus();
   fireEvent.click(toggle);
   view.rerender(<OnboardingModelStep {...p} advancedOpen />);
-  expect(screen.getByRole("button", { name: "返回服务商选择" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Back to provider selection" }),
+  ).toBeTruthy();
   expect(screen.getByLabelText("API Key")).toBeTruthy();
   expect(
-    screen.getByText("预设已填好，只有自定义服务或特殊需求才需要修改。"),
+    screen.getByText(
+      "The presets are filled in; only custom services or special needs require changes.",
+    ),
   ).toBeTruthy();
   expect(p.onDraftChange).not.toHaveBeenCalled();
 });
@@ -328,12 +375,18 @@ it("uses the failure-state title and omits consent and scope-management UI", () 
     />,
   );
   expect(
-    screen.getByRole("heading", { name: "连接未通过，配置已保留" }),
+    screen.getByRole("heading", {
+      name: "Connection failed; the configuration is kept",
+    }),
   ).toBeTruthy();
-  expect(screen.getByText(/连接未通过，请检查 API Key/)).toBeTruthy();
+  expect(
+    screen.getByText(/The connection failed. Check the API Key/),
+  ).toBeTruthy();
   expect(screen.getByText("synthetic failure")).toBeTruthy();
-  expect(screen.queryByText("调整处理范围")).toBeNull();
-  expect(screen.queryByText(/允许发送少量测试内容/)).toBeNull();
+  expect(screen.queryByText("Adjust processing scope")).toBeNull();
+  expect(
+    screen.queryByText(/allow sending a small amount of test content/),
+  ).toBeNull();
 });
 
 it("keeps the first-run model form free of a second consent strip", () => {
@@ -345,11 +398,13 @@ it("keeps the first-run model form free of a second consent strip", () => {
       draft={{ ...p.draft, embedding_mode: "custom" }}
     />,
   );
-  const fields = screen.getByRole("region", { name: "模型参数" });
-  expect(within(fields).getByLabelText("向量 Base URL")).toBeTruthy();
-  expect(screen.queryByText(/允许发送少量测试内容/)).toBeNull();
-  expect(screen.queryByText(/通过后自动启用/)).toBeNull();
+  const fields = screen.getByRole("region", { name: "Model parameters" });
+  expect(within(fields).getByLabelText("Embedding Base URL")).toBeTruthy();
+  expect(
+    screen.queryByText(/allow sending a small amount of test content/),
+  ).toBeNull();
+  expect(screen.queryByText(/auto-enable after it passes/)).toBeNull();
   expect(screen.queryByText(p.generationRecipient)).toBeNull();
   expect(screen.queryByText(p.embeddingRecipient)).toBeNull();
-  expect(screen.queryByLabelText("启用前积压")).toBeNull();
+  expect(screen.queryByLabelText("Backlog before enabling")).toBeNull();
 });

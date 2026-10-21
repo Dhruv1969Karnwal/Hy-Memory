@@ -45,13 +45,19 @@ pytestmark = [
     pytest.mark.skipif(not PROFILE_DB, reason="explicit configured provider required"),
 ]
 
-STORED = "项目周会固定避开周五，星期五不安排项目周会。"
+STORED = (
+    "\u9879\u76ee\u5468\u4f1a\u56fa\u5b9a\u907f\u5f00\u5468\u4e94\uff0c"
+    "\u661f\u671f\u4e94\u4e0d\u5b89\u6392\u9879\u76ee\u5468\u4f1a\u3002"
+)
 # Shares no term with the stored wording at all, so the lexical half of the
 # memory lane cannot reach it and a hit can only have come from HY. The test
 # checks that disjointness rather than trusting this comment.
-QUESTION = "团队碰头会应该躲开一周里的哪一天"
+QUESTION = (
+    "\u56e2\u961f\u78b0\u5934\u4f1a\u5e94\u8be5\u8eb2\u5f00"
+    "\u4e00\u5468\u91cc\u7684\u54ea\u4e00\u5929"
+)
 # The same fact in the stored wording: the control for the lexical lane.
-QUOTED = "项目周会固定避开周五"
+QUOTED = "\u9879\u76ee\u5468\u4f1a\u56fa\u5b9a\u907f\u5f00\u5468\u4e94"
 
 
 def test_both_lanes_answer_through_one_real_hy_instance(tmp_path, monkeypatch):
@@ -171,9 +177,10 @@ def test_both_lanes_answer_through_one_real_hy_instance(tmp_path, monkeypatch):
     memory = asked["paths"]["memory"]
     assert memory["status"] == "ok" and memory["returned_count"] > 0, asked["paths"]
     remembered = [item for item in asked["items"] if item["kind"] == "memory"]
-    assert any("周五" in item["content"] or "星期五" in item["content"] for item in remembered), (
-        remembered
-    )
+    assert any(
+        "\u5468\u4e94" in item["content"] or "\u661f\u671f\u4e94" in item["content"]
+        for item in remembered
+    ), remembered
 
     # Same instance, same authorization, wording the lexical lane can match.
     # Without this the empty raw lane above would be unreadable.

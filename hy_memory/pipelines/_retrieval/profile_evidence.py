@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Profile 证据反查 —— 从一批 VDB 命中节点反查「支撑它们的 L6 schema」。
+Profile evidence reverse lookup -- find the L6 schemas that support a batch of VDB hit nodes.
 
-正路（graph vector_search）找与 query 语义相近的 L6；反路（本模块）从 normal
-召回命中的 VDB 节点出发，沿 DERIVED_FROM 边反向找引用它们的 L6 schema，按支撑度
-（被多少个命中节点支撑）排序。一正一反，供 reader 用 RRF 融合成 profile 输出。
+The forward path (graph vector_search) looks for L6 nodes semantically close to the query; the reverse path (this module)
+starts from the VDB nodes hit by normal recall and walks DERIVED_FROM edges backwards to the L6 schemas referencing them, ordered by support
+(how many hit nodes back each one). Forward and reverse feed the reader's RRF fusion into profile output.
 
-graph_store.find_referencing_memories 每条 (Memory, VdbRef) 边返回一行，带
-evidence_vdb_id。同一 L6 被 N 个输入节点支撑 → 出现 N 行；支撑度 = 该 L6 的
-distinct evidence_vdb_id 数。
+graph_store.find_referencing_memories returns one row per (Memory, VdbRef) edge, carrying
+evidence_vdb_id. An L6 supported by N input nodes shows up in N rows; support = the number of distinct
+evidence_vdb_id values on that L6.
 
-free async 函数，graph_store 作首参，与 evolution.recall / intention.recall 一致；
-其他 reader 可直接 import 复用。best-effort：graph 不可用 / 无该能力 / 抛错均返回 []。
+Free async function with graph_store as the first argument, matching evolution.recall / intention.recall;
+other readers can import and reuse it. Best-effort: unavailable graph, missing capability or exceptions all return [].
 """
 
 from typing import Any, Dict, List
@@ -34,18 +34,18 @@ async def reverse_lookup_l6(
     include_sources: List[str] = None,
     exclude_sources: List[str] = None,
 ) -> List[Dict[str, Any]]:
-    """从 VDB node_id 列表反查支撑它们的 L6 schema，按支撑度降序。
+    """Reverse-lookup the L6 schemas supporting a list of VDB node_ids, sorted by support descending.
 
     Args:
-        graph_store: 图存储（None 或无 find_referencing_memories 则返回 []）。
-        vdb_node_ids: normal 路命中的 VDB 节点 id 列表（反查锚点）。
-        limit: 反查的边数上限（传给 find_referencing_memories）。
+        graph_store: graph store (returns [] when None or when find_referencing_memories is absent).
+        vdb_node_ids: VDB node ids hit by the normal channel (the reverse-lookup anchors).
+        limit: upper bound on the number of edges to reverse-lookup (passed to find_referencing_memories).
 
     Returns:
-        与 reader 输出层兼容的 hit 列表，按支撑度降序：
+        Hit list compatible with the reader output layer, sorted by support descending:
           [{node_id, content, layer:"l6_schema", score:<support/max_support>,
             source:"schema_reverse", confidence, _support_count, node:None}, ...]
-        支撑度 = distinct evidence_vdb_id 数。无结果返回 []。
+        Support = number of distinct evidence_vdb_id values. Returns [] when nothing is found.
     """
     if graph_store is None or not vdb_node_ids:
         return []
@@ -67,7 +67,7 @@ async def reverse_lookup_l6(
         logger.debug(f"[profile-evidence] reverse_lookup_l6 failed: {e}")
         return []
 
-    # 按 L6 node_id 聚合：support = distinct evidence_vdb_id 数
+    # Aggregate by L6 node_id: support = number of distinct evidence_vdb_id values
     grouped: Dict[str, Dict[str, Any]] = {}
     for row in rows or []:
         if row.get("layer") != _L6_LAYER:
@@ -114,14 +114,14 @@ async def reverse_lookup_l6(
             "node_id": g["node_id"],
             "content": g["content"],
             "layer": _L6_LAYER,
-            # RRF 只看 rank，score 仅作观测；归一到 [0,1]
+            # RRF only looks at rank; the score is for observation only, normalized to [0,1]
             "score": support / max_support,
             "retrieval_source": "schema_reverse",
             "memory_source": g.get("memory_source") or "default",
             "confidence": g.get("confidence"),
             "_schema_kind": g.get("_schema_kind", "behavior_pattern"),
             "_support_count": support,
-            "node": None,  # graph 节点无 MemoryNode 对象，输出层从 content/layer 渲染
+            "node": None,  # graph nodes carry no MemoryNode object; the output layer renders from content/layer
         })
 
     hits.sort(key=lambda h: h["_support_count"], reverse=True)

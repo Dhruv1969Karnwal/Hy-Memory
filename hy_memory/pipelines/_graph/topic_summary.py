@@ -1,22 +1,22 @@
-"""Topic-scoped summary：按**主题**切摘要，而不是按时间窗切。
+"""Topic-scoped summary: slice summaries by **topic**, not by time window.
 
-固定窗口摘要按时间攒 buffer，所以产出只能是
-"这段对话说了啥" —— 检索价值有限，因为一个时间窗里的内容通常横跨多个不相关话题。
+Fixed-window summaries accumulate a buffer over time, so the output can only ever be
+"what this conversation was about" -- of limited retrieval value, since the content of one time window usually spans several unrelated topics.
 
-有了 Topic 图之后可以换个切法：**某个 Topic 下的记忆累积到阈值就总结一次**，
-产出"关于你的工作，我知道这些"。这才是有检索价值的摘要粒度。
+With the Topic graph we can slice it differently: **summarize once the memories under a Topic cross a threshold**,
+producing "here is what I know about your work". That is the summary granularity worth retrieving.
 
-状态存在摘要节点自己的 `custom` 里，不额外建表：
+State lives in the summary node's own `custom` field, so no extra table is needed:
     custom = {
-        "summary_kind": "topic",      # 与其他摘要类型区分
+        "summary_kind": "topic",      # Distinguishes it from other summary types
         "topic_id": ..., "topic_name": ...,
-        "covered_count": N,           # 本次总结覆盖了该 Topic 下多少条记忆
+        "covered_count": N,           # How many memories under this Topic this run covered
         "source_memory_ids": [...],
     }
-下次判断是否要重新总结时，回读该 Topic 最新一条摘要的 `covered_count`，
-和当前 Topic 度数比较即可。
+When deciding whether to summarize again, read back the `covered_count` of the newest summary of that Topic
+and compare it with the current degree of the Topic.
 
-旧摘要置 SHADOW，不进 supersedes 演化链。
+Old summaries are set to SHADOW and do not enter the supersedes evolution chain.
 """
 
 import asyncio
@@ -93,39 +93,39 @@ Rules:
 Return ONLY the summary text, no preamble, no JSON, no quotes."""
 
 
-TOPIC_SUMMARY_PROMPT_ZH = """你在为**一个主题**总结已知的全部信息。
+TOPIC_SUMMARY_PROMPT_ZH = """You are summarizing everything known about **one topic**.
 
-## 主题
+## Topic
 
 {topic_name}
 
-## 该主题下的记忆（时间正序）
+## Memories under this topic (oldest first)
 
 {memories}
 
 ---
 
-写一段关于用户在这个主题上的高密度摘要。
+Write one high-density summary of the user on this topic.
 
-要求：
+Requirements:
 
-* 2–4 句，第三人称，以"用户…"开头（若记忆讲的是别人，则以那个人的名字开头）。
-* 覆盖整个主题 —— 说明当前状况；只在变化本身重要时才提它是怎么演变过来的。
-* 保留具体细节：人名、地点、数字、日期。
-* 绝不编造记忆里没有的内容。
-* 不要逐条罗列记忆，要综合成一段。
-* 输出语言与记忆的语言一致。
+* 2-4 sentences, third person, starting with "The user..." (if the memories are about someone else, start with that person's name).
+* Cover the whole topic -- state the current situation; mention how it evolved only when the change itself matters.
+* Keep concrete details: names of people, places, numbers, dates.
+* Never invent anything that is not in the memories.
+* Do not enumerate memories one by one; synthesize them into a single paragraph.
+* Write the output in the same language as the memories.
 
-只返回摘要正文，不要任何前言、不要 JSON、不要引号。"""
+Return only the summary body, no preamble, no JSON, no quotes."""
 
 
 async def find_latest_topic_summary(
     *, vector_store, user_id: str, agent_id: Optional[str], topic_id: str,
 ) -> Optional[Any]:
-    """找该 Topic 最新的一条 topic summary 节点（没有则 None）。
+    """Find the newest topic summary node for this Topic (None if there is none).
 
-    VDB 的 filter 表达不了 `custom` 里的字段，所以拉该 user 的 L3 在 Python 侧过滤。
-    L3 的量级很小（每个 Topic 至多一条 active），这个代价可以接受。
+    The VDB filter cannot express fields inside `custom`, so we pull this user's L3 and filter on the Python side.
+    The L3 volume is small (at most one active summary per Topic), so this cost is acceptable.
     """
     from ...models.memory import MemoryLayer, MemoryStatus
 
@@ -194,10 +194,10 @@ async def maybe_summarize_topics(
     temperature: Optional[float] = None,
     trace=None,
 ) -> Dict[str, Any]:
-    """对本次写入触达的 Topic，按需有界并发生成 / 刷新 summary。
+    """For the Topics touched by this write, generate / refresh summaries with bounded concurrency as needed.
 
-    触发条件：Topic 下 active 记忆数 ≥ `min_memories`，且比上次总结时多了 ≥ `step` 条。
-    这样既不会每写一条就重算（贵），也不会一直不更新（陈旧）。
+    Trigger: the number of active memories under the Topic is ≥ `min_memories`, and it grew by ≥ `step` items since the last summary.
+    This way we neither recompute on every single write (expensive) nor keep serving stale summaries.
 
     Returns:
         {"checked", "summarized", "skipped", "errors", "topics": [...]}
@@ -212,7 +212,7 @@ async def maybe_summarize_topics(
     try:
         from ...models.memory import MemoryNode
 
-        # Topic 建在 user::agent 上（不含 session），查询必须用同一个键
+        # Topics are built on user::agent (without session); queries must use the same key
         for t in await graph_store.get_all_topics(
             MemoryNode.topic_scope_of(isolation_key)
         ):
@@ -318,7 +318,7 @@ async def _generate(
     *, llm_provider, topic_name: str, memories: List[str],
     temperature: Optional[float] = None,
 ) -> tuple:
-    """返回 (摘要文本, 实际 prompt, token 用量) —— 后两个供埋点，线上要能复盘。"""
+    """Return (summary text, actual prompt, token usage) -- the last two feed instrumentation, so production runs can be reviewed."""
     from ...utils.lang_detect import is_chinese
 
     body = "\n".join(f"- {c}" for c in memories if c)
@@ -337,7 +337,7 @@ async def _generate(
         "total": getattr(resp, "total_tokens", 0) or 0,
     }
     text = (getattr(resp, "content", "") or "").strip()
-    # LLM 偶尔会包一层引号或 markdown 围栏
+    # The LLM occasionally wraps the output in quotes or markdown fences
     if text.startswith("```"):
         parts = text.split("```")
         text = parts[1] if len(parts) > 1 else text
@@ -388,13 +388,13 @@ async def _store(
             "topic_name": topic_name,
             "covered_count": covered_count,
             "source_memory_ids": list(source_memory_ids),
-            # 仅作审计：topic summary 按设计无 chain，不进 supersedes 演化链
+            # Audit only: topic summaries have no chain by design and do not enter the supersedes chain
             "supersedes_summary_id": getattr(prev_node, "node_id", "") or "",
         },
     )
     nid = await vector_store.upsert(node)
 
-    # 旧摘要置 SHADOW，避免同一 Topic 多条摘要重复召回
+    # Old summaries are set to SHADOW so several summaries of one Topic are not recalled repeatedly
     if prev_node is not None and getattr(prev_node, "node_id", ""):
         try:
             await vector_store.update_payload(

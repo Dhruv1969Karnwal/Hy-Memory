@@ -17,8 +17,16 @@ from tests.source_consent import connection_request
 @pytest.mark.parametrize("filename", ["chat.json", "renamed.json"])
 def test_manual_json_keeps_authors_unknown_time_and_exact_text(filename):
     value = [
-        {"role": "user", "content": "  预算<5；这不是批准。\n保留原话。", "time": None},
-        {"role": "assistant", "content": "建议先评估。", "time": "2026-09-12T09:00:00+08:00"},
+        {
+            "role": "user",
+            "content": "  Budget<5; this is not approval.\nKeep the words verbatim.",
+            "time": None,
+        },
+        {
+            "role": "assistant",
+            "content": "Suggest assessing it first.",
+            "time": "2026-09-12T09:00:00+08:00",
+        },
     ]
     result = parse_chat_export(json.dumps(value).encode(), filename)
     assert result.vendor == "generic" and len(result.messages) == 2
@@ -30,33 +38,44 @@ def test_manual_json_keeps_authors_unknown_time_and_exact_text(filename):
 
 def test_marked_text_keeps_code_fences_and_never_invents_timestamps():
     text = (
-        "# 设计讨论\n\n## 用户\n预算>5，不是<5。\n```text\n"
-        "Assistant: 代码里的文字\n```\n\n## 助手\n这仍是建议。\n"
+        "# Design discussion\n\n## User\nBudget>5, not <5.\n```text\n"
+        "Assistant: text inside code\n```\n\n## Assistant\nThis is still a suggestion.\n"
     )
     result = parse_chat_export(text.encode(), "chat.md")
     assert len(result.messages) == 2 and result.skipped_records == 0
-    assert result.messages[0].verbatim == "预算>5，不是<5。\n```text\nAssistant: 代码里的文字\n```"
-    assert result.messages[1].verbatim == "这仍是建议。"
-    assert all(m.created_at is None and m.project == "设计讨论" for m in result.messages)
+    assert (
+        result.messages[0].verbatim
+        == "Budget>5, not <5.\n```text\nAssistant: text inside code\n```"
+    )
+    assert result.messages[1].verbatim == "This is still a suggestion."
+    assert all(m.created_at is None and m.project == "Design discussion" for m in result.messages)
 
 
 @pytest.mark.parametrize(
     "text,filename",
     [
-        ("普通工作材料，不是角色明确的对话", "notes.txt"),
-        ("User: 第一段\nAssistant:\nUser: 最后一段", "chat.txt"),
-        ("User: 第一段\nTool: 不是用户\nAssistant: 最后一段", "chat.txt"),
+        ("Ordinary work material, not a conversation with clear roles", "notes.txt"),
+        ("User: first part\nAssistant:\nUser: last part", "chat.txt"),
+        ("User: first part\nTool: not the user\nAssistant: last part", "chat.txt"),
         (
             json.dumps(
-                [{"role": "user", "content": "可读"}, {"role": "tool", "content": "不可归属"}]
+                [
+                    {"role": "user", "content": "readable"},
+                    {"role": "tool", "content": "unattributable"},
+                ]
             ),
             "chat.json",
         ),
         (
-            json.dumps([{"role": "user", "content": "原话", "time": "2026-09-12T09:00:00"}]),
+            json.dumps(
+                [{"role": "user", "content": "original words", "time": "2026-09-12T09:00:00"}]
+            ),
             "chat.json",
         ),
-        (json.dumps([{"role": "user", "content": "原话", "time": "昨天"}]), "chat.json"),
+        (
+            json.dumps([{"role": "user", "content": "original words", "time": "yesterday"}]),
+            "chat.json",
+        ),
         (
             json.dumps([{"role": "user", "content": "x" * (MAX_VERBATIM_CHARACTERS + 1)}]),
             "chat.json",
@@ -94,13 +113,15 @@ def test_manual_import_reports_segment_then_follows_normal_authorize_and_dedup(t
         ):
             bad = await client.post(
                 "/api/v1/import-files?filename=chat.txt",
-                content="User: 可读\nTool: 待处理".encode(),
+                content=b"User: readable\nTool: pending",
             )
             assert bad.status_code == 422
             assert bad.json()["detail"] == "generic_import_invalid"
             assert bad.json()["issue"]["location"] == "line:2"
-            assert bad.json()["issue"]["excerpt"] == "Tool: 待处理"
-            payload = "User: 发布前保留来源引用。\nAssistant: 建议做一次检查。"
+            assert bad.json()["issue"]["excerpt"] == "Tool: pending"
+            payload = (
+                "User: Keep source citations before release.\nAssistant: Suggest running a check."
+            )
             uploaded = await client.post(
                 "/api/v1/import-files?filename=chat.txt", content=payload.encode()
             )
@@ -108,7 +129,7 @@ def test_manual_import_reports_segment_then_follows_normal_authorize_and_dedup(t
             receipt = uploaded.json()
             assert receipt["source_id"] == "generic-export"
             assert receipt["human_messages"] == receipt["agent_messages"] == 1
-            assert receipt["preview"][0]["text"] == "发布前保留来源引用。"
+            assert receipt["preview"][0]["text"] == "Keep source citations before release."
             assert app.state.evidence_store.count() == 0
             await client.post(
                 f"/api/v1/import-files/{receipt['upload_id']}/commit", json={"confirmed": True}
@@ -121,7 +142,9 @@ def test_manual_import_reports_segment_then_follows_normal_authorize_and_dedup(t
             job = await app.state.import_supervisor.wait(connected.json()["jobs"][0]["job_id"])
             assert job.stored == 2 and job.errors == 0
             found = (
-                await client.get("/api/v1/conversations/search", params={"query": "保留来源"})
+                await client.get(
+                    "/api/v1/conversations/search", params={"query": "source citations"}
+                )
             ).json()
             assert found["hits"][0]["created_at"] is None
             again = await client.post(

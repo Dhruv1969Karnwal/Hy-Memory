@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { modelErrorText } from "./model-error-text";
 
-describe("模型配置的报错要说人话", () => {
-  it("把后端的代号翻成一句能照着做的话", () => {
-    // 真实发生过：粘完 key 点「设为当前模型」，界面上出现的就是这串英文。
+describe("Model config errors must speak human language", () => {
+  it("translates backend codes into one actionable sentence", () => {
+    // Really happened: after pasting the key and clicking "Set as current model", this exact English string showed in the UI.
     const text = modelErrorText("model_profile_probe_required");
     expect(text).not.toContain("model_profile_probe_required");
-    expect(text).toContain("测");
+    expect(text).toContain("test");
   });
 
-  it("每个已知代号都有对应的话，且没有一句是代号原文", () => {
+  it("every known code has a sentence, and none is the raw code", () => {
     const codes = [
       "model_profile_probe_required",
       "model_provider_not_supported",
@@ -25,9 +25,9 @@ describe("模型配置的报错要说人话", () => {
     }
   });
 
-  it("不认识的代号照原样带出来，不许吞掉", () => {
-    // 正向对照：没有这条，上一条可以被「一律回一句『出错了』」骗过 ——
-    // 那样每个代号都不等于原文，测试全绿，而排查线索全丢了。
+  it("unknown codes pass through untouched, never swallowed", () => {
+    // Positive control: without this line, the previous test could be fooled by "always return one 'something went wrong'" —
+    // that way no code equals the original text, all tests go green, and the debugging trail is gone.
     const text = modelErrorText("some_code_nobody_mapped_yet");
     expect(text).toContain("some_code_nobody_mapped_yet");
   });

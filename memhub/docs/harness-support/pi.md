@@ -1,45 +1,45 @@
-# Pi 一键插入支持
+# Pi one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-Pi 没有 MCP 配置入口，但当前生产权限层支持 CLI 通道，因此 Pi 可以使用和撤销 Credential。它安装 **CLI Recall Skill + Capture Extension**。
+Pi has no MCP config entry point, but the current production permissions layer supports the CLI channel, so Pi can use and revoke a Credential. It installs **a CLI Recall Skill + a Capture Extension**.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | Pi 当前实现 |
+| Item | Pi current implementation |
 |---|---|
-| 一键插入产品状态 | 生产代码开放 |
-| Pi 查询 MemHub | Skill 执行 Recall CLI，不使用 MCP |
-| 告诉模型何时查询 | CLI 版 Skill |
-| Prompt 前自动 Prefetch | 没有自动注入；模型按 Skill 主动执行命令 |
-| Pi 新会话实时送入 MemHub | `one-memory-capture.js` Extension |
-| Credential | 支持，CLI 从私有文件读取，可撤销 |
+| One-click insert status | Available in production code |
+| How Pi queries MemHub | The Skill runs the Recall CLI; no MCP |
+| How the model knows when to query | CLI version of the Skill |
+| Automatic Prefetch before prompts | No automatic injection; the model runs the command itself as the Skill directs |
+| New Pi sessions into MemHub in real time | `one-memory-capture.js` Extension |
+| Credential | Supported; the CLI reads it from a private file, and it can be revoked |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-安装 CLI Recall Skill 和 Capture Extension，创建 Credential 并授权。Pi 需要根据 Skill 主动执行 Recall CLI；这不是 MCP，也不是自动 Prefetch。
+It installs the CLI Recall Skill and the Capture Extension, creates the Credential and grants it. Pi has to run the Recall CLI itself as the Skill directs; this is neither MCP nor automatic Prefetch.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤销 Pi Credential，再恢复或删除 Skill、Capture Extension 和 Journal；同步开关不变。
+It revokes the Pi Credential first, then restores or deletes the Skill, the Capture Extension and the Journal; the Sync toggle is unchanged.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 补扫 Pi Session，并允许 Extension 的 `before_agent_start`、`turn_end` Capture 事件进入 Evidence。
+Core backfills Pi Sessions and allows the Extension's `before_agent_start` and `turn_end` Capture events into Evidence.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core 停止扫描和 pending Job claim，并拒绝 Extension Capture 入库；running Job可结束，已有 Memory 保留。只要一键插入仍开，Pi 的 Recall CLI 仍可查询已有 Memory。
+Core stops scanning and pending Job claims and refuses Extension Capture intake; running Jobs may finish and existing Memory is kept. As long as one-click insert stays on, Pi's Recall CLI can still query existing Memory.
 
-### 组合效果
+### Combined effect
 
-Pi 的 Recall 出口是 CLI Skill，入库实时入口是 Extension；两者都不是 MCP。同步关闭只冻结入库，不撤销 Pi 查询已有 Memory 的权限。
+Pi's Recall exit is the CLI Skill and its live intake is the Extension; neither is MCP. Turning sync off only freezes intake; it does not revoke Pi's permission to query existing Memory.
 
-## 实际安装
+## What gets installed
 
 ```text
 ~/.pi/agent/skills/memhub-recall/SKILL.md
@@ -47,45 +47,45 @@ Pi 的 Recall 出口是 CLI Skill，入库实时入口是 Extension；两者都�
 ~/.pi/agent/.one-memory/recall-install.json
 ```
 
-不会创建 MCP 配置，因为 Pi 没有读取 `mcp.json` 或 `mcpServers` 的机制。
+No MCP config is created, because Pi has nothing that reads `mcp.json` or `mcpServers`.
 
-## Recall 通道
+## Recall channel
 
-Skill 通过 Shell 命令执行 `recall-cli.cjs`，并设置：
+The Skill runs `recall-cli.cjs` through a shell command and sets:
 
 ```text
 ONE_MEMORY_BROKER_DISCOVERY
 ONE_MEMORY_HOST_CREDENTIAL_FILE
 ```
 
-Recall CLI 从私有 Credential 文件读取凭证，再访问本机 Broker。Broker 每次调用都检查当前 Grant，所以 Credential 可以撤销。
+The Recall CLI reads the credential from the private Credential file and then talks to the local Broker. The Broker checks the current Grant on every call, so the Credential can be revoked.
 
 ## Capture Extension
 
-`one-memory-capture.js` 监听：
+`one-memory-capture.js` listens for:
 
 ```text
 before_agent_start
 turn_end
 ```
 
-并调用 `one-memory capture pi`。采集失败不会阻断 Pi。
+and calls `one-memory capture pi`. Capture failures never block Pi.
 
-## 权限、重复打开与关闭
+## Permissions, re-opening and closing
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:pi`。
-- 已安装且 `approved`：不重装，只修复 Skill 中的命令路径并 Probe。
-- 权限 revoked：重新签发 Installation 和 Credential，再授权。
-- 关闭：先撤权，再恢复或删除 Skill、Extension 和 Journal。
-- 用户修改过 Skill 或 Extension 时不强删。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:pi`.
+- Already installed and `approved`: no reinstall; only repair the command paths in the Skill and Probe.
+- Permission revoked: reissue the Installation and Credential, then grant again.
+- Closing: revoke first, then restore or delete the Skill, the Extension and the Journal.
+- A Skill or Extension modified by the user is not force-deleted.
 
-## 过时 UI 文案
+## Stale UI copy
 
-[host-state.ts](../../apps/web/src/host-state.ts) 中仍有“Pi 没有 MCP，所以不能发放可撤销 Credential”的旧注释和不支持文案，部分测试也手工构造 Pi 为 `unsupported_transport`。
+[host-state.ts](../../apps/web/src/host-state.ts) still contains the old comment and the unsupported copy claiming Pi has no MCP and therefore cannot get a revocable Credential, and some tests still hand-build Pi as `unsupported_transport`.
 
-这与当前生产实现矛盾：`HostPermissions` 支持 `channel="cli"`，Pi Skill 也携带 Credential 文件路径。这些文案和测试属于过时残留。
+That contradicts the current production implementation: `HostPermissions` supports `channel="cli"`, and the Pi Skill also carries the Credential file path. This copy and those tests are stale leftovers.
 
-## 生效与重启
+## Taking effect and restart
 
-Probe 只能证明 Recall CLI 可运行，不能证明 Pi 已加载新 Skill 和 Extension。建议完全退出 Pi、重新打开并开始新会话。
+A Probe can only prove the Recall CLI runs; it cannot prove Pi has loaded the new Skill and Extension. Quit Pi fully, re-open and start a new session.

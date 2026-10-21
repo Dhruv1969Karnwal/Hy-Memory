@@ -1359,7 +1359,7 @@ export function isHealthResponse(value: unknown): value is HealthResponse {
     typeof candidate.instance_id === "string" &&
     candidate.instance_id.length > 0 &&
     // Optional, so an older Core still reads as healthy, but not free-form:
-    // an unrecognised value would otherwise show up as "已连接" and hide a
+    // an unrecognised value would otherwise show up as "Connected" and hide a
     // catch-up that had failed.
     (candidate.memory_backfill === undefined ||
       candidate.memory_backfill === "running" ||

@@ -64,15 +64,15 @@ vi.mock("./OnboardingModelController", () => ({
     onSkip(): void;
     onEnabled(): void;
   }) => (
-    <section aria-label="模型步骤边界">
+    <section aria-label="Model step boundary">
       <button type="button" onClick={onBack}>
-        返回导入
+        Back to import
       </button>
       <button type="button" onClick={onEnabled}>
-        模型启用回执已确认
+        Model enable receipt confirmed
       </button>
       <button type="button" onClick={onSkip}>
-        跳过模型进入应用
+        Skip the model and go to apps
       </button>
     </section>
   ),
@@ -159,14 +159,14 @@ function imports(
   };
 }
 
-const READ_CONSENT = "允许读取以上来源的本次历史";
-const START = "开始导入";
-const SKIP = "稍后添加，先进入";
+const READ_CONSENT = "Allow reading this run's history from the sources above";
+const START = "Start import";
+const SKIP = "Add later, continue now";
 async function openApps(_user?: ReturnType<typeof userEvent.setup>) {
   await waitFor(() =>
     expect(
       screen.getByRole("button", {
-        name: "重新检测位置",
+        name: "Re-check locations",
       }),
     ).toHaveProperty("disabled", false),
   );
@@ -176,12 +176,16 @@ async function skipWelcome(user?: ReturnType<typeof userEvent.setup>) {
   await openApps(user);
 }
 async function continueImport(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: "配置模型，沉淀记忆" }));
-  await user.click(screen.getByRole("button", { name: "模型启用回执已确认" }));
+  await user.click(
+    screen.getByRole("button", { name: "Configure a model to build memory" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Model enable receipt confirmed" }),
+  );
 }
 function choice(name = "Claude Code") {
   return screen.getByRole<HTMLInputElement>("checkbox", {
-    name: `导入 ${name} 历史`,
+    name: `Import ${name} history`,
   });
 }
 async function choose(
@@ -190,10 +194,10 @@ async function choose(
 ) {
   await openApps(user);
   for (const box of screen.getAllByRole<HTMLInputElement>("checkbox", {
-    name: /^导入 .* 历史$/,
+    name: /^Import .* history$/,
   })) {
     const wanted = names.some(
-      (name) => box.getAttribute("aria-label") === `导入 ${name} 历史`,
+      (name) => box.getAttribute("aria-label") === `Import ${name} history`,
     );
     if (box.checked !== wanted) await user.click(box);
   }
@@ -236,10 +240,14 @@ describe("OnboardingFlow S1.3", () => {
         onFinish={vi.fn()}
       />,
     );
-    expect(screen.queryByText("不必从头开始。")).toBeNull();
-    for (const name of ["新会话，接着聊", "换工具，继续做", "新搭档，懂习惯"])
+    expect(screen.queryByText("You don't have to start over.")).toBeNull();
+    for (const name of [
+      "A new chat that picks up where you left off",
+      "Switch tools and keep going",
+      "A new assistant that knows your habits",
+    ])
       expect(screen.queryByRole("tab", { name })).toBeNull();
-    expect(screen.getByRole("list", { name: "候选应用" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Candidate apps" })).toBeTruthy();
     await openApps();
     expect(controller.refresh).toHaveBeenCalledOnce();
     expect(controller.detect).not.toHaveBeenCalled();
@@ -273,7 +281,9 @@ describe("OnboardingFlow S1.3", () => {
     await skipWelcome();
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     expect(document.body.textContent).not.toContain("import-files");
-    expect(screen.queryByRole("button", { name: "导入历史包" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Import history package" }),
+    ).toBeNull();
     expect(finish).not.toHaveBeenCalled();
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
   });
@@ -316,7 +326,9 @@ describe("OnboardingFlow S1.3", () => {
     await approve(user);
     await user.click(screen.getByRole("button", { name: START }));
     expect(
-      screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+      screen.getByRole("heading", {
+        name: "Your conversations are coming in; memory starts here",
+      }),
     ).toBeTruthy();
     expect(finish).not.toHaveBeenCalled();
     expect(completeOnboarding).not.toHaveBeenCalled();
@@ -352,26 +364,28 @@ describe("OnboardingFlow S1.3", () => {
     await user.click(screen.getByRole("button", { name: START }));
 
     const continueButton = await screen.findByRole("button", {
-      name: "配置模型，沉淀记忆",
+      name: "Configure a model to build memory",
     });
     expect(continueButton).toHaveProperty("disabled", false);
     await user.click(continueButton);
     const modelBoundary = screen.getByRole("region", {
-      name: "模型步骤边界",
+      name: "Model step boundary",
     });
 
     await act(async () => rejectImport(new Error("response lost")));
-    expect(screen.getByRole("region", { name: "模型步骤边界" })).toBe(
+    expect(screen.getByRole("region", { name: "Model step boundary" })).toBe(
       modelBoundary,
     );
-    await user.click(screen.getByRole("button", { name: "返回导入" }));
+    await user.click(screen.getByRole("button", { name: "Back to import" }));
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "开始导入的结果尚未确认",
+        "The start-import result is not confirmed",
       ),
     );
     expect(
-      screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+      screen.getByRole("heading", {
+        name: "Your conversations are coming in; memory starts here",
+      }),
     ).toBeTruthy();
   });
 
@@ -389,9 +403,11 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
-    expect(screen.getByRole("region", { name: "模型步骤边界" })).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Model step boundary" }),
+    ).toBeTruthy();
     expect(completeOnboarding).not.toHaveBeenCalled();
     expect(finish).not.toHaveBeenCalled();
     expect(getModelProfiles).not.toHaveBeenCalled();
@@ -421,7 +437,9 @@ describe("OnboardingFlow S1.3", () => {
         onFinish={vi.fn()}
       />,
     );
-    expect(screen.getByRole("heading", { name: "本机 AI 应用" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "AI apps on this machine" }),
+    ).toBeTruthy();
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     expect(screen.getByRole("checkbox")).toHaveProperty("disabled", true);
     expect(
@@ -431,7 +449,7 @@ describe("OnboardingFlow S1.3", () => {
       "disabled",
       true,
     );
-    expect(screen.getAllByText("已发现")).toHaveLength(1);
+    expect(screen.getAllByText("Found")).toHaveLength(1);
     expect(controller.refresh).toHaveBeenCalledOnce();
     expect(controller.detect).not.toHaveBeenCalled();
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
@@ -457,7 +475,7 @@ describe("OnboardingFlow S1.3", () => {
     expect(controller.refresh).toHaveBeenCalledOnce();
     expect(choice()).toHaveProperty("checked", true);
     expect(choice()).toHaveProperty("disabled", false);
-    expect(screen.getByText("已发现")).toBeTruthy();
+    expect(screen.getByText("Found")).toBeTruthy();
     for (const fn of [
       controller.detect,
       controller.startImport,
@@ -497,20 +515,22 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     await openApps(user);
-    await user.click(screen.getByRole("button", { name: "重新检测位置" }));
-    expect(screen.getByText("已发现")).toBeTruthy();
-    expect(screen.getByText("位置无效")).toBeTruthy();
-    expect(screen.queryByText("未发现")).toBeNull();
-    expect(screen.queryByText("无法访问")).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
+    expect(screen.getByText("Found")).toBeTruthy();
+    expect(screen.getByText("Invalid location")).toBeTruthy();
+    expect(screen.queryByText("Not found")).toBeNull();
+    expect(screen.queryByText("Inaccessible")).toBeNull();
     expect(choice("WorkBuddy")).toHaveProperty("disabled", false);
     expect(choice("Codex")).toHaveProperty("disabled", true);
     expect(
-      screen.queryByRole("checkbox", { name: "导入 Claude Code 历史" }),
+      screen.queryByRole("checkbox", { name: "Import Claude Code history" }),
     ).toBeNull();
     expect(
-      screen.queryByRole("checkbox", { name: "导入 Cursor 历史" }),
+      screen.queryByRole("checkbox", { name: "Import Cursor history" }),
     ).toBeNull();
-    expect(screen.queryByText("未安装")).toBeNull();
+    expect(screen.queryByText("Not installed")).toBeNull();
     expect(screen.queryByText(/\/isolated\/claude/)).toBeNull();
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
@@ -529,9 +549,13 @@ describe("OnboardingFlow S1.3", () => {
         />,
       );
       await openApps(user);
-      await user.click(screen.getByRole("button", { name: "重新检测位置" }));
+      await user.click(
+        screen.getByRole("button", { name: "Re-check locations" }),
+      );
       expect(choice()).toHaveProperty("disabled", true);
-      expect(screen.getAllByTitle(/Core.*位置身份/).length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByTitle(/Core.*location identity/).length,
+      ).toBeGreaterThan(0);
     },
   );
 
@@ -547,9 +571,13 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     await openApps(user);
-    await user.click(screen.getByRole("button", { name: "重新检测位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
     expect(choice()).toHaveProperty("disabled", true);
-    expect(screen.getAllByTitle("暂不支持历史导入").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByTitle("History import not supported yet").length,
+    ).toBeGreaterThan(0);
   });
 
   it("requires explicit start and passes only the selected identity snapshot", async () => {
@@ -650,18 +678,20 @@ describe("OnboardingFlow S1.3", () => {
     await user.click(screen.getByRole("button", { name: START }));
     expect(onFinish).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
     expect(onFinish).not.toHaveBeenCalled();
     expect(completeOnboarding).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "模型启用回执已确认" }),
+      screen.getByRole("button", { name: "Model enable receipt confirmed" }),
     );
     expect(onFinish).toHaveBeenCalledWith("sources");
     expect(getModelProfiles).not.toHaveBeenCalled();
     expect(getMemoryProcessing).not.toHaveBeenCalled();
     expect(
-      screen.queryByRole("heading", { name: "配置一个模型，记忆才会生成" }),
+      screen.queryByRole("heading", {
+        name: "Configure a model, then memory is generated",
+      }),
     ).toBeNull();
   });
 
@@ -699,9 +729,11 @@ describe("OnboardingFlow S1.3", () => {
     await approve(user);
     await user.click(screen.getByRole("button", { name: START }));
     await user.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
-    await user.click(screen.getByRole("button", { name: "跳过模型进入应用" }));
+    await user.click(
+      screen.getByRole("button", { name: "Skip the model and go to apps" }),
+    );
     expect(completeOnboarding).toHaveBeenCalledOnce();
     expect(onFinish).toHaveBeenCalledWith("sources");
     expect(getModelProfiles).not.toHaveBeenCalled();
@@ -744,9 +776,13 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     await openApps(user);
-    expect(screen.queryByRole("button", { name: "选择目录" })).toBeNull();
-    expect(screen.queryByLabelText("选择历史文件")).toBeNull();
-    expect(screen.queryByRole("button", { name: "导入历史包" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Choose directory" }),
+    ).toBeNull();
+    expect(screen.queryByLabelText("Choose history file")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Import history package" }),
+    ).toBeNull();
     expect(onFinish).not.toHaveBeenCalled();
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
   });
@@ -767,11 +803,13 @@ describe("OnboardingFlow S1.3", () => {
     );
     await openApps(user);
     expect((await screen.findByRole("alert")).textContent).toContain(
-      "检测未完成",
+      "Location check did not finish",
     );
     expect(choice()).toHaveProperty("disabled", true);
-    expect(screen.queryByText("未发现")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "重新检测位置" }));
+    expect(screen.queryByText("Not found")).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
     expect(choice()).toHaveProperty("disabled", false);
     await waitFor(() => expect(choice()).toHaveProperty("checked", true));
     await user.click(screen.getByRole("button", { name: SKIP }));
@@ -876,7 +914,9 @@ describe("OnboardingFlow S1.3", () => {
     );
     await choose(user);
     await user.click(choice());
-    await user.click(screen.getByRole("button", { name: "重新检测位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
     expect(choice()).toHaveProperty("checked", false);
     expect(screen.getByRole("button", { name: START })).toHaveProperty(
       "disabled",
@@ -918,11 +958,11 @@ describe("OnboardingFlow S1.3", () => {
     await user.click(screen.getByRole("button", { name: START }));
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
     expect(onFinish).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toContain("已变化");
+    expect(screen.getByRole("alert").textContent).toContain("changed");
     expect(screen.queryByRole("checkbox", { name: READ_CONSENT })).toBeNull();
     expect(
       screen.queryByRole<HTMLInputElement>("checkbox", {
-        name: "导入 Claude Code 历史",
+        name: "Import Claude Code history",
       })?.checked ?? false,
     ).toBe(false);
   });
@@ -980,7 +1020,7 @@ describe("OnboardingFlow S1.3", () => {
       );
       await choose(user);
       expect(
-        screen.getByText(/\/Volumes\/ai\/cursor.*自定义位置/),
+        screen.getByText(/\/Volumes\/ai\/cursor.*Custom location/),
       ).toBeTruthy();
       expect(choice("Cursor")).toHaveProperty("checked", false);
       await approve(user);
@@ -1003,15 +1043,17 @@ describe("OnboardingFlow S1.3", () => {
       await choose(user, []);
       const trigger = choice("Cursor");
       await user.click(trigger);
-      const modal = screen.getByRole("dialog", { name: "确认自定义位置" });
+      const modal = screen.getByRole("dialog", {
+        name: "Confirm custom location",
+      });
       const background = screen
-        .getByRole("button", { name: "重新检测位置", hidden: true })
+        .getByRole("button", { name: "Re-check locations", hidden: true })
         .closest(".onboarding-r6-discovery");
       expect(background).toHaveProperty("inert", true);
       expect(modal.contains(document.activeElement)).toBe(true);
       expect(trigger.checked).toBe(false);
       expect(
-        within(modal).getByRole("button", { name: "确认此位置" }),
+        within(modal).getByRole("button", { name: "Confirm this location" }),
       ).toHaveProperty("disabled", true);
       await user.tab({ shift: true });
       expect(modal.contains(document.activeElement)).toBe(true);
@@ -1037,11 +1079,11 @@ describe("OnboardingFlow S1.3", () => {
       const modal = screen.getByRole("dialog");
       await user.click(
         within(modal).getByRole("checkbox", {
-          name: "确认这是 Cursor 的历史位置",
+          name: "Confirm this is the history location for Cursor",
         }),
       );
       await user.click(
-        within(modal).getByRole("button", { name: "确认此位置" }),
+        within(modal).getByRole("button", { name: "Confirm this location" }),
       );
       expect(choice("Cursor").checked).toBe(true);
       expect(controller.connectForOnboarding).not.toHaveBeenCalled();
@@ -1066,7 +1108,9 @@ describe("OnboardingFlow S1.3", () => {
       );
       await choose(user, ["Cursor"]);
       await user.click(
-        screen.getByRole("checkbox", { name: "确认这是 Cursor 的历史位置" }),
+        screen.getByRole("checkbox", {
+          name: "Confirm this is the history location for Cursor",
+        }),
       );
       view.rerender(
         <OnboardingFlow
@@ -1080,7 +1124,7 @@ describe("OnboardingFlow S1.3", () => {
       );
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(choice("Cursor").checked).toBe(false);
-      expect(screen.getByRole("alert").textContent).toContain("已变化");
+      expect(screen.getByRole("alert").textContent).toContain("changed");
       expect(controller.connectForOnboarding).not.toHaveBeenCalled();
     });
 
@@ -1110,10 +1154,10 @@ describe("OnboardingFlow S1.3", () => {
       );
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(
-        screen.queryByRole("checkbox", { name: "导入 Cursor 历史" }),
+        screen.queryByRole("checkbox", { name: "Import Cursor history" }),
       ).toBeNull();
       expect(document.activeElement).toBe(
-        screen.getByRole("heading", { name: "本机 AI 应用" }),
+        screen.getByRole("heading", { name: "AI apps on this machine" }),
       );
     });
   });
@@ -1141,12 +1185,14 @@ describe("OnboardingFlow S1.3", () => {
     );
     await openApps(userEvent.setup());
     const buttons = screen.getAllByRole("button", {
-      name: /^选择 .* 历史目录$/,
+      name: /^Select .* history directory$/,
     });
     expect(buttons).toHaveLength(4);
     for (const button of buttons) expect(button.closest("label")).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "选择 openclaw 历史目录" }),
+      screen.queryByRole("button", {
+        name: "Select openclaw history directory",
+      }),
     ).toBeNull();
   });
 
@@ -1208,14 +1254,16 @@ describe("OnboardingFlow S1.3", () => {
     );
     await openApps(user);
     await user.click(
-      screen.getByRole("button", { name: "选择 Cursor 历史目录" }),
+      screen.getByRole("button", { name: "Select Cursor history directory" }),
     );
     await user.click(
       await screen.findByRole("checkbox", {
-        name: "仅保存此候选位置，不授权读取历史",
+        name: "Save this candidate location only, without authorizing history reads",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "保存候选位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save candidate location" }),
+    );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(controller.refresh).toHaveBeenCalledTimes(2);
     expect(pick).toHaveBeenCalledExactlyOnceWith("cursor");
@@ -1231,9 +1279,13 @@ describe("OnboardingFlow S1.3", () => {
     expect(controller.startImport).not.toHaveBeenCalled();
     await user.click(choice("Cursor"));
     await user.click(
-      screen.getByRole("checkbox", { name: "确认这是 Cursor 的历史位置" }),
+      screen.getByRole("checkbox", {
+        name: "Confirm this is the history location for Cursor",
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "确认此位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirm this location" }),
+    );
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
     await approve(user);
     await user.click(screen.getByRole("button", { name: START }));
@@ -1262,7 +1314,7 @@ describe("OnboardingFlow S1.3", () => {
     );
     await choose(user, ["Cursor"]);
     await user.click(
-      screen.getByRole("button", { name: "选择 Cursor 历史目录" }),
+      screen.getByRole("button", { name: "Select Cursor history directory" }),
     );
     expect(choice("Cursor").checked).toBe(true);
     expect(controller.refresh).toHaveBeenCalledOnce();
@@ -1297,16 +1349,16 @@ describe("OnboardingFlow S1.3", () => {
     await openApps();
     const user = userEvent.setup();
     await user.click(
-      screen.getByRole("button", { name: "选择 Cursor 历史目录" }),
+      screen.getByRole("button", { name: "Select Cursor history directory" }),
     );
-    for (const box of screen.getAllByRole("checkbox", { name: /^导入/ }))
+    for (const box of screen.getAllByRole("checkbox", { name: /^Import/ }))
       expect(box).toHaveProperty("disabled", true);
     for (const name of [
       START,
       SKIP,
-      "重新检测位置",
-      "选择 Codex 历史目录",
-      "导入历史包",
+      "Re-check locations",
+      "Select Codex history directory",
+      "Import history package",
     ])
       expect(screen.getByRole("button", { name })).toHaveProperty(
         "disabled",
@@ -1314,9 +1366,11 @@ describe("OnboardingFlow S1.3", () => {
       );
     await user.click(screen.getByRole("button", { name: START }));
     await user.click(
-      screen.getByRole("button", { name: "选择 Codex 历史目录" }),
+      screen.getByRole("button", { name: "Select Codex history directory" }),
     );
-    await user.click(screen.getByRole("button", { name: "导入历史包" }));
+    await user.click(
+      screen.getByRole("button", { name: "Import history package" }),
+    );
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(pick).toHaveBeenCalledExactlyOnceWith("cursor");
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
@@ -1327,10 +1381,9 @@ describe("OnboardingFlow S1.3", () => {
       "disabled",
       false,
     );
-    expect(screen.getByRole("button", { name: "导入历史包" })).toHaveProperty(
-      "disabled",
-      false,
-    );
+    expect(
+      screen.getByRole("button", { name: "Import history package" }),
+    ).toHaveProperty("disabled", false);
     expect(controller.refresh).toHaveBeenCalledOnce();
     expect(previewSourceDirectory).not.toHaveBeenCalled();
     expect(saveSourceDirectory).not.toHaveBeenCalled();
@@ -1358,7 +1411,7 @@ describe("OnboardingFlow S1.3", () => {
     );
     await openApps();
     await userEvent.click(
-      screen.getByRole("button", { name: "选择 Cursor 历史目录" }),
+      screen.getByRole("button", { name: "Select Cursor history directory" }),
     );
     view.rerender(
       <OnboardingFlow
@@ -1384,10 +1437,9 @@ describe("OnboardingFlow S1.3", () => {
     expect(saveSourceDirectory).not.toHaveBeenCalled();
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
     expect(choice("Cursor").checked).toBe(false);
-    expect(screen.getByRole("button", { name: "重新检测位置" })).toHaveProperty(
-      "disabled",
-      false,
-    );
+    expect(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    ).toHaveProperty("disabled", false);
     expect(finish).not.toHaveBeenCalled();
   });
 
@@ -1447,14 +1499,16 @@ describe("OnboardingFlow S1.3", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      screen.getByRole("button", { name: "选择 Cursor 历史目录" }),
+      screen.getByRole("button", { name: "Select Cursor history directory" }),
     );
     await user.click(
       await screen.findByRole("checkbox", {
-        name: "仅保存此候选位置，不授权读取历史",
+        name: "Save this candidate location only, without authorizing history reads",
       }),
     );
-    await user.click(screen.getByRole("button", { name: "保存候选位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Save candidate location" }),
+    );
     await waitFor(() => expect(controller.refresh).toHaveBeenCalledTimes(2));
     expect(
       screen.getByRole("button", { name: START, hidden: true }),
@@ -1469,7 +1523,7 @@ describe("OnboardingFlow S1.3", () => {
     );
     await act(async () => resolve({ health, sources: [saved], jobs: [] }));
     const row = screen
-      .getByRole("checkbox", { name: "导入 Cursor 历史", hidden: true })
+      .getByRole("checkbox", { name: "Import Cursor history", hidden: true })
       .closest("li");
     expect(row?.textContent).toContain("/fixture/newer");
     expect(row?.textContent).not.toContain("/fixture/saved");
@@ -1501,7 +1555,7 @@ describe("OnboardingFlow S1.3", () => {
     );
     await openApps();
     await userEvent.click(
-      screen.getByRole("button", { name: "选择 Cursor 历史目录" }),
+      screen.getByRole("button", { name: "Select Cursor history directory" }),
     );
     expect(pick).toHaveBeenCalledOnce();
     view.unmount();
@@ -1553,7 +1607,9 @@ describe("OnboardingFlow S1.3", () => {
     );
     expect(PLUGIN_CONSENT_KEY).toBe("one-memory.consent.plugins");
     expect(
-      screen.queryByRole("checkbox", { name: "给常用 AI 装上连接" }),
+      screen.queryByRole("checkbox", {
+        name: "Install connections for your AI apps",
+      }),
     ).toBeNull();
     await choose(user);
     await approve(user);
@@ -1616,13 +1672,13 @@ describe("OnboardingFlow S1.3", () => {
       );
     }
     render(<Harness />);
-    await screen.findByRole("button", { name: "重新检测位置" });
+    await screen.findByRole("button", { name: "Re-check locations" });
     await choose(user);
     await approve(user);
     await user.click(screen.getByRole("button", { name: START }));
     await screen.findByRole("alert");
     expect(onFinish).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toContain("尚未确认");
+    expect(screen.getByRole("alert").textContent).toContain("not confirmed");
     expect(completeOnboarding).not.toHaveBeenCalled();
     expect(api.connectSources).toHaveBeenCalledOnce();
     const requestId = vi.mocked(api.connectSources).mock.calls[0][2]?.requestId;
@@ -1642,7 +1698,7 @@ describe("OnboardingFlow S1.3", () => {
       ),
     );
     expect(api.connectSources).toHaveBeenCalledOnce();
-    expect(screen.getByRole("alert").textContent).toContain("尚未确认");
+    expect(screen.getByRole("alert").textContent).toContain("not confirmed");
     vi.mocked(api.getSourceConnection).mockResolvedValueOnce({
       request_id: requestId,
       accepted_source_ids: ["claude"],
@@ -1651,7 +1707,9 @@ describe("OnboardingFlow S1.3", () => {
     });
     await openApps();
     await user.click(screen.getByRole("button", { name: START }));
-    await screen.findByRole("button", { name: "配置模型，沉淀记忆" });
+    await screen.findByRole("button", {
+      name: "Configure a model to build memory",
+    });
     await continueImport(user);
     expect(onFinish).toHaveBeenCalledWith("sources");
     expect(api.connectSources).toHaveBeenCalledOnce();
@@ -1683,10 +1741,9 @@ describe("OnboardingFlow S1.3", () => {
     await user.dblClick(screen.getByRole("button", { name: START }));
     for (const box of screen.getAllByRole("checkbox"))
       expect(box).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "重新检测位置" })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    ).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: SKIP })).toHaveProperty(
       "disabled",
       true,
@@ -1718,7 +1775,9 @@ describe("OnboardingFlow S1.3", () => {
         onFinish={vi.fn()}
       />,
     );
-    await user.dblClick(screen.getByRole("button", { name: "重新检测位置" }));
+    await user.dblClick(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
     expect(controller.refresh).toHaveBeenCalledOnce();
     expect(screen.queryByRole("progressbar")).toBeNull();
     await act(async () => resolve());
@@ -1837,8 +1896,12 @@ describe("OnboardingFlow S1.3", () => {
         onFinish={onFinish}
       />,
     );
-    expect(screen.getByRole("alert").textContent).not.toContain("尚未提交");
-    expect(screen.getByRole("alert").textContent).toContain("等待本次提交回执");
+    expect(screen.getByRole("alert").textContent).not.toContain(
+      "has not been submitted",
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Waiting for this submission's receipt",
+    );
     await act(async () => resolve());
     await continueImport(user);
     expect(onFinish).toHaveBeenCalledWith("sources");
@@ -1867,7 +1930,9 @@ describe("OnboardingFlow S1.3", () => {
     await approve(user);
     await user.click(screen.getByRole("button", { name: START }));
     expect(onFinish).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "查看未导入的应用" }));
+    await user.click(
+      screen.getByRole("button", { name: "View apps not imported" }),
+    );
     expect(onFinish).toHaveBeenCalledWith("sources");
   });
 
@@ -1897,9 +1962,13 @@ describe("OnboardingFlow S1.3", () => {
     await user.click(screen.getByRole("button", { name: START }));
     expect(onFinish).not.toHaveBeenCalled();
     expect(completeOnboarding).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: "本机 AI 应用" })).toBeTruthy();
-    expect(screen.getByText(/目录暂时不可读取/)).toBeTruthy();
-    expect(screen.getByText(/目录身份已变化/)).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "AI apps on this machine" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/directory is not readable right now/),
+    ).toBeTruthy();
+    expect(screen.getByText(/directory identity has changed/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: START }));
     expect(controller.connectForOnboarding).toHaveBeenLastCalledWith(
       ["claude", "cursor"],
@@ -1946,7 +2015,9 @@ describe("OnboardingFlow S1.3", () => {
     );
     await act(async () => resolve());
     expect(
-      screen.getByText("来源目录身份已变化，请返回重新检测。"),
+      screen.getByText(
+        "The source directory identity has changed; go back and check again.",
+      ),
     ).toBeTruthy();
     expect(onFinish).not.toHaveBeenCalled();
     expect(completeOnboarding).not.toHaveBeenCalled();
@@ -1954,7 +2025,9 @@ describe("OnboardingFlow S1.3", () => {
 
   it("uses a known accepted receipt when post-connect refresh failed without creating again", async () => {
     const user = userEvent.setup();
-    const controller = imports({ error: "最新状态暂不可读取" });
+    const controller = imports({
+      error: "The latest status is not readable right now",
+    });
     const onFinish = vi.fn();
     render(
       <OnboardingFlow
@@ -1990,13 +2063,17 @@ describe("OnboardingFlow S1.3", () => {
     await continueImport(user);
     // A plain Error has no HTTP status, so the outcome is unknown: the user
     // must not be told the save failed when the UI cannot prove it did.
-    expect(screen.getByRole("alert").textContent).toContain("完成状态尚未确认");
-    expect(screen.getByRole("alert").textContent).not.toContain(
-      "完成状态未能保存",
+    expect(screen.getByRole("alert").textContent).toContain(
+      "completion state is not confirmed",
     );
-    expect(screen.queryByText(/模型失败/)).toBeNull();
+    expect(screen.getByRole("alert").textContent).not.toContain(
+      "completion state was not saved",
+    );
+    expect(screen.queryByText(/model failed/)).toBeNull();
     expect(onFinish).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "重试保存并进入" }));
+    await user.click(
+      screen.getByRole("button", { name: "Retry save and continue" }),
+    );
     expect(controller.connectForOnboarding).toHaveBeenCalledOnce();
     expect(completeOnboarding).toHaveBeenCalledTimes(2);
     expect(onFinish).toHaveBeenCalledWith("sources");
@@ -2024,8 +2101,8 @@ describe("OnboardingFlow S1.3", () => {
     await user.click(screen.getByRole("button", { name: START }));
     await continueImport(user);
     const alert = screen.getByRole("alert").textContent ?? "";
-    expect(alert).toContain("完成状态未能保存");
-    expect(alert).not.toContain("完成状态尚未确认");
+    expect(alert).toContain("completion state was not saved");
+    expect(alert).not.toContain("completion state is not confirmed");
     expect(onFinish).not.toHaveBeenCalled();
   });
 
@@ -2042,7 +2119,7 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     await user.click(screen.getByRole("button", { name: SKIP }));
-    await user.click(screen.getByRole("button", { name: "仍进入应用页" }));
+    await user.click(screen.getByRole("button", { name: "Go to apps anyway" }));
     expect(onFinish).toHaveBeenCalledWith("sources");
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();
     expect(completeOnboarding).toHaveBeenCalledOnce();
@@ -2060,7 +2137,9 @@ describe("OnboardingFlow S1.3", () => {
       <OnboardingFlow state={state} imports={controller} onFinish={onFinish} />,
     );
     expect(
-      screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+      screen.getByRole("heading", {
+        name: "Your conversations are coming in; memory starts here",
+      }),
     ).toBeTruthy();
     expect(onFinish).not.toHaveBeenCalled();
     view.rerender(
@@ -2136,7 +2215,7 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     const insertion = screen.getByRole<HTMLInputElement>("checkbox", {
-      name: "一键接入应用",
+      name: "Connect apps in one click",
     });
     await waitFor(() => expect(insertion.disabled).toBe(false));
     expect(insertion.checked).toBe(true);
@@ -2144,9 +2223,11 @@ describe("OnboardingFlow S1.3", () => {
     expect(controller.setSync).not.toHaveBeenCalled();
     expect(previewRecallInstall).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
-    expect(screen.getByRole("region", { name: "模型步骤边界" })).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Model step boundary" }),
+    ).toBeTruthy();
     expect(controller.setSync).not.toHaveBeenCalled();
     expect(previewRecallInstall).toHaveBeenCalledWith("claude-code");
     expect(installRecall).toHaveBeenCalledWith("claude-code", "fingerprint");
@@ -2186,14 +2267,14 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     const insertion = await screen.findByRole<HTMLInputElement>("checkbox", {
-      name: "一键接入应用",
+      name: "Connect apps in one click",
     });
     await waitFor(() => expect(insertion.checked).toBe(true));
     await user.click(insertion);
     expect(insertion.checked).toBe(false);
     expect(readConnectionPreferences().hostSourceIds).toEqual([]);
     await user.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
     expect(controller.setSync).not.toHaveBeenCalled();
     expect(previewRecallInstall).not.toHaveBeenCalled();
@@ -2236,12 +2317,12 @@ describe("OnboardingFlow S1.3", () => {
     );
 
     const host = await screen.findByRole<HTMLInputElement>("checkbox", {
-      name: "测试实例不接入应用",
+      name: "Test instance does not connect apps",
     });
     expect(host.disabled).toBe(true);
     expect(host.checked).toBe(false);
     await user.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
     expect(controller.setSync).not.toHaveBeenCalled();
     expect(previewRecallInstall).not.toHaveBeenCalled();
@@ -2283,15 +2364,15 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     const options = await screen.findByRole("complementary", {
-      name: "连接应用",
+      name: "Connect apps",
     });
     expect(
       await within(options).findByText(
-        "请先把 MemHub 拖到“应用程序”并从那里重新打开，才能接入应用。",
+        "Drag MemHub to Applications and reopen it from there before apps can be connected.",
       ),
     ).toBeTruthy();
     const host = within(options).getByRole<HTMLInputElement>("checkbox", {
-      name: "测试实例不接入应用",
+      name: "Test instance does not connect apps",
     });
     expect(host.disabled).toBe(true);
     expect(host.checked).toBe(false);
@@ -2350,23 +2431,25 @@ describe("OnboardingFlow S1.3", () => {
       />,
     );
     const insertion = await screen.findByRole<HTMLInputElement>("checkbox", {
-      name: "一键接入应用",
+      name: "Connect apps in one click",
     });
     await waitFor(() => expect(insertion.disabled).toBe(false));
     expect(previewRecallInstall).not.toHaveBeenCalled();
     expect(insertion.checked).toBe(true);
     await user.click(
-      screen.getByRole("button", { name: "配置模型，沉淀记忆" }),
+      screen.getByRole("button", { name: "Configure a model to build memory" }),
     );
-    expect(screen.getByRole("region", { name: "模型步骤边界" })).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Model step boundary" }),
+    ).toBeTruthy();
     expect(previewRecallInstall).toHaveBeenCalledWith("claude-code");
     expect(window.oneMemory?.installRecall).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(document.body.textContent).toMatch(
-        /1 个应用已接入，1 个未完成：Pi（应用控制通道暂不可用）。/,
+        /Apps connected: 1. Not finished: 1: Pi/,
       ),
     );
-    expect(document.body.textContent).not.toContain("Pi、Pi");
+    expect(document.body.textContent).not.toContain("Pi, Pi");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(insertion.checked).toBe(true);
   });
@@ -2391,7 +2474,9 @@ describe("OnboardingFlow S1.3", () => {
         }),
     );
     await openApps(user);
-    await user.click(screen.getByRole("button", { name: "重新检测位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
     view.rerender(
       <OnboardingFlow
         state={{ ...onboarding, status: "importing" }}
@@ -2401,7 +2486,9 @@ describe("OnboardingFlow S1.3", () => {
     );
     await act(async () => resolve());
     expect(
-      screen.getByRole("heading", { name: "对话正在汇入，记忆从这里开始" }),
+      screen.getByRole("heading", {
+        name: "Your conversations are coming in; memory starts here",
+      }),
     ).toBeTruthy();
     expect(onFinish).not.toHaveBeenCalled();
     await continueImport(user);
@@ -2430,7 +2517,9 @@ describe("OnboardingFlow S1.3", () => {
         onFinish={onFinish}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "重新检测位置" }));
+    await user.click(
+      screen.getByRole("button", { name: "Re-check locations" }),
+    );
     view.unmount();
     await act(async () => resolve());
     expect(controller.connectForOnboarding).not.toHaveBeenCalled();

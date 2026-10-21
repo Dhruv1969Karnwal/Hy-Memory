@@ -63,8 +63,8 @@ def test_starting_twice_does_not_write_everything_twice(tmp_path) -> None:
     again = start_logging_to_file(tmp_path)
     try:
         assert again == destination
-        logging.getLogger("one_memory.once").warning("只应出现一次")
+        logging.getLogger("one_memory.once").warning("should appear only once")
     finally:
         _detach(destination)
 
-    assert destination.read_text(encoding="utf-8").count("只应出现一次") == 1
+    assert destination.read_text(encoding="utf-8").count("should appear only once") == 1

@@ -395,7 +395,7 @@ it("marks a problem and exports a redacted local bundle", async () => {
   const value = await fixture();
   const mark = await value.handlers.get(
     "one-memory:mark-diagnostic-incident",
-  )?.({}, "蓝莓没出来");
+  )?.({}, "Blueberries did not show up");
   expect(mark).toMatchObject({
     incident_id: expect.any(String),
     session_id: expect.any(String),
@@ -410,7 +410,7 @@ it("marks a problem and exports a redacted local bundle", async () => {
   const zip = (await readdir(value.dataDir)).find((name) =>
     name.endsWith(".zip"),
   );
-  expect(zip).toMatch(/^MemHub-日志-3800-/);
+  expect(zip).toMatch(/^MemHub-logs-3800-/);
   if (!zip) throw new Error("missing diagnostic zip");
   expect(value.revealItem).toHaveBeenCalledWith(path.join(value.dataDir, zip));
   const summary = JSON.parse(

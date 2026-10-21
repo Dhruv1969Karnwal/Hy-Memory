@@ -1,4 +1,5 @@
-"""测试里以人的名义写记忆：每个治理 store 领一次人工入口，之后复用。"""
+"""Writing memories as a person in tests: claim the person door once per governance store, then \
+reuse it."""
 
 import weakref
 

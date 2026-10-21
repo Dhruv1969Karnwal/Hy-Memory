@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Chroma keyword_search 端到端测试。
+End-to-end tests for Chroma keyword_search.
 
-注意：本地嵌入式 Chroma（PersistentClient）不支持原生 BM25/FTS 检索 ——
-新的 collection.search() Search 表达式引擎只在 Chroma Server / Cloud（Rust
-分布式后端）实现，本地调用会抛 NotImplementedError("Search is not implemented
-for Local Chroma")。旧的 $contains 子串匹配命中只能给 binary 1.0 分，被 reader
-端 normalize_bm25 sigmoid 压成 ~0.039 后对融合几乎无贡献还稀释强语义结果，
-因此 keyword_search 在 chroma 后端故意 return []（诚实退化为纯向量召回）。
+Note: local embedded Chroma (PersistentClient) does not support native BM25/FTS retrieval --
+the new collection.search() Search expression engine exists only on Chroma Server / Cloud (the Rust
+distributed backend), so a local call raises NotImplementedError("Search is not implemented
+for Local Chroma"). The old $contains substring match can only yield a binary 1.0 score, which the
+reader-side normalize_bm25 sigmoid squashes to ~0.039: it adds almost nothing to fusion while
+diluting strong semantic hits, so keyword_search deliberately returns [] on the chroma backend (an honest degrade to pure vector recall).
 
-→ 这些断言"有命中"的用例对本地 chroma 不成立，整体 skip。真关键词检索请用
-  支持 sparse/BM25 的后端（qdrant）。chromadb>=1.5.9 已具备 server
-  模式的 BM25 能力，将来上 chroma server 时可重新启用。
+-> These assertions about "having hits" do not hold for local chroma, so the whole file is skipped.
+  Use a backend with sparse/BM25 support (qdrant) for real keyword retrieval. chromadb>=1.5.9
+  already has BM25 in server mode, so this can be re-enabled once chroma server is in place.
 """
 
 import asyncio
@@ -25,8 +25,8 @@ from hy_memory.config import MemoryConfig
 from hy_memory.models.memory import MemoryNode, MemoryLayer, MemoryStatus
 
 pytestmark = pytest.mark.skip(
-    reason="本地 Chroma 不支持原生 BM25/FTS（Search 引擎仅 server/cloud 实现），"
-           "keyword_search 故意 return []。真关键词检索走 qdrant 后端。"
+    reason="Local Chroma has no native BM25/FTS (the Search engine only exists on server/cloud), so "
+           "keyword_search deliberately returns []. Real keyword retrieval uses the qdrant backend."
 )
 
 
@@ -86,34 +86,34 @@ class TestChromaKeywordSearchChinese:
 
     def test_chinese_query_hits_chinese_content(self, store):
         nodes = [
-            _make_node(content="用户倾向于接受务实的解决方案，主动寻找更新", user_id="u1"),
-            _make_node(content="今天天气不错，公园里很多人散步", user_id="u1"),
-            _make_node(content="用户喜欢吃辣，川菜火锅都行", user_id="u1"),
+            _make_node(content="The user prefers pragmatic solutions and actively looks for updates", user_id="u1"),
+            _make_node(content="The weather is nice today, with many people walking in the park", user_id="u1"),
+            _make_node(content="The user likes spicy food; Sichuan dishes and hotpot are both fine", user_id="u1"),
         ]
         run(store.upsert_batch(nodes))
 
-        hits = run(store.keyword_search(query="用户倾向接受务实", user_id="u1", top_k=5))
+        hits = run(store.keyword_search(query="Users tend to accept pragmatic solutions", user_id="u1", top_k=5))
         ids = {h["node_id"] for h in hits}
-        # 命中第 1 条（含"用户/倾向/接受/务实"），可能也命中第 3 条（含"用户"）
+        # Hits entry 1 (contains "user/tend/accept/pragmatic") and may also hit entry 3 (contains "user")
         assert nodes[0].node_id in ids
-        # 第 2 条不应命中（没"用户/倾向/接受/务实"任一）
+        # Entry 2 must not hit (it has none of "user/tend/accept/pragmatic")
         assert nodes[1].node_id not in ids
 
     def test_chinese_no_overlap_returns_empty(self, store):
         nodes = [
-            _make_node(content="今天天气不错，公园里很多人", user_id="u1"),
+            _make_node(content="The weather is nice today, with many people in the park", user_id="u1"),
         ]
         run(store.upsert_batch(nodes))
 
-        hits = run(store.keyword_search(query="完全无关的另一个查询", user_id="u1", top_k=5))
+        hits = run(store.keyword_search(query="a completely unrelated query", user_id="u1", top_k=5))
         assert hits == []
 
     def test_score_is_binary_one(self, store):
-        """跟 Qdrant 行为对齐：所有命中 score=1.0"""
-        nodes = [_make_node(content="用户倾向接受务实", user_id="u1")]
+        """Aligned with Qdrant behavior: every hit scores 1.0"""
+        nodes = [_make_node(content="Users tend to accept pragmatic solutions", user_id="u1")]
         run(store.upsert_batch(nodes))
 
-        hits = run(store.keyword_search(query="用户", user_id="u1", top_k=5))
+        hits = run(store.keyword_search(query="user", user_id="u1", top_k=5))
         assert len(hits) == 1
         assert hits[0]["score"] == 1.0
 
@@ -137,25 +137,25 @@ class TestChromaKeywordSearchFilters:
 
     def test_user_id_filter(self, store):
         nodes = [
-            _make_node(content="用户倾向接受务实", user_id="u1"),
-            _make_node(content="用户倾向接受务实", user_id="u2"),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1"),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u2"),
         ]
         run(store.upsert_batch(nodes))
 
-        hits = run(store.keyword_search(query="用户倾向", user_id="u1", top_k=10))
+        hits = run(store.keyword_search(query="users tend", user_id="u1", top_k=10))
         ids = {h["node_id"] for h in hits}
         assert nodes[0].node_id in ids
         assert nodes[1].node_id not in ids
 
     def test_agent_id_filter(self, store):
         nodes = [
-            _make_node(content="用户倾向接受务实", user_id="u1", agent_id="a1"),
-            _make_node(content="用户倾向接受务实", user_id="u1", agent_id="a2"),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", agent_id="a1"),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", agent_id="a2"),
         ]
         run(store.upsert_batch(nodes))
 
         hits = run(store.keyword_search(
-            query="用户倾向", user_id="u1", agent_ids=["a1"], top_k=10,
+            query="users tend", user_id="u1", agent_ids=["a1"], top_k=10,
         ))
         ids = {h["node_id"] for h in hits}
         assert nodes[0].node_id in ids
@@ -163,13 +163,13 @@ class TestChromaKeywordSearchFilters:
 
     def test_layer_filter(self, store):
         nodes = [
-            _make_node(content="用户倾向接受务实", user_id="u1", layer=MemoryLayer.L2_FACT),
-            _make_node(content="用户倾向接受务实", user_id="u1", layer=MemoryLayer.L4_IDENTITY),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", layer=MemoryLayer.L2_FACT),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", layer=MemoryLayer.L4_IDENTITY),
         ]
         run(store.upsert_batch(nodes))
 
         hits = run(store.keyword_search(
-            query="用户倾向", user_id="u1", layers=[MemoryLayer.L4_IDENTITY], top_k=10,
+            query="users tend", user_id="u1", layers=[MemoryLayer.L4_IDENTITY], top_k=10,
         ))
         ids = {h["node_id"] for h in hits}
         assert nodes[1].node_id in ids
@@ -177,26 +177,26 @@ class TestChromaKeywordSearchFilters:
 
     def test_status_filter_excludes_non_active(self, store):
         nodes = [
-            _make_node(content="用户倾向接受务实", user_id="u1", status=MemoryStatus.ACTIVE),
-            _make_node(content="用户倾向接受务实", user_id="u1", status=MemoryStatus.SUPERSEDED),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", status=MemoryStatus.ACTIVE),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", status=MemoryStatus.SUPERSEDED),
         ]
         run(store.upsert_batch(nodes))
 
-        # 默认只搜 active
-        hits = run(store.keyword_search(query="用户倾向", user_id="u1", top_k=10))
+        # Only active is searched by default
+        hits = run(store.keyword_search(query="users tend", user_id="u1", top_k=10))
         ids = {h["node_id"] for h in hits}
         assert nodes[0].node_id in ids
         assert nodes[1].node_id not in ids
 
     def test_only_latest(self, store):
         nodes = [
-            _make_node(content="用户倾向接受务实", user_id="u1", is_latest=True),
-            _make_node(content="用户倾向接受务实", user_id="u1", is_latest=False),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", is_latest=True),
+            _make_node(content="Users tend to accept pragmatic solutions", user_id="u1", is_latest=False),
         ]
         run(store.upsert_batch(nodes))
 
         hits = run(store.keyword_search(
-            query="用户倾向", user_id="u1", only_latest=True, top_k=10,
+            query="users tend", user_id="u1", only_latest=True, top_k=10,
         ))
         ids = {h["node_id"] for h in hits}
         assert nodes[0].node_id in ids
@@ -215,9 +215,9 @@ class TestChromaKeywordSearchEdgeCases:
 
     def test_top_k_caps_results(self, store):
         nodes = [
-            _make_node(content=f"用户倾向 候选 {i}", user_id="u1") for i in range(5)
+            _make_node(content=f"Users tend candidate {i}", user_id="u1") for i in range(5)
         ]
         run(store.upsert_batch(nodes))
 
-        hits = run(store.keyword_search(query="用户倾向", user_id="u1", top_k=3))
+        hits = run(store.keyword_search(query="users tend", user_id="u1", top_k=3))
         assert len(hits) <= 3

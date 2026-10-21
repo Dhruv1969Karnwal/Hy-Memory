@@ -64,7 +64,7 @@ describe("connection intent recovery journal", () => {
       freezeConnection([source.source_id], [replaced], false).identity,
     ).not.toBe(checked.identity);
     expect(() => assertCheckedConnection(checked, [replaced])).toThrow(
-      /来源位置/,
+      /source location/,
     );
     expect(() => assertCheckedConnection(checked, [source])).not.toThrow();
   });

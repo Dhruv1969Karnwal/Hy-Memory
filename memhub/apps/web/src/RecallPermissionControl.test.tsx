@@ -194,12 +194,12 @@ const check = (name: string) =>
 /** The sheet's own commit, whatever the sheet is editing. */
 const commitButton = () =>
   screen.getByRole<HTMLButtonElement>("button", {
-    name: /允许并保存|保存这次范围/,
+    name: /Allow and save|Save this scope/,
   });
 
 /** Open the scope sheet. The row's "allow" grants without opening it. */
 async function open() {
-  await userEvent.click(button("调整范围"));
+  await userEvent.click(button("Adjust scope"));
 }
 async function confirm() {
   await userEvent.click(commitButton());
@@ -217,8 +217,10 @@ const approvedAll = () => approved(defaultTools, defaultScopes);
 describe("RecallPermissionControl", () => {
   it("allows everything in one click from the row, after rechecking the installation identity", async () => {
     const api = setup();
-    expect(screen.getByText("已安装，尚未允许使用记忆")).toBeTruthy();
-    await userEvent.click(button("允许使用记忆"));
+    expect(
+      screen.getByText("Installed; memory use is not allowed yet"),
+    ).toBeTruthy();
+    await userEvent.click(button("Allow memory use"));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.get).toHaveBeenCalledExactlyOnceWith("workbuddy");
     expect(api.set).toHaveBeenCalledExactlyOnceWith("workbuddy", {
@@ -231,8 +233,10 @@ describe("RecallPermissionControl", () => {
     expect(api.changed).toHaveBeenCalledTimes(1);
     expect(api.install).not.toHaveBeenCalled();
     expect(api.query).not.toHaveBeenCalled();
-    expect(screen.getByText("已允许 WorkBuddy 使用记忆。")).toBeTruthy();
-    expect(screen.getByText("已允许按所选范围使用记忆")).toBeTruthy();
+    expect(screen.getByText("Allowed WorkBuddy to use memory.")).toBeTruthy();
+    expect(
+      screen.getByText("Memory use is allowed for the selected scopes"),
+    ).toBeTruthy();
   });
 
   it("does not spend a row allow on a connection that changed underneath it", async () => {
@@ -240,33 +244,35 @@ describe("RecallPermissionControl", () => {
     api.get.mockResolvedValue(
       permission({ receipt: { ...baseReceipt(), revision: 3 } }),
     );
-    await userEvent.click(button("允许使用记忆"));
+    await userEvent.click(button("Allow memory use"));
     expect(api.set).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByText("已允许 WorkBuddy 使用记忆。")).toBeNull();
+    expect(screen.queryByText("Allowed WorkBuddy to use memory.")).toBeNull();
   });
 
   it("keeps a row allow that succeeded even if the parent refresh fails", async () => {
     const api = setup({
       onChanged: vi.fn().mockRejectedValue(new Error("parent refresh failed")),
     });
-    await userEvent.click(button("允许使用记忆"));
+    await userEvent.click(button("Allow memory use"));
     expect(api.set).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("已允许 WorkBuddy 使用记忆。")).toBeTruthy();
+    expect(screen.getByText("Allowed WorkBuddy to use memory.")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain(
-      "授权已保存，但列表刷新失败",
+      "The authorization was saved, but the list refresh failed",
     );
   });
 
   it("keeps a failed row allow inline, without repeating it", async () => {
     const api = setup();
     api.set.mockRejectedValueOnce(new Error("unknown private diagnostic"));
-    await userEvent.click(button("允许使用记忆"));
-    expect(screen.getByRole("alert").textContent).toContain("未能确认这次授权");
+    await userEvent.click(button("Allow memory use"));
+    expect(screen.getByRole("alert").textContent).toContain(
+      "This grant could not be confirmed",
+    );
     expect(screen.queryByText(/private diagnostic/)).toBeNull();
-    expect(button("允许使用记忆").disabled).toBe(false);
-    await userEvent.click(button("允许使用记忆"));
+    expect(button("Allow memory use").disabled).toBe(false);
+    await userEvent.click(button("Allow memory use"));
     expect(api.set).toHaveBeenCalledTimes(2);
     expect(api.set.mock.calls[1][1]).toEqual(api.set.mock.calls[0][1]);
   });
@@ -274,12 +280,12 @@ describe("RecallPermissionControl", () => {
   it("opens the sheet with every offered tool and scope already selected, and writes nothing until it is submitted", async () => {
     const api = setup();
     await open();
-    expect(check("检索记忆").checked).toBe(true);
-    expect(check("记忆问答（可选）").checked).toBe(true);
-    expect(check("读取原始对话").checked).toBe(true);
-    expect(check("跨应用共享记忆（all-apps）").checked).toBe(true);
-    expect(check("WorkBuddy 原始对话").checked).toBe(true);
-    expect(check("Cursor 原始对话").checked).toBe(true);
+    expect(check("Retrieve memories").checked).toBe(true);
+    expect(check("Memory Q&A (optional)").checked).toBe(true);
+    expect(check("Read raw conversations").checked).toBe(true);
+    expect(check("Cross-app shared memory (all-apps)").checked).toBe(true);
+    expect(check("WorkBuddy raw conversations").checked).toBe(true);
+    expect(check("Cursor raw conversations").checked).toBe(true);
     for (const fn of [
       api.get,
       api.set,
@@ -301,16 +307,20 @@ describe("RecallPermissionControl", () => {
     expect(api.changed).toHaveBeenCalledTimes(1);
     expect(api.install).not.toHaveBeenCalled();
     expect(api.query).not.toHaveBeenCalled();
-    expect(screen.getByText(/授权不代表应用已实际调用或采用记忆/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Authorization does not mean the app has actually called or adopted memories/,
+      ),
+    ).toBeTruthy();
   });
 
-  it.each(["取消", "关闭", "escape"])(
+  it.each(["Cancel", "Close", "escape"])(
     "%s restores focus with no IPC calls and restores the default selection",
     async (action) => {
       const api = setup();
-      const trigger = button("调整范围");
+      const trigger = button("Adjust scope");
       await open();
-      await userEvent.click(check("检索记忆"));
+      await userEvent.click(check("Retrieve memories"));
       if (action === "escape") await userEvent.keyboard("{Escape}");
       else await userEvent.click(button(action));
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -318,7 +328,7 @@ describe("RecallPermissionControl", () => {
       expect(api.get).not.toHaveBeenCalled();
       expect(api.set).not.toHaveBeenCalled();
       await open();
-      expect(check("检索记忆").checked).toBe(true);
+      expect(check("Retrieve memories").checked).toBe(true);
     },
   );
 
@@ -326,17 +336,17 @@ describe("RecallPermissionControl", () => {
     const api = setup();
     await open();
     for (const name of [
-      "检索记忆",
-      "记忆问答（可选）",
-      "读取原始对话",
-      "读取脱敏诊断记录",
+      "Retrieve memories",
+      "Memory Q&A (optional)",
+      "Read raw conversations",
+      "Read redacted diagnostic records",
     ])
       await userEvent.click(check(name));
-    expect(button("允许并保存").disabled).toBe(true);
-    await userEvent.click(check("检索记忆"));
-    expect(button("允许并保存").disabled).toBe(false);
-    await userEvent.click(check("跨应用共享记忆（all-apps）"));
-    expect(button("允许并保存").disabled).toBe(true);
+    expect(button("Allow and save").disabled).toBe(true);
+    await userEvent.click(check("Retrieve memories"));
+    expect(button("Allow and save").disabled).toBe(false);
+    await userEvent.click(check("Cross-app shared memory (all-apps)"));
+    expect(button("Allow and save").disabled).toBe(true);
     expect(api.get).not.toHaveBeenCalled();
     expect(api.set).not.toHaveBeenCalled();
   });
@@ -345,9 +355,9 @@ describe("RecallPermissionControl", () => {
     const api = setup({ sources: [source(), source("cursor", false)] });
     await open();
     expect(
-      screen.queryByRole("checkbox", { name: "Cursor 原始对话" }),
+      screen.queryByRole("checkbox", { name: "Cursor raw conversations" }),
     ).toBeNull();
-    expect(check("WorkBuddy 原始对话").checked).toBe(true);
+    expect(check("WorkBuddy raw conversations").checked).toBe(true);
     await confirm();
     expect(api.set.mock.calls[0][1].allowedTools).toEqual(defaultTools);
     expect(api.set.mock.calls[0][1].allowedScopes).toEqual([
@@ -359,8 +369,8 @@ describe("RecallPermissionControl", () => {
   it("discloses that ask may use the configured model, and lets it be left out", async () => {
     const api = setup();
     await open();
-    expect(screen.getByText(/可能使用已配置的模型处理/)).toBeTruthy();
-    await userEvent.click(check("记忆问答（可选）"));
+    expect(screen.getByText(/May use the configured model/)).toBeTruthy();
+    await userEvent.click(check("Memory Q&A (optional)"));
     await confirm();
     expect(api.set.mock.calls[0][1].allowedTools).toEqual([
       "om_recall",
@@ -373,13 +383,15 @@ describe("RecallPermissionControl", () => {
     const scope = `workspace:v1:${"a".repeat(64)}`;
     const api = setup({
       workspaceScopes: [
-        { scope, label: "隔离项目" },
-        { scope: "/not-a-scope", label: "不可用路径" },
+        { scope, label: "Isolated project" },
+        { scope: "/not-a-scope", label: "Unavailable path" },
       ],
     });
     await open();
-    expect(screen.queryByRole("checkbox", { name: "不可用路径" })).toBeNull();
-    expect(check("工作区：隔离项目").checked).toBe(true);
+    expect(
+      screen.queryByRole("checkbox", { name: "Unavailable path" }),
+    ).toBeNull();
+    expect(check("Workspace: Isolated project").checked).toBe(true);
     await confirm();
     expect(api.set.mock.calls[0][1].allowedScopes).toEqual([
       ...defaultScopes,
@@ -390,13 +402,15 @@ describe("RecallPermissionControl", () => {
   it("initializes edits from the receipt, discloses replacement and removals, and replaces on submit", async () => {
     const initial = approved(["om_recall"], ["all-apps", "source:workbuddy"]);
     const api = setup({ host: host(initial) });
-    await userEvent.click(button("调整调用权限"));
-    expect(check("检索记忆").checked).toBe(true);
-    expect(check("跨应用共享记忆（all-apps）").checked).toBe(true);
-    expect(check("WorkBuddy 原始对话").checked).toBe(true);
-    expect(screen.getByText(/替换当前全部工具和范围/)).toBeTruthy();
-    await userEvent.click(check("WorkBuddy 原始对话"));
-    expect(screen.getByText(/本次将移除/).textContent).toContain(
+    await userEvent.click(button("Adjust call permissions"));
+    expect(check("Retrieve memories").checked).toBe(true);
+    expect(check("Cross-app shared memory (all-apps)").checked).toBe(true);
+    expect(check("WorkBuddy raw conversations").checked).toBe(true);
+    expect(
+      screen.getByText(/replaces all current tools and scopes/),
+    ).toBeTruthy();
+    await userEvent.click(check("WorkBuddy raw conversations"));
+    expect(screen.getByText(/This grant removes/).textContent).toContain(
       "source:workbuddy",
     );
     await confirm();
@@ -411,12 +425,12 @@ describe("RecallPermissionControl", () => {
         approved(["om_recall"], ["all-apps", unknown, "source:absent"]),
       ),
     });
-    await userEvent.click(button("调整调用权限"));
-    expect(button("保存这次范围").disabled).toBe(true);
-    expect(check(`移除未核对范围：${unknown}`).checked).toBe(false);
-    expect(check("移除未核对范围：source:absent").checked).toBe(false);
-    await userEvent.click(check(`移除未核对范围：${unknown}`));
-    await userEvent.click(check("移除未核对范围：source:absent"));
+    await userEvent.click(button("Adjust call permissions"));
+    expect(button("Save this scope").disabled).toBe(true);
+    expect(check(`Remove unverified scope: ${unknown}`).checked).toBe(false);
+    expect(check("Remove unverified scope: source:absent").checked).toBe(false);
+    await userEvent.click(check(`Remove unverified scope: ${unknown}`));
+    await userEvent.click(check("Remove unverified scope: source:absent"));
     await confirm();
     expect(api.set.mock.calls[0][1].allowedScopes).toEqual(["all-apps"]);
   });
@@ -438,8 +452,10 @@ describe("RecallPermissionControl", () => {
       api.get.mockResolvedValue(next);
       await confirm();
       expect(api.set).not.toHaveBeenCalled();
-      expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
-      expect(button("允许并保存").disabled).toBe(true);
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Close and reopen",
+      );
+      expect(button("Allow and save").disabled).toBe(true);
     },
   );
 
@@ -448,15 +464,15 @@ describe("RecallPermissionControl", () => {
     await open();
     api.update({ host: host(approvedAll()) });
     api.update({ host: host() });
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
-    expect(button("允许并保存").disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
+    expect(button("Allow and save").disabled).toBe(true);
     expect(api.set).not.toHaveBeenCalled();
   });
 
   it("freezes receipt arrays and revision instead of sharing mutable polling references", async () => {
     const original = approved();
     const api = setup({ host: host(original) });
-    await userEvent.click(button("调整调用权限"));
+    await userEvent.click(button("Adjust call permissions"));
     if (!original.receipt) throw new Error("test receipt missing");
     (original.receipt.allowedScopes as string[]).push("source:cursor");
     api.get.mockResolvedValue(approved());
@@ -474,8 +490,10 @@ describe("RecallPermissionControl", () => {
       if (change === "revoked") next.authorized = false;
       if (change === "root") next.root_id = "replaced";
       api.update({ sources: change === "missing" ? [] : [next] });
-      expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
-      expect(button("允许并保存").disabled).toBe(true);
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Close and reopen",
+      );
+      expect(button("Allow and save").disabled).toBe(true);
       expect(api.set).not.toHaveBeenCalled();
     },
   );
@@ -486,10 +504,10 @@ describe("RecallPermissionControl", () => {
     api.get.mockReturnValueOnce(late.promise);
     await open();
     await confirm();
-    await userEvent.click(button("取消"));
+    await userEvent.click(button("Cancel"));
     await open();
     await act(async () => late.resolve(approved()));
-    expect(check("检索记忆").checked).toBe(true);
+    expect(check("Retrieve memories").checked).toBe(true);
     expect(api.set).not.toHaveBeenCalled();
     expect(api.changed).not.toHaveBeenCalled();
   });
@@ -511,7 +529,7 @@ describe("RecallPermissionControl", () => {
     const write = deferred<RecallPermissionStatus>();
     api.set.mockReturnValueOnce(write.promise);
     await open();
-    const submit = button("允许并保存");
+    const submit = button("Allow and save");
     act(() => {
       fireEvent.click(submit);
       fireEvent.click(submit);
@@ -519,12 +537,12 @@ describe("RecallPermissionControl", () => {
     await act(async () => {});
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(api.set).toHaveBeenCalledTimes(1);
-    expect(button("取消").disabled).toBe(true);
-    expect(button("关闭").disabled).toBe(true);
+    expect(button("Cancel").disabled).toBe(true);
+    expect(button("Close").disabled).toBe(true);
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");
     await act(async () => write.resolve(approvedAll()));
-    expect(screen.getByText("调用授权已保存。")).toBeTruthy();
+    expect(screen.getByText("The call authorization was saved.")).toBeTruthy();
   });
 
   it("keeps errors inline, refreshes before retry, and never reuses consent", async () => {
@@ -532,12 +550,14 @@ describe("RecallPermissionControl", () => {
     api.set.mockRejectedValueOnce(new Error("unknown private diagnostic"));
     await open();
     await confirm();
-    expect(screen.getByRole("alert").textContent).toContain("保存结果尚未确认");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The save result is not confirmed yet",
+    );
     expect(screen.queryByText(/private diagnostic/)).toBeNull();
-    expect(button("允许并保存").disabled).toBe(true);
-    await userEvent.click(button("刷新核对"));
+    expect(button("Allow and save").disabled).toBe(true);
+    await userEvent.click(button("Refresh and check"));
     expect(api.set).toHaveBeenCalledTimes(1);
-    expect(button("允许并保存").disabled).toBe(false);
+    expect(button("Allow and save").disabled).toBe(false);
     await confirm();
     expect(api.set).toHaveBeenCalledTimes(2);
     expect(api.set.mock.calls[1][1]).toEqual(api.set.mock.calls[0][1]);
@@ -549,13 +569,13 @@ describe("RecallPermissionControl", () => {
     await open();
     await confirm();
     api.get.mockRejectedValueOnce(new Error("offline"));
-    await userEvent.click(button("刷新核对"));
+    await userEvent.click(button("Refresh and check"));
     expect(api.set).toHaveBeenCalledTimes(1);
-    expect(button("允许并保存").disabled).toBe(true);
+    expect(button("Allow and save").disabled).toBe(true);
     api.get.mockResolvedValue(approved());
-    await userEvent.click(button("刷新核对"));
+    await userEvent.click(button("Refresh and check"));
     expect(api.set).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
   });
 
   it("keeps a committed receipt if parent refresh fails, offering read-only retry", async () => {
@@ -565,12 +585,12 @@ describe("RecallPermissionControl", () => {
     await open();
     await confirm();
     expect(screen.getByRole("alert").textContent).toContain(
-      "授权已保存，但列表刷新失败",
+      "The authorization was saved, but the list refresh failed",
     );
-    expect(screen.queryByRole("button", { name: "允许并保存" })).toBeNull();
-    await userEvent.click(button("刷新核对"));
+    expect(screen.queryByRole("button", { name: "Allow and save" })).toBeNull();
+    await userEvent.click(button("Refresh and check"));
     expect(api.set).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("调用授权已保存。")).toBeTruthy();
+    expect(screen.getByText("The call authorization was saved.")).toBeTruthy();
   });
 
   it("does not treat an incomplete or mismatched write response as confirmed success", async () => {
@@ -578,18 +598,24 @@ describe("RecallPermissionControl", () => {
     api.set.mockResolvedValueOnce(permission({ receipt: null }));
     await open();
     await confirm();
-    expect(screen.getByRole("alert").textContent).toContain("保存结果尚未确认");
-    expect(screen.queryByText("调用授权已保存。")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The save result is not confirmed yet",
+    );
+    expect(screen.queryByText("The call authorization was saved.")).toBeNull();
     expect(api.changed).not.toHaveBeenCalled();
   });
 
   it("revokes only the frozen installation after separate confirmation, without uninstalling or deleting sources", async () => {
     const api = setup({ host: host(approved()) });
-    await userEvent.click(button("撤回调用权限"));
-    expect(screen.getByText(/不会删除来源或卸载连接/)).toBeTruthy();
+    await userEvent.click(button("Revoke call permissions"));
+    expect(
+      screen.getByText(/does not delete sources or uninstall the connection/),
+    ).toBeTruthy();
     expect(api.revoke).not.toHaveBeenCalled();
-    await userEvent.click(check("我确认撤回此安装的调用授权"));
-    await userEvent.click(button("确认撤回"));
+    await userEvent.click(
+      check("I confirm revoking the call authorization for this install"),
+    );
+    await userEvent.click(button("Confirm revocation"));
     expect(api.revoke).toHaveBeenCalledExactlyOnceWith("workbuddy", {
       installationId: "isolated-installation-a",
       expectedRevision: 2,
@@ -597,21 +623,31 @@ describe("RecallPermissionControl", () => {
     });
     expect(api.set).not.toHaveBeenCalled();
     expect(api.install).not.toHaveBeenCalled();
-    expect(screen.getByText("此安装的调用授权已撤回。")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The call authorization for this install has been revoked.",
+      ),
+    ).toBeTruthy();
   });
 
   it("retains failed revoke inline and does not repeat it without refreshing and confirming again", async () => {
     const api = setup({ host: host(approved()) });
     api.revoke.mockRejectedValueOnce(new Error("unavailable"));
-    await userEvent.click(button("撤回调用权限"));
-    await userEvent.click(check("我确认撤回此安装的调用授权"));
-    await userEvent.click(button("确认撤回"));
-    expect(screen.getByRole("alert").textContent).toContain("撤回结果尚未确认");
-    expect(button("确认撤回").disabled).toBe(true);
-    await userEvent.click(button("刷新核对"));
+    await userEvent.click(button("Revoke call permissions"));
+    await userEvent.click(
+      check("I confirm revoking the call authorization for this install"),
+    );
+    await userEvent.click(button("Confirm revocation"));
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The revocation result is not confirmed yet",
+    );
+    expect(button("Confirm revocation").disabled).toBe(true);
+    await userEvent.click(button("Refresh and check"));
     expect(api.revoke).toHaveBeenCalledTimes(1);
-    await userEvent.click(check("我确认撤回此安装的调用授权"));
-    await userEvent.click(button("确认撤回"));
+    await userEvent.click(
+      check("I confirm revoking the call authorization for this install"),
+    );
+    await userEvent.click(button("Confirm revocation"));
     expect(api.revoke).toHaveBeenCalledTimes(2);
   });
 
@@ -624,9 +660,11 @@ describe("RecallPermissionControl", () => {
       if (missing === "set") delete window.oneMemory?.setRecallPermission;
       if (missing === "revoke") delete window.oneMemory?.revokeRecallPermission;
       api.update({});
-      expect(screen.getByText(/当前桌面连接不支持完整权限管理/)).toBeTruthy();
-      expect(button("允许使用记忆").disabled).toBe(true);
-      fireEvent.click(button("允许使用记忆"));
+      expect(
+        screen.getByText(/does not support full permission management/),
+      ).toBeTruthy();
+      expect(button("Allow memory use").disabled).toBe(true);
+      fireEvent.click(button("Allow memory use"));
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(api.set).not.toHaveBeenCalled();
     },
@@ -643,7 +681,7 @@ describe("RecallPermissionControl", () => {
     permission({ receipt: { ...baseReceipt(), hostId: "cursor" } }),
   ])("blocks incomplete or unusable permission metadata: %j", (value) => {
     const api = setup({ host: host(value) });
-    expect(button("允许使用记忆").disabled).toBe(true);
+    expect(button("Allow memory use").disabled).toBe(true);
     expect(api.get).not.toHaveBeenCalled();
   });
 
@@ -651,11 +689,11 @@ describe("RecallPermissionControl", () => {
     const old = host();
     delete old.permission;
     const api = setup({ host: old });
-    expect(button("允许使用记忆").disabled).toBe(true);
+    expect(button("Allow memory use").disabled).toBe(true);
     expect(api.get).not.toHaveBeenCalled();
-    await userEvent.click(button("刷新调用权限"));
+    await userEvent.click(button("Refresh call permissions"));
     expect(api.get).toHaveBeenCalledTimes(1);
-    expect(button("允许使用记忆").disabled).toBe(false);
+    expect(button("Allow memory use").disabled).toBe(false);
   });
 
   it("rechecks disabled during async preflight and never commits after being disabled", async () => {
@@ -667,7 +705,7 @@ describe("RecallPermissionControl", () => {
     api.update({ disabled: true });
     await act(async () => read.resolve(permission()));
     expect(api.set).not.toHaveBeenCalled();
-    expect(button("允许并保存").disabled).toBe(true);
+    expect(button("Allow and save").disabled).toBe(true);
   });
 
   it("never reapproves a terminal revoked installation", () => {
@@ -679,8 +717,8 @@ describe("RecallPermissionControl", () => {
         }),
       ),
     });
-    expect(button("允许使用记忆").disabled).toBe(true);
-    expect(screen.getByText(/需重新连接后再授权/)).toBeTruthy();
+    expect(button("Allow memory use").disabled).toBe(true);
+    expect(screen.getByText(/reconnect and grant it again/)).toBeTruthy();
     expect(api.get).not.toHaveBeenCalled();
   });
 
@@ -699,7 +737,7 @@ describe("RecallPermissionControl", () => {
           }),
         ),
       });
-      expect(button("允许使用记忆").disabled).toBe(true);
+      expect(button("Allow memory use").disabled).toBe(true);
       expect(api.get).not.toHaveBeenCalled();
     },
   );
@@ -708,25 +746,25 @@ describe("RecallPermissionControl", () => {
     const api = setup();
     await open();
     api.update({ host: { ...host(), installed: false } });
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
-    expect(button("允许并保存").disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
+    expect(button("Allow and save").disabled).toBe(true);
     expect(api.set).not.toHaveBeenCalled();
   });
 
   it("retains existing matters permission without offering it to a new installation", async () => {
     const api = setup({ host: host(approved(["om_recall", "om_matters"])) });
-    await userEvent.click(button("调整调用权限"));
-    expect(check("事项（已有授权）").checked).toBe(true);
+    await userEvent.click(button("Adjust call permissions"));
+    expect(check("Matters (already authorized)").checked).toBe(true);
     await confirm();
     expect(api.set.mock.calls[0][1].allowedTools).toEqual([
       "om_recall",
       "om_matters",
     ]);
-    await userEvent.click(button("完成"));
+    await userEvent.click(button("Done"));
     api.unmount();
     setup();
     await open();
-    expect(screen.queryByRole("checkbox", { name: /事项/ })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Matters/ })).toBeNull();
   });
 
   it("does not offer an unverified or replaced source identity", async () => {
@@ -738,10 +776,10 @@ describe("RecallPermissionControl", () => {
     });
     await open();
     expect(
-      screen.queryByRole("checkbox", { name: "WorkBuddy 原始对话" }),
+      screen.queryByRole("checkbox", { name: "WorkBuddy raw conversations" }),
     ).toBeNull();
     expect(
-      screen.queryByRole("checkbox", { name: "Cursor 原始对话" }),
+      screen.queryByRole("checkbox", { name: "Cursor raw conversations" }),
     ).toBeNull();
   });
 
@@ -749,7 +787,7 @@ describe("RecallPermissionControl", () => {
     const api = setup();
     const late = deferred<RecallPermissionStatus>();
     api.get.mockReturnValueOnce(late.promise);
-    await userEvent.click(button("刷新调用权限"));
+    await userEvent.click(button("Refresh call permissions"));
     const next = permission({
       receipt: { ...baseReceipt(), installationId: "isolated-installation-b" },
     });
@@ -771,7 +809,7 @@ describe("RecallPermissionControl", () => {
     document.body.append(background, existing);
     try {
       const api = setup();
-      const trigger = button("调整范围");
+      const trigger = button("Adjust scope");
       await open();
       const dialog = screen.getByRole("dialog");
       expect(api.container.contains(dialog)).toBe(false);
@@ -779,14 +817,14 @@ describe("RecallPermissionControl", () => {
       expect(background.inert).toBe(true);
       expect(api.container.inert).toBe(true);
       expect(document.activeElement).toBe(
-        within(dialog).getByRole("button", { name: "关闭" }),
+        within(dialog).getByRole("button", { name: "Close" }),
       );
       // Tab wraps inside the sheet: back from the first control to the last,
       // forward from the last back to the first.
       await userEvent.tab({ shift: true });
-      expect(document.activeElement).toBe(button("允许并保存"));
+      expect(document.activeElement).toBe(button("Allow and save"));
       await userEvent.tab();
-      expect(document.activeElement).toBe(button("关闭"));
+      expect(document.activeElement).toBe(button("Close"));
       background.focus();
       expect(dialog.contains(document.activeElement)).toBe(true);
       await userEvent.keyboard("{Escape}");
@@ -816,10 +854,10 @@ describe("RecallPermissionControl", () => {
       ),
     });
     await act(async () => write.resolve(approvedAll()));
-    expect(screen.getByText("调用授权已保存。")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
+    expect(screen.getByText("The call authorization was saved.")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
     expect(screen.getByText("isolated-installation-a")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "允许并保存" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Allow and save" })).toBeNull();
     expect(api.set).toHaveBeenCalledTimes(1);
   });
 
@@ -831,7 +869,7 @@ describe("RecallPermissionControl", () => {
     await confirm();
     api.update({ host: host(approvedAll()) });
     await act(async () => write.resolve(approvedAll()));
-    expect(screen.getByText("调用授权已保存。")).toBeTruthy();
+    expect(screen.getByText("The call authorization was saved.")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(api.set).toHaveBeenCalledTimes(1);
   });
@@ -840,27 +878,29 @@ describe("RecallPermissionControl", () => {
     setup({ sources: [source(), { ...source(), root_id: "different-root" }] });
     await open();
     expect(
-      screen.queryByRole("checkbox", { name: "WorkBuddy 原始对话" }),
+      screen.queryByRole("checkbox", { name: "WorkBuddy raw conversations" }),
     ).toBeNull();
   });
 
   it("restores the actual trigger even when focus was lost before the dialog effect", async () => {
     setup();
-    const trigger = button("调整范围");
+    const trigger = button("Adjust scope");
     expect(document.activeElement).not.toBe(trigger);
     fireEvent.click(trigger);
-    await userEvent.click(button("取消"));
+    await userEvent.click(button("Cancel"));
     expect(document.activeElement).toBe(trigger);
   });
 
   it("uses a focusable control fallback after revocation removes the initiating button", async () => {
     setup({ host: host(approved()) });
-    await userEvent.click(button("撤回调用权限"));
-    await userEvent.click(check("我确认撤回此安装的调用授权"));
-    await userEvent.click(button("确认撤回"));
-    await userEvent.click(button("完成"));
+    await userEvent.click(button("Revoke call permissions"));
+    await userEvent.click(
+      check("I confirm revoking the call authorization for this install"),
+    );
+    await userEvent.click(button("Confirm revocation"));
+    await userEvent.click(button("Done"));
     expect(document.activeElement).toBe(
-      screen.getByRole("region", { name: "WorkBuddy 调用权限" }),
+      screen.getByRole("region", { name: "WorkBuddy call permissions" }),
     );
   });
 
@@ -870,8 +910,8 @@ describe("RecallPermissionControl", () => {
     api.update({
       sources: [source(), { ...source(), root_id: "different-root" }],
     });
-    expect(button("允许并保存").disabled).toBe(true);
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
+    expect(button("Allow and save").disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
     expect(api.set).not.toHaveBeenCalled();
   });
 
@@ -887,8 +927,10 @@ describe("RecallPermissionControl", () => {
     );
     await open();
     await confirm();
-    expect(screen.getByRole("alert").textContent).toContain("关闭后重新打开");
-    expect(button("允许并保存").disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "刷新核对" })).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("Close and reopen");
+    expect(button("Allow and save").disabled).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: "Refresh and check" }),
+    ).toBeNull();
   });
 });

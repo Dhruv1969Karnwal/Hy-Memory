@@ -1,11 +1,11 @@
-"""记忆关系图（pro 模式）测试。
+"""Memory relation graph (pro mode) tests.
 
-覆盖三层：
-1. 读侧数学：用法 A 传播 / 用法 B 阈值松弛 / 用法 C 路径（纯函数，无 I/O）
-2. 写侧建边：projector 的四种边来源 + 同步契约
-3. Kuzu 端到端：投影 → get_related_edges → Topic 归一化
+Covers three layers:
+1. Read-side math: use A support propagation / use B threshold relaxation / use C paths (pure functions, no I/O)
+2. Write-side edge building: the projector's four edge sources + the sync contract
+3. Kuzu end to end: projection -> get_related_edges -> Topic normalization
 
-设计文档：docs/pro_graph_design.md
+Design doc: docs/pro_graph_design.md
 """
 
 from typing import Any, Dict
@@ -54,7 +54,7 @@ def _edge(src, tgt, rtype="causes", weight=1.0, status="active", directed=False)
 
 
 # ================================================================
-# 邻接表 / 类型先验
+# Adjacency list / type priors
 # ================================================================
 
 class TestAdjacency:
@@ -69,7 +69,7 @@ class TestAdjacency:
         assert eff == pytest.approx(0.5 * TYPE_PRIOR["causes"])
 
     def test_shadow_targets_are_dropped(self):
-        """被判重逻辑删除的记忆不能从图里绕回来。"""
+        """Memories deleted by the dedup logic must not be reachable again through the graph."""
         adj = build_adjacency([_edge("a", "b", status="shadow")])
         assert adj == {}
 
@@ -78,10 +78,10 @@ class TestAdjacency:
         assert build_adjacency([{"source_id": "a"}]) == {}
 
     def test_parallel_edges_collapse_to_strongest(self):
-        """同一对节点的多种关系折叠成一条，取先验最高的那种。
+        """Several relations between the same node pair fold into one, keeping the highest prior.
 
-        度数要数"不同邻居"而不是"平行边数"，否则 hub 降权会被平行边稀释、
-        支持度会重复计。
+        Degree must count "distinct neighbors", not "parallel edges", otherwise hub demotion gets diluted by parallel edges and
+        support gets double-counted.
         """
         adj = build_adjacency([
             _edge("a", "b", "semantic_neighbor", weight=1.0),
@@ -97,42 +97,42 @@ class TestAdjacency:
         assert edge_prior(None) == 0.5
 
     def test_semantic_neighbor_prior_is_lowest(self):
-        """semantic_neighbor 与向量检索高度冗余，先验必须最低。"""
+        """semantic_neighbor is highly redundant with vector retrieval, so its prior must be the lowest."""
         assert TYPE_PRIOR["semantic_neighbor"] < TYPE_PRIOR["co_occurs"]
         assert TYPE_PRIOR["co_occurs"] < TYPE_PRIOR["causes"]
 
 
 # ================================================================
-# 用法 A：池内支持度传播
+# Use A: in-pool support propagation
 # ================================================================
 
 class TestPropagateSupport:
     def test_linked_pair_both_rise_above_unlinked(self):
-        """文档 §3.1 的例子：互相佐证的一对应该浮到无边候选之上。"""
+        """The example from doc section 3.1: a mutually corroborating pair should float above edge-less candidates."""
         scores = {"m2": 0.55, "m7": 0.53, "m3": 0.52, "m8": 0.51}
         adj = build_adjacency([_edge("m2", "m3", "causes")])
         out, support = propagate_support(scores, adj, beta=0.15)
 
         assert out["m2"] > out["m3"] > out["m7"] > out["m8"]
-        assert out["m7"] == 0.53 and out["m8"] == 0.51  # 无边支持 → 分数不变
+        assert out["m7"] == 0.53 and out["m8"] == 0.51  # no edge support -> score unchanged
         assert support["m2"] > 0 and support["m7"] == 0
 
     def test_does_not_introduce_new_candidates(self):
-        """A 的核心保证：召回集合不变，recall 恒定。"""
+        """The core guarantee of A: the retrieved set is unchanged, recall stays constant."""
         scores = {"a": 0.6, "b": 0.5}
         adj = build_adjacency([_edge("a", "outside")])
         out, _ = propagate_support(scores, adj, beta=0.15)
         assert set(out) == {"a", "b"}
 
     def test_only_propagates_within_pool(self):
-        """池外的强节点不该给池内节点加分。"""
+        """Strong nodes outside the pool must not boost nodes inside it."""
         adj = build_adjacency([_edge("a", "outside", weight=1.0)])
         out, support = propagate_support({"a": 0.5, "b": 0.4}, adj, beta=0.15)
         assert out["a"] == 0.5
         assert support["a"] == 0.0
 
     def test_hub_penalty_via_degree_normalization(self):
-        """度数归一化：高度数节点单条边的贡献被摊薄（tag hub 问题的解药）。"""
+        """Degree normalization: a single edge of a high-degree node is diluted (the cure for the tag hub problem)."""
         scores = {"hub": 0.5, "x1": 0.5, "x2": 0.5, "x3": 0.5, "x4": 0.5,
                   "lo": 0.5, "y1": 0.5}
         hub_adj = build_adjacency([
@@ -142,7 +142,7 @@ class TestPropagateSupport:
 
         _o1, sup_hub = propagate_support(scores, hub_adj, beta=0.15)
         _o2, sup_lo = propagate_support(scores, lo_adj, beta=0.15)
-        # 4 条边 / sqrt(4) = 2× 单边；而不是 4× —— 归一化生效
+        # 4 edges / sqrt(4) = 2x a single edge, not 4x -- normalization is in effect
         assert sup_hub["hub"] == pytest.approx(sup_lo["lo"] * 2.0)
 
     def test_beta_zero_is_noop(self):
@@ -164,12 +164,12 @@ class TestPropagateSupport:
 
 
 # ================================================================
-# 用法 B：阈值松弛
+# Use B: threshold relaxation
 # ================================================================
 
 class TestRelaxAdmission:
     def test_hard_gate_admits_near_seed_sim(self):
-        """硬闸：sim ≥ seed_sim − δ。seed=0.72 → 门槛 0.52。"""
+        """Hard gate: sim >= seed_sim - delta. With seed=0.72 the admission bar is 0.52."""
         adj = build_adjacency([_edge("knee", "running", "causes", weight=1.0)])
         out = relax_admission(
             seed_scores={"knee": 0.72},
@@ -183,7 +183,7 @@ class TestRelaxAdmission:
         assert out[0]["sim"] == 0.55
 
     def test_hard_gate_rejects_far_below_seed(self):
-        """旧 gamma 路径会捞回 0.35；硬闸 δ=0.2 时相对 seed=0.72 进不来。"""
+        """The old gamma path would pull 0.35 back in; with the hard gate delta=0.2 it cannot pass against seed=0.72."""
         adj = build_adjacency([_edge("knee", "running", "causes", weight=1.0)])
         out = relax_admission(
             seed_scores={"knee": 0.72},
@@ -249,7 +249,7 @@ class TestRelaxAdmission:
             candidate_sims={"c": 0.75}, min_score=0.4, gamma=0.3,
             seed_sim_delta=0.2,
         )
-        assert out[0]["relation_type"] == "causes"  # 先验更高
+        assert out[0]["relation_type"] == "causes"  # higher prior
 
     def test_channel_score_prefers_tag_over_co_occur(self):
         adj = build_adjacency([_edge("s", "c", "co_occurs")])
@@ -300,7 +300,7 @@ class TestMergeExpansionsIntoSeeds:
 
 
 # ================================================================
-# 用法 C：关系路径
+# Use C: relation paths
 # ================================================================
 
 class TestFindRelationPaths:
@@ -314,7 +314,7 @@ class TestFindRelationPaths:
         assert set(paths[0]["nodes"]) == {"a", "b"}
 
     def test_two_hop_path_carries_low_scoring_middle_node(self):
-        """中间节点自己分数很低也要带上 —— 它是路径的一部分。"""
+        """The middle node must come along even with a very low score -- it is part of the path."""
         adj = build_adjacency([
             _edge("ramen", "dana_rec", "elaborates"),
             _edge("dana_rec", "dana_chef", "co_occurs"),
@@ -325,7 +325,7 @@ class TestFindRelationPaths:
         )
         assert len(paths) == 1
         assert paths[0]["hops"] == 2
-        assert paths[0]["nodes"][1] == "dana_rec"  # 中间节点不在 hit_scores 里
+        assert paths[0]["nodes"][1] == "dana_rec"  # the middle node is not in hit_scores
 
     def test_low_scoring_anchors_are_skipped(self):
         adj = build_adjacency([_edge("a", "b", "causes")])
@@ -334,7 +334,7 @@ class TestFindRelationPaths:
         ) == []
 
     def test_semantic_neighbor_excluded_by_default(self):
-        """两条语义相近的记忆之间连一条路径对答案没有解释价值。"""
+        """A path between two semantically similar memories adds no explanatory value to the answer."""
         adj = build_adjacency([_edge("a", "b", "semantic_neighbor")])
         assert find_relation_paths(
             hit_scores={"a": 0.8, "b": 0.8}, adjacency=adj,
@@ -356,10 +356,10 @@ class TestFindRelationPaths:
         adj = build_adjacency([_edge("a", "b", "causes")])
         paths = find_relation_paths(hit_scores={"a": 0.9, "b": 0.9}, adjacency=adj)
         assert paths[0]["relations"][0]["type"] == "causes"
-        assert "direction" not in paths[0]["relations"][0]  # 无向边不标方向
+        assert "direction" not in paths[0]["relations"][0]  # undirected edges carry no direction label
 
     def test_temporal_direction_is_labelled(self):
-        """有向边要标方向，否则"X 之后"和"X 之前"在输出里分不开。"""
+        """Directed edges must be labelled, otherwise "after X" and "before X" are indistinguishable in the output."""
         edges = [_edge("early", "late", "temporal_next", directed=True)]
         adj = build_adjacency(edges)
         fwd = collect_directed_edges(edges)
@@ -367,7 +367,7 @@ class TestFindRelationPaths:
         paths = find_relation_paths(
             hit_scores={"early": 0.9, "late": 0.8}, adjacency=adj, forward_dirs=fwd,
         )
-        # 同一 anchor 对去重后只产出一条路径；方向随路径起点而定
+        # A deduplicated anchor pair yields a single path; the direction depends on where the path starts
         assert len(paths) == 1
         nodes, rel = paths[0]["nodes"], paths[0]["relations"][0]
         assert rel["type"] == "temporal_next"
@@ -384,12 +384,12 @@ class TestCollectDirectedEdges:
         assert out == {("x", "y")}
 
     def test_type_prior_ordering(self):
-        """先验排序按"能否提供向量检索拿不到的信息"来定。
+        """The prior ordering is set by "whether it can provide information vector retrieval cannot obtain".
 
-        `co_occurs` 排在很高位：共同写入是**跨话题联系的主要来源**
-        （"去公园/骑车/吃饭"一起写下来，三者向量互不相似但关联真实）。
-        它的噪声由写侧的批大小归一化 + 读侧的度数归一化控制，而不是靠压低先验 ——
-        压低先验会连带把"一批只有 2 条"这种几乎必然相关的情况也一起贬值。
+        `co_occurs` ranks very high: co-writing is the **main source of cross-topic links**
+        (a park ride / biking / meal written down together: the three vectors are mutually dissimilar yet genuinely linked).
+        Its noise is controlled by write-side batch-size normalization + read-side degree normalization, not by suppressing the prior --
+        a lower prior would also devalue near-certain cases like "a batch with only 2 items".
         """
         p = TYPE_PRIOR
         assert p["causes"] > p["same_series"] > p["contrasts"]
@@ -398,7 +398,7 @@ class TestCollectDirectedEdges:
 
 
 # ================================================================
-# 写侧：projector
+# Write side: projector
 # ================================================================
 
 class _FakeGraphStore:
@@ -596,7 +596,7 @@ class TestProjector:
             nodes=[_node("n1", tags=["work", "health"])],
         )
         assert stats["nodes"] == 1 and stats["tags"] == 2
-        # embed_service 必须透传下去，否则 Topic 不做语义归一化
+        # embed_service must be passed through, otherwise Topics skip semantic normalization
         assert all(has_embed for *_x, has_embed in gs.tags)
 
     async def test_co_occurs_pairwise_within_batch(self):
@@ -653,14 +653,14 @@ class TestProjector:
         assert gs.updates["dup1"]["status"] == "shadow"
 
     async def test_llm_relation_vocabulary_is_small(self):
-        """弱模型 + 大本体 = 垃圾；same_event 已按冗余删除。"""
+        """A weak model + a big ontology = garbage; same_event was removed as redundant."""
         assert LLM_RELATION_TYPES == (
             "causes", "elaborates", "contrasts", "same_series",
         )
 
     @staticmethod
     def _spine_setup(member_times):
-        """图给同 Topic 成员，VDB 给事件时间 —— 图里没有 memory_at。"""
+        """The graph supplies same-Topic members, the VDB supplies event times -- the graph has no memory_at."""
         from datetime import datetime
 
         gs = _FakeGraphStore(topic_memories={
@@ -685,8 +685,8 @@ class TestProjector:
         target_ts = datetime(2026, 5, 1).timestamp()
         gs, vs = self._spine_setup({
             "too_old": datetime(2020, 1, 1).timestamp(),
-            "nearest": datetime(2026, 4, 1).timestamp(),   # 应选它
-            "later": datetime(2026, 9, 1).timestamp(),     # 比新节点还晚，不能选
+            "nearest": datetime(2026, 4, 1).timestamp(),   # it should be picked
+            "later": datetime(2026, 9, 1).timestamp(),     # later than the new node, must not be picked
         })
         node = _node("new1", tags=["work"])
         node.memory_at = datetime.fromtimestamp(target_ts)
@@ -723,7 +723,7 @@ class TestProjector:
 
     async def test_temporal_spine_needs_topic_and_memory_at(self):
         gs, vs = self._spine_setup({"older": 1.0})
-        # 无 tag → 无 Topic → 无从串脊
+        # no tag -> no Topic -> nothing to chain the spine on
         stats = await project_memories_to_graph(
             graph_store=gs, embed_service=None, nodes=[_node("n1")],
             vector_store=vs, temporal_spine=True,
@@ -731,11 +731,11 @@ class TestProjector:
         assert stats["temporal"] == 0
 
     async def test_bulk_spine_chains_whole_batch_in_time_order(self):
-        """回填用的 bulk 版：整批按 Topic 分组、按事件时间逐对相连。"""
+        """The bulk variant for backfills: group the whole batch by Topic and connect members pairwise in event-time order."""
         from datetime import datetime
         gs = _FakeGraphStore()
         nodes = []
-        # 故意乱序传入，验证是按 memory_at 排序而不是按入参顺序
+        # deliberately shuffled input, verifying the order comes from memory_at rather than argument order
         for nid, month in (("b", 5), ("c", 9), ("a", 1)):
             n = _node(nid, tags=["work"])
             n.memory_at = datetime(2026, month, 1)
@@ -751,9 +751,9 @@ class TestProjector:
         ]
 
     async def test_incremental_spine_would_build_nothing_for_backfill(self):
-        """回填若误用增量版，会因"排除批内节点"而一条边都建不出来。
+        """Using the incremental variant for a backfill builds zero edges, since it excludes nodes inside the batch.
 
-        这正是 bulk 版存在的理由 —— 两者的前驱来源不同。
+        That is exactly why the bulk variant exists -- the two differ in where predecessors come from.
         """
         from datetime import datetime
         gs = _FakeGraphStore(topic_memories={"topic_work": []})
@@ -869,7 +869,7 @@ class TestTopicSummary:
         assert vs.upserted == []
 
     async def test_skips_when_increment_below_step(self):
-        """已总结过 5 条，现在 7 条 → 增量 2 < step 5，不重算（省 LLM）。"""
+        """5 already summarized, now 7: increment 2 < step 5, so no recompute (saves the LLM)."""
         stats, vs, llm = await self._run(
             mems=self._mems(7), l3=[_l3("s1", "t_work", 5)],
         )
@@ -880,12 +880,12 @@ class TestTopicSummary:
         prev = _l3("s1", "t_work", 5)
         stats, vs, _ = await self._run(mems=self._mems(10), l3=[prev])
         assert stats["summarized"] == 1
-        # 旧摘要置 SHADOW，避免同一 Topic 多条摘要重复召回
+        # the old summary is set to SHADOW so one Topic never surfaces duplicate summaries in recall
         assert vs.payload_updates["s1"]["status"] == MemoryStatus.SHADOW.value
         assert vs.upserted[0].custom["supersedes_summary_id"] == "s1"
 
     async def test_other_topics_summary_not_confused(self):
-        """别的 Topic 的摘要不能被当成本 Topic 的上一版。"""
+        """A summary of another Topic must not be mistaken for this Topic's previous version."""
         stats, vs, llm = await self._run(
             mems=self._mems(6), l3=[_l3("s_other", "t_food", 100)],
         )
@@ -921,18 +921,18 @@ class TestTopicSummary:
 
 
 # ================================================================
-# 架构不变量：light search / heavy write
+# Architectural invariant: light search / heavy write
 # ================================================================
 
 class TestReadPathHasNoLLM:
-    """**检索链路不得有 LLM 调用** —— 架构约定是 light search / heavy write。
+    """**The retrieval pipeline must contain no LLM calls** -- the architectural contract is light search / heavy write.
 
-    推理放在写入侧（reconcile 标 typed 边、Topic 摘要），读侧只做确定性的图遍历
-    和范围过滤。曾经在 reader 里加过 LLM 驱动的"推理多跳"，已移除：
-    跨话题时序问题改用「派生时间锚点 + 二次纯向量检索」（用法 D），零 LLM。
+    Reasoning lives on the write side (reconcile labels typed edges, Topic summaries); the read side only does deterministic graph traversal
+    and scope filtering. An LLM-driven "reasoning multi-hop" once existed in the reader and was removed:
+    cross-topic temporal questions now use "derived time anchor + second pure vector retrieval" (use D), with zero LLM.
 
-    这条不变量必须由**结构**保证而不是靠开关 —— 靠 flag 守着的话，
-    一旦全局 env 被打开，所有 search（含延迟敏感的 chat 路径）都会多一次 LLM。
+    This invariant must be guaranteed by **structure**, not by a switch -- with a flag guard,
+    one global env flip would add an LLM call to every search (including latency-sensitive chat paths).
     """
 
     @pytest.mark.parametrize("mod_name", [
@@ -946,7 +946,7 @@ class TestReadPathHasNoLLM:
         src = inspect.getsource(mod)
         for banned in ("LLMProvider", "llm_provider", "complete_messages"):
             assert banned not in src, (
-                f"{mod_name} 出现 {banned!r} —— 检索链路不得引入 LLM"
+                f"{mod_name} contains {banned!r} -- the retrieval pipeline must not introduce an LLM"
             )
 
     def test_graph_read_helpers_are_llm_free(self):
@@ -956,27 +956,27 @@ class TestReadPathHasNoLLM:
         for mod in (rr,):
             src = inspect.getsource(mod)
             for banned in ("LLMProvider", "llm_provider", ".complete("):
-                assert banned not in src, f"{mod.__name__} 不得调用 LLM"
+                assert banned not in src, f"{mod.__name__} must not call the LLM"
 
     def test_multihop_module_is_gone(self):
-        """LLM 驱动的推理多跳已从 SDK 移除，不留死代码。"""
+        """LLM-driven reasoning multi-hop was removed from the SDK, leaving no dead code."""
         with pytest.raises(ModuleNotFoundError):
             import hy_memory.pipelines._graph.multihop  # noqa: F401
 
 
 # ================================================================
-# 扩展候选的筛选漏斗
+# Filtering funnel for expansion candidates
 # ================================================================
 #
-# 扩展会带进很多新候选，筛选靠一个漏斗而不是一道关。顺序决定成本：
-# 算候选与 query 的相似度是唯一有 I/O 的一步，必须先用免费的图信号砍到几十条。
+# Expansion brings in many new candidates; filtering is a funnel, not a single gate. Order decides cost:
+# scoring candidates against the query is the only I/O step, so free graph signals must first cut the set down to dozens.
 
 
 class TestNormalizeByDegree:
-    """度数归一化 —— 时间边能安全参与扩展的前提。"""
+    """Degree normalization -- the precondition for letting temporal edges join expansion safely."""
 
     def test_high_degree_neighbor_edges_are_devalued(self):
-        # hub 有 4 个邻居，lonely 只有 1 个
+        # hub has 4 neighbors, lonely has only 1
         adj = build_adjacency([
             _edge("s", "hub", "co_occurs"), _edge("hub", "x1", "co_occurs"),
             _edge("hub", "x2", "co_occurs"), _edge("hub", "x3", "co_occurs"),
@@ -985,14 +985,14 @@ class TestNormalizeByDegree:
         norm = normalize_by_degree(adj)
         w_hub = next(w for nb, _t, w in norm["s"] if nb == "hub")
         w_lonely = next(w for nb, _t, w in norm["s2"] if nb == "lonely")
-        assert w_hub < w_lonely, "高连接节点的每条边都该贬值"
+        assert w_hub < w_lonely, "every edge of a highly connected node should be devalued"
 
     def test_empty(self):
         assert normalize_by_degree({}) == {}
 
 
 class TestApplyTemporalAffinity:
-    """时间维度：与锚点写入时间越近，联系越可能真实。"""
+    """Time dimension: the closer to the anchor's write time, the likelier the link is real."""
 
     def test_closer_in_time_keeps_more_support(self):
         day = 86400.0
@@ -1003,7 +1003,7 @@ class TestApplyTemporalAffinity:
         assert out["near"][0] > out["far"][0]
 
     def test_same_write_point_keeps_full_support(self):
-        """同批次写入（Δt≈0）→ 因子 = 1，这正是"公园/骑车/吃饭"那个场景。"""
+        """Same-batch writes (dt about 0) give a factor of 1, exactly the park/biking/meal scenario."""
         reach = {"park": (0.8, "meal", "co_occurs", 1)}
         out = apply_temporal_affinity(
             reach, times={"meal": 1000.0, "park": 1000.0}, tau_days=7.0,
@@ -1011,7 +1011,7 @@ class TestApplyTemporalAffinity:
         assert out["park"][0] == pytest.approx(0.8)
 
     def test_floor_prevents_time_from_erasing_strong_relations(self):
-        """时间远但关系强（如 LLM 标的 causes）的边不该被时间抹平。"""
+        """Edges that are temporally far but relationally strong (e.g. causes labelled by the LLM) must not be flattened by time."""
         reach = {"c": (1.0, "s", "causes", 1)}
         out = apply_temporal_affinity(
             reach, times={"s": 0.0, "c": 3650 * 86400.0}, tau_days=7.0, floor=0.3,
@@ -1025,14 +1025,14 @@ class TestApplyTemporalAffinity:
 
 
 class TestApplyTypeQuota:
-    """类型配额 —— 防止数量最多、信息量最低的时间边挤掉关系边。"""
+    """Type quota -- keeps the most numerous, least informative temporal edges from crowding out relational edges."""
 
     def test_relational_survives_flood_of_temporal(self):
         reach = {f"t{i}": (0.9, "s", "temporal_next", 1) for i in range(100)}
-        reach["rel"] = (0.1, "s", "causes", 1)  # 分数最低，但类型信息量最高
+        reach["rel"] = (0.1, "s", "causes", 1)  # lowest score, but the most informative type
         out = apply_type_quota(reach, top_n=10)
-        assert "rel" in out, "关系边不该被时间边淹没"
-        assert len(out) <= 12  # 配额取整可能略超，但量级受控
+        assert "rel" in out, "relational edges must not be swamped by temporal edges"
+        assert len(out) <= 12  # quota rounding may slightly exceed, but the order of magnitude stays bounded
 
     def test_edge_group_mapping(self):
         assert edge_group("causes") == "relational"
@@ -1046,10 +1046,10 @@ class TestApplyTypeQuota:
 
 
 class TestMultiSeedCorroboration:
-    """多 seed 佐证：两个不同 seed 同时指向同一候选，才是真正的佐证。"""
+    """Multi-seed corroboration: only two distinct seeds pointing at one candidate is real corroboration."""
 
     def test_two_seeds_beat_one(self):
-        """query 同时命中「吃饭」「骑车」，两者都指向「公园」→ 公园显著上浮。"""
+        """The query hits both "meal" and "biking", and both point at "park" -> park rises sharply."""
         adj = build_adjacency([
             _edge("meal", "park", "co_occurs"),
             _edge("bike", "park", "co_occurs"),
@@ -1059,7 +1059,7 @@ class TestMultiSeedCorroboration:
             {"meal": 0.8, "bike": 0.8}, adj, hops=1, seed_floor=0.6,
             multi_seed_bonus=0.5,
         )
-        assert got["park"][0] > got["solo"][0], "被两个 seed 指向的候选该更高"
+        assert got["park"][0] > got["solo"][0], "the candidate pointed at by two seeds should rank higher"
 
     def test_bonus_zero_falls_back_to_max_path(self):
         adj = build_adjacency([
@@ -1074,7 +1074,7 @@ class TestMultiSeedCorroboration:
 
 
 class TestExpandScoring:
-    """打分：硬闸后多通道 / 或退回 sim + 有界结构加权。"""
+    """Scoring: multi-channel after the hard gate, or fall back to sim + bounded structural boost."""
 
     def test_structural_boost_without_channels(self):
         adj = build_adjacency([_edge("s", "c", "causes")])
@@ -1099,7 +1099,7 @@ class TestExpandScoring:
         assert out[0]["score"] == pytest.approx(0.75)
 
     def test_graph_still_cannot_invent_relevance(self):
-        """无论结构支持多强，远低于 seed_sim−δ 就进不来。"""
+        """No matter how strong the structural support, anything far below seed_sim - delta stays out."""
         adj = build_adjacency([_edge("s", "junk", "causes")])
         out = relax_admission(
             seed_scores={"s": 1.0}, adjacency=adj,
@@ -1111,7 +1111,7 @@ class TestExpandScoring:
 
 
 class TestReachableWithin:
-    """关系型结构多跳：k 跳可达 + 衰减 + 预算。"""
+    """Relational multi-hop: k-hop reachability + decay + budget."""
 
     def test_one_hop(self):
         adj = build_adjacency([_edge("s", "a", "causes")])
@@ -1119,7 +1119,7 @@ class TestReachableWithin:
         assert set(got) == {"a"} and got["a"][3] == 1
 
     def test_two_hops_reaches_through_middle_node(self):
-        """"朋友推荐的餐厅"这类问题两端常隔一个中间节点 —— 1 跳到不了。"""
+        """"The restaurant a friend recommended" questions usually have an extra middle node between the ends -- 1 hop cannot reach them."""
         adj = build_adjacency([
             _edge("s", "mid", "co_occurs"), _edge("mid", "far", "co_occurs"),
         ])
@@ -1133,7 +1133,7 @@ class TestReachableWithin:
             _edge("s", "mid", "co_occurs"), _edge("mid", "far", "co_occurs"),
         ])
         got = reachable_within({"s": 0.9}, adj, hops=2, seed_floor=0.6, hop_decay=0.5)
-        assert got["far"][0] < got["mid"][0], "越远支持度必须越低"
+        assert got["far"][0] < got["mid"][0], "support must decay with distance"
 
     def test_pool_members_excluded(self):
         adj = build_adjacency([_edge("s", "inpool", "causes")])
@@ -1149,7 +1149,7 @@ class TestReachableWithin:
             _edge("s", "mid", "causes"), _edge("mid", "far", "co_occurs"),
         ])
         got = reachable_within({"s": 0.9}, adj, hops=2, seed_floor=0.6)
-        assert got["far"][2] == "causes", "应报首跳关系，便于解释路径来源"
+        assert got["far"][2] == "causes", "report the first-hop relation so the path origin stays explainable"
 
 
 class TestRelaxAdmissionMultiHop:
@@ -1184,7 +1184,7 @@ class TestRelaxAdmissionMultiHop:
 
 
 # ================================================================
-# Cypher 静态守卫（Neo4j 路 CI 里跑不到，只能静态兜）
+# Cypher static guards (the Neo4j path cannot run in CI, so guard statically)
 # ================================================================
 
 class TestNeo4jCypherGuards:
@@ -1322,16 +1322,16 @@ class TestNeo4jCypherGuards:
         assert "MERGE (a)-[r:TEMPORAL_NEXT]->(b)" in writes[-1][0]
         assert writes[-1][1]["rows"][0]["tid"] == "topic_work"
 
-    """起因是一个真实 bug：`get_topic_memories` 写成
+    """The root cause was a real bug: `get_topic_memories` was written as
 
         RETURN DISTINCT m.node_id AS node_id, m.content AS content
         ORDER BY m.created_at
 
-    Neo4j 在 `DISTINCT` 之后只认投影里的变量，`m.created_at` 未投影 → SyntaxError。
-    而该方法的异常是 `logger.debug` 吞掉 + `return []`，**表面无声**：
-    `MEMORY_TOPIC_SUMMARY_ENABLED=true` 时永远拿不到成员记忆，摘要一条都不生成。
+    After `DISTINCT`, Neo4j only accepts projected variables; `m.created_at` was not projected -> SyntaxError.
+    The method swallowed the exception with `logger.debug` + `return []`, failing **silently on the surface**:
+    with `MEMORY_TOPIC_SUMMARY_ENABLED=true` member memories were never fetched and no summary was ever generated.
 
-    CI 里没有 Neo4j 实例（端到端测试跑的是 Kuzu），所以只能静态兜住这一类问题。
+    CI has no Neo4j instance (the end-to-end tests run Kuzu), so this class of bug can only be caught statically.
     """
 
     def test_order_by_after_distinct_uses_projected_alias(self):
@@ -1347,11 +1347,11 @@ class TestNeo4jCypherGuards:
             if not ob:
                 continue
             expr = ob.group(1).strip().rstrip(",")
-            # DISTINCT 之后只能按别名排序；出现 `var.prop` 就是本 bug
+            # after DISTINCT you may only order by alias; a `var.prop` here is the bug
             if re.search(r"\b\w+\.\w+", expr):
                 offenders.append(expr)
         assert not offenders, (
-            "RETURN DISTINCT 之后的 ORDER BY 必须用投影别名，不能用 var.property: "
+            "ORDER BY after RETURN DISTINCT must use the projected alias, not var.property: "
             f"{offenders}"
         )
 
@@ -1360,11 +1360,11 @@ class TestNeo4jCypherGuards:
         import hy_memory.data.graph_store_neo4j as m
 
         src = inspect.getsource(m.Neo4jGraphStore.get_topic_memories)
-        assert "m.created_at AS created_at" in src, "排序键必须投影出来"
-        assert "ORDER BY created_at" in src, "ORDER BY 必须用别名"
+        assert "m.created_at AS created_at" in src, "the sort key must be projected out"
+        assert "ORDER BY created_at" in src, "ORDER BY must use the alias"
 
     def test_both_backends_return_same_topic_memory_shape(self):
-        """两个后端 get_topic_memories 的返回形状要一致（只 node_id / content）。"""
+        """Both backends' get_topic_memories must return the same shape (node_id / content only)."""
         import inspect
         import hy_memory.data.graph_store_kuzu as k
         import hy_memory.data.graph_store_neo4j as n
@@ -1372,20 +1372,20 @@ class TestNeo4jCypherGuards:
         for mod, cls in ((k, "KuzuGraphStore"), (n, "Neo4jGraphStore")):
             src = inspect.getsource(getattr(mod, cls).get_topic_memories)
             assert '"node_id"' in src and '"content"' in src, cls
-            # created_at 只用于排序，不该进返回体
-            assert '"created_at":' not in src, f"{cls} 不该把 created_at 放进返回体"
+            # created_at is only for ordering and must not leak into the returned rows
+            assert '"created_at":' not in src, f"{cls} must not put created_at into the returned rows"
 
 
 # ================================================================
-# 端到端：Kuzu + Neo4j 两个后端都跑
+# End to end: run against both the Kuzu and Neo4j backends
 # ================================================================
 #
-# Neo4j 路此前零覆盖，直接导致 dev6 那个 bug 漏出去：
-# `get_topic_memories` 的 `RETURN DISTINCT ... ORDER BY m.created_at` 在 Neo4j 上是
-# SyntaxError，而异常被 logger.debug 吞掉 + return []，表面无声。
-# Kuzu 版语法合法，所以单跑 Kuzu 永远测不出来 —— 两个后端必须都跑。
+# The Neo4j path had zero coverage before, which is what let the dev6 bug slip out:
+# `get_topic_memories` with `RETURN DISTINCT ... ORDER BY m.created_at` is a SyntaxError on Neo4j,
+# and the exception was swallowed by logger.debug + return [], failing silently on the surface.
+# The Kuzu dialect is legal, so running only Kuzu never catches it -- both backends must run.
 #
-# Neo4j 连接信息从 env 取，取不到就 skip（CI 无实例时不阻塞）：
+# Neo4j connection info comes from env; skip when it is absent (so CI without an instance is not blocked):
 #   HY_TEST_NEO4J_URL / HY_TEST_NEO4J_USER / HY_TEST_NEO4J_PASSWORD
 
 _BACKENDS = ["kuzu", "neo4j"]
@@ -1401,7 +1401,7 @@ def _neo4j_conn():
 
 
 async def _make_graph_store(backend: str, tmp_path, suffix: str):
-    """按 backend 建一个干净的 GraphStore；不可用则 pytest.skip。"""
+    """Build a clean GraphStore for the given backend; pytest.skip when it is unavailable."""
     from hy_memory.config import MemoryConfig, GraphStoreConfig
 
     cfg = MemoryConfig()
@@ -1420,7 +1420,7 @@ async def _make_graph_store(backend: str, tmp_path, suffix: str):
     url, user, pwd = _neo4j_conn()
     if not url or not pwd:
         pytest.skip(
-            "Neo4j 未配置：设 HY_TEST_NEO4J_URL / HY_TEST_NEO4J_PASSWORD 后才跑"
+            "Neo4j not configured: set HY_TEST_NEO4J_URL / HY_TEST_NEO4J_PASSWORD to run this test"
         )
     from hy_memory.data.graph_store_neo4j import Neo4jGraphStore
 
@@ -1432,7 +1432,7 @@ async def _make_graph_store(backend: str, tmp_path, suffix: str):
         await gs.initialize()
     except Exception as e:
         pytest.skip(f"Neo4j unreachable: {e}")
-    # Community edition 只有一个 database，测试间必须自己清干净，否则互相污染
+    # Community edition has a single database, so tests must clean up between themselves to avoid cross-pollution
     await _wipe_neo4j(gs)
     return gs
 
@@ -1449,21 +1449,21 @@ async def _wipe_neo4j(gs) -> None:
 @pytest.mark.parametrize("backend", _BACKENDS)
 @pytest.mark.parametrize("with_embed", [True, False], ids=["normalized", "fallback"])
 async def test_tagged_with_edge_created_in_both_paths(backend, with_embed, tmp_path):
-    """`add_topic_tag` 的两条路径都必须真的建出 Memory→Topic 边。
+    """Both paths of `add_topic_tag` must really create the Memory->Topic edge.
 
-    回归一个真实 bug：Neo4j 的 fallback 分支（不传 embed_service，或归一化抛异常时）
-    给 `_run_write` 多传了一个 params dict → TypeError 被 `except` 静默吞掉，
-    **TAGGED_WITH 边从来没建出来**。后果是 tag 全变成孤立 Topic：
-    `get_topic_memories` 返回空 → Topic 摘要不触发、时序脊找不到同 Topic 成员。
+    Regression for a real bug: the Neo4j fallback branch (no embed_service passed, or normalization raising)
+    passed an extra params dict to `_run_write`, and the TypeError was silently swallowed by `except`, so
+    **the TAGGED_WITH edge was never created at all**. Every tag became an orphan Topic:
+    `get_topic_memories` returned empty -> Topic summaries never triggered, temporal spines found no same-Topic members.
 
-    单跑归一化路径测不出来（那条分支自己会建边），所以两条路径都要覆盖。
+    Testing only the normalized path misses it (that branch builds edges itself), so both paths are covered.
     """
     gs = await _make_graph_store(backend, tmp_path, f"tagpath_{int(with_embed)}")
 
     class _Embed:
         async def embed_queued(self, text):
             return [1.0, 0.0, 0.0]
-        async def embed(self, text):  # 真实 EmbedService 两个都有
+        async def embed(self, text):  # the real EmbedService has both methods
             return [1.0, 0.0, 0.0]
 
     try:
@@ -1473,12 +1473,12 @@ async def test_tagged_with_edge_created_in_both_paths(backend, with_embed, tmp_p
             "tp1", "work", node.get_isolation_key(),
             embed_service=_Embed() if with_embed else None,
         )
-        assert tid, "add_topic_tag 应返回 topic_id"
+        assert tid, "add_topic_tag should return a topic_id"
 
         mems = await gs.get_topic_memories(tid)
         assert [m["node_id"] for m in mems] == ["tp1"], (
-            f"{backend}/{'normalized' if with_embed else 'fallback'} 路径没建出 "
-            f"TAGGED_WITH 边 —— Topic 成了孤岛"
+            f"{backend}/{'normalized' if with_embed else 'fallback'} path built no "
+            f"TAGGED_WITH edge -- the Topic became an island"
         )
     finally:
         await gs.close()
@@ -1488,15 +1488,15 @@ async def test_tagged_with_edge_created_in_both_paths(backend, with_embed, tmp_p
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", _BACKENDS)
 async def test_graph_end_to_end(backend, tmp_path):
-    """投影 → get_related_edges → Topic 归一化，走真实图库。"""
+    """Projection -> get_related_edges -> Topic normalization, against a real graph database."""
     gs = await _make_graph_store(backend, tmp_path, "db")
 
     class _Embed:
-        """fake 必须同时提供 embed_queued / embed —— 真实 EmbedService 两个都有。
-        只实现一个会让某个后端的 tag 归一化静默退化成字符串精确匹配。"""
+        """The fake must provide both embed_queued and embed -- the real EmbedService has both.
+        Implementing only one silently degrades a backend's tag normalization to exact string matching."""
 
         _TABLE = {
-            # work / job 近似同义 → 应被归一化成同一个 Topic
+            # work / job are near-synonyms -> they should normalize to the same Topic
             "work": [1.0, 0.0, 0.0], "job": [0.99, 0.14, 0.0],
             "food": [0.0, 1.0, 0.0],
         }
@@ -1518,38 +1518,38 @@ async def test_graph_end_to_end(backend, tmp_path):
         assert stats["co_occurs"] == 1 and stats["typed"] == 1
 
         edges = await gs.get_related_edges(["g1"])
-        # 无向去重：g1↔g2 之间两种关系各一条（co_occurs + causes）
+        # undirected dedup: one edge per relation type between g1 and g2 (co_occurs + causes)
         rtypes = sorted(e["relation_type"] for e in edges)
         assert rtypes == ["causes", "co_occurs"]
         assert all(e["target_status"] == "active" for e in edges)
 
-        # 关系类型过滤
+        # relation type filter
         only_causes = await gs.get_related_edges(["g1"], relation_types=["causes"])
         assert [e["relation_type"] for e in only_causes] == ["causes"]
 
-        # shadow 后读侧必须能过滤掉
+        # after shadowing, the read side must be able to filter the node out
         await sync_graph_on_shadow(gs, ["g2"])
         adj = build_adjacency(await gs.get_related_edges(["g1"]))
         assert adj == {}
 
-        # Topic 语义归一化：work / job 复用同一个 Topic，food 独立
+        # Topic semantic normalization: work / job reuse the same Topic, food stays separate
         ik = n1.get_isolation_key()
         t_work = await gs.add_topic_tag("g1", "work", ik, embed_service=_Embed())
         t_job = await gs.add_topic_tag("g1", "job", ik, embed_service=_Embed())
         t_food = await gs.add_topic_tag("g1", "food", ik, embed_service=_Embed())
-        assert t_job == t_work, "同义 tag 应复用同一 Topic，否则 tag 图会碎成同义孤岛"
+        assert t_job == t_work, "synonymous tags must reuse one Topic, otherwise the tag graph shatters into synonym islands"
         assert t_food != t_work
 
         topics = await gs.get_all_topics(ik)
         assert {t["name"] for t in topics} >= {"work", "food"}
-        # 两个后端的返回键必须一致 —— degree 缺失会让画像聚合（§7.1）静默失效
+        # both backends must return the same keys -- a missing degree silently breaks profile aggregation (section 7.1)
         assert all({"topic_id", "name", "embedding", "degree"} <= set(t) for t in topics)
         assert all(t["degree"] >= 1 for t in topics if t["name"] == "work")
 
-        # get_topic_memories：给 Topic-scoped summary 取素材
+        # get_topic_memories: fetches the material for the Topic-scoped summary
         mems = await gs.get_topic_memories(t_work)
         assert [m["node_id"] for m in mems] == ["g1"]
-        # 图里没有 memory_at（Memory 表只有 created_at），事件时间以 VDB 为准
+        # the graph has no memory_at (the Memory table only has created_at); the VDB is authoritative for event time
         assert "memory_at" not in mems[0]
     finally:
         await gs.close()
@@ -1558,7 +1558,7 @@ async def test_graph_end_to_end(backend, tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", _BACKENDS)
 async def test_temporal_spine_end_to_end(backend, tmp_path):
-    """时序脊：同 Topic 内按 memory_at 串有向边，两个方向都能查到。"""
+    """Temporal spine: directed edges chained by memory_at within one Topic, queryable in both directions."""
     from datetime import datetime
 
     gs = await _make_graph_store(backend, tmp_path, "spine")
@@ -1570,7 +1570,7 @@ async def test_temporal_spine_end_to_end(backend, tmp_path):
         async def embed(self, text):
             return [1.0, 0.0, 0.0]
 
-    # 事件时间以 VDB 为准（图的 Memory 表没有 memory_at）
+    # event time is authoritative from the VDB (the graph's Memory table has no memory_at)
     written: Dict[str, Any] = {}
 
     class _VS:
@@ -1578,7 +1578,7 @@ async def test_temporal_spine_end_to_end(backend, tmp_path):
             return [written[i] for i in ids if i in written]
 
     try:
-        # 同一个 Topic（fitness）下三条按时间递进的记忆，分三批写入
+        # three memories under the same Topic (fitness) in chronological order, written in three batches
         specs = [
             ("t1", "started jogging", datetime(2026, 1, 1)),
             ("t2", "ran a 10k", datetime(2026, 3, 1)),
@@ -1592,19 +1592,19 @@ async def test_temporal_spine_end_to_end(backend, tmp_path):
                 vector_store=_VS(), temporal_spine=True,
             )
             written[nid] = node
-            # 第一条没有前驱；后两条各接一条时序边
+            # the first has no predecessor; the other two each add one temporal edge
             assert st["temporal"] == (0 if nid == "t1" else 1), nid
 
         edges = await gs.get_related_edges(["t2"])
         temporal = [e for e in edges if e["relation_type"] == "temporal_next"]
-        # t2 既有前驱 t1 也有后继 t3 —— 两个方向都要能查到，
-        # 否则 "X 之前发生了什么" 走不通
+        # t2 has predecessor t1 and successor t3 -- both directions must be visible,
+        # otherwise "what happened before X" cannot work
         assert {(e["source_id"], e["target_id"]) for e in temporal} == {
             ("t1", "t2"), ("t2", "t3"),
         }
         assert all(e["directed"] for e in temporal)
 
-        # 方向要能落到路径输出上
+        # the direction must show up in the path output
         fwd = collect_directed_edges(edges)
         assert ("t1", "t2") in fwd and ("t2", "t3") in fwd
         paths = find_relation_paths(
@@ -1613,10 +1613,10 @@ async def test_temporal_spine_end_to_end(backend, tmp_path):
             forward_dirs=fwd,
         )
         two_hop = [p for p in paths if p["hops"] == 2 and p["nodes"][0] == "t1"]
-        assert two_hop, "t1 →(t2)→ t3 的时序路径应被找到"
+        assert two_hop, "the temporal path t1 ->(t2)-> t3 should be found"
         assert all(r.get("direction") == "forward" for r in two_hop[0]["relations"])
 
-        # include_temporal=False 时不返回时序边
+        # include_temporal=False must return no temporal edges
         assert not [
             e for e in await gs.get_related_edges(["t2"], include_temporal=False)
             if e["relation_type"] == "temporal_next"

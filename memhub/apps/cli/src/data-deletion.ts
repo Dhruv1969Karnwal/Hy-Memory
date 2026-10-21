@@ -88,45 +88,45 @@ export async function planDataDeletion(options: {
   if (!path.isAbsolute(target) || /[\0\r\n]/.test(target)) {
     return blocked(
       "data_dir_unusable",
-      "数据目录必须是绝对且无换行的路径。",
-      "传入 --data-dir 的绝对路径后重试。",
+      "The data directory must be an absolute path without newlines.",
+      "Retry with an absolute path passed to --data-dir.",
     );
   }
   const resolved = path.resolve(target);
   if (resolved === path.parse(resolved).root) {
     return blocked(
       "data_dir_refused",
-      "拒绝删除文件系统根目录。",
-      "指向具体的 One Memory Home 后重试。",
+      "Refusing to delete the filesystem root.",
+      "Retry pointing at a specific One Memory Home.",
     );
   }
   if (resolved === path.resolve(options.home)) {
     return blocked(
       "data_dir_refused",
-      "拒绝删除用户主目录本身。",
-      "指向 One Memory Home（默认 ~/.one-memory）后重试。",
+      "Refusing to delete the user's home directory itself.",
+      "Retry pointing at the One Memory Home (default ~/.one-memory).",
     );
   }
   if (options.runtimeRunning) {
     return blocked(
       "runtime_still_running",
-      "Runtime 仍在运行，Core 正持有数据库文件。",
-      "先运行 memhub stop 停止 Runtime，再执行 delete-data。",
+      "The Runtime is still running; Core holds the database files.",
+      "Run memhub stop to stop the Runtime first, then run delete-data.",
     );
   }
   const info = await directoryInfo(resolved);
   if (info === null) {
     return blocked(
       "data_dir_missing",
-      "数据目录不存在。",
-      "确认 --data-dir 后重试；无需删除。",
+      "The data directory does not exist.",
+      "Confirm --data-dir and retry; nothing to delete.",
     );
   }
   if (!info.isDirectory() || info.isSymbolicLink()) {
     return blocked(
       "data_dir_refused",
-      "数据目录不是普通目录（或是符号链接）。",
-      "指向真实的 One Memory Home 目录后重试。",
+      "The data directory is not a plain directory (or is a symlink).",
+      "Retry pointing at a real One Memory Home directory.",
     );
   }
   const names = await readdir(resolved).catch(() => [] as string[]);
@@ -136,8 +136,8 @@ export async function planDataDeletion(options: {
   if (markers.length === 0) {
     return blocked(
       "not_a_one_memory_home",
-      "目录里没有 One Memory 运行产物，拒绝删除未知目录。",
-      "确认 --data-dir 指向真正的 One Memory Home。",
+      "The directory contains no One Memory runtime artifacts; refusing to delete an unknown directory.",
+      "Confirm --data-dir points at the real One Memory Home.",
     );
   }
   const entries: string[] = [];

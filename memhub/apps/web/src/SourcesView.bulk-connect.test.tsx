@@ -182,15 +182,19 @@ describe("connecting every app at once", () => {
     const api = setup();
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键接入全部 2 个应用" }),
+      await screen.findByRole("button", {
+        name: "Connect all 2 apps in one click",
+      }),
     );
     const dialog = await screen.findByRole("dialog");
     // Only the app that is not connected yet has a file to write.
     expect(api.previewRecallInstall).toHaveBeenCalledExactlyOnceWith("claude");
     expect(api.installRecall).not.toHaveBeenCalled();
     expect(api.setRecallPermission).not.toHaveBeenCalled();
-    expect(dialog.textContent).toContain("安装连接，并允许使用记忆");
-    expect(dialog.textContent).toContain("已安装，允许使用记忆");
+    expect(dialog.textContent).toContain(
+      "Install the connection and allow memory use",
+    );
+    expect(dialog.textContent).toContain("Installed, memory use allowed");
     expect(dialog.textContent).toContain("/synthetic/.claude.json");
   });
 
@@ -198,10 +202,12 @@ describe("connecting every app at once", () => {
     const api = setup();
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键接入全部 2 个应用" }),
+      await screen.findByRole("button", {
+        name: "Connect all 2 apps in one click",
+      }),
     );
     await user.click(
-      await screen.findByRole("button", { name: "确认接入 2 个应用" }),
+      await screen.findByRole("button", { name: "Confirm connecting 2 apps" }),
     );
     await waitFor(() => expect(api.installRecall).toHaveBeenCalledTimes(1));
     expect(api.installRecall).toHaveBeenCalledWith(
@@ -231,7 +237,7 @@ describe("connecting every app at once", () => {
     expect(
       (await within(screen.getByRole("dialog")).findByRole("status"))
         .textContent,
-    ).toBe("2 个应用已接入。");
+    ).toBe("2 apps connected.");
   });
 
   it("names every app that did not finish, with the reason, next to the count", async () => {
@@ -241,16 +247,18 @@ describe("connecting every app at once", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键接入全部 2 个应用" }),
+      await screen.findByRole("button", {
+        name: "Connect all 2 apps in one click",
+      }),
     );
     await user.click(
-      await screen.findByRole("button", { name: "确认接入 2 个应用" }),
+      await screen.findByRole("button", { name: "Confirm connecting 2 apps" }),
     );
     expect(
       (await within(screen.getByRole("dialog")).findByRole("status"))
         .textContent,
     ).toBe(
-      "1 个应用已接入，1 个未完成：Claude（未能完成）。可在下方逐个重试。",
+      "1 app connected, 1 unfinished: Claude (Could not finish). You can retry each one below.",
     );
   });
 
@@ -261,14 +269,18 @@ describe("connecting every app at once", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "一键接入全部 2 个应用" }),
+      await screen.findByRole("button", {
+        name: "Connect all 2 apps in one click",
+      }),
     );
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain(
-      "跳过：未能读取这个应用的连接变更预览",
+      "Skipped: Could not read this app's connection change preview",
     );
-    expect(dialog.textContent).toContain("有 1 个应用无法准备");
-    await user.click(screen.getByRole("button", { name: "确认接入 1 个应用" }));
+    expect(dialog.textContent).toContain("1 app could not be prepared");
+    await user.click(
+      screen.getByRole("button", { name: "Confirm connecting 1 app" }),
+    );
     await waitFor(() =>
       expect(api.setRecallPermission).toHaveBeenCalledTimes(1),
     );
@@ -283,7 +295,7 @@ describe("connecting every app at once", () => {
       (await within(screen.getByRole("dialog")).findByRole("status"))
         .textContent,
     ).toBe(
-      "1 个应用已接入，1 个未完成：Claude（未能读取这个应用的连接变更预览）。可在下方逐个重试。",
+      "1 app connected, 1 unfinished: Claude (Could not read this app's connection change preview). You can retry each one below.",
     );
   });
 
@@ -311,7 +323,7 @@ describe("connecting every app at once", () => {
         },
       },
     ]);
-    await screen.findByRole("heading", { name: "使用记忆" });
-    expect(screen.queryByRole("button", { name: /一键接入全部/ })).toBeNull();
+    await screen.findByRole("heading", { name: "Use memories" });
+    expect(screen.queryByRole("button", { name: /Connect all/ })).toBeNull();
   });
 });

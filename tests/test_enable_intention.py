@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MEMORY_ENABLE_INTENTION / LLMConfig.enable_intention 开关。"""
+"""MEMORY_ENABLE_INTENTION / LLMConfig.enable_intention switch."""
 
 import asyncio
 import os
@@ -33,7 +33,7 @@ class TestIntentionPromptGate:
     def test_system_zh_strips_intentions(self):
         s = _system_prompt_without_intention(EXTRACT_SYSTEM_PROMPT_ZH, lang="zh")
         assert "## intentions" not in s
-        assert "INTENTION 关闭" in s
+        assert "INTENTION DISABLED" in s
 
     def test_user_prompt_variants(self):
         assert '"intentions"' in EXTRACT_PROMPT
@@ -63,7 +63,7 @@ def run(coro):
 
 class TestWriterSkipsIntentionWhenDisabled:
     def test_flag_gates_store_path(self):
-        """与 writer.py 意图写入处同一条件：关闭时不 collect/store。"""
+        """Same condition as the intention write path in writer.py: when disabled, no collect/store."""
         cfg_off = LLMConfig(enable_intention=False)
         cfg_on = LLMConfig(enable_intention=True)
         assert cfg_off.enable_intention is False

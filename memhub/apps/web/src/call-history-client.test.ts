@@ -122,28 +122,28 @@ it("clear-all uses the dedicated transport and never reuses page IDs", async () 
   await expect(clearAllCallEvents()).rejects.toThrow();
 });
 it("uses one plain-language lookup vocabulary across summary surfaces", () => {
-  expect(callEventHeadline(event)).toBe("Codex 查到 1 条相关内容");
+  expect(callEventHeadline(event)).toBe("Codex found 1 related item");
   expect(callDetailHeadline({ ...event, memory_count: 2 })).toBe(
-    "Codex 查到 3 条相关内容",
+    "Codex found 3 related items",
   );
   expect(callDetailHeadline({ ...event, state: "empty" })).toBe(
-    "Codex 没有查到相关记忆",
+    "Codex found no related memory",
   );
   expect(callDetailHeadline({ ...event, state: "timed_out" })).toBe(
-    "Codex 这次没来得及查到记忆",
+    "Codex did not get memory in time this time",
   );
   expect(callDetailHeadline({ ...event, state: "unavailable" })).toBe(
-    "Codex 暂时无法查记忆",
+    "Codex cannot look up memory right now",
   );
   expect(callDetailHeadline({ ...event, state: "denied" })).toBe(
-    "Codex 未获准查记忆",
+    "Codex was not allowed to look up memory",
   );
-  expect(callRowHeadline(event)).toBe("Codex 查到 1 条相关内容");
+  expect(callRowHeadline(event)).toBe("Codex found 1 related item");
   expect(callRowHeadline({ ...event, state: "unavailable" })).toBe(
-    "Codex 暂时无法查记忆",
+    "Codex cannot look up memory right now",
   );
   expect(callRowDetail({ ...event, state: "timed_out" })).toBe(
-    "后台正在整理记忆，查询超时，这次回答没有带上记忆",
+    "The background is still organizing memory; the query timed out, so this answer did not include memory",
   );
 });
 it("keeps delivery and adoption separate for call history", async () => {

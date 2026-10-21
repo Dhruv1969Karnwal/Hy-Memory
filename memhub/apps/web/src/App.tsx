@@ -216,19 +216,19 @@ function AppContent() {
         {startupRead === "error" ? (
           <div className="boot-status">
             <p className="error-banner" role="alert">
-              暂时无法读取启动状态，请重试。
+              Temporarily unable to read the startup status; retry.
             </p>
             <R6Button
               onClick={() => {
                 if (!startupFlight.current) readStartup();
               }}
             >
-              重新读取
+              Read again
             </R6Button>
           </div>
         ) : (
           <p className="boot-status" aria-live="polite">
-            正在打开 MemHub…
+            Opening MemHub...
           </p>
         )}
       </main>
@@ -256,7 +256,7 @@ function AppContent() {
     <div
       className={`app-shell r6-shell${window.oneMemory ? " desktop-shell" : ""}`}
     >
-      {/* Mark + "MemHub" + the "个人资料空间" caption were removed on
+      {/* Mark + "MemHub" + the "personal profile space" caption were removed on
           2026-09-20 at the user's request. The source still shows them
           (139:6770 / 139:6771); this is a product decision, not a gap. The bar
           stays because it is the window drag region and holds the traffic-light
@@ -264,9 +264,9 @@ function AppContent() {
           the text it used to contain. */}
       <header className="r6-titlebar" />
       <a className="skip-link" href="#main-content">
-        跳到主要内容
+        Skip to main content
       </a>
-      <nav className="app-rail" aria-label="主要导航">
+      <nav className="app-rail" aria-label="Primary navigation">
         <div className="brand-mark" title="MemHub">
           <Layers3 size={21} strokeWidth={1.6} aria-hidden="true" />
           <span>MemHub</span>
@@ -275,7 +275,7 @@ function AppContent() {
           {import.meta.env.VITE_ENABLE_MATTERS === "true" && (
             <RailButton
               active={displayedView === "matters"}
-              label="事项"
+              label="Matters"
               icon={<BookOpen size={18} />}
               onClick={() => navigate("matters")}
             />
@@ -285,7 +285,7 @@ function AppContent() {
               key={destination}
               active={displayedView === destination}
               tourId={destination === "sources" ? "nav-sources" : undefined}
-              label={destination === "memory" ? "记忆" : "应用"}
+              label={destination === "memory" ? "Memory" : "Applications"}
               icon={
                 destination === "memory" ? (
                   <Network size={19} />
@@ -308,16 +308,16 @@ function AppContent() {
           <RailButton
             active={displayedView === "settings" || displayedView === "health"}
             tourId="nav-settings"
-            label="设置"
+            label="Settings"
             icon={<Settings size={18} />}
             onClick={() => navigate("settings")}
           />
           <p
             className="rail-core"
-            title="记忆保存在本机；使用云模型整理或交给已授权的助手时，相关内容会发送给对应服务。"
+            title="Memories are stored on this device; when a cloud model organizes them or an authorized assistant uses them, the relevant content is sent to the corresponding service."
           >
             <span aria-hidden="true" />
-            本地存储
+            Local storage
           </p>
         </div>
       </nav>
@@ -439,7 +439,7 @@ function AppContent() {
               onClick={() => navigate("settings")}
             >
               <ArrowLeft size={16} />
-              设置
+              Settings
             </button>
             <HealthPanel imports={imports} />
           </>
@@ -481,13 +481,15 @@ export function viewFromUrl(
 }
 
 export function coreStatus(health: HealthResponse | null): string {
-  if (!health) return "连接 Core…";
+  if (!health) return "Connecting to Core...";
   // After a large import there is a stretch where Core is connected and
-  // working through conversations it has not read yet. Saying only "已连接"
+  // working through conversations it has not read yet. Saying only "Connected"
   // there reads as "nothing is happening", and the memories are not in yet.
-  if (health.memory_backfill === "running") return "本地 Core 正在整理历史对话";
-  if (health.memory_backfill === "failed") return "历史对话整理未完成";
-  return "本地 Core 已连接";
+  if (health.memory_backfill === "running")
+    return "The local Core is organizing conversation history";
+  if (health.memory_backfill === "failed")
+    return "History organizing not finished";
+  return "Local Core connected";
 }
 
 function RailButton({

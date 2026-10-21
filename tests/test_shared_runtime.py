@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-SharedRuntime 端到端测试。
+SharedRuntime end-to-end tests.
 
-覆盖：
-1. Solo 模式（不传 runtime）行为完全不变 — backward compat 回归
-2. Shared 模式两个 client 可以共存
-3. Shared 模式两个 client 共享同一个 cache + 同一个 loop
-4. Shared 模式 client.close() 不关 shared cache、不停 shared loop
-5. Shared 模式 runtime.close() 关掉 cache 和 loop
-6. MetricsCollector 单例在 shared 模式下只 bind 一次（关键 cross-loop bug 防护）
-7. 多个 client 真的能并行 add/search 不挂
+Coverage:
+1. Solo mode (no runtime passed) behaves exactly the same — backward compat regression
+2. Two clients can coexist in shared mode
+3. Two clients in shared mode share the same cache + the same loop
+4. In shared mode client.close() does not close the shared cache or stop the shared loop
+5. In shared mode runtime.close() closes the cache and the loop
+6. The MetricsCollector singleton binds only once in shared mode (key cross-loop bug guard)
+7. Multiple clients can really run add/search in parallel without hanging
 
-测试依赖只用 Chroma + SQLite cache（零外部依赖），避免 MySQL/网络。
+Tests depend only on Chroma + SQLite cache (zero external deps), avoiding MySQL/network.
 """
 
 import asyncio
@@ -32,7 +32,7 @@ def run(coro):
 
 
 def _make_config(tmp_path, *, dims=32, collection_suffix=""):
-    """构造一个不依赖外部服务的 config（chroma + sqlite cache）"""
+    """Build a config that depends on no external service (chroma + sqlite cache)"""
     suffix = collection_suffix or uuid.uuid4().hex[:8]
     return MemoryConfig.from_dict({
         "vector_store": {
@@ -51,7 +51,7 @@ def _make_config(tmp_path, *, dims=32, collection_suffix=""):
 
 @pytest.fixture(autouse=True)
 def _reset_metrics_singleton():
-    """每个 test reset MetricsCollector 单例，避免 cross-test 污染"""
+    """Reset the MetricsCollector singleton before each test to avoid cross-test pollution"""
     MetricsCollector.reset()
     yield
     MetricsCollector.reset()
@@ -59,7 +59,7 @@ def _reset_metrics_singleton():
 
 @pytest.fixture(autouse=True)
 def _safe_env(monkeypatch, tmp_path):
-    """避免 test 误连真实 redis/mysql"""
+    """Avoid tests accidentally connecting to real redis/mysql"""
     monkeypatch.setenv("MEMORY_CACHE_BACKEND", "sqlite")
     monkeypatch.delenv("REDIS_HOST", raising=False)
     monkeypatch.delenv("MEMORY_VECTOR_HOST", raising=False)
@@ -69,19 +69,19 @@ def _safe_env(monkeypatch, tmp_path):
 
 
 # ================================================================
-# Phase 1: Solo 模式向后兼容
+# Phase 1: Solo mode backward compatibility
 # ================================================================
 
 class TestSoloModeUnchanged:
-    """Solo 模式（不传 runtime）行为必须完全跟改造前一致"""
+    """Solo mode (no runtime passed) must behave exactly as before the refactor"""
 
     def test_solo_client_init_close(self, tmp_path):
         cfg = _make_config(tmp_path)
         client = HyMemoryClient(cfg, mode="lite")
         try:
-            # solo 模式 owns_runtime=True
+            # solo mode owns_runtime=True
             assert client._owns_runtime is True
-            # 自己有 cache + loop_thread
+            # owns its own cache + loop_thread
             assert client._cache is not None
             assert client._loop_thread is not None
         finally:
@@ -99,7 +99,7 @@ class TestSoloModeUnchanged:
 
 
 # ================================================================
-# Phase 2: Shared 模式 — 单 client
+# Phase 2: Shared mode — single client
 # ================================================================
 
 class TestSharedRuntimeSingleClient:
@@ -111,7 +111,7 @@ class TestSharedRuntimeSingleClient:
             assert runtime.cache is not None
             assert runtime.loop_thread is not None
             assert runtime.metrics is MetricsCollector.get()
-            # cache 已经 bind 到 metrics
+            # cache is already bound to metrics
             assert runtime.metrics._cache is runtime.cache
             assert runtime.metrics._background_started is True
         finally:
@@ -140,16 +140,16 @@ class TestSharedRuntimeSingleClient:
             client = HyMemoryClient(client_cfg, mode="lite", runtime=runtime)
             shared_cache = runtime.cache
             client.close()
-            # client.close 后 runtime.cache 仍可用
+            # runtime.cache is still usable after client.close
             assert runtime.cache is shared_cache
-            # runtime loop 仍在跑
+            # the runtime loop is still running
             assert runtime.loop_thread is not None
         finally:
             runtime.close()
 
 
 # ================================================================
-# Phase 3: Shared 模式 — 多 client（核心 bug 防护场景）
+# Phase 3: Shared mode — multiple clients (core bug-guard scenario)
 # ================================================================
 
 class TestSharedRuntimeMultiClient:
@@ -173,8 +173,8 @@ class TestSharedRuntimeMultiClient:
             runtime.close()
 
     def test_metrics_singleton_only_bound_once(self, tmp_path):
-        """关键测试：原 bug 是 bind_cache 被第二个 client 覆盖；
-        shared 模式下应该只 runtime 调一次 bind_cache，client 都不调"""
+        """Key test: the original bug was bind_cache being overwritten by the second client;
+        in shared mode only the runtime should call bind_cache once, and no client calls it"""
         cfg = _make_config(tmp_path)
         runtime = run(SharedRuntime.create(cfg))
         bound_cache_after_runtime = runtime.metrics._cache
@@ -186,11 +186,11 @@ class TestSharedRuntimeMultiClient:
             client_a = HyMemoryClient(cfg_a, mode="lite", runtime=runtime)
             client_b = HyMemoryClient(cfg_b, mode="lite", runtime=runtime)
             try:
-                # 创建俩 client 之后，metrics._cache 仍然是 runtime.cache，
-                # 没被 client 的 bind_cache 覆盖
+                # after creating both clients, metrics._cache is still runtime.cache,
+                # not overwritten by the client's bind_cache
                 assert MetricsCollector.get()._cache is bound_cache_after_runtime
                 assert MetricsCollector.get()._cache is runtime.cache
-                # background 状态保持
+                # background state preserved
                 assert MetricsCollector.get()._background_started is bg_started_after_runtime
             finally:
                 client_a.close()
@@ -199,7 +199,7 @@ class TestSharedRuntimeMultiClient:
             runtime.close()
 
     def test_clients_use_same_loop_thread(self, tmp_path):
-        """关键 cross-loop 防护：所有 client 用同一个 loop"""
+        """Key cross-loop guard: all clients use the same loop"""
         cfg = _make_config(tmp_path)
         runtime = run(SharedRuntime.create(cfg))
         try:
@@ -208,9 +208,9 @@ class TestSharedRuntimeMultiClient:
             client_a = HyMemoryClient(cfg_a, mode="lite", runtime=runtime)
             client_b = HyMemoryClient(cfg_b, mode="lite", runtime=runtime)
             try:
-                # 同一个 _LoopThread 实例
+                # the same _LoopThread instance
                 assert client_a._loop_thread is client_b._loop_thread
-                # 同一个底层 event loop
+                # the same underlying event loop
                 assert client_a._loop_thread._loop is client_b._loop_thread._loop
             finally:
                 client_a.close()
@@ -220,11 +220,11 @@ class TestSharedRuntimeMultiClient:
 
 
 # ================================================================
-# Phase 4: 真正跑 add / 验证 functionally works
+# Phase 4: actually run add / verify it functionally works
 # ================================================================
 
 class TestSharedRuntimeFunctional:
-    """真的发请求过 add/search 看流程能跑通，不挂在 cross-loop"""
+    """Actually send requests through add/search to confirm the flow runs without hanging on cross-loop"""
 
     def test_two_clients_add_concurrently_no_crossloop(self, tmp_path):
         cfg = _make_config(tmp_path)
@@ -235,12 +235,12 @@ class TestSharedRuntimeFunctional:
             client_a = HyMemoryClient(cfg_a, mode="lite", runtime=runtime)
             client_b = HyMemoryClient(cfg_b, mode="lite", runtime=runtime)
             try:
-                # 直接走 runtime 的 cache 上的 store/get_pipeline_log（base 协议层落库）
-                # 关键验证：两个 client 不在自己的 _LoopThread 上读写 cache
-                # 都委托给 runtime 的 loop（避免跨 loop pool 错误）
+                # go directly through the runtime cache's store/get_pipeline_log (base protocol-layer persistence)
+                # key check: the two clients do not read/write cache on their own _LoopThread
+                # both delegate to the runtime's loop (avoiding cross-loop pool errors)
                 shared = runtime.cache
 
-                # 通过 client 的 loop_thread.run 写 cache（应该能跑通）
+                # write cache via the client's loop_thread.run (should work)
                 async def _w(rid):
                     from hy_memory.utils.pipeline_observability import (
                         drain_pipeline_log_tasks,
@@ -255,7 +255,7 @@ class TestSharedRuntimeFunctional:
 
                 client_a._loop_thread.run(_w("rid_a"))
                 client_b._loop_thread.run(_w("rid_b"))
-                # 跨 client 读对方写的，证明同一 pool
+                # read what the other client wrote, proving the same pool
                 assert len(client_a._loop_thread.run(_r("rid_b"))) == 1
                 assert len(client_b._loop_thread.run(_r("rid_a"))) == 1
             finally:
@@ -266,7 +266,7 @@ class TestSharedRuntimeFunctional:
 
 
 # ================================================================
-# Phase 5: aclose / close 语义
+# Phase 5: aclose / close semantics
 # ================================================================
 
 class TestSharedRuntimeClose:
@@ -275,26 +275,26 @@ class TestSharedRuntimeClose:
         cfg = _make_config(tmp_path)
         runtime = run(SharedRuntime.create(cfg))
         runtime.close()
-        # 再关一次不挂
+        # closing again does not hang
         runtime.close()
 
     def test_aclose_async(self, tmp_path):
         cfg = _make_config(tmp_path)
         runtime = run(SharedRuntime.create(cfg))
-        # 用 runtime.loop_thread.run 调 aclose（因为 cache 在那个 loop 上）
+        # call aclose via runtime.loop_thread.run (because the cache is on that loop)
         runtime.close()
 
 
 # ================================================================
-# Phase 6: search 专用 loop 与 write loop 隔离
-# search 使用独立 loop，避免被 write 队列阻塞。
+# Phase 6: search-dedicated loop isolated from the write loop
+# search uses an independent loop to avoid being blocked by the write queue.
 # ================================================================
 
 class TestSearchLoopIsolation:
-    """search 走独立 _LoopThread，不被 write 队列挤占调度。"""
+    """search uses an independent _LoopThread so the write queue does not crowd out its scheduling."""
 
     def test_solo_search_loop_is_distinct_thread(self, tmp_path):
-        """solo 模式：search loop 与 write loop 是两个独立的 event loop/线程。"""
+        """solo mode: the search loop and the write loop are two independent event loops/threads."""
         cfg = _make_config(tmp_path)
         client = HyMemoryClient(cfg, mode="lite")
         try:
@@ -307,8 +307,8 @@ class TestSearchLoopIsolation:
             client.close()
 
     def test_shared_search_loop_from_runtime(self, tmp_path):
-        """shared 模式：client 的 search loop 来自 runtime.search_loop_thread，
-        且与 write loop 隔离；多个 client 共用同一个 search loop。"""
+        """shared mode: the client's search loop comes from runtime.search_loop_thread,
+        and is isolated from the write loop; multiple clients share the same search loop."""
         cfg = _make_config(tmp_path)
         runtime = run(SharedRuntime.create(cfg))
         try:
@@ -321,10 +321,10 @@ class TestSearchLoopIsolation:
             client_a = HyMemoryClient(cfg_a, mode="lite", runtime=runtime)
             client_b = HyMemoryClient(cfg_b, mode="lite", runtime=runtime)
             try:
-                # search loop 来自 runtime，与 write loop 隔离
+                # the search loop comes from runtime, isolated from the write loop
                 assert client_a._search_loop_thread is runtime.search_loop_thread
                 assert client_a._search_loop_thread is not client_a._loop_thread
-                # 多 client 共用同一个 search loop
+                # multiple clients share the same search loop
                 assert client_a._search_loop_thread is client_b._search_loop_thread
             finally:
                 client_a.close()
@@ -333,17 +333,17 @@ class TestSearchLoopIsolation:
             runtime.close()
 
     def test_backward_compat_old_runtime_without_search_loop(self, tmp_path):
-        """兼容旧 runtime（无 search_loop_thread 属性）：回落到 write loop，不报错。"""
+        """Support the old runtime (no search_loop_thread attribute): fall back to the write loop without erroring."""
         cfg = _make_config(tmp_path)
         runtime = run(SharedRuntime.create(cfg))
         try:
-            # 模拟旧 runtime：抹掉 search 专用 loop
+            # simulate the old runtime: remove the search-dedicated loop
             old_search = runtime._search_loop_thread
             runtime._search_loop_thread = None
             client_cfg = _make_config(tmp_path, collection_suffix="compat")
             client = HyMemoryClient(client_cfg, mode="lite", runtime=runtime)
             try:
-                # 回落到 write loop（行为等价旧路径，不隔离但不崩）
+                # fall back to the write loop (behavior equivalent to the old path, not isolated but not crashing)
                 assert client._search_loop_thread is runtime.loop_thread
             finally:
                 client.close()
@@ -352,12 +352,12 @@ class TestSearchLoopIsolation:
             runtime.close()
 
     def test_search_loop_schedules_while_write_loop_blocked(self, tmp_path):
-        """核心回归：write loop 被一个长时间同步阻塞的协程占满时，search loop
-        仍能及时调度协程——证明二者互不挤占。
+        """Core regression: when the write loop is occupied by a long-running synchronously blocking coroutine, the search loop
+        can still schedule coroutines promptly -- proving they do not crowd each other out.
 
-        直接在 loop 调度层验证（不拉入 chroma/embed），精确对应本次修复：
-        改动前 search 和 write 共用一个 loop，提交到该 loop 的 search 协程会被
-        卡到 write 的阻塞结束；改动后 search 有独立 loop，调度不受影响。
+        Verified directly at the loop-scheduling layer (no chroma/embed), matching this fix exactly:
+        before the change search and write shared one loop, so a search coroutine submitted to it was
+        stuck until the write block ended; after the change search has its own loop and scheduling is unaffected.
         """
         import time
         import asyncio as _aio
@@ -367,49 +367,49 @@ class TestSearchLoopIsolation:
         try:
             write_loop = runtime.loop_thread._loop
             search_loop = runtime.search_loop_thread._loop
-            assert write_loop is not search_loop  # 前提：确实是两个 loop
+            assert write_loop is not search_loop  # premise: they really are two loops
 
             BLOCK_SEC = 2.0
 
             async def _hog():
-                # 同步 sleep 占满 write loop（协作式调度下彻底卡住该 loop），
-                # 模拟 EXTRACT/RECONCILE 中夹杂的非 await 同步代码段。
+                # a synchronous sleep saturates the write loop (fully stuck under cooperative scheduling),
+                # simulating non-await synchronous segments interspersed in EXTRACT/RECONCILE.
                 time.sleep(BLOCK_SEC)
 
             async def _probe():
-                # 极轻量探针：代表一次 search 协程被提交后能否被及时调度执行。
+                # an extremely lightweight probe: represents whether a submitted search coroutine gets scheduled promptly.
                 return "scheduled"
 
-            # 1. 占满 write loop
+            # 1. saturate the write loop
             hog_fut = _aio.run_coroutine_threadsafe(_hog(), write_loop)
-            time.sleep(0.1)  # 确保 hog 真正开始执行、占住 write loop
+            time.sleep(0.1)  # ensure hog actually starts executing and holds the write loop
 
-            # 2. 此刻 write loop 卡死 → 提交到 search loop 的探针应立刻被调度
+            # 2. at this point the write loop is stuck -> a probe submitted to the search loop should be scheduled immediately
             t0 = time.perf_counter()
             probe_fut = _aio.run_coroutine_threadsafe(_probe(), search_loop)
             assert probe_fut.result(timeout=1.0) == "scheduled"
             search_latency = time.perf_counter() - t0
 
-            # search loop 调度延迟应是「毫秒级」——独立 loop 完全不受 write 阻塞影响。
-            # 阈值取远小于 BLOCK_SEC 的绝对值：改动前 search/write 共用一个 loop 时，
-            # 探针会被 hog 卡到接近 BLOCK_SEC 才调度，必然超过此阈值 → 回归被捕获。
+            # the search loop scheduling latency should be on the order of milliseconds -- the independent loop is fully unaffected by the write block.
+            # the threshold is an absolute value far smaller than BLOCK_SEC: before the change, when search/write shared one loop,
+            # the probe would be stuck behind hog until near BLOCK_SEC, certainly exceeding this threshold -> the regression is caught.
             _SCHED_BUDGET = 0.3
             assert search_latency < _SCHED_BUDGET, (
-                f"search loop 调度耗时 {search_latency:.3f}s（应 < {_SCHED_BUDGET}s），"
-                f"说明未与 write loop（阻塞 {BLOCK_SEC}s）隔离"
+                f"search loop scheduling took {search_latency:.3f}s (should be < {_SCHED_BUDGET}s); "
+                f"meaning it is not isolated from the write loop (blocked for {BLOCK_SEC}s)"
             )
 
-            # 3. 对照：同一探针提交到 write loop 会被 hog 卡住，直到阻塞结束
+            # 3. control: the same probe submitted to the write loop is stuck behind hog until the block ends
             t1 = time.perf_counter()
             write_probe_fut = _aio.run_coroutine_threadsafe(_probe(), write_loop)
             assert write_probe_fut.result(timeout=BLOCK_SEC + 1.0) == "scheduled"
             write_latency = time.perf_counter() - t1
-            # write loop 上的探针确实被 hog 挤压（证明 hog 生效、对照有意义）
+            # the write-loop probe really is squeezed by hog (proving hog works and the control is meaningful)
             assert write_latency > search_latency, (
-                "write loop 探针应比 search loop 探针慢（被 hog 阻塞），"
-                "否则说明 hog 没有真正占用 write loop，对照无效"
+                "the write-loop probe should be slower than the search-loop probe (blocked by hog); "
+                "otherwise hog is not really occupying the write loop and the control is invalid"
             )
 
-            hog_fut.result(timeout=BLOCK_SEC + 1)  # 收尾，避免 teardown 残留
+            hog_fut.result(timeout=BLOCK_SEC + 1)  # clean up to avoid leftover teardown
         finally:
             runtime.close()

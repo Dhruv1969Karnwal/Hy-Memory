@@ -36,16 +36,18 @@ export function R6Button({
 
 export function R6Stepper({ active }: { active: 1 | 2 | 3 }) {
   return (
-    <nav className="r6-stepper" aria-label="首次设置进度">
+    <nav className="r6-stepper" aria-label="First-time setup progress">
       <ol>
-        {["导入历史", "连接应用", "沉淀记忆"].map((label, index) => (
-          <li
-            key={label}
-            aria-current={active === index + 1 ? "step" : undefined}
-          >
-            <span aria-hidden="true">0{index + 1}</span> {label}
-          </li>
-        ))}
+        {["Import history", "Connect apps", "Distill memories"].map(
+          (label, index) => (
+            <li
+              key={label}
+              aria-current={active === index + 1 ? "step" : undefined}
+            >
+              <span aria-hidden="true">0{index + 1}</span> {label}
+            </li>
+          ),
+        )}
       </ol>
     </nav>
   );
@@ -118,10 +120,10 @@ export function R6LocalStorage() {
   return (
     <span
       className="r6-local-storage"
-      title="对话与记忆保存在本机；使用云模型或已授权的助手时，相关内容会发送给对应服务。"
+      title="Conversations and memories stay on this device; when a cloud model or an authorized assistant is used, the relevant content is sent to that service."
     >
       <span aria-hidden="true" />
-      本地存储
+      Local storage
     </span>
   );
 }

@@ -1,45 +1,45 @@
-# Codex 一键插入支持
+# Codex one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-Codex 已开放一键插入。它安装的是 **TOML MCP 配置 + Skill + Capture Hooks + Credential Grant**。
+Codex ships with one-click insert. What it installs is **TOML MCP config + Skill + Capture Hooks + Credential Grant**.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | Codex 当前实现 |
+| Item | Codex current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| Codex 查询 MemHub | MCP Server |
-| 告诉模型何时查询 | Skill |
-| Prompt 前自动 Prefetch | 没有 |
-| Codex 新会话实时送入 MemHub | `UserPromptSubmit`、`Stop` Capture Hooks |
-| Plugin | 没有 |
+| One-click insert status | Available |
+| How Codex queries MemHub | MCP Server |
+| How the model knows when to query | Skill |
+| Automatic Prefetch before prompts | None |
+| New Codex sessions into MemHub in real time | `UserPromptSubmit`, `Stop` Capture Hooks |
+| Plugin | None |
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-写入 TOML MCP 表、安装 Skill 和 Capture Hooks，并创建 Codex Credential。Codex 模型需要主动调用 MCP 才会查询记忆。
+It writes the TOML MCP table, installs the Skill and the Capture Hooks, and creates the Codex Credential. The Codex model has to call MCP on its own for any memory query to happen.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-撤销 Credential，恢复或删除 TOML、Skill、Hooks 和 Journal；不影响同步开关。
+It revokes the Credential and restores or deletes the TOML, Skill, Hooks and Journal; the Sync toggle is unaffected.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 补扫 `.codex/sessions`，恢复冻结 Job，并允许 Hook Capture 进入 Evidence。
+Core backfills `.codex/sessions`, resumes frozen Jobs, and allows Hook Capture to enter Evidence.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-停止扫描和 pending Job claim，Hook Capture 被 Core 拒绝；running Job允许结束，已有 Memory 保持可查询。
+Scanning and pending Job claims stop and Hook Capture is refused by Core; running Jobs may finish and existing Memory stays queryable.
 
-### 组合效果
+### Combined effect
 
-两个开关分别控制 Recall 出口和会话入口；都打开才是双向接通，但仍没有自动 Prefetch。
+The two toggles control the Recall exit and the session intake respectively; only both on connects both directions, and there is still no automatic Prefetch.
 
-## 实际安装
+## What gets installed
 
 ```text
 ~/.codex/config.toml
@@ -55,21 +55,21 @@ Core 补扫 `.codex/sessions`，恢复冻结 Job，并允许 Hook Capture 进入
 ~/.codex/.one-memory/recall-install.json
 ```
 
-TOML 编辑器只维护 `mcp_servers.one-memory` 和对应 `.env` 表，尽量保留其他配置、注释和顺序。实现见 [toml-mcp.ts](../../packages/host-bridge/src/toml-mcp.ts)。
+The TOML editor maintains only the `mcp_servers.one-memory` table and its `.env` table, preserving other config, comments and ordering as much as possible. See [toml-mcp.ts](../../packages/host-bridge/src/toml-mcp.ts).
 
-## 权限
+## Permissions
 
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:codex`。
-- Credential Secret 位于 MemHub 私有目录；`config.toml` 只写文件路径。
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:codex`.
+- The Credential Secret lives in a MemHub private directory; `config.toml` only stores the file path.
 
-## 重复打开与关闭
+## Re-opening and closing
 
-- 已安装且 `approved`：不重装，只修复 Runtime/MCP 路径并 Probe。
-- 权限不完整：重新安装、创建新 Installation 和 Credential，再授权。
-- 关闭：先撤权，再恢复 TOML、Skill、Hooks 和 Journal。
-- 用户修改过 MCP、Skill 或 Hook 时不强删，撤权后提示人工处理。
+- Already installed and `approved`: no reinstall; only repair Runtime/MCP paths and Probe.
+- Incomplete permissions: reinstall, create a new Installation and Credential, then grant.
+- Closing: revoke first, then restore the TOML, Skill, Hooks and Journal.
+- MCP, Skill or Hook files modified by the user are not force-deleted; the grant is revoked and manual handling is requested.
 
-## 生效与重启
+## Taking effect and restart
 
-当前代码没有保证运行中的 Codex 热加载 `config.toml`、Skill 和 Hooks。建议完全退出 Codex、重新打开并开始新会话。
+Current code does not guarantee a running Codex hot-loads `config.toml`, the Skill and the Hooks. Quit Codex fully, re-open and start a new session.

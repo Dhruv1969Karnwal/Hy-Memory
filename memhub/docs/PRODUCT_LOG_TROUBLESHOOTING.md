@@ -1,87 +1,87 @@
-# MemHub 产品日志排查手册
+# MemHub Product Log Troubleshooting Guide
 
-本文给产品、测试和一线支持同学使用。目标不是解释底层实现，而是回答三个问题：
+This guide is for product, QA, and front-line support. The goal is not to explain the internals, but to answer three questions:
 
-1. 数据有没有成功导入；
-2. 记忆沉淀有没有持续运行、产出了多少条；
-3. 如果停住，停在导入、模型调用还是最终写入。
+1. Did the data import successfully;
+2. Is memory distillation still running, and how many memories did it produce;
+3. If it stalled, did it stall at import, at the model call, or at the final write.
 
-默认 `info` 下的结构化诊断日志不包含会话正文、模型输入输出或 API Key。`debug`
-会额外启用 HY pipeline trace，其中可能包含完整 prompt/response 和获授权的对话正文。
-排查时优先通过 App 的“导出日志”提供文件，不要直接发送整个 `~/.one-memory` 数据目录；
-debug 期间产生的 pipeline 日志在分享前必须由开发人员确认并脱敏。
+The structured diagnostic logs at the default `info` level contain no conversation bodies, no model input/output, and no API keys. `debug`
+additionally enables the HY pipeline trace, which may contain full prompt/response and the authorized conversation bodies.
+When troubleshooting, prefer the app's "Export logs" to produce the file, and never send the whole `~/.one-memory` data directory;
+pipeline logs produced while debug is on must be reviewed and sanitized by a developer before they are shared.
 
-## 1. Log level 设什么
+## 1. Which log level to set
 
-### 日常观察：`info`
+### Everyday observation: `info`
 
-`info` 是默认级别，已经包含导入数量、任务排队、模型沉淀结果、待处理数量和失败终态。
-持续观察产品是否正常工作时，不需要打开 debug。
+`info` is the default level and already covers import counts, task queueing, model distillation results, pending counts, and failure terminal states.
+While just watching the product work normally, there is no need to turn on debug.
 
-### 复现具体问题：`debug`
+### Reproducing a specific issue: `debug`
 
-只有开发人员明确要求跟踪一次点击、一次召回或一个具体模型任务时，才打开：
+Turn it on only when a developer explicitly asks to trace one click, one recall, or one specific model task:
 
-> 设置 → 运行诊断 → 详细日志（排查用）
+> Settings → Diagnostics → Detailed logs (for debugging)
 
-开关打开后等同于 `debug`。复现完成后：
+Switching this on is the same as `debug`. Once the issue is reproduced:
 
-1. 点击“记录问题时间点”；
-2. 点击“导出日志（发给开发排查）”；
-3. 关闭“详细日志（排查用）”。
+1. Click "Record issue time";
+2. Click "Export logs (send to developers for debugging)";
+3. Turn off "Detailed logs (for debugging)".
 
-debug 可能把完整模型 prompt/response 写入本机调试日志，不得长期开启。切回 `info`
-只会停止后续正文记录，不会自动删除此前已经产生的 debug 文件。
+debug may write full model prompt/response into the local debug logs, so it must not stay on for long. Switching back to `info`
+only stops further body capture; the debug files already produced are not deleted automatically.
 
-不要把日志级别设置成仅 `warning` 或 `error` 来判断系统是否健康，因为正常进度事件是
-`info`。
+Do not judge whether the system is healthy with the level set to `warning` or `error` only, because normal progress events are
+`info`.
 
-## 2. 日志在哪里
+## 2. Where the logs are
 
-App 内推荐直接使用“运行诊断 → 导出日志”。开发人员远程指导时，优先使用
-`memhub logs`，它会再次过滤不安全字段。需要现场查看原始结构化日志时，Core 日志默认位于：
+Inside the app, use "Diagnostics → Export logs" directly. When a developer guides you remotely, prefer
+`memhub logs`, which filters unsafe fields again. When you need to inspect the raw structured logs on the spot, Core logs live by default at:
 
 ```text
 ~/.one-memory/logs/diagnostic-core.jsonl
 ```
 
-每行都是一条 JSON。macOS 终端中可先设置：
+Every line is one JSON object. In a macOS terminal, set this first:
 
 ```bash
 LOG="$HOME/.one-memory/logs/diagnostic-core.jsonl"
 ```
 
-## 3. 用什么 key 过滤
+## 3. Which keys to filter on
 
-产品排查只需要认识以下字段：
+Product troubleshooting only needs to know these fields:
 
-- `timestamp`：发生时间；
-- `level`：`info`、`warn`、`error`；
-- `event`：事件名称，是最重要的过滤 key；
-- `outcome`：`started`、`succeeded`、`completed`、`failed` 等结果；
-- `error_code`：稳定错误码，可直接发给开发；
-- `job_id`：一次导入任务；
-- `task_id`：一次记忆沉淀任务；
-- `request_id` / `trace_id`：串联一次模型或界面请求；
-- `details.result_count`：本次沉淀最终关联了多少条记忆；
-- `details.pending_count`：完成本次任务后还有多少条待处理；
-- `details.stored_count`：本次导入新增了多少条原始消息；
-- `duration_ms`：耗时。
+- `timestamp`: when it happened;
+- `level`: `info`, `warn`, `error`;
+- `event`: the event name, which is the most important filter key;
+- `outcome`: results such as `started`, `succeeded`, `completed`, `failed`;
+- `error_code`: the stable error code, which can be sent straight to a developer;
+- `job_id`: one import job;
+- `task_id`: one memory distillation task;
+- `request_id` / `trace_id`: chains one model or UI request together;
+- `details.result_count`: how many memories this run finally linked;
+- `details.pending_count`: how many items are still pending after this task;
+- `details.stored_count`: how many raw messages this import added;
+- `duration_ms`: how long it took.
 
-不要按用户原话、会话内容或 API Key 搜索；这些内容按设计不会进入诊断日志。
+Never search by user wording, conversation content, or API keys; by design none of that ever reaches the diagnostic logs.
 
-## 4. 系统正常工作时应该看到什么
+## 4. What you should see when the system is healthy
 
-### A. Core 已启动
+### A. Core has started
 
 ```text
 event = core.ready
 outcome = succeeded
 ```
 
-没有 `core.ready` 时，后面的导入和沉淀都不会运行。
+Without `core.ready`, neither the later import nor distillation will run.
 
-### B. 原始消息正在导入
+### B. Raw messages are being imported
 
 ```text
 event = import.finished
@@ -90,9 +90,9 @@ details.stored_count >= 0
 details.error_count = 0
 ```
 
-`stored_count=0` 可能只是没有新消息；只要状态不是 failed，就不能单凭 0 判故障。
+`stored_count=0` may simply mean there were no new messages; as long as the status is not failed, 0 alone is not a failure.
 
-### C. 记忆任务进入队列
+### C. Memory tasks enter the queue
 
 ```text
 event = memory_scheduler.tasks_queued
@@ -100,24 +100,24 @@ outcome = succeeded
 details.prepared_count > 0
 ```
 
-这表示导入的数据已经进入记忆沉淀队列。
+This means the imported data has entered the memory distillation queue.
 
-### D. SDK 正在沉淀
+### D. The SDK is distilling
 
 ```text
 event = hy.ingest_started
 outcome = started
 ```
 
-随后应出现：
+It should then be followed by:
 
 ```text
 event = hy.ingest_completed
 outcome = succeeded
-details.result_count = 本次 SDK 返回的记忆数
+details.result_count = number of memories the SDK returned this call
 ```
 
-如果有 reconcile，还会出现：
+If a reconcile runs, you also see:
 
 ```text
 event = hy.reconcile.completed
@@ -127,32 +127,32 @@ details.superseded_count
 details.deleted_count
 ```
 
-### E. MemHub 已完成本次沉淀
+### E. MemHub finished this distillation
 
-最适合产品观察的是：
+The best signal for product to watch is:
 
 ```text
 event = memory_task.finished
 outcome = completed
-details.result_count = 本任务最终写入或关联的记忆数
-details.pending_count = 剩余待处理任务数
-details.attempt = 第几次尝试
+details.result_count = memories this task finally wrote or linked
+details.pending_count = tasks still left to process
+details.attempt = which attempt number this was
 ```
 
-健康表现是：
+A healthy run looks like this:
 
-- `memory_task.finished` 持续出现；
-- `pending_count` 总体下降，或在持续导入时保持动态变化；
-- `result_count` 间歇性大于 0；
-- 没有持续重复的同一 `error_code`。
+- `memory_task.finished` keeps appearing;
+- `pending_count` trends down overall, or keeps moving while imports keep arriving;
+- `result_count` is above 0 intermittently;
+- the same `error_code` does not keep repeating.
 
-`result_count=0` 并不一定是故障。某段对话没有值得长期保存的信息时，0 是正常结果。只有大量
-任务连续为 0，同时存在 `hy.ingest_failed`、`memory_task.failed` 或积压只增不减，才需要升级
-排查。
+`result_count=0` is not necessarily a failure. When a stretch of conversation holds nothing worth keeping long term, 0 is the normal
+result. Only when many tasks return 0 in a row and `hy.ingest_failed`, `memory_task.failed`, or a backlog that only grows is also
+present should you escalate.
 
-## 5. 可复制的过滤命令
+## 5. Copy-paste filter commands
 
-优先使用以下安全读取命令：
+Prefer these safe read commands:
 
 ```bash
 memhub logs --since 2h --event memory_task.finished --json
@@ -161,10 +161,10 @@ memhub logs --since 24h --errors-only --tail 500 --json
 memhub status --json
 ```
 
-以下 `jq` 命令仅用于 `diagnostic-core.jsonl`，不要对 `core.log`、`service.log` 或 debug
-pipeline 日志直接运行后把完整输出发给他人。
+The `jq` commands below are only for `diagnostic-core.jsonl`. Do not run them against `core.log`, `service.log`, or the debug
+pipeline logs and then send the complete output to someone else.
 
-### 查看最近的失败
+### Recent failures
 
 ```bash
 jq -r '
@@ -174,7 +174,7 @@ jq -r '
 ' "$LOG"
 ```
 
-### 查看每次沉淀数量和剩余积压
+### Distillation counts and remaining backlog per run
 
 ```bash
 jq -r '
@@ -185,13 +185,13 @@ jq -r '
 ' "$LOG"
 ```
 
-输出列依次是：
+The output columns are, in order:
 
 ```text
-时间  结果  本次记忆数  剩余待处理数  尝试次数  错误码
+time  outcome  memories this run  pending left  attempt  error code
 ```
 
-### 统计当前日志里累计完成和累计记忆数
+### Cumulative completions and cumulative memories in the current log
 
 ```bash
 jq -s '
@@ -204,10 +204,10 @@ jq -s '
 ' "$LOG"
 ```
 
-这里的 `memory_results` 是任务结果数量之和，用于判断流水线是否持续产出；它不是当前记忆库
-去重后的总行数。
+The `memory_results` here sums the per-task result counts and tells you whether the pipeline keeps producing; it is not the
+deduplicated row total of the current memory store.
 
-### 查看导入数量
+### Import counts
 
 ```bash
 jq -r '
@@ -219,35 +219,35 @@ jq -r '
 ' "$LOG"
 ```
 
-### 跟踪一个具体任务
+### Tracing one specific task
 
-先从失败或完成日志复制 `task_id`：
+First copy a `task_id` from a failed or finished log line:
 
 ```bash
-TASK_ID="粘贴-task_id"
+TASK_ID="paste-task_id"
 jq --arg id "$TASK_ID" 'select(.task_id == $id)' "$LOG"
 ```
 
-## 6. 常见停点怎么判断
+## 6. How to read the common stop points
 
-- 有 `core.ready`，没有 `import.finished`：来源未授权、未开启同步，或来源读取失败。
-- `import.finished` 正常，没有 `memory_scheduler.tasks_queued`：导入内容尚未形成完整会话，或未进入处理窗口。
-- 有 `memory_task.started`，没有 `hy.ingest_completed`：重点查模型配置、余额、网络、超时和 `hy.ingest_failed`。
-- 有 `hy.ingest_completed`，但 `memory_task.finished` 失败：重点查最终治理写入和对应 `error_code`。
-- `pending_count` 长时间完全不下降：查看是否反复出现同一个错误码，或任务都在
-  `waiting_for_model`。
-- 导入数量持续增加、沉淀任务完全没有出现：这是异常，不应解释为“对话没有记忆价值”。
+- `core.ready` present but no `import.finished`: the source is not authorized, sync is off, or reading the source failed.
+- `import.finished` is normal but there is no `memory_scheduler.tasks_queued`: the imported content has not formed complete conversations yet, or it is outside the processing window.
+- `memory_task.started` present but no `hy.ingest_completed`: focus on model configuration, balance, network, timeouts, and `hy.ingest_failed`.
+- `hy.ingest_completed` present but `memory_task.finished` failed: focus on the final governance write and the matching `error_code`.
+- `pending_count` does not drop at all for a long time: check whether the same error code keeps appearing, or whether the tasks are all sitting in
+  `waiting_for_model`.
+- Import counts keep rising while no distillation task shows up at all: that is abnormal and must not be explained away as "this conversation had no memory value".
 
-## 7. 产品反馈给开发时提供什么
+## 7. What product should provide when reporting to development
 
-请提供：
+Please provide:
 
-1. 问题发生的大致时间；
-2. App 版本和平台；
-3. 是否开启了详细日志；
-4. 点击“记录问题时间点”后显示的结果；
-5. 通过“导出日志”得到的诊断文件；
-6. 最近重复出现的 `error_code`；
-7. `memory_task.finished` 最近几行中的 `result_count` 和 `pending_count`。
+1. the approximate time the issue happened;
+2. the app version and platform;
+3. whether detailed logs were enabled;
+4. what was shown after clicking "Record issue time";
+5. the diagnostics file obtained through "Export logs";
+6. the `error_code` values that repeated recently;
+7. the `result_count` and `pending_count` in the last few `memory_task.finished` lines.
 
-不要提供 API Key，也不要打包发送整个记忆数据库。
+Do not provide API keys, and do not package and send the whole memory database.

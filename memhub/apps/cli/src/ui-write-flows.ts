@@ -343,13 +343,13 @@ export function uiWriteExitCode(document: UiWriteOutcome): number {
 
 export function renderUiWriteText(document: UiWriteOutcome): string {
   if (document.state === "preview") {
-    return `以下操作尚未执行；加 --confirm 后才会写入：\n${document.plan.kind}\nplan_digest：${document.plan.digest}\n`;
+    return `The following actions have not been executed; they are only written with --confirm:\n${document.plan.kind}\nplan_digest: ${document.plan.digest}\n`;
   }
   if (document.state === "committed" || document.state === "recovered") {
-    return `已提交：${document.operation_id}\n${JSON.stringify(document.receipt)}\n`;
+    return `Committed: ${document.operation_id}\n${JSON.stringify(document.receipt)}\n`;
   }
   const code = "code" in document ? document.code : "ui_write_state_invalid";
-  return `操作未完成：${document.state}（${code}）\n`;
+  return `Operation incomplete: ${document.state}(${code})\n`;
 }
 
 export async function executeCallEventsClear(

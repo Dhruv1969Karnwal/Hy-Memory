@@ -340,8 +340,8 @@ def _lexical_raw_rows(
         ]
     long_terms = [term for term in terms if len(term) >= TRIGRAM_FLOOR]
     declarative = (
-        "CASE WHEN e.verbatim LIKE '%？%' OR e.verbatim LIKE '%?%' "
-        "OR e.verbatim LIKE '%只回答%' THEN 0 ELSE 1 END"
+        "CASE WHEN e.verbatim LIKE '%\uff1f%' OR e.verbatim LIKE '%?%' "
+        "OR e.verbatim LIKE '%\u53ea\u56de\u7b54%' THEN 0 ELSE 1 END"
         if context_raw._prefers_declared_facts(query.query)
         else "1"
     )
@@ -352,7 +352,7 @@ def _lexical_raw_rows(
         else "1"
     )
     echo_values: list[object] = (
-        [query.query.strip(), f"{query.query.strip()}。"]
+        [query.query.strip(), f"{query.query.strip()}\u3002"]
         if context_raw._prefers_declared_facts(query.query)
         else []
     )

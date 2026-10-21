@@ -58,14 +58,14 @@ def test_recent_conversations_follow_import_time_not_when_they_were_said(tmp_pat
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
     store.put(
         message(
-            verbatim="先写进库的一句",
+            verbatim="A line written to the store early",
             message_id="first",
             created_at=datetime(2026, 9, 23, 6, 0, tzinfo=UTC),
         )
     )
     store.put(
         message(
-            verbatim="后写进库的一句",
+            verbatim="A line written to the store last",
             message_id="second",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -81,14 +81,14 @@ def test_recent_activity_uses_message_time_and_skips_injected_context(tmp_path) 
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
     store.put(
         message(
-            verbatim="刚刚真实发送的消息",
+            verbatim="The message really just sent",
             message_id="live",
             created_at=datetime(2026, 9, 23, 6, 0, tzinfo=UTC),
         )
     )
     store.put(
         message(
-            verbatim="历史导入但刚写进库",
+            verbatim="History imported but just written to the store",
             message_id="history",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -146,10 +146,14 @@ def test_recent_conversations_hydrate_a_page_with_constant_query_count(
 
 def test_a_cursor_turn_also_filed_under_claude_code_is_listed_once_as_cursor(tmp_path) -> None:
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
-    store.put(message(verbatim="开关还是打不开", conversation_id="cursor-chat", message_id="c"))
     store.put(
         message(
-            verbatim="开关还是打不开",
+            verbatim="The toggle still will not open", conversation_id="cursor-chat", message_id="c"
+        )
+    )
+    store.put(
+        message(
+            verbatim="The toggle still will not open",
             conversation_id="cursor-chat",
             message_id="replayed",
             source_id="claude-code",
@@ -157,7 +161,7 @@ def test_a_cursor_turn_also_filed_under_claude_code_is_listed_once_as_cursor(tmp
     )
     store.put(
         message(
-            verbatim="真正在 Claude Code 里说的",
+            verbatim="Actually said inside Claude Code",
             conversation_id="claude-session",
             message_id="own",
             source_id="claude-code",
@@ -348,7 +352,7 @@ def test_conversation_browser_groups_by_source_and_conversation(tmp_path) -> Non
     for source in ("cursor", "codex"):
         store.put(
             message(
-                verbatim=f"{source} 的第一轮",
+                verbatim=f"the first turn of {source}",
                 source_id=source,
                 conversation_id="shared-id",
                 message_id=f"{source}-1",
@@ -370,7 +374,7 @@ def test_conversation_turn_page_keeps_complete_recent_turns(tmp_path) -> None:
     for turn in range(25):
         stored = store.put(
             message(
-                verbatim=f"用户问题 {turn}",
+                verbatim=f"user question {turn}",
                 message_id=f"user-{turn:02d}",
                 created_at=datetime(2026, 9, 3, 1, turn, tzinfo=UTC),
             )
@@ -378,7 +382,7 @@ def test_conversation_turn_page_keeps_complete_recent_turns(tmp_path) -> None:
         if turn == 0:
             seed_id = stored.record.evidence_id
         assistant = message(
-            verbatim=f"助手回答 {turn}",
+            verbatim=f"assistant answer {turn}",
             message_id=f"assistant-{turn:02d}",
             created_at=datetime(2026, 9, 3, 1, turn, 30, tzinfo=UTC),
         )
@@ -400,10 +404,19 @@ def test_conversation_turn_page_keeps_complete_recent_turns(tmp_path) -> None:
 
 def test_a_phrase_inside_a_message_finds_its_conversation(tmp_path) -> None:
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
-    store.put(message(verbatim="昨天晚上重新打了一个包，抽取终于跑通了", message_id="m-1"))
-    store.put(message(verbatim="周末想去爬山，天气应该不错", message_id="m-2"))
+    store.put(
+        message(
+            verbatim="Rebuilt the package last night. The extraction finally ran through.",
+            message_id="m-1",
+        )
+    )
+    store.put(
+        message(
+            verbatim="Want to go hiking this weekend. The weather should be nice.", message_id="m-2"
+        )
+    )
 
-    hits = store.search_conversations("抽取终于", user_id="local", limit=10)
+    hits = store.search_conversations("extraction finally", user_id="local", limit=10)
 
     assert [hit.message_id for hit in hits] == ["m-1"]
 
@@ -416,10 +429,15 @@ def test_a_query_shorter_than_the_trigram_floor_still_finds_its_rows(tmp_path) -
     back empty and look exactly like "you never said that".
     """
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
-    store.put(message(verbatim="打包这件事今天终于收尾了", message_id="m-1"))
-    store.put(message(verbatim="周末想去爬山", message_id="m-2"))
+    store.put(
+        message(
+            verbatim="\u6253\u5305\u8fd9\u4ef6\u4e8b\u4eca\u5929\u7ec8\u4e8e\u6536\u5c3e\u4e86",
+            message_id="m-1",
+        )
+    )
+    store.put(message(verbatim="\u5468\u672b\u60f3\u53bb\u722c\u5c71", message_id="m-2"))
 
-    hits = store.search_conversations("打包", user_id="local", limit=10)
+    hits = store.search_conversations("\u6253\u5305", user_id="local", limit=10)
 
     assert [hit.message_id for hit in hits] == ["m-1"]
 
@@ -433,33 +451,46 @@ def test_rows_imported_before_the_index_existed_are_reachable(tmp_path) -> None:
     """
     database = tmp_path / "one-memory.sqlite3"
     store = EvidenceStore(database)
-    store.put(message(verbatim="昨天晚上重新打了一个包，抽取终于跑通了", message_id="m-1"))
+    store.put(
+        message(
+            verbatim="Rebuilt the package last night. The extraction finally ran through.",
+            message_id="m-1",
+        )
+    )
 
     with sqlite3.connect(database) as connection:
         connection.execute("DROP TABLE IF EXISTS evidence_search")
         connection.execute("DELETE FROM evidence_repairs WHERE name = 'conversation_search_index'")
 
     reopened = EvidenceStore(database)
-    hits = reopened.search_conversations("抽取终于", user_id="local", limit=10)
+    hits = reopened.search_conversations("extraction finally", user_id="local", limit=10)
 
     assert [hit.message_id for hit in hits] == ["m-1"]
 
 
 def test_a_revised_message_is_found_by_its_new_words_and_not_its_old(tmp_path) -> None:
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
-    store.put(message(verbatim="先用向量检索顶一阵子"))
-    store.put(message(verbatim="改成字面检索，向量那条另开一项"))
+    store.put(message(verbatim="Use vector retrieval for now"))
+    store.put(
+        message(verbatim="Switch to literal search and open a separate item for the vector lane")
+    )
 
-    assert store.search_conversations("字面检索", user_id="local", limit=10)
-    assert store.search_conversations("顶一阵子", user_id="local", limit=10) == []
+    assert store.search_conversations("literal search", user_id="local", limit=10)
+    assert store.search_conversations("for now", user_id="local", limit=10) == []
 
 
 def test_another_users_conversations_are_not_reachable(tmp_path) -> None:
     store = EvidenceStore(tmp_path / "one-memory.sqlite3")
-    store.put(message(verbatim="抽取终于跑通了", user_id="local", message_id="m-1"))
-    store.put(message(verbatim="抽取终于跑通了", user_id="someone-else", message_id="m-2"))
+    store.put(
+        message(verbatim="The extraction finally ran through.", user_id="local", message_id="m-1")
+    )
+    store.put(
+        message(
+            verbatim="The extraction finally ran through.", user_id="someone-else", message_id="m-2"
+        )
+    )
 
-    hits = store.search_conversations("抽取终于", user_id="local", limit=10)
+    hits = store.search_conversations("extraction finally", user_id="local", limit=10)
 
     assert [hit.user_id for hit in hits] == ["local"]
 
@@ -474,13 +505,13 @@ def test_a_missing_index_is_raised_rather_than_answered_as_no_matches(tmp_path) 
     """
     database = tmp_path / "one-memory.sqlite3"
     store = EvidenceStore(database)
-    store.put(message(verbatim="抽取终于跑通了"))
+    store.put(message(verbatim="The extraction finally ran through."))
 
     with sqlite3.connect(database) as connection:
         connection.execute("DROP TABLE IF EXISTS evidence_search")
 
     with pytest.raises(ConversationSearchUnavailableError):
-        store.search_conversations("抽取终于", user_id="local", limit=10)
+        store.search_conversations("extraction finally", user_id="local", limit=10)
 
 
 def _client(tmp_path):
@@ -506,7 +537,7 @@ async def test_recent_list_ignores_a_missing_search_index(tmp_path) -> None:
     app, transport = _client(tmp_path)
     async with app.router.lifespan_context(app), transport as client:
         app.state.evidence_store.put(
-            message(verbatim="刚从 Cursor 同步进来的原话", message_id="live")
+            message(verbatim="Words just synced in from Cursor", message_id="live")
         )
         with sqlite3.connect(app.state.evidence_store.database_path) as connection:
             connection.execute("DROP TABLE IF EXISTS evidence_search")
@@ -516,7 +547,7 @@ async def test_recent_list_ignores_a_missing_search_index(tmp_path) -> None:
         assert response.status_code == 200
         body = response.json()
         assert body["total"] == 1
-        assert body["items"][0]["excerpt"] == "刚从 Cursor 同步进来的原话"
+        assert body["items"][0]["excerpt"] == "Words just synced in from Cursor"
         assert body["items"][0]["truncated"] is False
         assert body["items"][0]["source_id"] == "cursor"
 
@@ -526,44 +557,50 @@ async def test_search_answers_with_no_model_profile_configured(tmp_path) -> None
     """The whole point of C-02: no generation model, and still an answer."""
     app, transport = _client(tmp_path)
     async with app.router.lifespan_context(app), transport as client:
-        app.state.evidence_store.put(message(verbatim="昨天晚上重新打了一个包，抽取终于跑通了"))
+        app.state.evidence_store.put(
+            message(verbatim="Rebuilt the package last night. The extraction finally ran through.")
+        )
 
         assert app.state.model_profile_store.active(app.state.secret_store) is None
-        response = await client.get("/api/v1/conversations/search", params={"query": "抽取终于"})
+        response = await client.get(
+            "/api/v1/conversations/search", params={"query": "extraction finally"}
+        )
 
         assert response.status_code == 200
         body = response.json()
         assert body["empty_reason"] is None
         assert len(body["hits"]) == 1
-        assert "抽取终于跑通了" in body["hits"][0]["excerpt"]
+        assert "The extraction finally ran through." in body["hits"][0]["excerpt"]
 
 
 @pytest.mark.anyio
 async def test_search_groups_hits_and_keeps_title_separate_from_match(tmp_path) -> None:
     app, transport = _client(tmp_path)
     async with app.router.lifespan_context(app), transport as client:
-        app.state.evidence_store.put(message(verbatim="发布准备", message_id="title"))
+        app.state.evidence_store.put(message(verbatim="Release preparation", message_id="title"))
         app.state.evidence_store.put(
             message(
-                verbatim="第一次提到公证",
+                verbatim="Notarization mentioned for the first time",
                 message_id="match-1",
                 created_at=datetime(2026, 9, 3, 1, 18, tzinfo=UTC),
             )
         )
         app.state.evidence_store.put(
             message(
-                verbatim="第二次提到公证",
+                verbatim="Notarization mentioned for the second time",
                 message_id="match-2",
                 created_at=datetime(2026, 9, 3, 1, 19, tzinfo=UTC),
             )
         )
 
-        response = await client.get("/api/v1/conversations/search", params={"query": "公证"})
+        response = await client.get(
+            "/api/v1/conversations/search", params={"query": "notarization"}
+        )
 
         assert response.status_code == 200
         assert len(response.json()["hits"]) == 1
-        assert response.json()["hits"][0]["title"] == "发布准备"
-        assert response.json()["hits"][0]["excerpt"] == "第二次提到公证"
+        assert response.json()["hits"][0]["title"] == "Release preparation"
+        assert response.json()["hits"][0]["excerpt"] == "Notarization mentioned for the second time"
         assert response.json()["hits"][0]["turn_count"] == 3
         assert response.json()["hits"][0]["turn_offset"] == 0
 
@@ -572,12 +609,16 @@ async def test_search_groups_hits_and_keeps_title_separate_from_match(tmp_path) 
 async def test_nothing_imported_is_told_apart_from_nothing_matching(tmp_path) -> None:
     app, transport = _client(tmp_path)
     async with app.router.lifespan_context(app), transport as client:
-        empty = await client.get("/api/v1/conversations/search", params={"query": "抽取终于"})
+        empty = await client.get(
+            "/api/v1/conversations/search", params={"query": "extraction finally"}
+        )
         assert empty.status_code == 200
         assert empty.json()["empty_reason"] == "nothing_imported"
 
-        app.state.evidence_store.put(message(verbatim="周末想去爬山"))
-        unmatched = await client.get("/api/v1/conversations/search", params={"query": "量子纠缠"})
+        app.state.evidence_store.put(message(verbatim="Want to go hiking this weekend"))
+        unmatched = await client.get(
+            "/api/v1/conversations/search", params={"query": "quantum entanglement"}
+        )
 
         assert unmatched.status_code == 200
         assert unmatched.json()["empty_reason"] == "no_matches"
@@ -587,11 +628,13 @@ async def test_nothing_imported_is_told_apart_from_nothing_matching(tmp_path) ->
 async def test_a_broken_index_is_reported_rather_than_shown_as_no_matches(tmp_path) -> None:
     app, transport = _client(tmp_path)
     async with app.router.lifespan_context(app), transport as client:
-        app.state.evidence_store.put(message(verbatim="抽取终于跑通了"))
+        app.state.evidence_store.put(message(verbatim="The extraction finally ran through."))
         with sqlite3.connect(app.state.evidence_store.database_path) as connection:
             connection.execute("DROP TABLE IF EXISTS evidence_search")
 
-        response = await client.get("/api/v1/conversations/search", params={"query": "抽取终于"})
+        response = await client.get(
+            "/api/v1/conversations/search", params={"query": "extraction finally"}
+        )
 
         assert response.status_code == 503
         assert response.json()["detail"] == "conversation_search_unavailable"
@@ -604,27 +647,29 @@ async def test_a_hit_opens_the_conversation_it_came_from(tmp_path) -> None:
     async with app.router.lifespan_context(app), transport as client:
         app.state.evidence_store.put(
             message(
-                verbatim="抽取终于跑通了",
+                verbatim="The extraction finally ran through.",
                 message_id="m-1",
                 created_at=datetime(2026, 9, 3, 1, 17, tzinfo=UTC),
             )
         )
         app.state.evidence_store.put(
             message(
-                verbatim="那就先把包发出去",
+                verbatim="Then let's ship the package first",
                 message_id="m-2",
                 created_at=datetime(2026, 9, 3, 1, 19, tzinfo=UTC),
             )
         )
 
-        found = await client.get("/api/v1/conversations/search", params={"query": "抽取终于"})
+        found = await client.get(
+            "/api/v1/conversations/search", params={"query": "extraction finally"}
+        )
         evidence_id = found.json()["hits"][0]["evidence_id"]
         transcript = await client.get(f"/api/v1/conversations/{evidence_id}")
 
         assert transcript.status_code == 200
         assert [item["verbatim"] for item in transcript.json()["messages"]] == [
-            "抽取终于跑通了",
-            "那就先把包发出去",
+            "The extraction finally ran through.",
+            "Then let's ship the package first",
         ]
 
 
@@ -634,14 +679,14 @@ async def test_assistant_only_conversation_opens_in_time_order(tmp_path) -> None
     async with app.router.lifespan_context(app), transport as client:
         first = app.state.evidence_store.put(
             message(
-                verbatim="第一条助手回复",
+                verbatim="First assistant reply",
                 message_id="assistant-only-1",
                 created_at=datetime(2026, 9, 3, 1, 17, tzinfo=UTC),
             ).model_copy(update={"role": "assistant", "written_by": "agent"})
         ).record
         app.state.evidence_store.put(
             message(
-                verbatim="第二条助手回复",
+                verbatim="Second assistant reply",
                 message_id="assistant-only-2",
                 created_at=datetime(2026, 9, 3, 1, 18, tzinfo=UTC),
             ).model_copy(update={"role": "assistant", "written_by": "agent"})
@@ -652,8 +697,8 @@ async def test_assistant_only_conversation_opens_in_time_order(tmp_path) -> None
         assert transcript.status_code == 200
         assert transcript.json()["total_turns"] == 1
         assert [item["verbatim"] for item in transcript.json()["messages"]] == [
-            "第一条助手回复",
-            "第二条助手回复",
+            "First assistant reply",
+            "Second assistant reply",
         ]
 
 
@@ -665,7 +710,7 @@ async def test_conversation_browser_and_turn_pages_are_bounded(tmp_path) -> None
         for turn in range(25):
             stored = app.state.evidence_store.put(
                 message(
-                    verbatim=f"用户问题 {turn}",
+                    verbatim=f"user question {turn}",
                     message_id=f"user-{turn:02d}",
                     created_at=datetime(2026, 9, 3, 1, turn, tzinfo=UTC),
                 )
@@ -673,7 +718,7 @@ async def test_conversation_browser_and_turn_pages_are_bounded(tmp_path) -> None
             if turn == 0:
                 first_id = stored.record.evidence_id
             assistant = message(
-                verbatim=f"助手回答 {turn}",
+                verbatim=f"assistant answer {turn}",
                 message_id=f"assistant-{turn:02d}",
                 created_at=datetime(2026, 9, 3, 1, turn, 30, tzinfo=UTC),
             )
@@ -682,7 +727,7 @@ async def test_conversation_browser_and_turn_pages_are_bounded(tmp_path) -> None
             )
         app.state.evidence_store.put(
             message(
-                verbatim="Codex 的同名会话",
+                verbatim="The same-named Codex conversation",
                 source_id="codex",
                 conversation_id="conversation-1",
                 message_id="codex-1",
@@ -712,11 +757,11 @@ async def test_conversation_memories_returns_only_linked_current_memories(tmp_pa
     app, transport = _client(tmp_path)
     async with app.router.lifespan_context(app), transport as client:
         linked = app.state.evidence_store.put(
-            message(verbatim="发布前确认签名", message_id="linked")
+            message(verbatim="Confirm signing before release", message_id="linked")
         ).record
         other = app.state.evidence_store.put(
             message(
-                verbatim="另一段会话",
+                verbatim="Another conversation",
                 conversation_id="other-conversation",
                 message_id="other",
             )
@@ -725,7 +770,7 @@ async def test_conversation_memories_returns_only_linked_current_memories(tmp_pa
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.WORKING,
-                content="发布前需要确认签名。",
+                content="Signing must be confirmed before release.",
                 scopes=("all-apps",),
                 evidence_ids=(linked.evidence_id,),
             ),
@@ -735,7 +780,7 @@ async def test_conversation_memories_returns_only_linked_current_memories(tmp_pa
             MemoryDraft(
                 user_id="local",
                 kind=MemoryKind.WORKING,
-                content="不属于这段对话。",
+                content="This does not belong to this conversation.",
                 scopes=("all-apps",),
                 evidence_ids=(other.evidence_id,),
             ),
@@ -745,4 +790,6 @@ async def test_conversation_memories_returns_only_linked_current_memories(tmp_pa
         response = await client.get(f"/api/v1/conversations/{linked.evidence_id}/memories")
 
         assert response.status_code == 200
-        assert [item["content"] for item in response.json()["items"]] == ["发布前需要确认签名。"]
+        assert [item["content"] for item in response.json()["items"]] == [
+            "Signing must be confirmed before release."
+        ]

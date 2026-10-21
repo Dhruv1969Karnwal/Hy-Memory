@@ -1,52 +1,52 @@
-# Hermes 一键插入支持
+# Hermes one-click insert support
 
-更新日期：2026-10-14
+Last updated: 2026-10-14
 
-## 结论
+## Bottom line
 
-Hermes 的“一键插入应用”已开放，但它不是插件安装。它在 Electron 后台静默修改 YAML、写入 Skill、创建 Credential 并授权，所以 macOS 上通常看不到安装窗口或进度。
+Hermes has "One-click insert" available, but it is not a plugin install. It silently edits YAML in the Electron background, writes the Skill, creates the Credential and grants it, so on macOS you usually never see an install window or progress bar.
 
-## 接入方式和产品状态
+## Integration and product status
 
-| 项目 | Hermes 当前实现 |
+| Item | Hermes current implementation |
 |---|---|
-| 一键插入产品状态 | 开放 |
-| Hermes 查询 MemHub | MCP Server |
-| 告诉模型何时查询 | `memhub-recall` Skill |
-| MemHub 自动向 Prompt 注入记忆 | 没有 |
-| Hermes 新会话实时送入 MemHub | 没有 Hook/Plugin；依赖 Core 扫描 |
-| 传统插件 | 没有 |
+| One-click insert status | Available |
+| How Hermes queries MemHub | MCP Server |
+| How the model knows when to query | `memhub-recall` Skill |
+| MemHub automatically injecting memories into prompts | None |
+| New Hermes sessions into MemHub in real time | No Hook/Plugin; relies on Core scanning |
+| Traditional plugin | None |
 
-Hermes 对 MemHub 的使用方式是：模型在需要时主动调用 MCP 工具。当前没有 Prompt 前 Prefetch，也没有 memory-provider Hook 自动把记忆塞进上下文。
+Hermes uses MemHub by having the model call the MCP tool itself when it needs to. There is no pre-prompt Prefetch today, and no memory-provider Hook that pushes memories into the context automatically.
 
-## 两个开关分别做什么
+## What each toggle does
 
-### 打开“一键插入应用”
+### Turning on "One-click insert"
 
-写入 `config.yaml` 的 MCP Server、安装 Skill、创建 Credential 并授予 Recall 权限。Hermes 随后可以主动调用 MemHub。
+It writes the MCP Server into `config.yaml`, installs the Skill, creates the Credential and grants the Recall permissions. Hermes can then call MemHub on its own.
 
-### 关闭“一键插入应用”
+### Turning off "One-click insert"
 
-先撤销 Hermes Credential，再恢复或删除 MCP 配置、Skill 和 Journal。它不改变 MemHub 是否继续读取 Hermes 对话。
+It revokes the Hermes Credential first, then restores or deletes the MCP config, the Skill and the Journal. It does not change whether MemHub keeps reading Hermes conversations.
 
-### 打开“同步开关”
+### Turning on the "Sync toggle"
 
-Core 校验 `.hermes` Root，创建或恢复 history Job，扫描 Hermes 会话数据库中尚未处理的记录，并通过 Core 的轮询器持续发现新记录。
+Core validates the `.hermes` Root, creates or resumes the history Job, scans the Hermes session database for records that have not been processed, and keeps discovering new records through Core's poller.
 
-### 关闭“同步开关”
+### Turning off the "Sync toggle"
 
-Core 停止扫描和 claim 未运行 Job；pending Job 冻结，running Job可结束。Hermes 没有 Capture Hook，因此关闭后不会再有另一条实时入库路径。已有 Memory 仍可查询。
+Core stops scanning and stops claiming Jobs that are not running; pending Jobs freeze and running Jobs may finish. Hermes has no Capture Hook, so once it is off there is no other real-time intake path. Existing Memory stays queryable.
 
-### 组合效果
+### Combined effect
 
-| 一键插入 | 同步 | 结果 |
+| One-click insert | Sync | Result |
 |---|---|---|
-| 关 | 关 | 双向都关闭 |
-| 开 | 关 | Hermes 可以查询已有 Memory，但 MemHub 不再读取 Hermes 新会话 |
-| 关 | 开 | MemHub 读取 Hermes 会话，但 Hermes 不能调用 MemHub |
-| 开 | 开 | 双向接通；Recall 仍由 Hermes 模型主动调用，不是自动 Prefetch |
+| Off | Off | Both directions are closed |
+| On | Off | Hermes can query existing Memory, but MemHub no longer reads new Hermes sessions |
+| Off | On | MemHub reads Hermes sessions, but Hermes cannot call MemHub |
+| On | On | Both directions connected; Recall is still the Hermes model calling on its own, not automatic Prefetch |
 
-## 打开时的实际动作
+## What actually happens when you turn it on
 
 ```text
 ~/.hermes/config.yaml
@@ -57,10 +57,10 @@ Core 停止扫描和 claim 未运行 Job；pending Job 冻结，running Job可�
 ~/.hermes/.one-memory/recall-install.json
 
 <MemHub dataDir>/host-permissions/...
-  └── Hermes Credential、Installation、Grant
+  └── Hermes Credential, Installation, Grant
 ```
 
-配置大致为：
+The config looks roughly like:
 
 ```yaml
 mcp_servers:
@@ -75,31 +75,31 @@ mcp_servers:
       ONE_MEMORY_HOST_CREDENTIAL_FILE: ".../credential"
 ```
 
-Hermes Layout 定义在 [recall-installer.ts](../../packages/host-bridge/src/recall-installer.ts)，YAML 局部编辑在 [yaml-mcp.ts](../../packages/host-bridge/src/yaml-mcp.ts)。编辑器只维护 `mcp_servers.one-memory`，尽量保留模型、Gateway 和注释。
+The Hermes Layout is defined in [recall-installer.ts](../../packages/host-bridge/src/recall-installer.ts), and the YAML-local editing lives in [yaml-mcp.ts](../../packages/host-bridge/src/yaml-mcp.ts). The editor maintains only `mcp_servers.one-memory` and preserves models, Gateway settings and comments as much as possible.
 
-## Skill、Capture 与权限
+## Skill, Capture and permissions
 
-- Skill：`~/.hermes/skills/memhub-recall/SKILL.md`。
-- Capture：当前不安装。Hermes 使用单一 memory-provider slot，自动占用可能覆盖用户已有 Provider。
-- 默认 Tools：`om_recall`、`om_conversations`、`om_diagnostic_trace`。
-- 默认 Scopes：`all-apps`、`source:hermes`。
+- Skill: `~/.hermes/skills/memhub-recall/SKILL.md`.
+- Capture: not installed today. Hermes uses a single memory-provider slot, and occupying it automatically could overwrite a Provider the user already has.
+- Default Tools: `om_recall`, `om_conversations`, `om_diagnostic_trace`.
+- Default Scopes: `all-apps`, `source:hermes`.
 
-## 重复打开
+## Re-opening
 
-- 已安装且 `approved`：不重装，只修复 MemHub 命令路径并 Probe。
-- 文件存在但权限不完整：重新 Preview、安装、签发新 Credential 并授权。
-- 已有非 MemHub 管理的 `one-memory` Server：默认拒绝覆盖。
+- Already installed and `approved`: no reinstall; only repair the MemHub command path and Probe.
+- File exists but permissions are incomplete: run Preview and install again, issue a fresh Credential and grant.
+- An existing `one-memory` Server not managed by MemHub: refuse to overwrite by default.
 
-## 关闭
+## Closing
 
-正常关闭会先撤销 Credential，再：
+A normal close revokes the Credential first, then:
 
-- 删除或恢复 `mcp_servers.one-memory`；
-- 删除或恢复 `memhub-recall/SKILL.md`；
-- 删除安装 Journal。
+- Delete or restore `mcp_servers.one-memory`;
+- Delete or restore `memhub-recall/SKILL.md`;
+- Delete the install Journal.
 
-配置或 Skill 被用户修改后，MemHub 不会强删，只会尽量撤权并提示人工检查。
+Once the config or Skill has been modified by the user, MemHub does not force-delete; it revokes what it can and asks for a manual check.
 
-## 生效与重启
+## Taking effect and restart
 
-Probe 成功只证明 MCP 命令能连接 MemHub，不证明正在运行的 Hermes 已热加载。建议完全退出 Hermes、重新打开并开始新会话。
+A successful Probe only proves the MCP command can connect to MemHub; it does not prove a running Hermes has hot-loaded it. Quit Hermes fully, re-open and start a new session.

@@ -2,18 +2,18 @@
 HY Memory - Pipelines
 
 pipelines/
-├── base.py                # WritePipeline / ReadPipeline 抽象基类 + 统一协议
-├── registry.py            # ComponentFactory — 组件工厂
-├── writer.py              # MemoryWriter (System 1 写入)
+├── base.py                # WritePipeline / ReadPipeline abstract bases + unified protocol
+├── registry.py            # ComponentFactory -- component factory
+├── writer.py              # MemoryWriter (System 1 writes)
 ├── reader.py              # MemoryReader (dispatcher → legacy/hybrid)
-├── reader_base.py         # BaseReadPipeline（共享后处理）
-├── reader_legacy.py       # LegacyReadPipeline（vector recall）
-├── reader_hybrid.py       # HybridReadPipeline（vector + BM25 recall）
-├── system2_writer.py      # System2Writer (ultra mode: System 1 + System 2 调度)
+├── reader_base.py         # BaseReadPipeline (shared post-processing)
+├── reader_legacy.py       # LegacyReadPipeline (vector recall)
+├── reader_hybrid.py       # HybridReadPipeline (vector + BM25 recall)
+├── system2_writer.py      # System2Writer (ultra mode: System 1 + System 2 scheduling)
 ├── system2_agent.py       # System 2 Agent (LLM + Graph tools)
 ├── system2_tools.py       # System 2 Tool definitions
 ├── cross_domain_sweeper.py # Cross-domain schema induction
-└── _retrieval/            # 检索策略子模块 (BM25, RRF, tag_index, evolution)
+└── _retrieval/            # Retrieval strategy submodules (BM25, RRF, tag_index, evolution)
 """
 
 from .base import (
@@ -29,14 +29,14 @@ from .base import (
 )
 from .registry import ComponentFactory, PipelineConfig
 
-# 向后兼容别名
+# Backward-compatible aliases
 PipelineRegistry = ComponentFactory
 
 __all__ = [
-    # 抽象基类
+    # Abstract base classes
     "WritePipeline",
     "ReadPipeline",
-    # 统一协议
+    # Unified protocol
     "ChatMessage",
     "ToolCall",
     "WriteRequest",
@@ -44,8 +44,8 @@ __all__ = [
     "ReadRequest",
     "ReadResponse",
     "PipelineContext",
-    # 组件工厂
+    # Component factory
     "ComponentFactory",
-    "PipelineRegistry",  # 向后兼容
-    "PipelineConfig",    # 向后兼容
+    "PipelineRegistry",  # Backward compatibility
+    "PipelineConfig",    # Backward compatibility
 ]

@@ -56,10 +56,12 @@ describe("GraphWidthPrompt", () => {
       </>,
     );
     const dialog = await screen.findByRole("dialog", {
-      name: "现有记忆库和内置模型对不上",
+      name: "The existing memory library does not match the built-in model",
     });
-    const keep = screen.getByRole("radio", { name: /保留现有记忆库/ });
-    const confirm = screen.getByRole("button", { name: "就这么办" });
+    const keep = screen.getByRole("radio", {
+      name: /Keep the existing memory library/,
+    });
+    const confirm = screen.getByRole("button", { name: "Do that" });
     await waitFor(() => expect(document.activeElement).toBe(keep));
 
     await user.tab({ shift: false });
@@ -71,7 +73,7 @@ describe("GraphWidthPrompt", () => {
     expect(confirm).toBeTruthy();
   });
 
-  describe("先导出再决定", () => {
+  describe("export first, then decide", () => {
     beforeEach(() => {
       decideGraphWidth.mockResolvedValue({
         archived_path: null,
@@ -85,13 +87,15 @@ describe("GraphWidthPrompt", () => {
       const user = userEvent.setup();
       render(<GraphWidthPrompt />);
       await user.click(
-        await screen.findByRole("radio", { name: /先导出再决定/ }),
+        await screen.findByRole("radio", {
+          name: /Export first and decide later/,
+        }),
       );
-      await user.click(screen.getByRole("button", { name: "就这么办" }));
+      await user.click(screen.getByRole("button", { name: "Do that" }));
       return user;
     }
 
-    it("把备份真正落在哪里原样告诉用户", async () => {
+    it("tells the user exactly where the backup actually landed", async () => {
       await exportFirst();
 
       expect(
@@ -101,17 +105,21 @@ describe("GraphWidthPrompt", () => {
       ).toBeTruthy();
     });
 
-    it("导完还留在三选一上，不把人停在半路", async () => {
+    it("stays on the three choices after exporting instead of stopping halfway", async () => {
       await exportFirst();
 
       await screen.findByText(/one-memory-graph-/);
       expect(
-        screen.getByRole("dialog", { name: "现有记忆库和内置模型对不上" }),
+        screen.getByRole("dialog", {
+          name: "The existing memory library does not match the built-in model",
+        }),
       ).toBeTruthy();
-      expect(screen.getByRole("radio", { name: /改用内置模型/ })).toBeTruthy();
+      expect(
+        screen.getByRole("radio", { name: /Switch to the built-in model/ }),
+      ).toBeTruthy();
     });
 
-    it("导出之后再选重建，走的还是明说的那一次", async () => {
+    it("choosing rebuild after an export still goes through the one stated path", async () => {
       const user = await exportFirst();
       await screen.findByText(/one-memory-graph-/);
       decideGraphWidth.mockResolvedValue({
@@ -120,8 +128,10 @@ describe("GraphWidthPrompt", () => {
         mismatch: null,
       });
 
-      await user.click(screen.getByRole("radio", { name: /改用内置模型/ }));
-      await user.click(screen.getByRole("button", { name: "就这么办" }));
+      await user.click(
+        screen.getByRole("radio", { name: /Switch to the built-in model/ }),
+      );
+      await user.click(screen.getByRole("button", { name: "Do that" }));
 
       await waitFor(() => {
         expect(decideGraphWidth).toHaveBeenLastCalledWith(
@@ -138,9 +148,13 @@ describe("GraphWidthPrompt", () => {
   it("keeping the existing library is what is selected before anyone clicks", async () => {
     render(<GraphWidthPrompt />);
 
-    const keep = await screen.findByRole("radio", { name: /保留现有记忆库/ });
+    const keep = await screen.findByRole("radio", {
+      name: /Keep the existing memory library/,
+    });
     expect((keep as HTMLInputElement).checked).toBe(true);
-    const rebuild = screen.getByRole("radio", { name: /改用内置模型/ });
+    const rebuild = screen.getByRole("radio", {
+      name: /Switch to the built-in model/,
+    });
     expect((rebuild as HTMLInputElement).checked).toBe(false);
   });
 
@@ -148,7 +162,7 @@ describe("GraphWidthPrompt", () => {
     const user = userEvent.setup();
     render(<GraphWidthPrompt />);
 
-    await user.click(await screen.findByRole("button", { name: "就这么办" }));
+    await user.click(await screen.findByRole("button", { name: "Do that" }));
 
     await waitFor(() => {
       expect(decideGraphWidth).toHaveBeenCalledWith(
@@ -162,7 +176,7 @@ describe("GraphWidthPrompt", () => {
     render(<GraphWidthPrompt />);
 
     const rebuild = await screen.findByRole("radio", {
-      name: /改用内置模型/,
+      name: /Switch to the built-in model/,
     });
     expect(rebuild.getAttribute("aria-label") ?? "").toContain("427");
   });
@@ -171,7 +185,7 @@ describe("GraphWidthPrompt", () => {
     render(<GraphWidthPrompt />);
 
     const prompt = await screen.findByRole("dialog", {
-      name: "现有记忆库和内置模型对不上",
+      name: "The existing memory library does not match the built-in model",
     });
     expect(prompt.textContent).toContain("768");
     expect(prompt.textContent).toContain("512");
@@ -182,9 +196,11 @@ describe("GraphWidthPrompt", () => {
     render(<GraphWidthPrompt />);
 
     await user.click(
-      await screen.findByRole("radio", { name: /改用内置模型/ }),
+      await screen.findByRole("radio", {
+        name: /Switch to the built-in model/,
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "就这么办" }));
+    await user.click(screen.getByRole("button", { name: "Do that" }));
 
     await waitFor(() => {
       expect(decideGraphWidth).toHaveBeenCalledWith(
@@ -209,7 +225,7 @@ describe("GraphWidthPrompt", () => {
     const user = userEvent.setup();
     render(<GraphWidthPrompt />);
 
-    await user.click(await screen.findByRole("button", { name: "就这么办" }));
+    await user.click(await screen.findByRole("button", { name: "Do that" }));
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();

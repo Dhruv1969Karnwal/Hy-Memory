@@ -38,7 +38,7 @@ describe("host flow", () => {
       operation: "previewInstall",
       result: { hostId: "codex", files: [], fingerprint: DIGEST },
     });
-    expect(text).toContain("未改动任何文件");
+    expect(text).toContain("no files were changed");
     expect(text).toContain(DIGEST);
   });
 
@@ -52,9 +52,9 @@ describe("host flow", () => {
         { host_id: "cursor", label: "Cursor", present: false },
       ],
     });
-    expect(text).toContain("可连接的应用");
-    expect(text).toContain("Codex：已接入");
-    expect(text).toContain("Cursor：未接入");
+    expect(text).toContain("Connectable apps");
+    expect(text).toContain("Codex: connected");
+    expect(text).toContain("Cursor: not connected");
     expect(text).not.toContain("codex");
   });
 
@@ -65,7 +65,7 @@ describe("host flow", () => {
       command: "list",
       hosts: [],
     });
-    expect(text).toContain("未发现");
+    expect(text).toContain("connectable hosts found");
   });
 
   it("maps document state onto exit codes", () => {

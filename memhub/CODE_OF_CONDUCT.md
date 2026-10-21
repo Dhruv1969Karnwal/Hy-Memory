@@ -1,10 +1,10 @@
 # Code of Conduct
 
-MemHub 社区致力于提供友好、安全、包容的协作环境。
+The MemHub community is committed to a friendly, safe, and inclusive collaborative environment.
 
-参与项目时，请保持尊重、具体和善意。欢迎针对代码、设计和文档提出不同意见，但不得进行
-骚扰、歧视、威胁、人身攻击，或公开他人的隐私、密钥、真实对话和个人信息。
+When participating in the project, stay respectful, specific, and good-faith. Disagreement about
+code, design, and documentation is welcome, but harassment, discrimination, threats, personal attacks, or exposing other people's privacy, keys, real conversations, or personal information is not.
 
-维护者可以编辑或删除违反这些要求的 Issue、评论和提交，并限制持续违规者参与项目。
-报告行为问题时，请使用仓库提供的私下安全或维护者联系渠道，不要在公开 Issue 中披露
-当事人的个人信息。
+Maintainers may edit or remove issues, comments, and submissions that violate these requirements, and may restrict persistent violators from participating in the project. When reporting a conduct problem,
+use the private security or maintainer contact channel provided by the repository, and do
+not disclose anyone's personal information in public issues.

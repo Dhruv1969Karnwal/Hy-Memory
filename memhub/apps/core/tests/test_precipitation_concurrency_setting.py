@@ -1,7 +1,7 @@
 """Rule 2/9: precipitation concurrency is configurable, not hardcoded to 1.
 
 `api.py` passed `max_concurrent_tasks=1` literally. `a59f4b5` labelled that
-"验收包临时" (temporary, for an acceptance package) and the config comment
+"Acceptance package temporary" (temporary, for an acceptance package) and the config comment
 next to `import_max_concurrent_jobs` says the durable fix is an admission
 controller, not a larger constant — but a hardcoded 1 is rule 9's exact
 anti-pattern: a small number baked into code that no machine can tune.

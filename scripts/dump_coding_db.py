@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-查看 smoke 跑出来的 coding_memory.db 的全部内容（不截断），经验层 + 事实层。
+Dump the full contents of a coding_memory.db produced by a smoke run, without truncation: experience layer plus fact layer.
 
-用法:
+Usage:
     python scripts/dump_coding_db.py /path/to/coding_memory.db
     python scripts/dump_coding_db.py /path/to/coding_memory.db --json
     python scripts/dump_coding_db.py /path/to/coding_memory.db --id <experience_id>
@@ -51,7 +51,7 @@ def fetch_facts(db_path: str):
         cur = conn.execute("SELECT * FROM working_fact ORDER BY created_at ASC")
         return [_decode(r, ("files", "derived_experience_ids")) for r in cur]
     except sqlite3.OperationalError:
-        # 老库还没建事实表
+        # Older databases do not have the fact table yet
         return []
     finally:
         conn.close()
@@ -118,9 +118,9 @@ def render_facts(rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("db", help="path to coding_memory.db")
-    ap.add_argument("--id", help="只看某条经验（experience_id）")
-    ap.add_argument("--facts", action="store_true", help="只看事实层")
-    ap.add_argument("--json", action="store_true", help="输出 JSON 而非可读文本")
+    ap.add_argument("--id", help="Show only one experience (experience_id)")
+    ap.add_argument("--facts", action="store_true", help="Show only the fact layer")
+    ap.add_argument("--json", action="store_true", help="Emit JSON instead of readable text")
     args = ap.parse_args()
 
     facts = fetch_facts(args.db)

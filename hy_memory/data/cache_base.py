@@ -1,9 +1,9 @@
 """
 Agent Memory V2 - CacheBase
 
-审计/观测落库层的抽象基类。
-定义所有后端（SQLite / MySQL）必须实现的公共接口：
-memory_operations（变动日志）、pipeline_logs（LLM 调用链）、system_metrics（指标）。
+Abstract base class of the audit / observability persistence layer.
+Defines the public interface every backend (SQLite / MySQL) must implement:
+memory_operations (change log), pipeline_logs (LLM call chain), system_metrics (metrics).
 """
 
 from abc import ABC, abstractmethod
@@ -12,28 +12,28 @@ from typing import Optional, List, Dict, Any
 
 class CacheBase(ABC):
     """
-    审计/观测落库抽象基类。
+    Abstract base class for audit / observability persistence.
 
-    所有后端（SqliteCache / MysqlCache）均继承此类，
-    上层代码只依赖 CacheBase 类型。
+    Every backend (SqliteCache / MysqlCache) inherits from this class,
+    and upper layers depend only on the CacheBase type.
     """
 
     # ================================================================
-    # 生命周期
+    # Lifecycle
     # ================================================================
 
     @abstractmethod
     async def initialize(self) -> None:
-        """初始化后端连接/数据库。"""
+        """Initialize the backend connection / database."""
         ...
 
     @abstractmethod
     async def close(self) -> None:
-        """关闭连接，释放资源。"""
+        """Close connections and release resources."""
         ...
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     @abstractmethod
@@ -58,7 +58,7 @@ class CacheBase(ABC):
         reason: str = "",
         supersedes: Optional[List[str]] = None,
     ) -> bool:
-        """记录一条知识库变动操作（ADD / EVOLVE）"""
+        """Record one knowledge-base change operation (ADD / EVOLVE)"""
         ...
 
     @abstractmethod
@@ -69,11 +69,11 @@ class CacheBase(ABC):
         user_id: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """查询知识库变动记录，支持按 request_id / memory_id / user_id 过滤"""
+        """Query knowledge-base change records, filterable by request_id / memory_id / user_id"""
         ...
 
     # ================================================================
-    # Pipeline Logs (LLM 调用链中间结果)
+    # Pipeline Logs (intermediate results of the LLM call chain)
     # ================================================================
 
     @abstractmethod
@@ -94,13 +94,13 @@ class CacheBase(ABC):
         session_id: str = "",
         event_at_ms: int = 0,
     ) -> bool:
-        """记录一条 pipeline 中间结果（EXTRACT / SEARCH_QUERY / RECONCILE / SUMMARY）
+        """Record one pipeline intermediate result (EXTRACT / SEARCH_QUERY / RECONCILE / SUMMARY)
 
-        session_id 与 user_id/agent_id 同为隔离维度，由调用方显式传入。
-        实现侧会把 user_id 按 "__" 拆出 namespace 单独落库。
+        session_id is an isolation dimension like user_id/agent_id and is passed in explicitly by the caller.
+        Implementations split user_id on "__" into a namespace that is stored separately.
 
-        event_at_ms: step 发生时刻（epoch 毫秒，可读由消费方自行转换），由上层统一捕获，
-        与 JSONL log 的 timestamp 同源。缺省（0）时实现侧回落到入库时刻。区别于 created_at（入库时刻）。"""
+        event_at_ms: when the step happened (epoch milliseconds; consumers convert it for display), captured uniformly by the upper layer,
+        sharing its source with the timestamp of the JSONL log. When unset (0), implementations fall back to the insertion time; distinct from created_at (insertion time)."""
         ...
 
     @abstractmethod
@@ -111,21 +111,21 @@ class CacheBase(ABC):
         step: Optional[str] = None,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """查询 pipeline 中间结果日志"""
+        """Query pipeline intermediate result logs"""
         ...
 
     # ================================================================
-    # Summary Buffer（rolling summary 的未消费 turn 暂存）
+    # Summary Buffer (unconsumed turns staged for rolling summary)
     #
-    # 默认 no-op，便于无需该能力的后端直接继承。
-    # 持久化后端（sqlite/mysql）覆盖为真实实现。
+    # No-op by default, so backends without this capability can inherit directly.
+    # Persistent backends (sqlite/mysql) override these with real implementations.
     # ================================================================
 
 
 
 
     async def get_episode_state(self, episode_key: str) -> Optional[Dict[str, Any]]:
-        """读取某 episode_key 的当前 episode 状态。默认返回 None（无状态 → 开新的）。"""
+        """Read the current episode state for an episode_key. Returns None by default (no state → start a new one)."""
         return None
 
     async def upsert_episode_state(
@@ -139,5 +139,5 @@ class CacheBase(ABC):
         last_write_ts: float,
         memory_count: int,
     ) -> bool:
-        """写入/更新 episode 状态。默认 no-op。"""
+        """Write / update episode state. No-op by default."""
         return False

@@ -1,31 +1,31 @@
-# Hy Memory Search 与 Reader 指南
+# Hy Memory Search and Reader Guide
 
-本文描述当前 `HyMemoryClient.search()` / `async_search()` 的公开参数和返回契约。
+This document describes the public parameters and return contract of the current `HyMemoryClient.search()` / `async_search()`.
 
-## Reader 选择
+## Reader Selection
 
 ```python
 client.search("query", user_ids=["u1"], reader="hybrid")
-client.search("query", user_ids=["u1"])  # HY_MEMORY_READER；默认 legacy
+client.search("query", user_ids=["u1"])  # HY_MEMORY_READER; defaults to legacy
 ```
 
-当前只支持：
+Only these are supported today:
 
-- `legacy`：候选召回使用向量检索。
-- `hybrid`：在向量候选之外增加后端关键词/BM25 候选。
+- `legacy`: candidate recall uses vector retrieval.
+- `hybrid`: adds backend keyword/BM25 candidates on top of the vector candidates.
 
-未知名称会记录 warning 并回退到 `legacy`。两个 Reader 继承同一共享读管线，区别仅为
-是否执行关键词候选召回；Schema、Intention、Episode、Tag/Entity、Graph、演化链、本地
-Rerank、配额和公开结果格式均一致。
+An unknown name logs a warning and falls back to `legacy`. Both Readers share one read pipeline and differ only
+in whether keyword candidate recall runs; Schema, Intention, Episode, Tag/Entity, Graph, the evolution chain, local
+Rerank, quotas and the public result format are identical.
 
-关键词通道依赖 Vector Store。Chroma 明确返回空关键词结果，因此 `hybrid` 在 Chroma 上
-退化为纯向量候选召回；支持关键词或 sparse/BM25 的后端才会产生额外候选。
+The keyword channel depends on the Vector Store. Chroma explicitly returns empty keyword results, so on Chroma
+`hybrid` degrades to pure vector candidate recall; only backends with keyword or sparse/BM25 support produce extra candidates.
 
-## Chat 检索参数
+## Chat Search Parameters
 
 ```python
 result = client.search(
-    query="用户喜欢什么？",
+query="What does the user like?",
     user_ids=["u1"],
     agent_ids=None,
     session_ids=None,
@@ -42,45 +42,45 @@ result = client.search(
 )
 ```
 
-| 参数 | 当前语义 |
+| Parameter | Current semantics |
 |---|---|
-| `limit` | `normal` 通道最大返回数，默认 `10` |
-| `min_score` | `normal` 通道最低分，默认 `0.4` |
-| `schema_limit` | L6 Schema 独立上限，默认 `10`；`0` 关闭，负数表示不限制 |
-| `schema_min_score` | L6 正向语义召回阈值，默认 `0.4`；反向证据命中的 Schema 不会在 Client 层再次按该值过滤 |
-| `intention_limit` | L7 Proactive 独立上限，默认 `0`，即关闭该路召回 |
-| `created_after` | 事件时间下界，Unix timestamp |
-| `layers` | 只召回指定 MemoryLayer；`l1_raw` 不会由 Search 对外返回 |
-| `reader` | 本次调用覆盖 Reader；空字符串使用 `HY_MEMORY_READER` |
-| `include_sources` | 调用来源白名单；空列表表示不限 |
-| `exclude_sources` | 调用来源黑名单；与白名单冲突时黑名单优先 |
+| `limit` | Maximum number of results on the `normal` channel, default `10` |
+| `min_score` | Minimum score on the `normal` channel, default `0.4` |
+| `schema_limit` | Independent cap for L6 Schema, default `10`; `0` disables it, a negative value means unlimited |
+| `schema_min_score` | Threshold for L6 forward semantic recall, default `0.4`; Schema hit through reverse evidence is not filtered again by this value at the Client layer |
+| `intention_limit` | Independent cap for L7 Proactive, default `0`, which disables that recall channel |
+| `created_after` | Lower bound of the event time, Unix timestamp |
+| `layers` | Recall only the given MemoryLayer; `l1_raw` is never returned to callers by Search |
+| `reader` | Overrides the Reader for this call; an empty string uses `HY_MEMORY_READER` |
+| `include_sources` | Call-source allowlist; an empty list means no restriction |
+| `exclude_sources` | Call-source denylist; on conflict with the allowlist the denylist wins |
 
-`query` 和 `queries` 二选一，`user_ids` 必须为非空列表。
+Provide either `query` or `queries`; `user_ids` must be a non-empty list.
 
-L0 basic info 已从 Search 拆出：
+L0 basic info has been split out of Search:
 
 ```python
 profile = client.get_user_profile(user_id="u1")
 ```
 
-该接口只按 `user_id` 读取完整画像。Ultra catalog/supplement 也只通过该接口附加，不占
-`schema_limit`。
+This API reads the full profile by `user_id` only. Ultra catalog/supplement is attached only through this API as
+well, and does not consume `schema_limit`.
 
-## Search mode 与生产力路由
+## Search Mode and Productivity Routing
 
-- `search_mode="default"` + 单个 `query`：固定 chat/normal，零 LLM。
-- `search_mode="default"` + `queries=[...]`：Coding 开启时一次 LLM 完成场景分类和
-  rewrite；Coding 关闭但 Query Rewrite 开启时只做 rewrite/time；两者都关闭时零 LLM。
-- `search_mode="agentic"`：单 query、多 queries 都执行一次 LLM 判断、改写和时间解析。
-- 显式 `scene="chat" | "working" | "coding"`：跳过 judge/rewrite LLM。
+- `search_mode="default"` + a single `query`: fixed chat/normal, zero LLM.
+- `search_mode="default"` + `queries=[...]`: one LLM call does scene classification and rewrite when Coding is on;
+  only rewrite/time when Coding is off but Query Rewrite is on; zero LLM when both are off.
+- `search_mode="agentic"`: single query and multiple queries both run one LLM judgment, rewrite and time parsing.
+- Explicit `scene="chat" | "working" | "coding"`: skips the judge/rewrite LLM.
 
-default 多-query 超过 `MEMORY_QUERY_REWRITE_MAX_CHARS` 时不改写：Coding 开启则只分类，
-Coding 关闭则直接使用最后一条 query。
+Under default, multiple queries over `MEMORY_QUERY_REWRITE_MAX_CHARS` are not rewritten: with Coding on it only
+classifies, with Coding off the last query is used directly.
 
-路由到 `working` / `coding` 后，Search 读取独立生产力记忆库，返回 `facts` /
-`experiences`，不使用 chat 三通道结构。`coding` 还返回 `chain_block` / `chain_used`。
+Once routed to `working` / `coding`, Search reads the separate productivity memory store and returns `facts` /
+`experiences` instead of the three-channel chat structure. `coding` also returns `chain_block` / `chain_used`.
 
-## Chat 成功返回结构
+## Chat Success Response Structure
 
 ```json
 {
@@ -92,8 +92,8 @@ Coding 关闭则直接使用最后一条 query。
   },
   "rewrite": {
     "used": false,
-    "original_query": "用户喜欢什么？",
-    "effective_query": "用户喜欢什么？",
+    "original_query": "What does the user like?",
+    "effective_query": "What does the user like?",
     "created_after": null,
     "scene": "normal"
   },
@@ -101,38 +101,38 @@ Coding 关闭则直接使用最后一条 query。
 }
 ```
 
-Reader 执行失败时仍返回空的 `memories` 三桶和 `request_id` / `elapsed_ms`，但当前失败
-兜底不包含 `rewrite`。
+When the Reader fails, the response still carries the three empty `memories` buckets plus `request_id` /
+`elapsed_ms`, but the current failure fallback does not include `rewrite`.
 
-每条公开结果的稳定基础字段包括 `memory_id`、`content`、`score`、`layer`、`user_id`、
-`agent_id`、`source`、`retrieval_source`、`owner`、`tags`、`memory_at`、
-`gmt_created` 和 `meta`。`source` 是写入应用来源；`retrieval_source` 是内部召回通道
-（例如 VDB / Schema / Episode）的诊断标记。特定能力可能附带
-`evolution_chain`、`episode_id`、`capsule_memories`、`timeline` 或 `rerank_score`。
+The stable base fields of every public result are `memory_id`, `content`, `score`, `layer`, `user_id`,
+`agent_id`, `source`, `retrieval_source`, `owner`, `tags`, `memory_at`, `gmt_created` and `meta`. `source` is the
+writing application; `retrieval_source` is a diagnostic marker for the internal recall channel (for example
+VDB / Schema / Episode). Specific capabilities may add `evolution_chain`, `episode_id`,
+`capsule_memories`, `timeline` or `rerank_score`.
 
-Reader 内部的 `_semantic`、`_bm25` 等私有分数不会由 `HyMemoryClient.search()` 作为
-单条记忆字段透出；更详细的召回诊断仍应使用 pipeline trace。
+Private scores inside the Reader such as `_semantic` and `_bm25` are not exposed as per-memory fields by
+`HyMemoryClient.search()`; detailed recall diagnostics still belong to the pipeline trace.
 
-source 过滤由底层 backend 在 `limit` / Top-K 之前完成：Qdrant 使用同一个 payload
-Filter，Chroma 使用 metadata where，FAISS 使用 ID selector，Neo4j/Kuzu Graph 先按
-属性筛选再计算相似度。不会按 source 拆成多路召回，也不会依赖 over-fetch 后过滤。
-多来源派生记忆使用 `source="mixed"`；开启任意 source 过滤时默认 fail-closed 排除，
-除非白名单显式包含 `mixed`。
+Source filtering is done by the underlying backend before `limit` / Top-K: Qdrant uses the same payload
+Filter, Chroma uses a metadata where, FAISS uses an ID selector, and Neo4j/Kuzu Graph filters on properties
+before computing similarity. Recall is never split into one channel per source, and nothing relies on filtering after over-fetch.
+Memories derived from multiple sources use `source="mixed"`; with any source filter enabled they are excluded
+fail-closed unless the allowlist explicitly contains `mixed`.
 
-## 本地 Rerank
+## Local Rerank
 
-本地 cross-encoder Rerank 是两个 Reader 共用的后处理，默认关闭：
+The local cross-encoder Rerank is post-processing shared by both Readers, off by default:
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEMORY_LOCAL_RERANK_ENABLED` | `false` | 是否启用本地 Rerank |
-| `MEMORY_LOCAL_RERANK_MODEL` | `nreimers/mmarco-mMiniLMv2-L6-H384-v1` | 小型多语言 Hugging Face 模型名或本地路径 |
-| `MEMORY_LOCAL_RERANK_DEVICE` | `auto` | `auto` / `cpu` / `cuda` 等 device |
-| `MEMORY_LOCAL_RERANK_BATCH_SIZE` | `16` | 单次模型 forward 的 batch size |
-| `MEMORY_LOCAL_RERANK_MAX_LENGTH` | `512` | Tokenizer 最大长度 |
-| `MEMORY_LOCAL_RERANK_POOL_FACTOR` | `3` | 候选池相对最终 `limit` 的倍数 |
+| `MEMORY_LOCAL_RERANK_ENABLED` | `false` | Whether local Rerank is enabled |
+| `MEMORY_LOCAL_RERANK_MODEL` | `nreimers/mmarco-mMiniLMv2-L6-H384-v1` | Small multilingual Hugging Face model name or local path |
+| `MEMORY_LOCAL_RERANK_DEVICE` | `auto` | Device such as `auto` / `cpu` / `cuda` |
+| `MEMORY_LOCAL_RERANK_BATCH_SIZE` | `16` | Batch size of a single model forward |
+| `MEMORY_LOCAL_RERANK_MAX_LENGTH` | `512` | Maximum tokenizer length |
+| `MEMORY_LOCAL_RERANK_POOL_FACTOR` | `3` | Candidate pool multiple over the final `limit` |
 
-也可以通过 Client 配置：
+It can also be configured through the Client:
 
 ```python
 from hy_memory import HyMemoryClient
@@ -149,16 +149,16 @@ client = HyMemoryClient.from_config({
 })
 ```
 
-安装可选依赖：
+Install the optional dependency:
 
 ```bash
 pip install 'hy-memory[rerank]==2.0.1'
 ```
 
-启用后，`HyMemoryClient(...)` 构造阶段会完成模型下载/读取、device 放置和一次 dummy
-forward；构造成功后 Search 不再触发模型加载。初始化失败会直接抛出 `RuntimeError`，避免
-服务看似 ready、首个用户请求才暴露问题。运行中的单次推理失败或非法分数仍 fail-open，
-保留 Rerank 前顺序。
+Once enabled, the `HyMemoryClient(...)` constructor downloads or loads the model, places it on the device and runs
+one dummy forward; after construction Search never triggers model loading. A failed initialization raises
+`RuntimeError` right away, instead of letting the service look ready and only failing on the first user request.
+A single inference failure or an invalid score at runtime still fails open and keeps the pre-Rerank order.
 
-SDK 不设置 Rerank Search 并发上限，也不串行化模型 forward；请求并发由调用方或部署层
-控制。`MEMORY_LOCAL_RERANK_BATCH_SIZE` 只控制一次 forward 的 batch，不是并发限制。
+The SDK sets no concurrency cap for Rerank Search and does not serialize model forwards; request concurrency is
+controlled by the caller or the deployment layer. `MEMORY_LOCAL_RERANK_BATCH_SIZE` only sizes the batch of one forward, it is not a concurrency limit.

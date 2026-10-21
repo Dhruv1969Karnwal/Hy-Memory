@@ -1,18 +1,18 @@
 """
 Agent Memory V2 - MysqlCache
 
-基于 aiomysql 的 MySQL 审计/观测落库后端。
-适用于标准 MySQL 实例，支持多实例共享状态。
+MySQL audit/observability persistence backend based on aiomysql.
+Targets standard MySQL instances and supports state shared across multiple instances.
 
-设计模式：
-- aiomysql 原生 async（无需线程池包装）
-- 连接池 aiomysql.create_pool
+Design pattern:
+- native aiomysql async (no thread pool wrapper)
+- connection pool via aiomysql.create_pool
 - autocommit=True
 
-三张表（与 SQLite 版本一一对应）：
-- memory_operations: 知识库变动日志
-- pipeline_logs:     LLM 调用链中间结果
-- system_metrics:    分钟粒度系统指标
+Three tables (one-to-one with the SQLite version):
+- memory_operations: knowledge base change log
+- pipeline_logs:     intermediate results of the LLM call chain
+- system_metrics:    per-minute system metrics
 """
 
 import json
@@ -88,9 +88,9 @@ _CREATE_TABLES_SQL = [
         PRIMARY KEY (minute_ts)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
-    # Episode（内部会话）状态：跨 write 批次把"一件事"归到同一个 episode_id。
-    # 缺了这张表，get_episode_state 永远返回 None → 每次写入都开新 episode，
-    # 划分等于没生效（线上实测 8798 次决策全是 new）。
+    # Episode (internal session) state: groups "one thing" under the same episode_id across write batches.
+    # Without this table get_episode_state always returns None → every write starts a new episode,
+    # so segmentation never takes effect (measured in production: all 8798 decisions were new).
     """
     CREATE TABLE IF NOT EXISTS episode_state (
         episode_key    VARCHAR(255) NOT NULL,
@@ -110,16 +110,16 @@ _CREATE_TABLES_SQL = [
 
 class MysqlCache(CacheBase):
     """
-    MySQL 审计/观测落库后端（memory_operations / pipeline_logs / system_metrics）。
+    MySQL audit/observability persistence backend (memory_operations / pipeline_logs / system_metrics).
 
-    基于 aiomysql 的原生异步 MySQL 后端。
+    Native asynchronous MySQL backend built on aiomysql.
     """
 
     def __init__(self, config: MemoryConfig):
         self.config = config
         self._pool = None  # aiomysql.Pool
 
-        # 读取 MySQL 连接参数
+        # Read the MySQL connection parameters
         cache_cfg = getattr(config, "cache", None)
         self._host = getattr(cache_cfg, "mysql_host", None) or os.getenv("MEMORY_MYSQL_HOST", "localhost")
         self._port = getattr(cache_cfg, "mysql_port", None) or int(os.getenv("MEMORY_MYSQL_PORT", "3306"))
@@ -130,11 +130,11 @@ class MysqlCache(CacheBase):
         self._pool_recycle = getattr(cache_cfg, "mysql_pool_recycle", None) or int(os.getenv("MEMORY_MYSQL_POOL_RECYCLE", "3600"))
 
     # ================================================================
-    # 生命周期
+    # Lifecycle
     # ================================================================
 
     async def initialize(self) -> None:
-        """立即创建 pool（必须在正确的 event loop 上调用，即 _LoopThread 的 loop）"""
+        """Create the pool immediately (must be called on the correct event loop, i.e. the _LoopThread loop)."""
         import aiomysql
         self._pool = await aiomysql.create_pool(
             host=self._host,
@@ -155,16 +155,16 @@ class MysqlCache(CacheBase):
         )
 
     async def _ensure_tables(self) -> None:
-        """确保所有表存在"""
+        """Ensure all tables exist."""
         for ddl in _CREATE_TABLES_SQL:
             await self._execute(ddl)
         await self._migrate_pipeline_logs_columns()
 
     async def _migrate_pipeline_logs_columns(self) -> None:
-        """给旧库的 pipeline_logs_v2 补 namespace/session/event time 列。
+        """Add namespace/session/event time columns to pipeline_logs_v2 on older databases.
 
-        用 AFTER 指定列位置，与 CREATE TABLE 一致：
-        namespace 紧跟 request_id、session_id 紧跟 agent_id。
+        Uses AFTER to pin column positions, matching CREATE TABLE:
+        namespace right after request_id, session_id right after agent_id.
         """
         migrations = (
             ("namespace", "ALTER TABLE pipeline_logs_v2 ADD COLUMN namespace "
@@ -178,7 +178,7 @@ class MysqlCache(CacheBase):
             try:
                 await self._execute(ddl)
             except Exception as e:
-                # 已存在 (Duplicate column) 等 → 忽略
+                # Already exists (Duplicate column) etc. → ignore
                 logger.debug(f"[mysql] add column {col} skipped: {e}")
 
     async def close(self) -> None:
@@ -189,44 +189,44 @@ class MysqlCache(CacheBase):
         logger.info("MysqlCache closed")
 
     # ================================================================
-    # 内部 DB helpers
+    # Internal DB helpers
     # ================================================================
 
     async def _execute(self, sql: str, args=None) -> int:
-        """执行写操作，返回 affected rows"""
+        """Execute a write statement and return the affected row count."""
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(sql, args)
                 return cur.rowcount
 
     async def _fetchone(self, sql: str, args=None) -> Optional[Dict[str, Any]]:
-        """查询单行，返回 dict 或 None"""
+        """Query a single row, returning a dict or None."""
         import aiomysql
         async with self._pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(sql, args)
                 row = await cur.fetchone()
-                # 防御：极端情况下 DictCursor 可能返回 tuple
+                # Defence: in extreme cases DictCursor may return a tuple
                 if row is not None and not isinstance(row, dict):
                     cols = [d[0] for d in cur.description] if cur.description else []
                     row = dict(zip(cols, row))
                 return row
 
     async def _fetchall(self, sql: str, args=None) -> List[Dict[str, Any]]:
-        """查询多行，返回 list of dict"""
+        """Query multiple rows, returning a list of dicts."""
         import aiomysql
         async with self._pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(sql, args)
                 rows = await cur.fetchall()
-                # 防御：确保返回 list of dict
+                # Defence: make sure a list of dicts is returned
                 if rows and not isinstance(rows[0], dict):
                     cols = [d[0] for d in cur.description] if cur.description else []
                     rows = [dict(zip(cols, r)) for r in rows]
                 return rows
 
     # ================================================================
-    # 统计
+    # Statistics
     # ================================================================
 
     async def get_stats(self) -> Dict[str, Any]:
@@ -304,7 +304,7 @@ class MysqlCache(CacheBase):
                 f"ORDER BY id DESC LIMIT %s",
                 params + [limit],
             )
-            # 反序列化 supersedes
+            # Deserialize supersedes
             for row in rows:
                 raw_sup = row.get("supersedes", "")
                 try:
@@ -320,7 +320,7 @@ class MysqlCache(CacheBase):
     # Pipeline Logs
     # ================================================================
 
-    # ── Episode（内部会话）状态 ──
+    # ── Episode (internal session) state ──
 
     async def get_episode_state(self, episode_key: str) -> Optional[Dict[str, Any]]:
         try:
@@ -447,7 +447,7 @@ class MysqlCache(CacheBase):
                 f"ORDER BY id ASC LIMIT %s",
                 params + [limit],
             )
-            # 派生可读的 event_at（ISO ms）供查询接口直接用；event_at_ms 为 0 时留空
+            # Derive a readable event_at (ISO ms) so query APIs can use it directly; left empty when event_at_ms is 0
             for _r in rows:
                 _ms = _r.get("event_at_ms") or 0
                 _r["event_at"] = (
@@ -460,13 +460,13 @@ class MysqlCache(CacheBase):
             return []
 
     # ================================================================
-    # System Metrics（分钟粒度落盘）
+    # System Metrics (persisted per minute)
     # ================================================================
 
     async def store_metrics_minute(self, minute_ts: str, data: dict) -> None:
         try:
             now = datetime.now().isoformat()
-            # 尝试 UPSERT
+            # Try UPSERT
             existing = await self._fetchone(
                 "SELECT data FROM system_metrics WHERE minute_ts = %s", (minute_ts,)
             )
@@ -519,7 +519,7 @@ class MysqlCache(CacheBase):
 
     @staticmethod
     def _merge_metric_buckets(old: dict, new: dict) -> dict:
-        """合并两个 metric bucket（同一分钟多次 flush）"""
+        """Merge two metric buckets (several flushes within the same minute)."""
         merged = dict(old)
         for key in ("sys1_started", "sys1_completed", "sys1_failed",
                     "sys2_started", "sys2_completed", "sys2_failed",

@@ -38,8 +38,8 @@ def test_an_unanswered_assistant_prefix_joins_the_turn_that_adopts_it(tmp_path) 
     """
     records = _records(
         tmp_path,
-        ("assistant", "agent", "建议把超时改成 30 秒。"),
-        ("user", "person", "就这么做，超时改成 30 秒。"),
+        ("assistant", "agent", "Suggest changing the timeout to 30 seconds."),
+        ("user", "person", "Do that, change the timeout to 30 seconds."),
     )
 
     chunks = _conversation_chunks(records)
@@ -54,7 +54,7 @@ def test_a_lone_user_message_does_not_become_a_model_input(tmp_path) -> None:
     user message must not create an HY task: that is the complete-turn rule,
     not a queue stall.
     """
-    records = _records(tmp_path, ("user", "person", "把超时改成 30 秒。"))
+    records = _records(tmp_path, ("user", "person", "Change the timeout to 30 seconds."))
 
     assert _conversation_chunks(records, completed_only=True) == []
 
@@ -63,9 +63,9 @@ def test_only_the_unanswered_trailing_turn_is_held_back(tmp_path) -> None:
     """Earlier complete turns stay eligible while the open tail waits."""
     records = _records(
         tmp_path,
-        ("user", "person", "先把超时改成 30 秒。"),
-        ("assistant", "agent", "已经改好了。"),
-        ("user", "person", "接着把发布包传上去。"),
+        ("user", "person", "First change the timeout to 30 seconds."),
+        ("assistant", "agent", "Already changed."),
+        ("user", "person", "Then upload the release bundle."),
     )
 
     assert _conversation_chunks(records, completed_only=True) == [(records[0], records[1])]
@@ -82,8 +82,8 @@ def test_the_complete_turn_contract_used_for_concurrent_import_reds(tmp_path) ->
     """
     closed = _records(
         tmp_path,
-        ("user", "person", "把超时改成 30 秒。"),
-        ("assistant", "agent", "已改为 30 秒。"),
+        ("user", "person", "Change the timeout to 30 seconds."),
+        ("assistant", "agent", "Changed to 30 seconds."),
     )
     assert [[record.role for record in chunk] for chunk in _conversation_chunks(closed)] == [
         ["user", "assistant"]

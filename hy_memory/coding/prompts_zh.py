@@ -1,229 +1,229 @@
 # -*- coding: utf-8 -*-
-"""HY Memory working/coding 链路使用的中文提示词模板。"""
+"""Chinese prompt templates for the HY Memory working/coding pipelines."""
 
 
 EXTRACT_PROMPT_ZH = """\
-你需要从一段任务执行会话中抽取可长期保留的 WORKING 记忆。
-“working”会话是指用户通过工具操作计算机或系统的任何实操任务——既包括软件/代码
-工作（编写、调试、重构、构建、部署、API/library 使用），也包括系统与运维工作
-（运行 shell/PowerShell 命令、磁盘/存储分析或清理、文件与文件夹操作、安装/配置
-软件、环境/设备设置、硬件/磁盘健康检查、备份、调度/自动化、数据处理）。
+You extract durable WORKING memories from a task-execution session segment.
+A "working" session is any hands-on task where the user operates a computer or
+system through tools -- this covers BOTH software/code work (writing, debugging,
+refactoring, building, deploying, API/library usage) AND system & operations work
+(running shell/PowerShell commands, disk/storage analysis or cleanup, file & folder operations, installing/configuring software, environment/device setup, hardware/disk health inspection, backup, scheduling/automation, data processing).
 
-你需要从同一段会话中产出两个层次：
+You produce TWO layers from the SAME segment:
 
-  EXPERIENCES（过程性，“如何做”）——可复用的方法；只有达到下述 VALUE BAR 时才
-  抽取。每条是一个 (task, search_keys, solution, boundary_envs) 组合。
+  EXPERIENCES (procedural, "how to do it") -- a reusable method, extracted only
+  when it clears the VALUE BAR below. Each is a (task, search_keys, solution, boundary_envs) bundle.
 
-  FACT（情节性，“这次发生了什么”）——关于本次会话的恰好一条记录：用户想做什么、
-  大致如何推进、最终结果如何。它不受价值门槛限制，但绝不能超过一条。
+  FACT (episodic, "what happened this time") -- EXACTLY ONE record of THIS
+  session: what the user wanted, roughly how it went, and the final outcome. It has no value bar, but there can never be more than one.
 
-这两个层次回答不同问题，并分别存储。可泛化的方法放入 EXPERIENCES；只对这个系统、
-这个项目、此时此刻成立的本次会话经历放入 FACT。
-
-═══════════════════════════════════════════════════════════════════
-VALUE BAR（仅适用于 EXPERIENCES）——不要轻易越过此门槛。
-═══════════════════════════════════════════════════════════════════
-一条记忆必须同时满足以下全部条件：
-  (a) 解决了同一用户以后很可能再次遇到的问题
-  (b) 解决方案并非琐碎操作：它组合了多项信息/多个步骤，或者包含决策理由，或者记录了
-      来之不易的 workaround，或者是某项运维任务的可复用流程/配方（例如如何分析并
-      清理磁盘占用、如何批量整理文件、如何检查硬件健康、如何设置 scheduled job）
-  (c) 未来的 agent / 用户会更愿意查阅它，而不是重新摸索
-
-重要——分析、诊断、调查任务也算：
-一项任务不必实际修改或“修复”任何东西才值得记忆。只读、分析、故障排查工作，只要其
-流程或结论可复用，就有价值。明确抽取：
-  - 分析/诊断配方：可复用的流程以及它揭示的结果（例如“如何分析哪些文件夹占用了
-    C-drive 空间”——扫描命令、遇到的坑和最终发现）。“只生成了报告，没有修改”
-    不是跳过理由——可复用的方法本身就是记忆。
-  - 调查结果，包括否定结果或未找到结果（例如“使用 rg / fs_search / SQL index
-    在 C: 和 D: 中搜索 folder X——任何位置都未找到”）。记录一条死路可以避免下一个
-    agent 重复同样无果的搜索，因此达到了价值门槛。
-不要仅仅因为“assistant 可以重新生成这些命令”或“实际上没有修改任何东西”就拒绝
-一条记忆。只要流程或结论能节省未来的工作，就保留它。
-
-不要抽取：
-  - 没有可复用流程、真正琐碎的单步操作（“rename one file”、“git status”、
-    “run ls once”）
-  - 已经解决且没有可迁移经验的一次性问题
-  - repo/system 中已经存在的信息（不要重复 package.json）
-  - 每个 PR / 每次会话的一次性任务，除非其中编码了可复用模式
-  - 向用户询问缺失信息这一行为。请求参数、列出未知项或引导用户提供必填字段属于
-    对话行为，不是方法：每个 agent 都知道如何提问，因此以后没有任何值得查阅的内容。
-    绝不要产出 task 或 search_keys 形如“how to ask for X”、“gather the missing Y”、
-    “eliciting required fields”、“what to clarify before starting”的 experience。
-    注意，这条限制只适用于 EXPERIENCES——会话最终停在等待用户的状态是真实状态，
-    应写入 FACT。
-
-如果该段会话因为等待用户而没有取得任何实质进展——assistant 只是询问参数，或者在
-开展任何实际工作前就被阻塞——输出 "experiences": []，只写 FACT。此时尚未学到任何
-东西，因此没有方法可存。这一点比看起来更重要：从停滞中提炼出的 experience 在检索时
-会像一项真正的技能；同一任务的后续片段会匹配它，再次向用户提问而不是继续推进，导致
-这种停滞在余下会话中不断自我复制。应根据工具实际做了什么判断是否有实质进展，而不是
-根据该轮是否生成了流畅文本。
-
-启发式标准：如果用户（或未来执行同类任务的 agent）希望把它记下来，而不是以后再重新
-摸索，就保留。多步骤运维流程通常符合条件——包括 system/ops 或只读分析/搜索流程，
-不局限于代码。只有当它只是任何用户都能在 30 秒内通过 `--help` 找到的单条命令，并且
-不包含值得记忆的决策或坑点时，才丢弃。
+The two layers answer different questions and are stored separately. A method
+that generalizes goes in EXPERIENCES; this session's story, which only holds for this system / this project / right now, goes in the FACT.
 
 ═══════════════════════════════════════════════════════════════════
-EXPERIENCE 字段
+VALUE BAR (EXPERIENCES ONLY) -- do not cross this bar lightly.
+═══════════════════════════════════════════════════════════════════
+A memory must satisfy ALL of the following at once:
+  (a) It solves a problem the same user is likely to hit again
+  (b) The solution is non-trivial: it combines multiple pieces of info / steps, or
+      carries a decision rationale, or records a hard-won workaround, or is a
+      reusable procedure/recipe for an operational task (e.g. how to analyze and clean up disk usage, how to batch-organize files, how to check hardware health, how to set up a scheduled job)
+  (c) A future agent / user would prefer looking it up over re-discovering it
+
+IMPORTANT -- analysis / diagnostic / investigation tasks COUNT:
+A task does not have to actually change or "fix" anything to be worth remembering. Read-only, analytical, and troubleshooting work is valuable whenever its
+procedure or conclusion is reusable. Explicitly extract:
+  - Analysis / diagnostic recipes: the reusable procedure and what it revealed
+    (e.g. "how to analyze which folders eat C-drive space" -- the scan commands, the gotchas hit, and the final finding). "It only produced a report, no change"
+    is not a reason to skip -- the reusable method itself is the memory.
+  - Investigation outcomes, including negative or not-found results (e.g.
+    "searched for folder X across C: and D: with rg / fs_search / SQL index -- not found anywhere"). Recording a dead end keeps the next agent from repeating
+    the same fruitless search, so it clears the value bar.
+Do not reject a memory merely because "the assistant could regenerate the commands"
+or "nothing was actually modified". If the procedure or the conclusion would save future work, keep it.
+
+Do NOT extract:
+  - Truly trivial single-step ops with no reusable procedure ("rename one file",
+    “run ls once”)
+  - One-off issues already resolved with no transferable lesson
+  - Information that already exists in the repo/system (don't duplicate package.json)
+  - Per-PR / per-session throwaway tasks unless they encode a reusable pattern
+  - The act of ASKING THE USER for missing information. Requesting a parameter,
+    listing what is unknown, or eliciting required fields is conversational behaviour, not a method: every agent already knows how to ask a question, so
+    there is nothing worth looking up later. Never emit an experience whose task or search_keys are shaped like "how to ask for X", "gather the missing Y",
+    "eliciting required fields", "what to clarify before starting".
+    Note this restriction applies to EXPERIENCES only -- a session that ends waiting on the user is real state and
+    belongs in the FACT.
+
+If the segment made no substantive progress because it stalled waiting on the user -- the assistant only asked for parameters, or was blocked before
+doing any real work -- emit "experiences": [] and write the FACT alone. Nothing
+has been learned yet, so there is no method to store. This matters more than it looks: an experience distilled from a stall reads on retrieval
+like a genuine skill; a later segment of the same task will match it and ask the user again instead of proceeding, so
+the stall reproduces itself for the rest of the session. Judge whether there was substantive progress by what the tools actually did, not by
+whether the turn produced fluent text.
+
+Heuristic: if the user (or a future agent doing the same kind of task) would want it
+written down instead of figuring it out again, keep it. Multi-step operational procedures usually qualify -- including system/ops or read-only
+analysis/search flows, not just code. Only drop it when it is a single command any user could find via `--help` in 30 seconds and it
+carries no decision or gotcha worth remembering.
+
+═══════════════════════════════════════════════════════════════════
+EXPERIENCE FIELDS
 ═══════════════════════════════════════════════════════════════════
 
-task          — 采用查询式名称；写成用户以后会如何提问。
-                使用“publish a release to the xx platform”，不要使用
-                “publish_release_internal”。
-                必须自包含（不要使用“this”、“the file”、“we”）。
+task          — Query-shaped name; phrase it as how the user would ask later.
+                Use "publish a release to the xx platform", not
+                “publish_release_internal”.
+                Must be self-contained (no "this", "the file", "we").
 
-search_keys   — 0 到 5 种替代表述，用来覆盖仅靠 `task` 无法匹配、但对 solution 很
-                重要的方面。写成未来用户会询问的问题或主题，且必须与 task 有区别。
-                如果 task 已覆盖全部内容，则省略。
+search_keys   — 0 to 5 alternative phrasings covering aspects that `task` alone
+                wouldn't match but that matter to the solution. Phrase them as questions or topics future users would ask, and they must differ from task.
+                Omit if task already covers everything.
 
-solution      — 用户实际需要的完整、自包含内容：命令、凭据位置（不是凭据值）、
-                文件路径、有序步骤、坑点、决策理由。如果多轮端到端工作构成一个连贯
-                任务，应聚合成一个 solution；只有用户执行了互不相关的任务时才拆成
-                多条记忆。
+solution      — Complete, self-contained content the user actually needs: commands,
+                credential locations (not credential values), file paths, ordered steps, gotchas, decision rationale. If multi-turn end-to-end work forms
+                one coherent task, aggregate it into one solution; split into multiple memories only when the user did unrelated tasks.
+                memories.
 
-boundary_envs — solution 所依赖的具体限定条件，使用多行“key: value”：
+boundary_envs — The concrete qualifications the solution depends on, multi-line "key: value":
                   runtime / SDK / library + version
-                  API endpoint 或 method signature
+                  API endpoint or method signature
                   external service / middleware version
-                  env var NAME（不是值）
+                  env var NAME (not the value)
                   config file path
                   host / cluster / region identifier
-                如果 solution 与环境无关，填写 ""（空字符串）。
-                目的：底层 SDK/middleware 升级后，未来使用者可以据此判断 solution
-                是否仍然适用。
+                If the solution is environment-independent, write "" (empty string).
+                Purpose: after the underlying SDK/middleware upgrades, future
+                users can judge from this whether the solution still applies.
 
-confidence  — 0.0 到 1.0
-  1.0   用户明确将其陈述为规则/指令
-  0.7   根据工具操作及充分证据推断
-  0.5   弱推断；只有一次观察；不确定
+confidence  — 0.0 to 1.0
+  1.0   the user explicitly stated it as a rule / instruction
+  0.7   inferred from tool actions with sufficient evidence
+  0.5   weak inference; a single observation only; uncertain
 
 ═══════════════════════════════════════════════════════════════════
-FACT 字段——每段会话恰好一条，无价值门槛
+FACT FIELD -- exactly one per session segment, no value bar
 ═══════════════════════════════════════════════════════════════════
 
-你要为整段会话写一条 FACT——它是本次会话可恢复的状态记录，不是精心润色的回顾，也
-绝不是分散发现的列表。未来 agent 必须能够从中继续推进，且不会把建议、推断或局部搜索
-误认为已经验证的事实。
+You write ONE FACT for the whole segment -- a recoverable state record for this
+session, not a polished retrospective and never a list of separate findings. A
+future agent must be able to resume from it without mistaking a suggestion, an inference, or a partial search for a verified fact.
 
-subject    — 本次会话围绕谁或什么展开：工作所针对或服务的单一实体。使用简短名词
-             短语，不要写句子，不要使用动词。选择会话真正围绕的最具体实体，而不是
-             所使用的工具：
-               会话服务于某个具名人员时，使用人名
-                 （“Dylan”、“Matthew”）
-               工作针对代码时，使用 file / module / symbol
-                 （“auth/middleware.ts”、“parse_plan_text”）
-               运维工作使用 service / host / device / drive
-                 （“D:\\WXWork”、“redis-cache-prod”、“ci.yml”）
-             这是 HARD KEY，不是散文：关于不同人员或不同文件的两次会话必须得到不同
-             subject；关于同一实体的两次会话必须得到拼写完全一致的同一字符串。
-             优先使用 trace 中出现的精确标识符，而不是对它的描述。如果该段确实没有
-             单一 subject，输出 ""。
+subject    — WHO or WHAT this session revolves around: the single entity the work was
+             performed on or serves. A short noun phrase, no sentence, no verb. Pick the most specific entity the session truly revolves around, not
+             the tool it used:
+               use the person's name when the session serves one named person
+                 (“Dylan”,“Matthew”)
+               use the file / module / symbol when the work targets code
+                 (“auth/middleware.ts”,“parse_plan_text”)
+               use the service / host / device / drive for ops work
+                 (“D:\\WXWork”,“redis-cache-prod”,“ci.yml”)
+             This is a HARD KEY, not prose: two sessions about different people or
+             different files must get different subjects; two sessions about the same entity must get the exact same string, spelled identically.
+             Prefer the exact identifier as it appears in the trace over a description of it. If the segment genuinely has no single
+             subject, output "".
 
-             这很重要：subject 是决定后续会话是否可以按“同一任务的继续”覆盖本条
-             记录的闸门。填错后，一个人的状态可能静默替换另一个人的状态。
+             This matters: subject is the gate deciding whether a later session may
+             overwrite this record as "the same task continued". Get it wrong and one person's state may silently replace another person's.
 
-statement  — 本次会话的紧凑记录。它分为两部分，而第二部分最容易丢失。
-             保留任务范围内的给定量和具体约束，不要用泛泛的结果评价取代它们。
-             每条规则只写一次：重复的指令文字会挤占记忆真正需要保留的数据。
+statement  — A compact record of THIS session. It splits into two parts, and the second is the one most easily lost.
+             Preserve task-scoped givens and concrete constraints; don't replace them with a generic outcome evaluation.
+             State each rule once: repeated instruction text crowds out the data the memory must keep.
 
-             PART 1——发生了什么，约 300 个拉丁字符（约 150 个 CJK 字符）。
-             从具体目标和对象开始（“reclaim disk space taken by D:\\WXWork”、
-             “locate the new_file_search folder”），不要写泛泛的“fix a bug”/
-             “find a file”。然后概述检查、尝试或修改了什么。最后说明结束状态，
-             且语义必须精确对应以下之一：completed、partially completed、failed、
-             blocked、still awaiting verification。纳入否定结果和死路，但不要夸大。
+             PART 1 -- what happened, about 300 latin characters (~150 CJK characters).
+             Start with the specific goal and object ("reclaim disk space taken by D:\\WXWork",
+             "locate the new_file_search folder"), not a generic "fix a bug" /
+             "find a file". Then outline what was inspected, tried, or changed. Finally state the end state,
+             and its semantics must match exactly one of the following: completed, partially completed, failed,
+             blocked, still awaiting verification. Include negative results and dead ends without overstating them.
 
-             PART 2——TASK-SCOPED GIVENS：整个任务赖以运行的全部给定信息，即使并非
-             本段会话建立，或看起来基础到不值得写。包括绑定关系（每个 name/symbol/
-             label 代表什么）、任务提供而不是推导出的固定值、采用的约定（indexing
-             base、units、timezone、defaults），以及本段自己的结果和值（写“x = 7”，
-             不要只写“the value was computed”）。
+             PART 2 -- TASK-SCOPED GIVENS: every piece of given information the whole task runs on, even when it was not established by
+             this segment or looks too basic to write down. Include bindings (what each name/symbol/
+             label stands for), fixed values the task supplies rather than derives, conventions adopted (indexing
+             base, units, timezone, defaults), and this segment's own results and values (write "x = 7",
+             not just "the value was computed").
 
-             将 PART 2 写成数据，每行一项，值保持给定形式：
+             Write PART 2 as data, one item per line, values kept as given:
                retry budget = 5; timeout 30s; index starts at 0
                step 3 input: n=64, tolerance 1e-6
                slot B: type=private, cost 688.7-721.3 per unit
-             每一行几乎都应由值构成。保留 trace 的 notation——symbols、units、
-             numbers、spellings——删掉其句子外壳：去掉那些只是宣告“这是给定量”的
-             短语，而非给定量本身（“I would prefer”、“it should be somewhere
-             between … and …”）。这些短语会在每项重复；一个 15 项列表会为它们
-             支付 15 次空间成本。
-             每一条 FACT 都要携带这些信息；绝不要写“as above”或“same as the
-             previous session”——检索只会按相似度返回少量 facts，被指代项可能不在
-             其中。
+             A line should be almost entirely values. Keep the trace's notation -- symbols, units,
+             numbers, spellings -- and drop its sentence shell: strip the phrases that merely announce
+             "this is a given" rather than the givens themselves ("I would prefer", "it should be somewhere
+             between ... and ..."). These phrases repeat once per item; a 15-item list pays
+             the space cost 15 times.
+             Every FACT carries this information; never write "as above" or "same as the
+             previous session" -- retrieval returns only a handful of facts by similarity, and the referent may not be
+             among them.
 
-             总长度尽量控制在 1200 字符以内。如果 PART 2 放不下，应优化 notation，
-             绝不能削减覆盖范围：statement 是 retrieval vector，也是后续 segment
-             唯一能读到的字段（details 既不做 embedding，也不会被注入），因此从中
-             删除的内容就永久丢失。压缩给定量周围的措辞，绝不要压缩给定量本身。
+             Keep the total under 1200 characters when possible. If PART 2 doesn't fit, optimize the notation,
+             never the coverage: statement is the retrieval vector and also the only field a later segment
+             can read (details is neither embedded nor injected), so anything deleted from it is
+             permanently lost. Compress the wording around a given; never compress the given itself.
 
-             检验标准：如果下一段看不到原始材料，能否仅凭此记录继续任务？只有肯定
-             答案才合格。缺失 binding 不会明显报错——该名称仍看起来有意义，于是会
-             按其通用含义被理解，后续答案可以很流畅，却回答了另一个问题。
+             The test: if the next segment cannot see the original material, can it continue the task from this record alone? Only a yes
+             qualifies. A missing binding does not fail loudly -- the name still looks meaningful, so it
+             gets read with its general-usage meaning, and the follow-up answer can be perfectly fluent while answering a different question.
 
-             LANGUAGE——使用与 session trace 相同的语言：statement 是 retrieval
-             vector，而查询会使用用户的工作语言；改用另一种语言会让每次检索都付出
-             跨语言匹配损失。
+             LANGUAGE -- use the same language as the session trace: statement is the retrieval
+             vector and queries arrive in the user's working language; switching to another language makes every lookup pay a
+             cross-lingual matching penalty.
 
-             EVIDENCE FIDELITY——只记录 trace 中实际执行的操作和明确存在的证据。
-             对关键命令、flags、arguments、errors、numbers 保持原样。
-             绝不要按惯例补全命令 flags，也不要把建议或计划写成已经执行的动作：
+             EVIDENCE FIDELITY -- record only actions actually executed and evidence explicitly present in the trace.
+             Keep material commands, flags, arguments, errors, and numbers as-is.
+             Never complete command flags by convention, and never write advice or plans as actions that were executed:
                “ran Get-ChildItem -Force” → “ran Get-ChildItem”
-                 （trace 中没有 `-Force`，不要杜撰）
-             每个否定发现都必须限定在实际搜索范围内，并逐一列出可能使其失效的所有
-             明确覆盖限制，尤其是 permission failures 和 depth limits：保留当时的
-             roots、filters、depth（“not found under C:\\ and D:\\ at depth 3;
-             some directories were not covered due to Access denied”），绝不要扩大为
-             “does not exist”。不要为了让记录更漂亮而漏掉任何限制。
-             绝不要把局部搜索提升为全局不存在。
-             被阻塞的尝试必须保留其 blocker。
-             保留 attempted、observed、verified、inferred、unresolved 之间的区别；
-             用自然语言表达（“tried … but was blocked by Access denied”、
-             “suspected …, not yet verified”），不要把它们当标签。没有工具输出或
-             明确确认时，绝不要声称修复已成功、原因已确定或路径不存在。
+                 (the trace did not contain `-Force`; do not invent it)
+             Scope every negative finding to what was actually searched, and enumerate one by one all explicit coverage limits that could invalidate it,
+             especially permission failures and depth limits: keep the
+             roots, filters, depth (“not found under C:\\ and D:\\ at depth 3;
+             some directories were not covered due to Access denied"), never widen it to
+             "does not exist". Don't omit any limit just to make the record prettier.
+             Never promote a partial search to global absence.
+             A blocked attempt must keep its blocker.
+             Preserve the distinction among attempted, observed, verified, inferred, and unresolved;
+             express it in natural language ("tried ... but was blocked by Access denied",
+             "suspected ..., not yet verified"), not as labels. Without tool output or
+             explicit confirmation, never claim a fix succeeded, a cause was established, or a path does not exist.
 
-             不要记录问候或纯闲聊——只有这种情况才输出 "fact": null。仅仅陈述了
-             要求，或尚未开展工作就停滞的会话，仍然建立了信息。
+             Do not record greetings or pure chatter -- only in that case output "fact": null. A session that merely stated
+             requirements, or stalled before any work began, still established information.
 
-details    — 本次会话的具体 OUTPUT，逐字复制。`statement` 是摘要，而摘要必然会
-             丢掉各个具体值；后续检索几乎总是在寻找某个具体值，而非大意。因此，只要
-             会话产出了可寻址的结果，就以原始形式和结构复现在这里：
-               plan / schedule / itinerary → 每一行、每一天、每个 slot、每个 price
-                 都严格按原文保留
-               config 或 code block → 保留整个 block
-               command 的关键 output → 保留承载发现的行（sizes、counts、versions、
-                 error text）
-               structured result（table、records list）→ 保留各行
-             保留原始布局——line breaks、`Day 1:` / key: value prefixes、units、
-             currency symbols、ids。不要再次概括，不要重排，不要舍入数字，不要翻译。
+details    — The session's concrete OUTPUT, copied over verbatim. `statement` is a summary, and a summary necessarily
+             drops the individual values; a later lookup almost always wants one specific value, not the gist. So whenever the
+             session produced an addressable result, reproduce it here in its original form and structure:
+               plan / schedule / itinerary → keep every line, every day, every slot, every price
+                 exactly as in the original
+               config or code block → keep the whole block
+               a command's key output → keep the lines that carry the findings (sizes, counts, versions,
+                 error text)
+               structured result (table, records list) → keep the rows
+             Preserve the original layout -- line breaks, `Day 1:` / key: value prefixes, units,
+             currency symbols, ids. Do not re-summarize, do not reorder, do not round numbers, do not translate.
 
-             只复制 trace 中实际存在的内容。绝不要填补空缺：如果某个 slot 没有填，
-             就保持未填或明确说明——杜撰的值比缺失的值更糟，因为它会被检索并使用。
-             长度控制在约 4000 字符；如果输出更长，保留承载具体值的部分，删去装饰性
-             文字，并注明删掉了什么。
+             Copy only what is actually present in the trace. Never fill a gap: if a slot was left unfilled,
+             leave it unfilled or say so explicitly -- an invented value is worse than a missing one, because it will be retrieved and used.
+             Cap at about 4000 characters; if the output is longer, keep the parts carrying concrete values and drop decorative
+             prose, and note what was dropped.
 
-             如果本次会话未产生此类 artifact（尚无发现的纯调查，或等待用户导致的
-             停滞），填写 ""。
+             If this session produced no such artifact (a pure investigation with no
+             findings yet, or a stall waiting on the user), write "".
 
-             此字段不属于 retrieval vector——`statement` 和 `subject` 负责找到
-             记录，`details` 在找到后提供具体值。因此不要在此堆砌检索诱饵，也不要
-             重复摘要；只写原始内容。
+             This field is NOT part of the retrieval vector -- `statement` and `subject` do the
+             finding; `details` supplies the concrete values once found. So don't stack retrieval bait here, and don't
+             repeat the summary; write only the raw content.
 
-files      — 0..N 个本次会话中实际操作或调查过的绝对或 repo-relative FILE OR
-             DIRECTORY paths。保留调查过的 roots，例如 `C:\\` 和 `D:\\`。只包含
-             实际访问/搜索过的路径，不包含仅建议或计划访问的路径；不适用时填写 []。
+files      — 0..N absolute or repo-relative FILE OR DIRECTORY paths actually
+             operated on or investigated during this session. Keep investigated roots such as `C:\\` and `D:\\`. Only include paths that were
+             actually accessed/searched, not paths merely suggested or planned; write [] when none apply.
 ═══════════════════════════════════════════════════════════════════
-HOST CONTEXT（由 SDK 提供）
+HOST CONTEXT (provided by the SDK)
 ═══════════════════════════════════════════════════════════════════
 - workspace_id present: {workspace_present}
 - branch present: {branch_present}
 
-没有 workspace_id 时，solution 不能依赖未声明的项目本地上下文——必须在 `solution`
-或 `boundary_envs` 中明确写出其所需的 repo / path / service，使记忆能够独立使用。
+With no workspace_id, the solution cannot rely on undeclared project-local context -- it must spell out the repo / path / service it needs in `solution`
+or `boundary_envs` so the memory stays usable on its own.
 
 ═══════════════════════════════════════════════════════════════════
 CONVERSATION
@@ -231,7 +231,7 @@ CONVERSATION
 {conversation_block}
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT（仅输出严格 JSON，不要 markdown）
+OUTPUT (strict JSON only, no markdown)
 ═══════════════════════════════════════════════════════════════════
 {{
   "experiences": [
@@ -251,246 +251,251 @@ OUTPUT（仅输出严格 JSON，不要 markdown）
   }}
 }}
 
-默认应进行抽取。当该段会话确实完成了实际工作时，必须输出至少一条 experience——即使
-任务看似简单或一次成功，也要记录所做工作的可复用本质（method / command / how-to）。
-会话内容较少时，只保留最有价值的一条 experience 即可。
+Extraction is the default. When the segment genuinely completed real work, you MUST output at least one experience -- even if
+the task looks simple or succeeded in one shot, record the reusable essence of the work done
+(method / command / how-to). When the session is thin, keeping the single most valuable experience is enough.
 
-唯一例外是上述停滞情况：如果该段因为缺少信息、被阻塞在向用户提问而没有开展实际工作，
-输出 "experiences": []，只写 fact。不要为了满足本指令而杜撰 experience——杜撰的
-“how to ask for the departure city”比没有记忆更糟，因为以后会被检索并照做。只有这个
-原因允许空数组；实际开展过工作时，绝不能把空数组当捷径。
+The only exception is the stall case above: if the segment did no real work because it was blocked asking the user for missing information, output
+"experiences": [] and write only the fact. Do not manufacture an experience to satisfy this instruction -- a fabricated
+"how to ask for the departure city" is worse than no memory at all, because it will later be retrieved and followed. Only this
+reason allows an empty array; when work was actually done, never treat an empty array as a shortcut.
 
-"fact" 是单个对象，绝不是列表——每次会话一条记录。
+"fact" is a SINGLE object, never a list -- one record per session.
 
-始终写 fact。fact 的门槛不是“这是否有价值”，而是“是否发生了任何事情”；能够到达
-你的 segment 已经越过这条门槛。这包括看起来只是 setup 而非工作的片段：仅有一条用户
-消息陈述 requirements、parameters 或 starting state，即使没有运行工具，也恰恰是后续
-会话无法自行重建的材料——把需求、参数、起始状态连同情形一起写进 `statement`（紧凑
-记法，不要照抄对话原句），不要推给 `details`（`details` 不进检索向量，读取侧也不再
-注入它）。只有完全没有内容的问候和纯闲聊才使用 "fact": null。有疑问时应写 fact：
-多余记录只多占一行，而漏掉记录会伤害每一次需要它、却无从知道它曾存在的后续会话。
+Always write the fact. The bar for the fact is not "was this valuable" but "did anything at all happen"; a segment
+reaching you has already cleared that bar. This includes segments that look like setup rather than work: a single user
+message stating requirements, parameters, or a starting state, even with no tools run, is exactly the material a later session cannot rebuild on its own -- write the requirements, parameters, and starting state together with the situation into
+`statement` (compact notation, don't copy the dialogue verbatim); don't push them to `details` (`details` is not in the retrieval vector, and the read side no longer
+injects it). Use "fact": null only for greetings and pure chatter with no content whatsoever. When in doubt, write the fact:
+a surplus record costs one extra row, while a dropped record harms every later session
+that needed it and has no way of knowing it ever existed.
 """
 
 
 EXTRACT_PROMPT_CODING_ZH = """\
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║ HARD CONSTRAINT——先阅读本节；它覆盖本提示词后文任何看似要求叙事的措辞。      ║
+║  HARD CONSTRAINT -- read this section first; it overrides any wording     ║
+║  later in this prompt that sounds like it wants a narrative.              ║
 ║                                                                           ║
-║ 你不是在撰写某个人做过什么的报告。你要写的是 FUTURE AGENT 为采取行动所需要 ║
-║ 的信息。该 agent 已有自己的任务；它不关心这个用户想要什么。它需要知道：此处 ║
-║ 做出了什么决定、位于哪些代码坐标、尝试并否决了什么，以及是否经过验证。       ║
+║  You are not writing a report of what some person did. You are writing    ║
+║  the information a FUTURE AGENT needs in order to act. That agent already ║
+║  has its own task; it does not care what this user wanted. It needs to    ║
+║  know: what was decided here, at which code coordinates, what was tried   ║
+║  and rejected, and whether it was verified.                               ║
 ║                                                                           ║
-║ 具体来说，每个 `statement` 和每个 `solution` 都必须遵守：                 ║
-║   · 语法主语必须是 CODE 或 THE DECISION——绝不能是“the user”，也绝不能是   ║
-║     “the agent”。不要写“The user attempted to…”、“The user wanted…”、   ║
-║     “The agent then checked…”。                                           ║
-║   · 绝不要用“the session was completed”、“the error was noted”、         ║
-║     “no solution was found yet”之类流水账短语收尾。结尾应写决定及其验证    ║
-║     状态。如果没有做出决定，就以已排除的内容和下一条尚未探索的线索收尾——这才 ║
-║     是可复用部分。                                                        ║
-║   · 保留具体症状（error string、failing command、wrong output）——未来搜索 ║
-║     正是通过这些内容命中。                                                ║
+║  Specifically, every `statement` and every `solution` must obey the       ║
+║  following:                                                               ║
+║   · The grammatical subject must be the CODE or THE DECISION -- never     ║
+║      "the user", and never "the agent". Do not write "The user attempted  ║
+║      to...", "The user wanted...", “The agent then checked…”.             ║
+║   · Never close with bookkeeping phrases like "the session was            ║
+║      completed", "the error was noted", "no solution was found yet".      ║
+║      Close with the decision and its verification status. If no decision  ║
+║      was made, close with what was ruled out and the next unexplored lead ║
+║      -- that is the reusable part.                                        ║
+║   · Keep the concrete symptom (error string, failing command, wrong       ║
+║      output) -- future searches match on exactly this content.            ║
 ║                                                                           ║
-║ bad:  “The user attempted to write a QTable to RST with header_rows and   ║
-║        hit a TypeError. The session was completed with the error noted.”  ║
-║ good: “ascii.rst's RST writer rejects header_rows:                        ║
-║        `tbl.write(..., format='ascii.rst', header_rows=['name','unit'])`  ║
-║        raises TypeError because RST.__init__ does not forward it, unlike  ║
-║        ascii.fixed_width which accepts it. No fix written — the writer    ║
-║        needs the same header_rows plumbing as fixed_width.”               ║
+║ bad: “The user attempted to write a QTable to RST with header_rows and    ║
+║      hit a TypeError. The session was completed with the error noted.”    ║
+║ good: “ascii.rst's RST writer rejects header_rows: `tbl.write(...,        ║
+║      format='ascii.rst', header_rows=['name','unit'])` raises TypeError   ║
+║      because RST.__init__ does not forward it, unlike ascii.fixed_width   ║
+║      which accepts it. No fix written — the writer needs the same         ║
+║      header_rows plumbing as fixed_width.”                                ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
-你需要从一段任务执行会话中抽取可长期保留的 WORKING 记忆。
-“working”会话是指用户通过工具操作计算机或系统的任何实操任务——既包括软件/代码
-工作（编写、调试、重构、构建、部署、API/library 使用），也包括系统与运维工作
-（运行 shell/PowerShell 命令、磁盘/存储分析或清理、文件与文件夹操作、安装/配置
-软件、环境/设备设置、硬件/磁盘健康检查、备份、调度/自动化、数据处理）。
+You extract durable WORKING memories from a task-execution session segment.
+A "working" session is any hands-on task where the user operates a computer or
+system through tools -- this covers BOTH software/code work (writing, debugging,
+refactoring, building, deploying, API/library usage) AND system & operations work
+(running shell/PowerShell commands, disk/storage analysis or cleanup, file & folder operations, installing/configuring software, environment/device setup, hardware/disk health inspection, backup, scheduling/automation, data processing).
 
-你需要从同一段会话中产出两个层次：
+You produce TWO layers from the SAME segment:
 
-  EXPERIENCES（过程性，“如何做”）——可复用的方法；只有达到下述 VALUE BAR 时才
-  抽取。每条是一个 (task, search_keys, solution, boundary_envs) 组合。
+  EXPERIENCES (procedural, "how to do it") -- a reusable method, extracted only
+  when it clears the VALUE BAR below. Each is a (task, search_keys, solution, boundary_envs) bundle.
 
-  FACT（情节性，“这次确立了什么”）——关于本次会话的恰好一条记录。它不是用户做了
-  什么的叙事，而要按以下顺序记录：任务及其具体症状（使它以后能被检索到）、代码坐标、
-  最终采用了什么以及拒绝了什么、验证推进到什么程度。它不受价值门槛限制，但绝不能
-  超过一条。
+  FACT (episodic, "what was established this time") -- EXACTLY ONE record of THIS session. It is not a narrative of what the user did,
+  but records, in this order: the task and its concrete symptom (this is what makes it findable later), the code coordinates,
+  what was finally adopted and what was rejected, and how far verification got. It has no value bar, but there can never be more
+  than one.
 
-这两个层次回答不同问题，并分别存储。可泛化的方法放入 EXPERIENCES；只对这个系统、
-这个项目、此时此刻成立的本次会话经历放入 FACT。
-
-═══════════════════════════════════════════════════════════════════
-VALUE BAR（仅适用于 EXPERIENCES）——不要轻易越过此门槛。
-═══════════════════════════════════════════════════════════════════
-一条记忆必须同时满足以下全部条件：
-  (a) 解决了同一用户以后很可能再次遇到的问题
-  (b) 解决方案并非琐碎操作：它组合了多项信息/多个步骤，或者包含决策理由，或者记录了
-      来之不易的 workaround，或者是某项运维任务的可复用流程/配方（例如如何分析并
-      清理磁盘占用、如何批量整理文件、如何检查硬件健康、如何设置 scheduled job）
-  (c) 未来的 agent / 用户会更愿意查阅它，而不是重新摸索
-
-重要——分析、诊断、调查任务也算：
-一项任务不必实际修改或“修复”任何东西才值得记忆。只读、分析、故障排查工作，只要其
-流程或结论可复用，就有价值。明确抽取：
-  - 分析/诊断配方：可复用的流程以及它揭示的结果（例如“如何分析哪些文件夹占用了
-    C-drive 空间”——扫描命令、遇到的坑和最终发现）。“只生成了报告，没有修改”
-    不是跳过理由——可复用的方法本身就是记忆。
-  - 调查结果，包括否定结果或未找到结果（例如“使用 rg / fs_search / SQL index
-    在 C: 和 D: 中搜索 folder X——任何位置都未找到”）。记录一条死路可以避免下一个
-    agent 重复同样无果的搜索，因此达到了价值门槛。
-不要仅仅因为“assistant 可以重新生成这些命令”或“实际上没有修改任何东西”就拒绝
-一条记忆。只要流程或结论能节省未来的工作，就保留它。
-
-不要抽取：
-  - 没有可复用流程、真正琐碎的单步操作（“rename one file”、“git status”、
-    “run ls once”）
-  - 已经解决且没有可迁移经验的一次性问题
-  - repo/system 中已经存在的信息（不要重复 package.json）
-  - 每个 PR / 每次会话的一次性任务，除非其中编码了可复用模式
-
-启发式标准：如果用户（或未来执行同类任务的 agent）希望把它记下来，而不是以后再重新
-摸索，就保留。多步骤运维流程通常符合条件——包括 system/ops 或只读分析/搜索流程，
-不局限于代码。只有当它只是任何用户都能在 30 秒内通过 `--help` 找到的单条命令，并且
-不包含值得记忆的决策或坑点时，才丢弃。
+The two layers answer different questions and are stored separately. A method
+that generalizes goes in EXPERIENCES; this session's story, which only holds for this system / this project / right now, goes in the FACT.
 
 ═══════════════════════════════════════════════════════════════════
-CODE WORK——未来 agent 无法重新推导的信息，因此必须捕获
+VALUE BAR (EXPERIENCES ONLY) -- do not cross this bar lightly.
 ═══════════════════════════════════════════════════════════════════
-当该段是针对 repository 的软件工作时，可复用方法只占一半。另一半是工作位于哪里，
-以及哪个版本胜出。这些无法通过以后阅读代码恢复——代码只能展示当前状态，无法说明它
-位于哪个 branch，也无法说明哪些方案已被否决。
+A memory must satisfy ALL of the following at once:
+  (a) It solves a problem the same user is likely to hit again
+  (b) The solution is non-trivial: it combines multiple pieces of info / steps, or
+      carries a decision rationale, or records a hard-won workaround, or is a
+      reusable procedure/recipe for an operational task (e.g. how to analyze and clean up disk usage, how to batch-organize files, how to check hardware health, how to set up a scheduled job)
+  (c) A future agent / user would prefer looking it up over re-discovering it
 
-本节不是要求写得更长，而是要求把相同预算花在价值更高的 token 上：删掉重复目标、
-assistant“随后决定”做什么的叙事，以及只是复述的粘贴代码；把这些字符用于下面四项。
-一条遗漏 branch、却引用 30 行 diff 的记录是糟糕的取舍。
+IMPORTANT -- analysis / diagnostic / investigation tasks COUNT:
+A task does not have to actually change or "fix" anything to be worth remembering. Read-only, analytical, and troubleshooting work is valuable whenever its
+procedure or conclusion is reusable. Explicitly extract:
+  - Analysis / diagnostic recipes: the reusable procedure and what it revealed
+    (e.g. "how to analyze which folders eat C-drive space" -- the scan commands, the gotchas hit, and the final finding). "It only produced a report, no change"
+    is not a reason to skip -- the reusable method itself is the memory.
+  - Investigation outcomes, including negative or not-found results (e.g.
+    "searched for folder X across C: and D: with rg / fs_search / SQL index -- not found anywhere"). Recording a dead end keeps the next agent from repeating
+    the same fruitless search, so it clears the value bar.
+Do not reject a memory merely because "the assistant could regenerate the commands"
+or "nothing was actually modified". If the procedure or the conclusion would save future work, keep it.
 
-1. BRANCH / WORKING LOCATION——逐字写入 fact `statement`。如果该段提到或 checkout
-   了 `feat/x` / `fix/y`，这个 token 必须出现。在错误 branch 上恢复工作的 agent
-   会产生随后被静默丢弃的改动，因此这一个 token 的优先级高于其他任何细节。
+Do NOT extract:
+  - Truly trivial single-step ops with no reusable procedure ("rename one file",
+    “run ls once”)
+  - One-off issues already resolved with no transferable lesson
+  - Information that already exists in the repo/system (don't duplicate package.json)
+  - Per-PR / per-session throwaway tasks unless they encode a reusable pattern
 
-2. WHICH VERSION WON——当用户改变主意时，用一个分句指出胜出者并标记落败者：
-   “settled on A; the interim B was dropped”。不要完整保留两个版本，只需一个分句。
-   只保留最新版本是错误的：以后遇到被否决代码的 agent 必须识别它，否则会把代码
-   “修复”回已经丢弃的变体。`scratch that / go back to / actually, let's / no, not that`
-   之类措辞就是标志：后面的内容才是正式结论，前面的内容已被 superseded。
+Heuristic: if the user (or a future agent doing the same kind of task) would want it
+written down instead of figuring it out again, keep it. Multi-step operational procedures usually qualify -- including system/ops or read-only
+analysis/search flows, not just code. Only drop it when it is a single command any user could find via `--help` in 30 seconds and it
+carries no decision or gotcha worth remembering.
 
-3. EXACT COORDINATES, NOT PASTED CODE——使用 repo-relative path
-   （`qutebrowser/utils/debug.py`，绝不要只写 `debug.py`）以及触及的 function /
-   class。如果 signature 发生变化，给出新的 signature。如果决定的是 constant、regex
-   或 literal，逐字引用它——但只引用这一项，不要引用周围 block。准确的一行胜过一段
-   近似描述。
+═══════════════════════════════════════════════════════════════════
+CODE WORK -- information a future agent cannot re-derive, so it MUST be captured
+═══════════════════════════════════════════════════════════════════
+When the segment is software work on a repository, the reusable method is only half of it. The other half is where the work lives and
+which version won. These cannot be recovered by reading the code later -- the code shows only the current state, not which branch it sits on,
+nor which approaches were already rejected.
 
-4. VERIFIED vs MERELY WRITTEN——四个词就足够（“tests run and passing”/
-   “confirmed by git diff only, tests not run”）。“the edit is in”和“the edit is in
-   and tested”会让未来 agent 采取完全不同的下一步。
+This section does not ask for a longer record; it asks you to spend the same budget on higher-value tokens: drop restated goals,
+narration of what the assistant "then decided to" do, and pasted code that merely echoes; spend those characters on the four items below instead.
+A record that omits the branch but quotes 30 lines of diff is a bad trade.
 
-反例——只总结目标，却丢掉坐标：
+1. BRANCH / WORKING LOCATION -- write it verbatim into the fact `statement`. If the segment mentions or checks out
+   `feat/x` / `fix/y`, that token must appear. An agent that resumes work on the wrong branch
+   produces changes that are silently discarded afterwards, so this one token outranks every other detail.
+
+2. WHICH VERSION WON -- when the user changes their mind, use one clause to name the winner and mark the loser:
+   "settled on A; the interim B was dropped". Don't keep both versions in full -- one clause.
+   Keeping only the latest version is wrong: an agent that later meets the rejected code must recognize it, otherwise it will "fix" the code
+   back to the already-discarded variant. Phrases like `scratch that / go back to / actually, let's / no, not that`
+   are the markers: what follows is the conclusion of record; what precedes it has been superseded.
+
+3. EXACT COORDINATES, NOT PASTED CODE -- use the repo-relative path
+   (`qutebrowser/utils/debug.py`, never bare `debug.py`) plus the function /
+   class touched. If a signature changed, give the new signature. If the decision was about a constant, regex
+   or literal, quote it verbatim -- but quote only that one item, not the surrounding block. One accurate line beats a paragraph of
+   approximation.
+
+4. VERIFIED vs MERELY WRITTEN -- four words are enough ("tests run and passing" /
+   "confirmed by git diff only, tests not run"). "the edit is in" and "the edit is in
+   and tested" lead a future agent to take completely different next steps.
+
+Anti-pattern -- summarizing only the goal and dropping the coordinates:
   bad:  “refactored the colour parsing logic to be cleaner.”
   good: “on feat/q4, in qutebrowser/config/configtypes.py QtColor._parse_value:
          settled on `mult = 360.0 if kind == 'h' else 255.0`; the interim version that
          used 255.0 for everything was dropped. Tests not run.”
-  （good 往往比 bad 还短——它只是把每个字符都用在无法重新推导的信息上）
+  (the good one is often shorter than the bad one -- it simply spends every character on information that cannot be re-derived)
 
 ═══════════════════════════════════════════════════════════════════
-EXPERIENCE 字段
+EXPERIENCE FIELDS
 ═══════════════════════════════════════════════════════════════════
 
-task          — 采用查询式名称；写成用户以后会如何提问。
-                使用“publish a release to the xx platform”，不要使用
-                “publish_release_internal”。
-                必须自包含（不要使用“this”、“the file”、“we”）。
+task          — Query-shaped name; phrase it as how the user would ask later.
+                Use "publish a release to the xx platform", not
+                “publish_release_internal”.
+                Must be self-contained (no "this", "the file", "we").
 
-search_keys   — 0 到 5 种替代表述，用来覆盖仅靠 `task` 无法匹配、但对 solution 很
-                重要的方面。写成未来用户会询问的问题或主题，且必须与 task 有区别。
-                如果 task 已覆盖全部内容，则省略。
+search_keys   — 0 to 5 alternative phrasings covering aspects that `task` alone
+                wouldn't match but that matter to the solution. Phrase them as questions or topics future users would ask, and they must differ from task.
+                Omit if task already covers everything.
 
-solution      — 用户实际需要的完整、自包含内容：命令、凭据位置（不是凭据值）、
-                文件路径、有序步骤、坑点、决策理由。如果多轮端到端工作构成一个连贯
-                任务，应聚合成一个 solution；只有用户执行了互不相关的任务时才拆成
-                多条记忆。
+solution      — Complete, self-contained content the user actually needs: commands,
+                credential locations (not credential values), file paths, ordered steps, gotchas, decision rationale. If multi-turn end-to-end work forms
+                one coherent task, aggregate it into one solution; split into multiple memories only when the user did unrelated tasks.
+                memories.
 
-boundary_envs — solution 所依赖的具体限定条件，使用多行“key: value”：
+boundary_envs — The concrete qualifications the solution depends on, multi-line "key: value":
                   runtime / SDK / library + version
-                  API endpoint 或 method signature
+                  API endpoint or method signature
                   external service / middleware version
-                  env var NAME（不是值）
+                  env var NAME (not the value)
                   config file path
                   host / cluster / region identifier
-                如果 solution 与环境无关，填写 ""（空字符串）。
-                目的：底层 SDK/middleware 升级后，未来使用者可以据此判断 solution
-                是否仍然适用。
+                If the solution is environment-independent, write "" (empty string).
+                Purpose: after the underlying SDK/middleware upgrades, future
+                users can judge from this whether the solution still applies.
 
-confidence  — 0.0 到 1.0
-  1.0   用户明确将其陈述为规则/指令
-  0.7   根据工具操作及充分证据推断
-  0.5   弱推断；只有一次观察；不确定
+confidence  — 0.0 to 1.0
+  1.0   the user explicitly stated it as a rule / instruction
+  0.7   inferred from tool actions with sufficient evidence
+  0.5   weak inference; a single observation only; uncertain
 
 ═══════════════════════════════════════════════════════════════════
-FACT 字段——每段会话恰好一条，无价值门槛
+FACT FIELD -- exactly one per session segment, no value bar
 ═══════════════════════════════════════════════════════════════════
 
-你要为整段会话写一条 FACT——它是本次会话可恢复的状态记录，不是精心润色的回顾，也
-绝不是分散发现的列表。未来 agent 必须能够从中继续推进，且不会把建议、推断或局部搜索
-误认为已经验证的事实。
+You write ONE FACT for the whole segment -- a recoverable state record for this
+session, not a polished retrospective and never a list of separate findings. A
+future agent must be able to resume from it without mistaking a suggestion, an inference, or a partial search for a verified fact.
 
-statement  — 本次会话的紧凑摘要。它同时承担两个职责，且两者都必须完成：它既是
-             retrieval vector（未来 agent 用一份新 issue report 搜索它；措辞方式
-             与用户报告问题的方式一致），也是该 agent 找到后要据以行动的 payload。
-             因此：
+statement  — A compact summary of THIS session. It carries two jobs at once and must do both: it is the
+             retrieval vector (a future agent searches it with a fresh issue report, worded the way
+             users report problems), and it is also the payload that agent acts on once found.
+             Therefore:
 
-             开头写任务和症状，使用用户会使用的措辞。
-                这是保证可检索性的关键——表述应尽量贴近问题被报告时的表面形式。
-                点明具体目标和对象（“reclaim disk space under D:\\WXWork”、
-                “adjust the hue multiplier in QtColor._parse_value on feat/q4”、
-                “locate the new_file_search folder”），绝不要写泛泛的“fix a bug”/
-                “look for a file”。包含具体症状：error string、failing command、
-                wrong output。
+             OPEN with the task and the symptom, using the words a user would use.
+                This is what guarantees findability -- keep the surface form close to how the problem was reported.
+                Name the specific goal and object ("reclaim disk space under D:\\WXWork",
+                “adjust the hue multiplier in QtColor._parse_value on feat/q4”,
+                "locate the new_file_search folder"), never a generic "fix a bug" /
+                "look for a file". Include the concrete symptom: error string, failing command,
+                wrong output.
 
-             然后给出坐标和决定。
-                对代码工作写 repo-relative path、symbol 和 branch。说明最终 SETTLED ON
-                什么，并在同一分句标记丢弃了什么（“settled on X; the interim Y was
-                dropped”）。这部分无法通过阅读代码重新推导——代码只展示胜出者，从不
-                展示 Y 曾被尝试后否决。以后遇到被否决变体的 agent 必须能识别它，
-                否则会把代码“修复”回已丢弃版本。
+             THEN give the coordinates and the decision.
+                For code work, write the repo-relative path, the symbol, and the branch. State what was finally SETTLED ON,
+                and in the same clause mark what was dropped ("settled on X; the interim Y was
+                dropped"). This part cannot be re-derived by reading the code -- the code shows only the winner, never
+                that Y was tried and then rejected. An agent that later meets the rejected variant must be able to recognize it,
+                or it will "fix" the code back to the discarded version.
 
-             结尾写证据状态。
-                必须精确对应以下之一：completed、partially completed、failed、blocked、
-                still awaiting verification；还要写明如何检查（“tests run and passing”/
-                “confirmed by git diff only, tests not run”）。纳入否定结果和死路，
-                但不要夸大。
+             CLOSE with the evidence status.
+                It must match exactly one of: completed, partially completed, failed, blocked,
+                still awaiting verification; also state how it was checked ("tests run and passing" /
+                "confirmed by git diff only, tests not run"). Include negative results and dead ends,
+                but don't overstate them.
 
-             ⚠️ 绝不要停留在叙事层。“The user tried X and hit error Y; no solution found
-             yet”是一条浪费的记录：它容易被检索到，却不能指导未来 agent 行动。如果
-             本次确实没有得出决定，就说明排除了什么、下一条尚未探索的线索是什么——
-             这才是可复用部分。
+             ⚠️ Never stop at the narrative layer. "The user tried X and hit error Y; no solution found
+             yet" is a wasted record: it retrieves easily but cannot guide a future agent to act. If
+             this session genuinely reached no decision, say what was ruled out and what the next unexplored lead is --
+             that is the reusable part.
 
-             句子的主语应是 code 和 decision，而不是“the user”。使用 2 到 4 个连贯
-             句子，不要写带标签的小节。硬上限约 400 个拉丁字符（约 200 个 CJK 字符）。
+             The subject of the sentences should be the code and the decision, not "the user". Use 2 to 4 coherent
+             sentences, no labelled sections. Hard ceiling ~400 latin characters (~200 CJK characters).
 
-             EVIDENCE FIDELITY——强制要求：
-             - 只记录 trace 中实际执行的操作和明确存在的证据。对关键 commands、flags、
-               arguments、errors、numbers 保持原样。绝不要按惯例补全 command flags，
-               也不要把 advice/plans 写成已执行的动作。
-             - 保留 attempted、observed、verified、inferred、unresolved 之间的区别。
-               不要把这些词作为标签写进正文；自然表达其含义，例如“tried … but was
-               blocked by Access denied”或“suspect …, not yet verified”。
-             - 没有工具输出或明确确认时，绝不要声称修复成功、原因已经确定、file/folder
-               不存在或 tests passed。
-             - 每个否定发现都必须限定在实际搜索范围内，并逐一列出可能使其失效的所有
-               明确覆盖限制，尤其是 permission failures 和 maximum search depth：
+             EVIDENCE FIDELITY -- mandatory:
+             - Record only actions actually executed and evidence explicitly present in the trace. Keep material commands, flags,
+               arguments, errors, and numbers as-is. Never complete command flags by convention,
+               and never write advice/plans as actions already executed.
+             - Preserve the distinction among attempted, observed, verified, inferred, and unresolved.
+               Don't write those words as labels in the prose; express their meaning naturally, e.g. "tried ... but was
+               blocked by Access denied" or "suspect ..., not yet verified".
+             - Without tool output or explicit confirmation, never claim a fix succeeded, a cause was established, a file/folder
+               does not exist, or tests passed.
+             - Scope every negative finding to what was actually searched, and enumerate one by one all explicit coverage limits that could invalidate it,
+               especially permission failures and maximum search depth:
                “not found within the searched parts of C:\\ and D:\\; some directories
-               were skipped on Access denied, and the search was also depth-limited”。
-               不要为了摘要更漂亮而漏掉任何限制。绝不要把局部搜索提升为全局不存在。
-             - 只有 trace 直接验证了因果关系时，才能确定地陈述因果。否则保留限定词
-               （“suspected”/“inferred”/“not yet verified”）；不要把错误的测试假设
-               改写成系统的 root cause。
+               were skipped on Access denied, and the search was also depth-limited”.
+               Don't omit any limit to make the summary prettier. Never promote a partial search to global absence.
+             - State causality as certain only when the trace directly verified the causal link. Otherwise keep the hedges
+               ("suspected"/"inferred"/"not yet verified"); don't rewrite a wrong test assumption
+               into the system's root cause.
 
-             关键——这段文字就是 retrieval vector，也是未来 query 唯一会匹配的内容。
-             泛泛摘要毫无价值，因为每次会话看起来都像泛泛摘要：它会匹配所有查询，
-             却无法回答任何一个。因此必须写出使本次会话可检索的具体 anchors——真实
-             file paths、function / symbol names、branch names、commands、error strings、
-             versions、config keys and values、host / service names。以后有人搜索其中任一
-             具体项时，本摘要必须能被返回。
+             Key point -- this text IS the retrieval vector, and it is the only content a future query gets matched against.
+             A generic summary is worthless, because every session looks like a generic summary: it would match every query,
+             yet answer none of them. So you must write the concrete anchors that make this session findable -- real
+             file paths, function / symbol names, branch names, commands, error strings,
+             versions, config keys and values, host / service names. If someone later searches for any one of these
+             specifics, this summary must be what comes back.
                good: “fixing a failing `npm run build` in CI. Read
                       .github/workflows/ci.yml and package.json; traced it to webpack
                       5.74 hitting ERR_OSSL_EVP_UNSUPPORTED under node 18. Bumping the
@@ -504,15 +509,15 @@ statement  — 本次会话的紧凑摘要。它同时承担两个职责，且�
                       run.”
                bad:  “user wanted a build bug fixed, the agent looked at some config
                       files, changed some code, and fixed it.”
-                      （没有 path、command、error string、version——没有任何可检索锚点；
-                       每次会话都可以写成这样）
+                      (no path, no command, no error string, no version -- no retrieval anchor whatsoever;
+                       every session could be written this way)
                bad:  “fixed the signal-name parsing compatibility issue on a feature
                       branch.”
-                      （哪个 branch？哪个 file？哪个 function？两个竞争版本中谁胜出？
-                       一周后检索到它时，没有任何信息仍然有用）
-             忠实度示例（bad → good）：
+                      (which branch? which file? which function? which of the two competing versions won?
+                       a week later, when it is retrieved, nothing here is still useful)
+             Fidelity examples (bad → good):
                “ran Get-ChildItem -Force” → “ran Get-ChildItem”
-                 （trace 中没有 `-Force`，不要杜撰）
+                 (the trace did not contain `-Force`; do not invent it)
                “confirmed new_file_search does not exist” →
                  “new_file_search was not found within the searched parts of C:\\ and
                   D:\\; some directories were skipped on Access denied or by the depth
@@ -522,20 +527,20 @@ statement  — 本次会话的紧凑摘要。它同时承担两个职责，且�
                   rank; that assumption does not hold, so whether there is a lock bug
                   is still unverified”
 
-             不要记录问候或纯闲聊。如果该段完全没有建立任何信息，输出 "fact": null。
+             Do NOT record greetings or pure chatter. If the segment established nothing at all, output "fact": null.
 
-files      — 0..N 个本次会话中实际操作或调查过的绝对或 repo-relative FILE OR
-             DIRECTORY paths。保留调查过的 roots，例如 `C:\\` 和 `D:\\`。只包含
-             实际访问/搜索过的路径，不包含仅建议或计划访问的路径；不适用时填写 []。
+files      — 0..N absolute or repo-relative FILE OR DIRECTORY paths actually
+             operated on or investigated during this session. Keep investigated roots such as `C:\\` and `D:\\`. Only include paths that were
+             actually accessed/searched, not paths merely suggested or planned; write [] when none apply.
 
 ═══════════════════════════════════════════════════════════════════
-HOST CONTEXT（由 SDK 提供）
+HOST CONTEXT (provided by the SDK)
 ═══════════════════════════════════════════════════════════════════
 - workspace_id present: {workspace_present}
 - branch present: {branch_present}
 
-没有 workspace_id 时，solution 不能依赖未声明的项目本地上下文——必须在 `solution`
-或 `boundary_envs` 中明确写出其所需的 repo / path / service，使记忆能够独立使用。
+With no workspace_id, the solution cannot rely on undeclared project-local context -- it must spell out the repo / path / service it needs in `solution`
+or `boundary_envs` so the memory stays usable on its own.
 
 ═══════════════════════════════════════════════════════════════════
 CONVERSATION
@@ -543,7 +548,7 @@ CONVERSATION
 {conversation_block}
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT（仅输出严格 JSON，不要 markdown）
+OUTPUT (strict JSON only, no markdown)
 ═══════════════════════════════════════════════════════════════════
 {{
   "experiences": [
@@ -561,39 +566,39 @@ OUTPUT（仅输出严格 JSON，不要 markdown）
   }}
 }}
 
-强制要求：必须输出至少一条 experience，不要返回空列表。即使任务看似简单或一次成功，
-也要记录所做工作的可复用本质（method / command / how-to）。会话内容较少时，只需要
-最有价值的一条 experience——但绝不能输出空的 "experiences" array。
+MANDATORY: you must output at least one experience; never return an empty list. Even if the task looks simple or succeeded in one shot,
+still record the reusable essence of the work done (method / command / how-to). When the session is thin, the
+single most valuable experience is enough -- but never output an empty "experiences" array.
 
-"fact" 是单个对象，绝不是列表——每次会话一条记录。只有该段是没有建立任何信息的
-纯闲聊时，才使用 "fact": null。
+"fact" is a SINGLE object, never a list -- one record per session. Use "fact": null only when the segment is
+pure chatter that established nothing.
 """
 
 
 RECONCILE_PROMPT_ZH = """\
-你需要决定如何将新的 coding memory drafts 与用户已有的 memories 合并。
+You decide how to merge the new coding memory drafts with the user's existing memories.
 
-对每条新 draft，选择以下一种 action：
-  ADD     — 没有已有 memory 描述相同的任务/方面
-  UPDATE  — 某条已有 memory 描述相同任务；用新 draft 替换它
-            （solution 可能已经变化，env 可能已经升级，等等）
-  SKIP    — 与已有内容重复；没有新信息
+For each new draft, choose one of the following actions:
+  ADD     -- no existing memory describes the same task / aspect
+  UPDATE  -- an existing memory describes the same task; replace it with the new draft
+            (the solution may have changed, the env may have upgraded, etc.)
+  SKIP    -- duplicates existing content; no new information
 
-此外，当新内容使已有候选失效或作废时，可以针对已有 candidates 输出 DELETE ops：
-  DELETE  — 新 conversation 明确 supersedes/cancels/invalidates 某条已有 memory，
-            且无法通过 UPDATE 修复。示例：
-              * 用户说“don't use X anymore”，而 X 只存在于另一条独立 memory 中
-                （不是本次正在 ADD/UPDATE 的那条）
-              * candidate 的 boundary_envs（service / endpoint / SDK）已经消失，
-                且新 conversation 确认其已 deprecated
+Additionally, when the new content invalidates or voids existing candidates, you may emit DELETE ops against existing candidates:
+  DELETE  -- the new conversation explicitly supersedes / cancels / invalidates an existing memory,
+            and it cannot be fixed via UPDATE. Examples:
+              * the user says "don't use X anymore", and X exists only in another separate memory
+                (not the one currently being ADD/UPDATEd)
+              * the candidate's boundary_envs (service / endpoint / SDK) have disappeared,
+                and the new conversation confirms it is deprecated
 
-规则：
-- “Same task”是指已有 memory 和新 draft 都可以作为同一个未来用户查询的有效答案。
-- 如果 solution 不同，优先 UPDATE（不保留历史版本）。
-- 如果 task 和 solution 都高度一致，选择 SKIP。
-- 只有在存在明确证据表明 candidate 已 invalid/obsolete 时才 DELETE。绝不要仅仅因为
-  candidate 看起来“stale”就 DELETE。
-- 产生 DELETE 时，输出的 ops 数量可以超过 drafts 数量。
+Rules:
+- "Same task" means the existing memory and the new draft are both valid answers to the same future user query.
+- If the solution differs, prefer UPDATE (do not keep historical versions).
+- If both task and solution are highly consistent, choose SKIP.
+- DELETE only when there is clear evidence that a candidate is invalid/obsolete. Never
+  DELETE a candidate just because it looks "stale".
+- When emitting DELETEs, the number of output ops may exceed the number of drafts.
 
 ═══════════════════════════════════════════════════════════════════
 NEW DRAFTS
@@ -601,12 +606,12 @@ NEW DRAFTS
 {drafts_block}
 
 ═══════════════════════════════════════════════════════════════════
-EXISTING CANDIDATES（按每条 draft 的 task similarity 检索）
+EXISTING CANDIDATES (retrieved by task similarity for each draft)
 ═══════════════════════════════════════════════════════════════════
 {candidates_block}
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT（仅输出严格 JSON，不要 markdown）
+OUTPUT (strict JSON only, no markdown)
 ═══════════════════════════════════════════════════════════════════
 {{
   "ops": [
@@ -617,52 +622,52 @@ OUTPUT（仅输出严格 JSON，不要 markdown）
   ]
 }}
 
-如果没有 drafts，输出 {{"ops": []}}。
+If there are no drafts, output {{"ops": []}}.
 """
 
 
 FACT_RECONCILE_PROMPT_ZH = """\
-你负责维护 session-level WORKING FACTS。每条 statement 都概括一整段 trace/session：
-用户的任务、大致方法和结果。它不是一条 atomic claim。
+You maintain session-level WORKING FACTS. Each statement summarizes an entire trace/session:
+the user's task, the rough approach, and the result. It is not an atomic claim.
 
-下面每条新的 session fact 都一定会被存储；这不是你要决定的事情。你的唯一任务是识别
-task continuation：新 session 是否在继续推进某条已有 session fact 所记录的同一个用户
-任务？如果是，就将较旧 fact 标记为 SUPERSEDE，使这些链接为该任务构成跨 session 的
-进展链。
+Every new session fact below will definitely be stored; that is not for you to decide. Your only task is to identify
+task continuation: is the new session continuing to advance the same user task recorded by some existing session
+fact? If so, mark the older fact as SUPERSEDE so these links form a cross-session progress
+chain for that task.
 
-只有在存在充分证据同时满足以下条件时，才将已有 fact 标记为 superseded：
-  - subjects 匹配：两条记录围绕同一个实体——同一个 person、同一个 file/module、
-    同一个 host/service。subject 相同是必要条件，但不是充分条件；并且
-  - 用户目标在实质上相同，而不只是处于同一 topic/project；并且
-  - 新 trace 在继续、重试、扩展、验证或完成已有 trace 所记录的工作。
+Mark an existing fact as superseded only when there is sufficient evidence that all of the following hold:
+  - subjects match: both records revolve around the same entity -- the same person, the same file/module,
+    the same host/service. A matching subject is necessary but not sufficient; and
+  - the user goal is materially the same, not merely in the same topic/project; and
+  - the new trace continues, retries, extends, verifies, or completes the work recorded by the existing trace.
 
-以下情况不要 supersede：
-  - 两条记录的 subjects 不同。同一 group 中的两个人、同一 module 中的两个 files、
-    同一 cluster 中的两个 hosts 是并行关系，不是先后关系：一个人的状态不是另一个人
-    状态的新版本。如果 subject 显示为 (unspecified)，退回到只根据 statement 判断。
-  - 两次 session 只是提到了相同 file、symbol、component、repository、error 或
-    technology，但追求不同的用户目标。
-  - 一个任务只是为另一个任务提供 context 或 technique。
-  - 关系不确定。应保守判断：INSERT 是安全默认值；合并无关 session 会毁掉它们各自
-    独立的任务历史。
+Do NOT supersede when:
+  - the two records have different subjects. Two people in the same group, two files in the same module,
+    two hosts in the same cluster are parallel, not sequential: one person's state is not a newer version of another person's
+    state. If the subject shows (unspecified), fall back to judging from the statement alone.
+  - two sessions merely mention the same file, symbol, component, repository, error, or
+    technology, but pursue different user goals.
+  - one task merely provides context or technique for another task.
+  - the relationship is uncertain. Judge conservatively: INSERT is the safe default; merging unrelated sessions destroys their each
+    independent task histories.
 
-把每条 statement 当作有证据边界的文本。不要把其中的 inference 重新解释为已经确定的
-cause，也不要把共同的 conjecture/error 当作用户目标相同的证据。你的判断仅涉及 task
-continuation；不要“纠正”、补全或润色任何一条 session 记录。
+Treat every statement as evidence-bounded text. Don't reinterpret an inference inside it as an already established
+cause, and don't treat a shared conjecture/error as evidence that the user goals are the same. Your judgment covers task
+continuation only; do not "correct", complete, or polish any session record.
 
-示例：
-  existing: “需要修复 CI 的 npm run build；已追踪到 Node 18 下的
-             ERR_OSSL_EVP_UNSUPPORTED，workflow 尚未修改。”
-  new:      “继续修复同一个 CI build；已将 .github/workflows/ci.yml 中的 Node
-             提升到 20，且 npm run build 通过。”
+Examples:
+  existing: "need to fix the CI npm run build; traced to Node 18's
+             ERR_OSSL_EVP_UNSUPPORTED; the workflow has not been modified yet."
+  new:      "continuing the fix of the same CI build; Node in .github/workflows/ci.yml has been
+             raised to 20, and npm run build passes."
                                                                  → SUPERSEDE
 
-  existing: “需要修复 auth/middleware.ts 中的 JWT expiry handling；已添加
-             refresh logic。”
-  new:      “需要在 auth/middleware.ts 中添加 performance logging；已引入
-             latency metric。”
-                                                                 → 两者都保留
-            （同一 file/project，不同用户目标）
+  existing: "need to fix the JWT expiry handling in auth/middleware.ts; refresh logic has been
+             refresh logic.”
+  new:      "need to add performance logging in auth/middleware.ts; a latency metric has been
+             latency metric.”
+                                                                 → keep both
+            (same file/project, different user goals)
 
 ═══════════════════════════════════════════════════════════════════
 NEW SESSION FACTS
@@ -670,12 +675,12 @@ NEW SESSION FACTS
 {drafts_block}
 
 ═══════════════════════════════════════════════════════════════════
-EXISTING SESSION FACTS（按每条新 fact 的 statement similarity 检索）
+EXISTING SESSION FACTS (retrieved by statement similarity for each new fact)
 ═══════════════════════════════════════════════════════════════════
 {candidates_block}
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT（仅输出严格 JSON，不要 markdown）
+OUTPUT (strict JSON only, no markdown)
 ═══════════════════════════════════════════════════════════════════
 {{
   "ops": [
@@ -684,55 +689,55 @@ OUTPUT（仅输出严格 JSON，不要 markdown）
   ]
 }}
 
-只能使用同一个 draft_idx 的 candidate list 中实际出现的 fact ids。
-如果任何位置都没有 fact 被 superseded，输出 {{"ops": []}}。
+Only use fact ids that actually appear in the candidate list of the same draft_idx.
+If no fact is superseded anywhere, output {{"ops": []}}.
 """
 
 
 CHAIN_SUMMARY_PROMPT_ZH = """\
-working-memory store 中的某个用户任务已跨多个 sessions 推进。下面是该任务进展链中的
-session summaries，按从最早到最新排列，最后一条是当前 session。
+A user task in the working-memory store has advanced across multiple sessions. Below are the
+session summaries in that task's progress chain, ordered from oldest to newest; the last one is the current session.
 
-总结同一个任务如何跨 sessions 推进到当前状态。按时间顺序覆盖每个重要阶段。对每个
-阶段，在有信息时保留：实际 action 或 change、其 direct result，以及任何 unresolved
-issue 或 limiting condition。最后明确写出当前状态。
+Summarize how the same task advanced across sessions to its current state. Cover every important stage in chronological order. For each
+stage, when information allows, keep: the actual action or change, its direct result, and any unresolved
+issue or limiting condition. State the current status explicitly at the end.
 
-规则：
-  - 这只是压缩。只能报告 entries 实际陈述的内容；绝不要新增或补全 command、cause、
-    motive、action、test result、success state 或 global negative conclusion。
-  - 精确保留证据状态：attempted 不等于 completed，observed 不等于 verified，inferred
-    不等于 established，unresolved 必须保持 unresolved。保留 uncertainty words 以及
-    search/permission/coverage limits。
-  - 忠实陈述当前结束状态（completed、partially completed、failed、blocked 或
-    still awaiting verification）。绝不要因为某个看似合理的因果故事，或后续 entry
-    并未验证的内容而提升状态。
-  - 如果 entries 提到 suspected cause 和后续 result，只有某条 entry 直接说明该 cause
-    已被 verified 时，才可在两者之间建立因果联系。
-  - 保留具体 retrieval anchors：file paths、symbols、commands、error strings、versions、
-    config keys/values，以及对进展重要的 numeric values。
-  - 对 2-3 代的 chains，不要把进展过度压缩成一句话。适合时优先使用 2-4 个紧凑段落，
-    或使用可读性良好的 prose，清楚呈现 task goal、逐阶段 progression 和 current status。
-  - 不要机械复制完整 history。在保留重要 actions、direct results 和 leftovers 的同时，
-    省略重复及低价值细节。
-  - 不要杜撰 stage headings 或 dates。只有 entries 使日期有实际意义时才提及日期；
-    单独的 timestamps 是噪声。
-  - 如果 entries 说明更早 revisions 已被省略，必须明确指出 earlier history was omitted；
-    不要暗示所提供的 entries 是完整历史。
-  - 使用与 entries 相同的语言。
-  - 不要写前言，也不要用引号包裹输出。
+Rules:
+  - This is compression only. Report only what the entries actually state; never add or complete a command, cause,
+    motive, action, test result, success state, or global negative conclusion.
+  - Preserve evidence states exactly: attempted is not completed, observed is not verified, inferred
+    is not established, and unresolved must stay unresolved. Keep uncertainty words and
+    search/permission/coverage limits.
+  - State the current end status faithfully (completed, partially completed, failed, blocked, or
+    still awaiting verification). Never upgrade the status because of a plausible-sounding causal story or something later entries
+    did not verify.
+  - If the entries mention a suspected cause and a later result, draw a causal link between them
+    only when some entry directly states that the cause was verified.
+  - Keep the concrete retrieval anchors: file paths, symbols, commands, error strings, versions,
+    config keys/values, and the numeric values that matter to the progression.
+  - For 2-3 generation chains, don't over-compress the progression into one sentence. When suitable, prefer 2-4 compact paragraphs,
+    or well-readable prose that clearly presents the task goal, the stage-by-stage progression, and the current status.
+  - Don't mechanically copy the full history. While keeping the important actions, direct results, and leftovers,
+    omit repeated and low-value details.
+  - Don't invent stage headings or dates. Mention dates only when the entries make dates meaningful;
+    timestamps on their own are noise.
+  - If the entries say earlier revisions were omitted, you must state explicitly that earlier history was omitted;
+    don't imply the provided entries are the complete history.
+  - Use the same language as the entries.
+  - Write no preamble, and don't wrap the output in quotes.
 
-示例
+Example
   entries:
-    (2026-07-20) 需要修复 CI 的 npm run build；已追踪到 Node 18 下的
-                 ERR_OSSL_EVP_UNSUPPORTED，workflow 尚未修改。
-    (2026-07-24) 继续修复同一个 CI 问题；已将 .github/workflows/ci.yml 中的 Node
-                 提升到 20，但 dependency cache 仍复现旧错误。
-    (now)        继续验证同一修复；清除 npm cache 后，npm run build 通过。
+    (2026-07-20) Need to fix the CI npm run build; traced to ERR_OSSL_EVP_UNSUPPORTED under
+                 Node 18; the workflow had not been modified yet.
+    (2026-07-24) Continued fixing the same CI issue; Node in .github/workflows/ci.yml was raised
+                 to 20, but the dependency cache still reproduced the old error.
+    (now)        Continued verifying the same fix; after clearing the npm cache, npm run build passed.
   output:
-    任务目标是修复 CI 的 npm run build。最初将问题追踪到 Node 18 下的
-    ERR_OSSL_EVP_UNSUPPORTED，当时尚未修改 workflow；随后将
-    .github/workflows/ci.yml 提升到 Node 20，但 dependency cache 仍使旧错误继续
-    出现。最后，清除 npm cache 后 npm run build 通过，因此该 build 修复目前已验证完成。
+    The task goal was to fix the CI npm run build. The problem was first traced to
+    ERR_OSSL_EVP_UNSUPPORTED under Node 18, with the workflow not yet modified at the time; the
+    .github/workflows/ci.yml was then raised to Node 20, but the dependency cache still kept the old error
+    appearing. Finally, after clearing the npm cache, npm run build passed, so this build fix is currently verified complete.
 
 ═══════════════════════════════════════════════════════════════════
 ENTRIES
@@ -740,6 +745,6 @@ ENTRIES
 {chain_block}
 
 ═══════════════════════════════════════════════════════════════════
-OUTPUT（只输出 summary 本身，不要其他内容）
+OUTPUT (output only the summary itself, nothing else)
 ═══════════════════════════════════════════════════════════════════
 """

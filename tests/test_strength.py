@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Memory Strength（基于 idle 的时间衰减排序）单元 + 集成测试。
+Memory Strength (idle-based time decay ranking): unit + integration tests.
 
-覆盖：
-- compute_strength 公式：新建满强度、冷启动退回 gmt_created、idle 衰减、access_count
-  log 频次加权、access_count=0 不崩（log 守卫）。
-- apply_strength_to_normal：profile / intention 层透传不衰减，normal 层乘进 strength。
-- bump_access：access_count+1 / last_accessed_at 回写（chroma 端到端）。
-- 持久化 round-trip：last_accessed_at upsert → get_by_id 保留。
-- reader 集成：近期命中的 fact 在 strength 后排到陈旧 fact 前面（chroma）。
+Coverage:
+- compute_strength formula: full strength when new, cold start falling back to gmt_created, idle decay, access_count
+  log frequency weighting, access_count=0 not crashing (log guard).
+- apply_strength_to_normal: profile / intention layers pass through undecayed, normal layers get strength folded in.
+- bump_access: access_count+1 / last_accessed_at write-back (chroma end to end).
+- persistence round-trip: last_accessed_at upsert -> preserved by get_by_id.
+- reader integration: a recently hit fact ranks ahead of a stale fact after strength (chroma).
 """
 
 import asyncio
@@ -74,17 +74,17 @@ class TestComputeStrength:
         n = _FakeNode(access_count=5, last_accessed_at=now - timedelta(days=1), gmt_created=now)
         expected = (1 + math.log(5)) * math.exp(-1 / DEFAULT_TAU)
         assert abs(compute_strength(n, now=now) - expected) < 1e-6
-        assert compute_strength(n, now=now) > 1.0  # 高频近期 → strength > 1
+        assert compute_strength(n, now=now) > 1.0  # frequent and recent -> strength > 1
 
     def test_cold_start_falls_back_to_created(self):
         now = datetime.now()
-        # 从未访问，但 300 天前创建 → idle 用 gmt_created
+        # never accessed, but created 300 days ago -> idle uses gmt_created
         n = _FakeNode(access_count=0, last_accessed_at=None, gmt_created=now - timedelta(days=300))
         expected = 1.0 * math.exp(-300 / DEFAULT_TAU)
         assert abs(compute_strength(n, now=now) - expected) < 1e-6
 
     def test_recent_old_memory_beats_idle_old(self):
-        """2023 创建但昨天命中，应强于创建近但久未命中的。"""
+        """Created in 2023 but hit yesterday must beat one created recently yet idle for a long time."""
         now = datetime.now()
         kobe = _FakeNode(access_count=3, last_accessed_at=now - timedelta(days=1),
                          gmt_created=now - timedelta(days=1000))
@@ -108,9 +108,9 @@ class TestApplyStrengthToNormal:
             intention_layers={"l7_intention"},
         )
         by_layer = {h["layer"]: h["score"] for h in hits}
-        assert by_layer["l4_identity"] == 1.0   # profile 透传
-        assert by_layer["l7_intention"] == 1.0   # intention 透传
-        assert by_layer["l2_fact"] < 1.0         # normal 被衰减
+        assert by_layer["l4_identity"] == 1.0   # profile passes through
+        assert by_layer["l7_intention"] == 1.0   # intention passes through
+        assert by_layer["l2_fact"] < 1.0         # normal is decayed
 
 
 @pytest.fixture
@@ -135,7 +135,7 @@ class TestPersistenceAndBump:
         laat = datetime.now() - timedelta(days=2)
         n = MemoryNode(
             node_id=str(uuid.uuid4()), user_id="u1", agent_id="a1", session_id="s1",
-            content="用户喜欢科比", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
+            content="The user likes Kobe", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
             last_accessed_at=laat, access_count=3,
         )
         n.embedding = _emb()
@@ -144,13 +144,13 @@ class TestPersistenceAndBump:
         assert got is not None
         assert got.access_count == 3
         assert got.last_accessed_at is not None
-        # 精度到秒
+        # precision down to the second
         assert abs((got.last_accessed_at - laat).total_seconds()) < 2
 
     def test_bump_access_increments(self, store):
         n = MemoryNode(
             node_id=str(uuid.uuid4()), user_id="u1", agent_id="a1", session_id="s1",
-            content="用户在学吉他", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
+            content="The user is learning guitar", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
             access_count=2,
         )
         n.embedding = _emb()
@@ -163,10 +163,10 @@ class TestPersistenceAndBump:
 
 
 class TestReaderStrengthRanking:
-    """近期高频命中的 fact 经 strength 后排到陈旧 fact 之前。
+    """A recently and frequently hit fact is ranked ahead of a stale fact after strength.
 
-    直接验证「真实 VDB 召回 + apply_strength_to_normal」这一 reader 核心步骤：
-    两条同向量（语义分相等）的 L2 fact，strength 成为唯一区分。
+    Verifies the core reader step directly, "real VDB recall + apply_strength_to_normal": two L2 facts with the
+    same embedding (equal semantic scores), so strength is the only differentiator.
     """
 
     def test_recent_fact_outranks_stale(self, store):
@@ -174,12 +174,12 @@ class TestReaderStrengthRanking:
         shared_emb = _emb()
         recent = MemoryNode(
             node_id=str(uuid.uuid4()), user_id="u1", agent_id="a1", session_id="s1",
-            content="用户最近在追一部剧", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
+            content="The user has been following a series recently", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
             access_count=10, last_accessed_at=now - timedelta(days=1),
         )
         stale = MemoryNode(
             node_id=str(uuid.uuid4()), user_id="u1", agent_id="a1", session_id="s1",
-            content="用户以前看过一部剧", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
+            content="The user watched a series in the past", layer=MemoryLayer.L2_FACT, status=MemoryStatus.ACTIVE,
             access_count=1, last_accessed_at=now - timedelta(days=400),
         )
         recent.embedding = list(shared_emb)
@@ -193,7 +193,7 @@ class TestReaderStrengthRanking:
             status_filter=[MemoryStatus.ACTIVE], only_latest=True,
         ))
         assert {recent.node_id, stale.node_id} <= {h["node_id"] for h in hits}
-        # 召回时语义分相等 → strength 前两者并列；strength 后 recent 必须更高
+        # semantic scores are equal at recall time -> the top two tie; after strength, recent must score higher
         apply_strength_to_normal(hits, score_key="score")
         hits.sort(key=lambda x: x["score"], reverse=True)
         ids = [h["node_id"] for h in hits]

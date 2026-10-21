@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
-"""演化链展开时屏蔽 SHADOW 节点。
+"""SHADOW nodes are filtered out while expanding evolution chains.
 
-dedup 从「硬删」改为「置 SHADOW」（逻辑删除、可恢复）后出现一条泄漏路径：
+After dedup changed from hard deletion to flagging SHADOW (logical delete, recoverable), one leak path appeared:
 
-  _trace_full_chain 走 get_by_ids 按 node_id 直取，**不看 status**；被去重的
-  节点其 supersedes / superseded_by 链接也还在。于是只要链上另一个节点被召回，
-  刚被去重"删掉"的内容就会经 evolution_chain 重新返回给用户。
+  _trace_full_chain fetches by node_id through get_by_ids and **ignores status**; a deduped
+  node keeps its supersedes / superseded_by links too, so as soon as another node on the
+  chain is recalled, the just-deduped "deleted" content comes back to the user via evolution_chain.
 
-更严重的是：dedup 判重链头时会连带处理整条链（chain_node_ids），整链被 SHADOW
-后所有节点 is_latest 都是 False，_trace_full_chain 挑 head 的逻辑会退化成
-`max(all_nodes, key=_time_key)` —— 直接交回一个 SHADOW 节点当代表节点。
+Worse: when dedup finds a duplicate chain head it also handles the whole chain (chain_node_ids),
+and once the whole chain is SHADOW every is_latest is False, so _trace_full_chain picks
+its head as `max(all_nodes, key=_time_key)` -- handing back a SHADOW node as representative.
 
-本文件锁住：
-  - 链上个别 SHADOW 节点不出现在 evolution_chain 里；
-  - 代表节点取「可见链」的链头，不会是 SHADOW；
-  - 整条链都不可见时该 hit 被丢弃（而不是 fallback 回原始 hit 返回 SHADOW）；
-  - 正常链（无 SHADOW）行为不变。
+This file pins down:
+  - individual SHADOW nodes on a chain never appear in evolution_chain;
+  - the representative node is the head of the visible chain and is never SHADOW;
+  - when the whole chain is invisible the hit is dropped, instead of falling back to the raw hit and returning SHADOW;
+  - normal chains (no SHADOW) behave exactly as before.
 """
 
 import asyncio
@@ -77,7 +77,7 @@ def _node(store, *, content, status, is_latest, supersedes=None, emb=None):
 
 
 def _link(store, old_id, new_id):
-    """回填 superseded_by，建立双向链（与 writer.py SUPERSEDE 路径一致）。"""
+    """Backfills superseded_by to build the two-way chain (same as the SUPERSEDE path in writer.py)."""
     run(store.update_payload(old_id, {"superseded_by": [new_id]}))
 
 
@@ -88,7 +88,7 @@ def _hit(store, node_id, score=0.9):
 
 class TestShadowFilteredFromChain:
     def test_shadow_body_not_exposed_in_chain(self, store):
-        """链身被 SHADOW（如 dedup 判掉一个非链头重复项）→ 不出现在 chain 里。"""
+        """A SHADOW chain body (e.g. a deduped duplicate that is not the head) stays out of the chain."""
         e = _emb()
         old_id, _ = _node(store, content="v1 old", status=MemoryStatus.SHADOW,
                           is_latest=False, emb=e)
@@ -104,10 +104,10 @@ class TestShadowFilteredFromChain:
         contents = [c["content"] for c in out[0]["evolution_chain"]]
         assert "v3 head" in contents
         assert "v2 mid" in contents
-        assert "v1 old" not in contents, "SHADOW 链身不应出现在 evolution_chain"
+        assert "v1 old" not in contents, "a SHADOW chain body must not appear in evolution_chain"
 
     def test_representative_node_is_never_shadow(self, store):
-        """链头被 SHADOW、链身仍 ACTIVE 时，代表节点必须是可见的那个。"""
+        """With a SHADOW head and an ACTIVE body, the representative must be the visible one."""
         e = _emb()
         body_id, _ = _node(store, content="visible body", status=MemoryStatus.ACTIVE,
                            is_latest=False, emb=e)
@@ -118,7 +118,7 @@ class TestShadowFilteredFromChain:
         out = run(expand_evolution_chains(store, [_hit(store, body_id)]))
         assert len(out) == 1
         rep = out[0]["node"]
-        assert rep.status != MemoryStatus.SHADOW, "代表节点不能是 SHADOW"
+        assert rep.status != MemoryStatus.SHADOW, "the representative node must not be SHADOW"
         assert rep.content == "visible body"
         assert all(
             c["content"] != "shadowed head"
@@ -126,11 +126,11 @@ class TestShadowFilteredFromChain:
         )
 
     def test_fully_shadowed_chain_is_dropped(self, store):
-        """整条链被 dedup SHADOW → 该 hit 直接丢弃，不返回任何 SHADOW 内容。
+        """When dedup SHADOWs the whole chain the hit is dropped, with no SHADOW content returned.
 
-        这是最关键的一条：整链 SHADOW 后 is_latest 全为 False，
-        _trace_full_chain 会退化成按时间取 head，交回一个 SHADOW 节点。
-        若调用方 fallback 回原始 hit，等于把逻辑删除的内容返回给用户。
+        This is the critical case: after the whole chain is SHADOWed every is_latest is False,
+        so _trace_full_chain falls back to taking the newest head and returns a SHADOW node.
+        Falling back to the raw hit would hand logically deleted content back to the user.
         """
         e = _emb()
         old_id, _ = _node(store, content="dup old", status=MemoryStatus.SHADOW,
@@ -140,10 +140,10 @@ class TestShadowFilteredFromChain:
         _link(store, old_id, new_id)
 
         out = run(expand_evolution_chains(store, [_hit(store, old_id)]))
-        assert out == [], f"整链 SHADOW 应丢弃该 hit，实际返回 {out}"
+        assert out == [], f"a fully SHADOWed chain must drop this hit, got {out}"
 
     def test_fully_shadowed_chain_dropped_even_when_hit_is_head(self, store):
-        """从链头侧命中同样要丢弃（避免只在某个方向上生效）。"""
+        """A hit from the head side must be dropped too (so the filter works in both directions)."""
         e = _emb()
         old_id, _ = _node(store, content="d1", status=MemoryStatus.SHADOW,
                           is_latest=False, emb=e)
@@ -155,15 +155,15 @@ class TestShadowFilteredFromChain:
         assert out == []
 
     def test_mixed_hits_only_shadowed_chain_dropped(self, store):
-        """同一批里有正常链和全 SHADOW 链 → 只丢后者，不影响前者。"""
+        """A batch mixing a normal chain and a fully SHADOWed chain drops only the latter."""
         e1, e2 = _emb(), _emb()
-        # 正常链
+        # Normal chain
         ok_old, _ = _node(store, content="ok v1", status=MemoryStatus.SUPERSEDED,
                           is_latest=False, emb=e1)
         ok_head, _ = _node(store, content="ok v2", status=MemoryStatus.ACTIVE,
                            is_latest=True, supersedes=[ok_old], emb=e1)
         _link(store, ok_old, ok_head)
-        # 全 SHADOW 链
+        # Fully SHADOWed chain
         bad_old, _ = _node(store, content="bad v1", status=MemoryStatus.SHADOW,
                            is_latest=False, emb=e2)
         bad_new, _ = _node(store, content="bad v2", status=MemoryStatus.SHADOW,
@@ -177,7 +177,7 @@ class TestShadowFilteredFromChain:
         assert out[0]["node"].content == "ok v2"
 
     def test_normal_chain_unaffected(self, store):
-        """无 SHADOW 的链行为不变（防止过滤逻辑误伤正常路径）。"""
+        """Chains without SHADOW behave unchanged (the filter must not hit the normal path)."""
         e = _emb()
         old_id, _ = _node(store, content="n v1", status=MemoryStatus.SUPERSEDED,
                           is_latest=False, emb=e)
@@ -185,7 +185,7 @@ class TestShadowFilteredFromChain:
                            is_latest=True, supersedes=[old_id], emb=e)
         _link(store, old_id, head_id)
 
-        # 从链身命中，应展开并以链头为代表
+        # Hit on the chain body: it must expand and represent the chain by its head
         out = run(expand_evolution_chains(store, [_hit(store, old_id)]))
         assert len(out) == 1
         assert out[0]["node"].node_id == head_id
@@ -193,7 +193,7 @@ class TestShadowFilteredFromChain:
         assert [c["content"] for c in out[0]["evolution_chain"]] == ["n v2", "n v1"]
 
     def test_non_chain_hit_passes_through(self, store):
-        """不在链上的普通节点原样返回，不受影响。"""
+        """A plain node that is not on a chain is returned as-is, unaffected."""
         nid, _ = _node(store, content="standalone", status=MemoryStatus.ACTIVE,
                        is_latest=True)
         out = run(expand_evolution_chains(store, [_hit(store, nid)]))

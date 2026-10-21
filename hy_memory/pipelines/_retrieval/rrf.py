@@ -1,14 +1,14 @@
 """
-Reciprocal Rank Fusion —— 多路召回的 rank 级融合。
+Reciprocal Rank Fusion -- rank-level fusion of multiple retrieval channels.
 
-公式（Cormack et al. 2009）：
+Formula (Cormack et al. 2009):
 
     score(d) = Σ_c [ w_c / (k + rank_c(d)) ]
 
-关键性质：
-  - 只看 rank 不看绝对分数 → 规避"vec cosine [0,1] 和 BM25 [0,+∞) 不可比"
-  - 每路独立排名，出现在多路中的 doc 天然累加得分
-  - 意图权重 w_c 按场景放大某一路贡献
+Key properties:
+  - Only rank matters, never absolute scores → sidesteps "vec cosine [0,1] is not comparable with BM25 [0,+∞)"
+  - Every channel ranks on its own; a doc present in several channels accumulates score
+  - Intention weight w_c amplifies a given channel's contribution per scenario
 """
 
 from typing import Any, Dict, List, Optional
@@ -22,22 +22,22 @@ def rrf_fuse(
     k: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    RRF 融合多路召回结果。
+    Fuse multi-channel retrieval results with RRF.
 
     Args:
         channels: {"vec": [hit, ...], "tag": [hit, ...], "bm25": [hit, ...]}
-                  每路的 hits **必须按各自分数降序排好**。每条 hit 必须含
-                  `node_id` 字段；`node` 字段强烈推荐（用于输出层 hydrate）。
-        weights:  通道权重；缺省则每路 1.0。未命中的通道名不产生贡献。
-        k:        RRF 平滑常数，默认 config.RRF_K（60）。
+                  Hits of each channel **must already be sorted by their own score, descending**. Each hit must carry
+                  a `node_id` field; a `node` field is strongly recommended (used to hydrate the output layer).
+        weights:  Channel weights; absent ones default to 1.0 per channel. Unknown channel names contribute nothing.
+        k:        RRF smoothing constant, defaults to config.RRF_K (60).
 
     Returns:
-        按 RRF 分数降序的合并列表，每条记录包括：
+        Merged list sorted by RRF score descending, each record containing:
           {
             "node_id": ...,
-            "node": ...,                # 若任一路原 hit 有 node 字段则保留
-            "rrf_score": float,         # 融合后分数（未归一化）
-            "rrf_rank_by_channel": {channel: rank, ...},  # 观测用
+            "node": ...,                # Kept when any channel's original hit had a node field
+            "rrf_score": float,         # Fused score (not normalized)
+            "rrf_rank_by_channel": {channel: rank, ...},  # For observability
             "per_channel_score": {channel: raw_score, ...},
           }
     """
@@ -66,7 +66,7 @@ def rrf_fuse(
                 }
                 acc[nid] = entry
             else:
-                # 补上先前路没带的 node 对象
+                # Backfill the node object that earlier channels did not carry
                 if entry.get("node") is None and hit.get("node") is not None:
                     entry["node"] = hit.get("node")
             entry["rrf_score"] += contrib
@@ -80,15 +80,15 @@ def rrf_fuse(
 
 def compute_confidence(fused: List[Dict[str, Any]], top_n: int = 3) -> float:
     """
-    基于 top-N RRF 分平均值的 proxy confidence，用于弃权判定。
+    Proxy confidence based on the mean top-N RRF score, used for abstain decisions.
 
-    返回 [0, ~1] 的分数——RRF 分数的理论上界与路数和权重有关，这里只做
-    相对置信度，业务方不应把它当精确概率使用。
+    Returns a score in [0, ~1] -- the theoretical RRF ceiling depends on the number of channels and their weights, so
+    this is only a relative confidence and callers must not treat it as an exact probability.
     """
     if not fused:
         return 0.0
     n = min(top_n, len(fused))
     avg = sum(h.get("rrf_score", 0.0) for h in fused[:n]) / max(n, 1)
-    # 经验归一化：单路权重 1.0 时最高贡献 ≈ 1/(60+1) ≈ 0.0164；三路都在 top-1
-    # 总和约 0.05。把 0.05 映射到 1.0 上做粗糙 scaling
+    # Empirical normalization: with single-channel weight 1.0 the top contribution ≈ 1/(60+1) ≈ 0.0164; all three channels at top-1
+    # sum to roughly 0.05. Mapping 0.05 onto 1.0 gives a rough scaling
     return min(1.0, avg / 0.05)

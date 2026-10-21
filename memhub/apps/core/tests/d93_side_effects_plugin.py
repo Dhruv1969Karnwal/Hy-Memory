@@ -1,6 +1,7 @@
 """D93 test 3: inventory every database write a Reader-bound read route makes.
 
-Plan `读写隔离方案-20261009.html` section 5 (B) and section 8 row 3. The Reader
+Plan `\u8bfb\u5199\u9694\u79bb\u65b9\u6848-20261009.html` \
+section 5 (B) and section 8 row 3. The Reader
 opens the library `mode=ro` + `query_only`, so any write a read route makes
 today will fail there. Instead of a manual audit, run the existing route tests
 with this plugin loaded; it records, per route, every INSERT / UPDATE / DELETE /

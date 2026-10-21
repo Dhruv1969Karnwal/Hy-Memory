@@ -69,7 +69,7 @@ _EXPLICIT_FORGET_EN_RE = re.compile(
     re.I,
 )
 _EXPLICIT_FORGET_ZH_RE = re.compile(
-    r"用户.{0,30}(?:请|要求|让).{0,20}忘记.{0,10}(?:自己|其|他们|她|他)"
+    r"\u7528\u6237.{0,30}(?:\u8bf7|\u8981\u6c42|\u8ba9).{0,20}\u5fd8\u8bb0.{0,10}(?:\u81ea\u5df1|\u5176|\u4ed6\u4eec|\u5979|\u4ed6)"
 )
 
 
@@ -79,7 +79,7 @@ def is_explicit_forget_marker(text: str) -> bool:
     if not value:
         return False
     lowered = value.lower()
-    if not (lowered.startswith("the user ") or value.startswith("用户")):
+    if not (lowered.startswith("the user ") or value.startswith("\u7528\u6237")):
         return False
     return bool(
         _EXPLICIT_FORGET_EN_RE.search(value)
@@ -145,7 +145,7 @@ def extract_forget_targets(marker_text: str) -> List[str]:
             target,
         ):
             atomic_target = re.sub(
-                r"^(?:请)?忘记(?:我|我的|本人)?", "", atomic_target,
+                r"^(?:\u8bf7)?\u5fd8\u8bb0(?:\u6211|\u6211\u7684|\u672c\u4eba)?", "", atomic_target,
             ).strip()
             atomic_target = re.sub(
                 r"(?i)\s+from your memory\.?$", "", atomic_target,
@@ -297,7 +297,7 @@ def _is_user_subject_fact(node: Any) -> bool:
     if owner in {"agent", "assistant"}:
         return False
     content = str(getattr(node, "content", "") or "").strip().lower()
-    return bool(re.match(r"^(?:the\s+user|user)(?:\b|\s|[,:])|^用户", content))
+    return bool(re.match(r"^(?:the\s+user|user)(?:\b|\s|[,:])|^\u7528\u6237", content))
 
 
 def eligible_catalog_facts(nodes: Iterable[Any]) -> List[Any]:

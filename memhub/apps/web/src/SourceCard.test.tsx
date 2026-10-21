@@ -69,8 +69,16 @@ describe("SourceCard", () => {
         {...callbacks()}
       />,
     );
-    expect(screen.getByText(/一次性快照，不跟随原应用变化/)).toBeTruthy();
-    expect(screen.queryByText(/仅新增同步，源头删除不跟随/)).toBeNull();
+    expect(
+      screen.getByText(
+        /One-time snapshot; does not follow changes in the source app/,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        /Add-only sync; deletions at the source are not followed/,
+      ),
+    ).toBeNull();
   });
   afterEach(() => {
     cleanup();
@@ -99,9 +107,9 @@ describe("SourceCard", () => {
       />,
     );
 
-    expect(screen.getByText("正在后台导入")).toBeTruthy();
+    expect(screen.getByText("Importing in the background")).toBeTruthy();
     expect(screen.getByText("5")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "暂停" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
     expect(container.textContent).not.toContain("%");
   });
 
@@ -119,8 +127,8 @@ describe("SourceCard", () => {
     );
 
     // Whether recall is installed here is the recall section's fact, not ours.
-    expect(container.textContent).toContain("支持应用内召回");
-    expect(container.textContent).not.toContain("应用内召回已接入");
+    expect(container.textContent).toContain("In-app recall supported");
+    expect(container.textContent).not.toContain("In-app recall wired up");
   });
 
   it("does not call an additions-only connection real-time sync", () => {
@@ -138,10 +146,10 @@ describe("SourceCard", () => {
     );
 
     // We poll on a server-side interval and cannot see upstream deletions, so
-    // a memory can outlive the sentence it came from. Saying "实时同步" would
+    // a memory can outlive the sentence it came from. Saying "live sync" would
     // tell the user their copy tracks the source.
-    expect(container.textContent).toContain("仅新增同步");
-    expect(container.textContent).not.toContain("实时同步");
+    expect(container.textContent).toContain("Add-only sync");
+    expect(container.textContent).not.toContain("live sync");
   });
 
   it("requires a second explicit confirmation for environment paths", async () => {
@@ -156,7 +164,9 @@ describe("SourceCard", () => {
     render(<SourceCard source={custom} busyKey={null} {...actions} />);
 
     await user.click(
-      screen.getByRole("button", { name: "确认并授权自定义目录" }),
+      screen.getByRole("button", {
+        name: "Confirm and authorize custom directory",
+      }),
     );
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining(custom.candidate_path),
@@ -165,7 +175,9 @@ describe("SourceCard", () => {
 
     confirm.mockReturnValueOnce(true);
     await user.click(
-      screen.getByRole("button", { name: "确认并授权自定义目录" }),
+      screen.getByRole("button", {
+        name: "Confirm and authorize custom directory",
+      }),
     );
     expect(actions.onAuthorize).toHaveBeenCalledWith(custom, true);
   });
@@ -180,7 +192,7 @@ describe("SourceCard", () => {
       />,
     );
 
-    expect(screen.getByText("找到 128 个会话")).toBeTruthy();
+    expect(screen.getByText("Found 128 conversations")).toBeTruthy();
   });
 
   it("says the host is installed but empty rather than showing a bare zero", () => {
@@ -193,8 +205,10 @@ describe("SourceCard", () => {
       />,
     );
 
-    expect(screen.getByText("已安装，暂未发现会话")).toBeTruthy();
-    expect(screen.queryByText("找到 0 个会话")).toBeNull();
+    expect(
+      screen.getByText("Installed, no conversations found yet"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Found 0 conversations")).toBeNull();
   });
 
   it("shows no session count when the core has not reported one", () => {
@@ -207,7 +221,9 @@ describe("SourceCard", () => {
       />,
     );
 
-    expect(container.textContent).not.toContain("个会话");
-    expect(container.textContent).not.toContain("已安装，暂未发现会话");
+    expect(container.textContent).not.toContain("conversations");
+    expect(container.textContent).not.toContain(
+      "Installed, no conversations found yet",
+    );
   });
 });

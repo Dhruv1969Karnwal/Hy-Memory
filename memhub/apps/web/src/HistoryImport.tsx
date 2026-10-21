@@ -14,28 +14,36 @@ import {
   reconcileHistoryUpload,
   uploadHistoryFile,
 } from "./api";
+import { countLabel } from "./count-label";
 import { readPendingFileUpload } from "./pending-file-upload";
 import { traceUiAction } from "./ui-trace";
 
 const errors: Record<string, string> = {
-  unsupported_export_schema: "暂不支持这份文件的对话格式，未导入任何内容。",
+  unsupported_export_schema:
+    "The conversation format of this file is not supported yet; nothing was imported.",
   export_size_exceeded:
-    "文件或解压后的总内容超过 128 MB，请选择 conversations.json。",
+    "The file or its total unpacked content exceeds 128 MB. Select conversations.json instead.",
   ambiguous_export_payload:
-    "压缩包里没有唯一的 conversations.json，请直接选择该文件。",
-  unsafe_export_archive: "压缩包未通过安全检查，未解压或导入。",
-  invalid_export_json: "这份 JSON 文件不完整或编码不受支持。",
-  export_has_no_text_conversations: "文件里没有可导入的文本对话。",
-  duplicate_export_identity: "文件里有重复的会话或消息身份，未导入任何内容。",
-  export_record_invalid: "文件中有超长或无法读取的对话记录，未导入任何内容。",
-  imports_disabled: "当前实例禁用了导入，请在完整 App 中使用。",
-  generic_import_invalid: "对话格式不完整，未导入任何内容。",
+    "The archive has no single conversations.json. Select that file directly.",
+  unsafe_export_archive:
+    "The archive failed the security check; it was neither unpacked nor imported.",
+  invalid_export_json:
+    "This JSON file is incomplete or uses an unsupported encoding.",
+  export_has_no_text_conversations:
+    "The file has no importable text conversations.",
+  duplicate_export_identity:
+    "The file has duplicate conversation or message identities; nothing was imported.",
+  export_record_invalid:
+    "The file contains overlong or unreadable conversation records; nothing was imported.",
+  imports_disabled: "Imports are disabled on this instance; use the full app.",
+  generic_import_invalid:
+    "The conversation format is incomplete; nothing was imported.",
   unsupported_memory_content_schema:
-    "这不是已支持的记忆文件格式。可选择 TXT、Markdown 或 one-memory-content-v1 JSON；ZIP 和厂商专有格式尚未接入。",
+    "This is not a supported memory file format. Use TXT, Markdown or one-memory-content-v1 JSON; ZIP and vendor-proprietary formats are not supported yet.",
   invalid_memory_content_record:
-    "已有记忆记录为空或字段不受支持，未导入任何内容。",
+    "The existing memory record is empty or has unsupported fields; nothing was imported.",
   invalid_memory_content_time:
-    "已有记忆时间缺少日期或时区，未知时间请保留为 null。",
+    "The existing memory time lacks a date or timezone; keep unknown times as null.",
 };
 
 export function HistoryImport({
@@ -253,7 +261,7 @@ export function HistoryImport({
       setIssue(historyImportIssue(reason));
       setError(
         errors[apiErrorCode(reason) ?? ""] ??
-          "未能读取这份历史包。请检查文件后重试。",
+          "This history package could not be read. Check the file and retry.",
       );
     } finally {
       // An early return before any request (e.g. the selection was invalidated)
@@ -277,7 +285,8 @@ export function HistoryImport({
       setSaveUnknown(false);
       update();
     } catch {
-      if (active(token)) setError("暂存文件未能清理，请重试切换。");
+      if (active(token))
+        setError("The staged file could not be cleaned up. Retry the switch.");
     } finally {
       finish(token);
     }
@@ -299,7 +308,9 @@ export function HistoryImport({
         remember(next);
         setInputKind(next.content_kind ?? "raw_conversation");
         setSelectionValid(true);
-        setNotice("上传结果已找回，尚未新增读取授权。请核对内容后继续。");
+        setNotice(
+          "The upload result was recovered; no new read authorization was granted. Review the content before continuing.",
+        );
         if (next.committed) await reviewSource(next, token);
       }
     } catch {
@@ -312,8 +323,8 @@ export function HistoryImport({
         }
         setError(
           pending
-            ? "上传结果仍待核对，不会重新上传。请稍后再次核对。"
-            : "上传结果暂不可用，请核对文件状态；本次未提交新的读取授权。",
+            ? "The upload result is still pending verification; it is not reuploaded. Check again later."
+            : "The upload result is currently unavailable; check the file status. No new read authorization was submitted.",
         );
       }
     } finally {
@@ -357,8 +368,8 @@ export function HistoryImport({
       if (active(token))
         setError(
           saved
-            ? "文件已保存，但来源位置或身份尚未核对成功。请重新核对来源，尚未提交读取授权。"
-            : "文件保存结果尚未确认。请先核对文件回执，不会直接重复保存或授权。",
+            ? "The file was saved, but the source location or identity was not verified. Recheck the source; no read authorization was submitted."
+            : "The file save result is not confirmed yet. Check the file receipt first; the save or authorization is not simply repeated.",
         );
     } finally {
       // See `select()`: an early return after the request still needs a
@@ -387,8 +398,8 @@ export function HistoryImport({
       if (active(token))
         setError(
           receipt.committed
-            ? "文件已保存，但文件回执或来源身份未能核对。保留已保存文件，请重试核对。"
-            : "暂时无法核对文件保存结果。保留原回执，不会重复保存或授权。",
+            ? "The file was saved, but the file receipt or source identity could not be verified. The saved file is kept; retry verification."
+            : "The file save result cannot be verified right now. The original receipt is kept; the save or authorization is not repeated.",
         );
     } finally {
       finish(token);
@@ -416,7 +427,7 @@ export function HistoryImport({
       ) {
         setConnection("failed");
         setError(
-          "此来源未能连接，文件已保存。核对上述目录后可明确重试此来源；位置变化时请先重新核对来源。",
+          "This source could not be connected, but the file was saved. After reviewing the directory above you can explicitly retry this source; if the location changed, recheck the source first.",
         );
         return;
       }
@@ -428,8 +439,8 @@ export function HistoryImport({
         throw new Error("invalid_connection_receipt");
       setNotice(
         isMemoryContent
-          ? "已取得来源连接回执。已有记忆的内容核对、模型处理和使用范围仍需单独确认。"
-          : "已取得来源连接回执，导入进度以对应来源任务为准。模型处理与使用权限未改变。",
+          ? "Source connection receipt obtained. Content verification, model processing and usage scope for the existing memory still need separate confirmation."
+          : "Source connection receipt obtained; import progress is tracked by the corresponding source task. Model processing and usage permissions are unchanged.",
       );
       tracked.current = null;
       setReceipt(null);
@@ -439,7 +450,7 @@ export function HistoryImport({
       if (active(token)) {
         setConnection("unknown");
         setError(
-          "连接结果尚未确认，文件已保存。请核对连接回执；来源变化时需重新核对并确认，不会自动重新授权。",
+          "The connection result is not confirmed yet, but the file was saved. Check the connection receipt; if the source changed you must review and confirm again; authorization is not renewed automatically.",
         );
       }
     } finally {
@@ -466,15 +477,16 @@ export function HistoryImport({
       if (previous?.receipt.committed || previous?.uncertain) {
         setNotice(
           previousOperation === "connect" || connection === "unknown"
-            ? "已关闭确认。已发送的连接请求可能继续，请在对应来源核对结果；关闭不会撤销授权或取消任务。"
+            ? "Confirmation closed. A connection request already sent may still proceed; check the result on the corresponding source. Closing does not revoke authorization or cancel tasks."
             : previous?.uncertain
-              ? "已关闭确认。文件保存请求可能已提交，请在来源中核对；未提交新的读取授权。"
-              : "文件已保留在本机，未提交新的读取授权。",
+              ? "Confirmation closed. The file save request may have been submitted; check it in the source. No new read authorization was submitted."
+              : "The file is kept on this device; no new read authorization was submitted.",
         );
       }
       setOpen(false);
     } catch {
-      if (active(token)) setError("暂存文件未能清理，请重试关闭。");
+      if (active(token))
+        setError("The staged file could not be cleaned up. Retry closing.");
     } finally {
       closing.current = false;
       finish(token);
@@ -499,7 +511,7 @@ export function HistoryImport({
         }}
       >
         <FileUp size={16} />
-        导入历史包
+        Import history package
       </button>
       {notice && (
         <p role="status" className="history-import-notice">
@@ -537,12 +549,12 @@ export function HistoryImport({
             }}
           >
             <header className="memory-note-heading">
-              <h2 id="history-import-title">导入历史包</h2>
+              <h2 id="history-import-title">Import history package</h2>
               <button
                 type="button"
                 className="quiet"
-                aria-label="关闭历史包导入"
-                title="关闭"
+                aria-label="Close history import"
+                title="Close"
                 disabled={operation === "discard"}
                 onClick={() => void close()}
               >
@@ -553,21 +565,21 @@ export function HistoryImport({
               <div role="status" className="model-refresh-notice">
                 <p>
                   {uploadStorageFailed
-                    ? "无法读取本地上传恢复记录，暂不开始新的上传。"
-                    : "上次上传结果待核对，不会重复上传或自动导入。"}
+                    ? "The local upload recovery record cannot be read; no new upload is started."
+                    : "The last upload result is pending verification; there is no reupload or automatic import."}
                 </p>
                 <button
                   type="button"
                   disabled={busy || uploadStorageFailed}
                   onClick={() => void recoverUpload()}
                 >
-                  核对上传结果
+                  Check upload result
                 </button>
               </div>
             )}
             <fieldset
               className="history-content-kind"
-              aria-label="内容类型"
+              aria-label="Content type"
               disabled={inputLocked}
             >
               <label>
@@ -583,7 +595,7 @@ export function HistoryImport({
                     })
                   }
                 />
-                历史对话
+                Historical conversations
               </label>
               <label>
                 <input
@@ -598,12 +610,12 @@ export function HistoryImport({
                     })
                   }
                 />
-                已有记忆
+                Existing memory
               </label>
             </fieldset>
             <fieldset
               className="map-axis import-input-mode"
-              aria-label="导入方式"
+              aria-label="Import method"
             >
               <button
                 type="button"
@@ -614,7 +626,7 @@ export function HistoryImport({
                 }}
               >
                 <FileUp size={15} aria-hidden="true" />
-                选择文件
+                Select file
               </button>
               <button
                 type="button"
@@ -626,12 +638,12 @@ export function HistoryImport({
                 }}
               >
                 <Clipboard size={15} aria-hidden="true" />
-                {isMemoryContent ? "粘贴内容" : "粘贴对话"}
+                {isMemoryContent ? "Paste content" : "Paste conversation"}
               </button>
             </fieldset>
             {mode === "file" ? (
               <label className="history-file-label">
-                历史数据文件
+                History data file
                 <input
                   key={inputKind}
                   type="file"
@@ -656,12 +668,14 @@ export function HistoryImport({
                   invalidateSelection();
                 }}
               >
-                编辑原文
+                Edit source text
               </button>
             ) : (
               <div className="history-paste">
                 <label htmlFor="history-paste-text">
-                  {isMemoryContent ? "已有记忆原文" : "对话原文"}
+                  {isMemoryContent
+                    ? "Existing memory source text"
+                    : "Conversation source text"}
                 </label>
                 <textarea
                   id="history-paste-text"
@@ -673,8 +687,8 @@ export function HistoryImport({
                   value={paste}
                   placeholder={
                     isMemoryContent
-                      ? "已有记忆内容…"
-                      : "User: 原始发言…\nAssistant: 原始回复…"
+                      ? "Existing memory content..."
+                      : "User: original message...\nAssistant: original reply..."
                   }
                   onChange={(event) => {
                     setPaste(event.target.value);
@@ -704,77 +718,88 @@ export function HistoryImport({
                     )
                   }
                 >
-                  预览内容
+                  Preview content
                 </button>
               </div>
             )}
             <p className="history-format-note">
               {isMemoryContent
-                ? "TXT / Markdown 或 one-memory-content-v1 JSON。原始对话未提供；导入不代表事实已确认，不新增其他应用读取权限。"
-                : "ChatGPT / Claude JSON、ZIP · 带角色标记的 Markdown、TXT 或 JSON 回合。仅文本对话；附件不纳入，导入为快照。"}
+                ? "TXT / Markdown or one-memory-content-v1 JSON. The original conversation is not provided; importing does not mean facts are confirmed, and it grants no extra read access for other apps."
+                : "ChatGPT / Claude JSON, ZIP, Markdown with role markers, TXT or JSON turns. Text conversations only; attachments are excluded and imports are snapshots."}
             </p>
             <p className="history-format-note">
-              本次确认不授予模型处理、持续同步、外部调用及安装权限；已有权限不会在此更改。
+              This confirmation does not grant model processing, continuous
+              sync, external calls or installation permissions; existing
+              permissions are not changed here.
             </p>
             {busy && (
               <p role="status">
                 {operation === "upload"
-                  ? "正在本地读取文件…"
+                  ? "Reading the file locally..."
                   : operation === "save"
-                    ? "正在保存文件…"
+                    ? "Saving the file..."
                     : operation === "refresh"
-                      ? "正在核对文件与来源…"
+                      ? "Checking the file and source..."
                       : operation === "connect"
-                        ? "正在核对连接回执…"
-                        : "正在清理暂存文件…"}
+                        ? "Checking the connection receipt..."
+                        : "Cleaning up the staged file..."}
               </p>
             )}
             {receipt && selectionValid && (
               <>
                 <dl className="history-import-summary">
                   <div>
-                    <dt>文件</dt>
+                    <dt>File</dt>
                     <dd>{receipt.filename}</dd>
                   </div>
                   <div>
-                    <dt>来源</dt>
+                    <dt>Source</dt>
                     <dd>
                       {receipt.vendor === "memory-content"
-                        ? "手工提供的已有记忆"
+                        ? "Manually provided existing memory"
                         : receipt.vendor === "generic"
-                          ? "手工提供的对话"
+                          ? "Manually provided conversation"
                           : receipt.vendor === "chatgpt"
                             ? "ChatGPT"
                             : "Claude"}
                     </dd>
                   </div>
                   <div>
-                    <dt>本文件内容</dt>
+                    <dt>File contents</dt>
                     <dd>
                       {receipt.messages}{" "}
-                      {isMemoryContent ? "条已有记忆记录" : "条文本消息"}
+                      {isMemoryContent
+                        ? "existing memory records"
+                        : "text messages"}
                     </dd>
                   </div>
                   <div>
-                    <dt>作者标记</dt>
+                    <dt>Author markers</dt>
                     <dd>
-                      用户 {receipt.human_messages} · Agent{" "}
+                      User {receipt.human_messages} - Agent{" "}
                       {receipt.agent_messages}
                       {(receipt.unknown_author_messages ?? 0) > 0 &&
-                        ` · 未知 ${receipt.unknown_author_messages}`}
+                        ` - Unknown ${receipt.unknown_author_messages}`}
                     </dd>
                   </div>
                   <div>
-                    <dt>{isMemoryContent ? "文件快照" : "会话与分支"}</dt>
+                    <dt>
+                      {isMemoryContent
+                        ? "File snapshot"
+                        : "Conversations and branches"}
+                    </dt>
                     <dd>{receipt.conversations}</dd>
                   </div>
                   {(receipt.skipped_records > 0 ||
                     receipt.ignored_files > 0) && (
                     <div>
-                      <dt>未纳入</dt>
+                      <dt>Excluded</dt>
                       <dd>
-                        {receipt.skipped_records} 条非对话记录 ·{" "}
-                        {receipt.ignored_files} 个其他文件
+                        {countLabel(
+                          receipt.skipped_records,
+                          "non-conversation record",
+                        )}{" "}
+                        - {countLabel(receipt.ignored_files, "other file")}
                       </dd>
                     </div>
                   )}
@@ -782,8 +807,8 @@ export function HistoryImport({
                 {!!receipt.preview?.length && (
                   <details className="history-preview" open>
                     <summary>
-                      原文预览 · {receipt.preview.length} / {receipt.messages}{" "}
-                      条
+                      Source preview - {receipt.preview.length} /{" "}
+                      {countLabel(receipt.messages, "record")}
                     </summary>
                     <ol>
                       {receipt.preview.map((item, index) => (
@@ -793,10 +818,10 @@ export function HistoryImport({
                             <strong>
                               {item.written_by === "unknown" ||
                               (item.role === "memory" && !item.written_by)
-                                ? "作者未知"
+                                ? "Author unknown"
                                 : item.written_by === "person" ||
                                     item.role === "user"
-                                  ? "用户"
+                                  ? "User"
                                   : "Agent"}
                             </strong>
                             <time>
@@ -804,7 +829,7 @@ export function HistoryImport({
                                 ? new Date(item.created_at).toLocaleString(
                                     "zh-CN",
                                   )
-                                : "时间未知"}
+                                : "Time unknown"}
                             </time>
                           </div>
                           <p>
@@ -824,46 +849,55 @@ export function HistoryImport({
                       disabled={busy}
                       onChange={(event) => setConsent(event.target.checked)}
                     />
-                    确认保存这份文件到本机，来源读取授权另行确认
+                    Confirm saving this file to this device; source read
+                    authorization is confirmed separately
                   </label>
                 )}
                 {receipt.committed && candidate && (
                   <>
                     <dl
                       className="history-import-summary"
-                      aria-label="待授权来源范围"
+                      aria-label="Source scope pending authorization"
                     >
                       <div>
-                        <dt>来源</dt>
+                        <dt>Source</dt>
                         <dd>{candidate.display_name}</dd>
                       </div>
                       <div>
-                        <dt>来源编号</dt>
+                        <dt>Source ID</dt>
                         <dd>{candidate.source_id}</dd>
                       </div>
                       <div>
-                        <dt>实际目录</dt>
+                        <dt>Actual directory</dt>
                         <dd>{candidate.candidate_path}</dd>
                       </div>
                       <div>
-                        <dt>目录身份</dt>
+                        <dt>Directory identity</dt>
                         <dd>{candidate.candidate_root_id}</dd>
                       </div>
                       <div>
-                        <dt>位置类型</dt>
+                        <dt>Location type</dt>
                         <dd>
                           {candidate.candidate_kind === "environment_override"
-                            ? "自定义位置"
-                            : "默认位置"}
+                            ? "Custom location"
+                            : "Default location"}
                         </dd>
                       </div>
                       <div>
-                        <dt>已有授权</dt>
-                        <dd>{candidate.authorized ? "已授权" : "未授权"}</dd>
+                        <dt>Existing authorization</dt>
+                        <dd>
+                          {candidate.authorized
+                            ? "Authorized"
+                            : "Not authorized"}
+                        </dd>
                       </div>
                     </dl>
                     <p className="history-format-note">
-                      读取范围为上述目录中的全部已提交历史包，包括以前保存的文件，不仅是本次文件。上方消息数与原文预览仅属于本次文件，并非整个目录的内容清单。
+                      The read scope covers all committed history packages in
+                      the directory above, including files saved earlier, not
+                      just this file. The message counts and source preview
+                      above belong to this file only and are not an inventory of
+                      the whole directory.
                     </p>
                     <label className="history-import-consent">
                       <input
@@ -873,7 +907,8 @@ export function HistoryImport({
                         disabled={busy}
                         onChange={(event) => setConsent(event.target.checked)}
                       />
-                      允许一次性读取上述来源目录中的历史包
+                      Allow one-time read of history packages in the source
+                      directory above
                     </label>
                   </>
                 )}
@@ -885,8 +920,9 @@ export function HistoryImport({
                 {issue && (
                   <>
                     <p>
-                      {issueLocation(issue.location)}：
-                      {issueLabels[issue.code] ?? "无法读取这段内容"}
+                      {issueLocation(issue.location)}:{" "}
+                      {issueLabels[issue.code] ??
+                        "This content could not be read"}
                     </p>
                     <pre>{issue.excerpt}</pre>
                   </>
@@ -902,10 +938,10 @@ export function HistoryImport({
               >
                 <X size={16} aria-hidden="true" />
                 {operation === "connect" || connection === "unknown"
-                  ? "关闭"
+                  ? "Close"
                   : receipt?.committed
-                    ? "暂不授权"
-                    : "取消"}
+                    ? "Skip authorization"
+                    : "Cancel"}
               </button>
               {receipt &&
                 selectionValid &&
@@ -917,7 +953,7 @@ export function HistoryImport({
                     onClick={() => void recover()}
                   >
                     <RefreshCw size={16} aria-hidden="true" />
-                    {saveUnknown ? "核对文件保存结果" : "重新核对来源"}
+                    {saveUnknown ? "Check file save result" : "Recheck source"}
                   </button>
                 )}
               {!receipt?.committed && !saveUnknown && (
@@ -927,7 +963,7 @@ export function HistoryImport({
                   onClick={() => void save()}
                 >
                   <Save size={16} aria-hidden="true" />
-                  保存文件并核对来源
+                  Save file and check source
                 </button>
               )}
               {receipt?.committed && candidate && selectionValid && (
@@ -938,10 +974,10 @@ export function HistoryImport({
                 >
                   <Check size={16} aria-hidden="true" />
                   {connection === "failed"
-                    ? "重试此来源"
+                    ? "Retry this source"
                     : connection === "unknown"
-                      ? "核对连接结果"
-                      : "授权并开始导入"}
+                      ? "Check connection result"
+                      : "Authorize and start import"}
                 </button>
               )}
             </div>
@@ -972,15 +1008,16 @@ function assertFileReceipt(
 }
 
 const issueLabels: Record<string, string> = {
-  missing_role: "缺少说话人标记",
-  unknown_role: "无法确认说话人",
-  empty_message: "这条消息没有正文",
-  invalid_time: "时间需要明确日期与时区，未知请填 null",
-  invalid_record: "消息字段应为 role、content、time",
-  message_too_long: "单条消息过长",
-  unclosed_code: "代码块没有结束标记",
+  missing_role: "Missing speaker marker",
+  unknown_role: "Cannot identify the speaker",
+  empty_message: "This message has no body",
+  invalid_time:
+    "The time needs an explicit date and timezone; use null when unknown",
+  invalid_record: "Message fields should be role, content, time",
+  message_too_long: "A single message is too long",
+  unclosed_code: "The code block has no closing marker",
 };
 function issueLocation(value: string) {
   const [kind, number] = value.split(":");
-  return kind === "line" ? `第 ${number} 行` : `第 ${number} 条消息`;
+  return kind === "line" ? `Line ${number}` : `Message ${number}`;
 }

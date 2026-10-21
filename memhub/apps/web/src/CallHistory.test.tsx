@@ -93,7 +93,7 @@ function mount() {
   return render(<CallHistory onBack={vi.fn()} />);
 }
 function refresh() {
-  fireEvent.click(screen.getByRole("button", { name: "刷新记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh records" }));
 }
 function row(id: string) {
   return document.querySelector(`[data-event-id="${id}"]`);
@@ -103,7 +103,7 @@ async function loaded(id = "event-1") {
   return row(id) as HTMLElement;
 }
 async function openClear() {
-  fireEvent.click(screen.getByRole("button", { name: "清除本页记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear this page" }));
   return screen.findByRole("dialog");
 }
 
@@ -152,31 +152,36 @@ it("loads a bounded first page and returns to applications", async () => {
   getHistory.mockReturnValueOnce(pending.promise);
   const onBack = vi.fn();
   render(<CallHistory onBack={onBack} />);
-  expect(screen.getByRole("status").textContent).toContain("正在读取");
+  expect(screen.getByRole("status").textContent).toContain("Loading");
   expect(getHistory).toHaveBeenCalledWith({ limit: 20, offset: 0 });
   await act(async () => pending.resolve(page()));
   expect(await loaded()).toBeTruthy();
-  expect(screen.getByText("保留 30 天，最多 10,000 条记录")).toBeTruthy();
   expect(
-    (screen.getByRole("button", { name: "上一页" }) as HTMLButtonElement)
+    screen.getByText("Retained for 30 days, up to 10,000 records"),
+  ).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Previous page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(
-    (screen.getByRole("button", { name: "下一页" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "返回应用" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to apps" }));
   expect(onBack).toHaveBeenCalledOnce();
 });
 
 it("renders an empty page without inventing a successful call", async () => {
   getHistory.mockResolvedValue(page([]));
   mount();
-  await screen.findByText("暂无使用记录");
-  expect(screen.queryByText(/Core已生成结果|已采用/)).toBeNull();
+  await screen.findByText("No usage records yet");
+  expect(screen.queryByText(/Core produced a result|Adopted/)).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "清除本页记录" }) as HTMLButtonElement)
-      .disabled,
+    (
+      screen.getByRole("button", {
+        name: "Clear this page",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(true);
 });
 
@@ -188,9 +193,9 @@ it.each(["reject", "unavailable"])(
     else getHistory.mockResolvedValue(page([event()], { available: false }));
     mount();
     await screen.findByRole("alert");
-    expect(screen.queryByText("暂无使用记录")).toBeNull();
+    expect(screen.queryByText("No usage records yet")).toBeNull();
     expect(
-      screen.queryByText(/记忆召回|om_recall|sensitive response body/),
+      screen.queryByText(/memory recall|om_recall|sensitive response body/),
     ).toBeNull();
     getHistory.mockResolvedValue(page());
     refresh();
@@ -205,10 +210,12 @@ it("hides the previous page during refresh and after failure", async () => {
   getHistory.mockReturnValueOnce(pending.promise);
   refresh();
   expect(row("event-1")).toBeNull();
-  expect(screen.queryByRole("navigation", { name: "记录分页" })).toBeNull();
+  expect(
+    screen.queryByRole("navigation", { name: "Record pagination" }),
+  ).toBeNull();
   await act(async () => pending.reject(new Error("offline")));
   await screen.findByRole("alert");
-  expect(screen.queryByText(/Core已生成结果/)).toBeNull();
+  expect(screen.queryByText(/Core produced a result/)).toBeNull();
 });
 
 it("ignores late refresh responses when a newer request has completed", async () => {
@@ -234,24 +241,24 @@ it("paginates in bounded pages and resets the offset on host filtering", async (
   mount();
   await loaded("first-0");
   expect(
-    within(screen.getByRole("list", { name: "调用记录" })).getAllByRole(
+    within(screen.getByRole("list", { name: "Call records" })).getAllByRole(
       "listitem",
     ),
   ).toHaveLength(20);
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await loaded("last");
   expect(getHistory).toHaveBeenLastCalledWith({ limit: 20, offset: 20 });
   expect(row("first-0")).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "下一页" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   getHistory.mockResolvedValueOnce(first);
-  fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
   await loaded("first-0");
   expect(getHistory).toHaveBeenLastCalledWith({ limit: 20, offset: 0 });
   getHistory.mockResolvedValueOnce(page([event("filtered")]));
-  fireEvent.change(screen.getByRole("combobox", { name: "按应用筛选" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "Filter by app" }), {
     target: { value: "cursor" },
   });
   await loaded("filtered");
@@ -286,33 +293,43 @@ it("ignores an older host response and allows returning to the unfiltered list",
 it("shows exact identity, timestamp, result counts and metadata-only references", async () => {
   mount();
   fireEvent.click(await loaded());
-  const detail = screen.getByRole("article", { name: "调用详情" });
+  const detail = screen.getByRole("article", { name: "Call details" });
   expect(
     within(detail).getByText("2026-09-20T11:03:37.197+08:00"),
   ).toBeTruthy();
-  expect(within(detail).getByText("查记忆")).toBeTruthy();
+  expect(within(detail).getByText("Memory lookup")).toBeTruthy();
   expect(within(detail).queryByText("om_recall")).toBeNull();
   // The metadata table must not leak the raw Core state enum next to the
   // The humanized state must not leak the raw Core enum.
   expect(within(detail).queryByText("grounded")).toBeNull();
-  expect(within(detail).getAllByText("查询成功").length).toBeGreaterThan(0);
+  expect(within(detail).getAllByText("Query succeeded").length).toBeGreaterThan(
+    0,
+  );
   expect(
-    within(detail).getByText("找到原文 2 段 · 记忆 1 条 · 用时 0.0 秒"),
+    within(detail).getByText(
+      "Found 2 source excerpts · memories 1 · elapsed 0.0 seconds",
+    ),
   ).toBeTruthy();
   expect(
     within(detail).getByText((value) =>
-      value.includes("Cursor 查到 3 条相关内容"),
+      value.includes("Cursor found 3 related items"),
     ),
   ).toBeTruthy();
   expect(within(detail).getAllByText("source-1").length).toBeGreaterThan(0);
-  expect(within(detail).queryByText(/第 3 版|第 2 版/)).toBeNull();
+  expect(within(detail).queryByText(/revision 3|revision 2/)).toBeNull();
   expect(within(detail).queryByRole("link")).toBeNull();
-  expect(within(detail).queryByText(/调用成功|已经采用/)).toBeNull();
-  expect(within(detail).queryByText(/送达未确认|采用未确认|Core/)).toBeNull();
+  expect(
+    within(detail).queryByText(/Call succeeded|Already adopted/),
+  ).toBeNull();
+  expect(
+    within(detail).queryByText(
+      /Delivery unconfirmed|Adoption unconfirmed|Core/,
+    ),
+  ).toBeNull();
   expect(document.activeElement).toBe(
-    screen.getByRole("heading", { name: "这次查记忆" }),
+    screen.getByRole("heading", { name: "This memory lookup" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "返回记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to records" }));
   expect(document.activeElement).toBe(await loaded());
 });
 it("shows delivered delivery without claiming adoption", async () => {
@@ -327,11 +344,11 @@ it("shows delivered delivery without claiming adoption", async () => {
   );
   mount();
   fireEvent.click(await loaded("delivered"));
-  const detail = screen.getByRole("article", { name: "调用详情" });
-  expect(within(detail).getAllByText("已提供给 Cursor").length).toBeGreaterThan(
-    0,
-  );
-  expect(within(detail).queryByText(/已采用/)).toBeNull();
+  const detail = screen.getByRole("article", { name: "Call details" });
+  expect(
+    within(detail).getAllByText("Provided to Cursor").length,
+  ).toBeGreaterThan(0);
+  expect(within(detail).queryByText(/Adopted/)).toBeNull();
 });
 it("does not claim delivery for a call Core never completed", async () => {
   getHistory.mockResolvedValue(
@@ -348,13 +365,15 @@ it("does not claim delivery for a call Core never completed", async () => {
   mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Cursor 暂时无法查记忆",
+      name: "Cursor cannot look up memory right now",
     }),
   );
-  const detail = screen.getByRole("article", { name: "调用详情" });
-  expect(within(detail).queryByText(/已返回给/)).toBeNull();
+  const detail = screen.getByRole("article", { name: "Call details" });
+  expect(within(detail).queryByText(/Returned to/)).toBeNull();
   expect(
-    within(detail).getByText("One Memory 暂时不可用，这次回答没有带上记忆。"),
+    within(detail).getByText(
+      "One Memory is unavailable right now; this answer did not include memory.",
+    ),
   ).toBeTruthy();
 });
 it("does not restate an undelivered result as returned", async () => {
@@ -363,9 +382,11 @@ it("does not restate an undelivered result as returned", async () => {
   );
   mount();
   fireEvent.click(await loaded("not-delivered"));
-  const detail = screen.getByRole("article", { name: "调用详情" });
-  expect(within(detail).getAllByText("没有提供给应用")).toHaveLength(1);
-  expect(within(detail).queryByText(/已返回给/)).toBeNull();
+  const detail = screen.getByRole("article", { name: "Call details" });
+  expect(within(detail).getAllByText("Not provided to the app")).toHaveLength(
+    1,
+  );
+  expect(within(detail).queryByText(/Returned to/)).toBeNull();
 });
 it("shows delivery state in the list without turning it into adoption", async () => {
   getHistory.mockResolvedValue(
@@ -377,11 +398,11 @@ it("shows delivery state in the list without turning it into adoption", async ()
   );
   mount();
   await loaded("delivered-list");
-  const list = screen.getByRole("list", { name: "调用记录" });
-  expect(within(list).getByText("已提供给 Cursor")).toBeTruthy();
-  expect(within(list).getByText("没有提供给应用")).toBeTruthy();
-  expect(within(list).getByText("查询成功")).toBeTruthy();
-  expect(within(list).queryByText(/已采用/)).toBeNull();
+  const list = screen.getByRole("list", { name: "Call records" });
+  expect(within(list).getByText("Provided to Cursor")).toBeTruthy();
+  expect(within(list).getByText("Not provided to the app")).toBeTruthy();
+  expect(within(list).getByText("Query succeeded")).toBeTruthy();
+  expect(within(list).queryByText(/Adopted/)).toBeNull();
 });
 
 it("keeps detail bound to event ID across refresh reordering, then removes missing details", async () => {
@@ -393,29 +414,49 @@ it("keeps detail bound to event ID across refresh reordering, then removes missi
   );
   refresh();
   expect(screen.queryByRole("article")).toBeNull();
-  await screen.findByText("找到原文 2 段 · 记忆 7 条 · 用时 0.0 秒");
-  expect(screen.getByRole("article").textContent).not.toContain("记忆 1 条");
+  await screen.findByText(
+    "Found 2 source excerpts · memories 7 · elapsed 0.0 seconds",
+  );
+  expect(screen.getByRole("article").textContent).not.toContain("memories 1");
   getHistory.mockResolvedValueOnce(page([event("one")]));
   refresh();
-  await screen.findByText("这条记录已不在当前页，请返回记录查看。");
+  await screen.findByText(
+    "This record is no longer on the current page. Go back to the records to view it.",
+  );
   expect(screen.queryByRole("article")).toBeNull();
 });
 
 it.each([
-  ["grounded", "查询成功", "直接调用（诊断） 查到 0 条相关内容"],
-  ["empty", "查询成功，没有找到相关记忆", "直接调用（诊断） 没有查到相关记忆"],
+  [
+    "grounded",
+    "Query succeeded",
+    "Direct call (diagnostics) found 0 related items",
+  ],
+  [
+    "empty",
+    "Query succeeded, no related memory found",
+    "Direct call (diagnostics) found no related memory",
+  ],
   [
     "partial",
-    "查询成功，部分内容还在整理中",
-    "直接调用（诊断） 查到 0 条相关内容",
+    "Query succeeded, some content is still being organized",
+    "Direct call (diagnostics) found 0 related items",
   ],
   [
     "timed_out",
-    "查询超时，没有提供记忆",
-    "直接调用（诊断） 这次没来得及查到记忆",
+    "Query timed out, no memory was provided",
+    "Direct call (diagnostics) did not get memory in time this time",
   ],
-  ["unavailable", "One Memory 暂时不可用", "直接调用（诊断） 暂时无法查记忆"],
-  ["denied", "当前未授权查询", "直接调用（诊断） 未获准查记忆"],
+  [
+    "unavailable",
+    "One Memory is unavailable right now",
+    "Direct call (diagnostics) cannot look up memory right now",
+  ],
+  [
+    "denied",
+    "The current authorization does not allow this query",
+    "Direct call (diagnostics) was not allowed to look up memory",
+  ],
 ] as const)(
   "renders the %s state without claiming external adoption",
   async (state, label, headline) => {
@@ -439,13 +480,13 @@ it.each([
     );
     expect(
       screen.getByRole("heading", {
-        name: /^未记录 · 09\/20 \d{2}:03$/,
+        name: /^Not recorded · 09\/20 \d{2}:03$/,
       }),
     ).toBeTruthy();
-    expect(screen.getByText("没有找到相关内容")).toBeTruthy();
-    expect(screen.queryByText(/已经采用|调用成功/)).toBeNull();
+    expect(screen.getByText("No related content found")).toBeTruthy();
+    expect(screen.queryByText(/Already adopted|Call succeeded/)).toBeNull();
     // The humanized state label appears both as the stage line and in the
-    // 记录详情 table; the raw enum must appear nowhere.
+    // Record details table; the raw enum must appear nowhere.
     expect(screen.getAllByText(new RegExp(label)).length).toBeGreaterThan(0);
     expect(screen.queryByText(state)).toBeNull();
   },
@@ -465,32 +506,32 @@ it("does not call an unavailable call returned", async () => {
   mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Cursor 暂时无法查记忆",
+      name: "Cursor cannot look up memory right now",
     }),
   );
-  const detail = screen.getByRole("article", { name: "调用详情" });
-  expect(within(detail).queryByText(/· 已返回/)).toBeNull();
+  const detail = screen.getByRole("article", { name: "Call details" });
+  expect(within(detail).queryByText(/· Returned/)).toBeNull();
   expect(
-    within(detail).getAllByText(/One Memory 暂时不可用/).length,
+    within(detail).getAllByText(/One Memory is unavailable right now/).length,
   ).toBeGreaterThan(0);
-  expect(within(detail).queryByText(/采用未确认|Core/)).toBeNull();
+  expect(within(detail).queryByText(/Adoption unconfirmed|Core/)).toBeNull();
 });
 
 it.each(["om_recall", "om_conversations", "om_ask", "om_matters"] as const)(
-  "renders %s as 查记忆 instead of the API name",
+  "renders %s as Memory lookup instead of the API name",
   async (tool) => {
     getHistory.mockResolvedValue(page([event("tool", { tool })]));
     mount();
     expect(
       await screen.findByRole("button", {
-        name: "Cursor 查到 3 条相关内容",
+        name: "Cursor found 3 related items",
       }),
     ).toBeTruthy();
     fireEvent.click(
-      screen.getByRole("button", { name: "Cursor 查到 3 条相关内容" }),
+      screen.getByRole("button", { name: "Cursor found 3 related items" }),
     );
     expect(
-      within(screen.getByRole("article")).getByText("查记忆"),
+      within(screen.getByRole("article")).getByText("Memory lookup"),
     ).toBeTruthy();
     expect(screen.queryByText(tool)).toBeNull();
   },
@@ -500,30 +541,34 @@ it("warns when recording is incomplete without hiding readable historical metada
   getHistory.mockResolvedValue(page([event()], { recording_error: true }));
   mount();
   await loaded();
-  expect(screen.getByRole("alert").textContent).toContain("列表可能不全");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "the list may be incomplete",
+  );
 });
 
 it("requires a distinct confirmation for clearing all retained records", async () => {
   getHistory.mockResolvedValueOnce(page([event()], { total: 21, offset: 0 }));
   mount();
   await loaded();
-  fireEvent.click(screen.getByRole("button", { name: "清空全部记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear all records" }));
   const dialog = await screen.findByRole("dialog");
   expect(
-    within(dialog).getByRole("heading", { name: "清空全部使用记录？" }),
+    within(dialog).getByRole("heading", { name: "Clear all usage records?" }),
   ).toBeTruthy();
-  expect(dialog.textContent).toContain("不限于本页或当前筛选");
-  fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+  expect(dialog.textContent).toContain(
+    "not just this page or the current filter",
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(clearAllEvents).not.toHaveBeenCalled();
   expect(clearEvents).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "清空全部记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear all records" }));
   getHistory.mockResolvedValueOnce(page([], { total: 0 }));
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: "确认清空全部",
+      name: "Confirm clearing all",
     }),
   );
-  await screen.findByText("暂无使用记录");
+  await screen.findByText("No usage records yet");
   // A clear is a real write: it now carries a trace id so the ui.action /
   // ui.result lines join Core's kernel-call/return in one log.
   expect(clearAllEvents).toHaveBeenCalledTimes(1);
@@ -537,9 +582,11 @@ it("requires confirmation and cancelling or Escape sends no clear request", asyn
   await loaded();
   let dialog = await openClear();
   expect(
-    within(dialog).getByRole("heading", { name: "清除本页 1 条记录？" }),
+    within(dialog).getByRole("heading", {
+      name: "Clear 1 record on this page?",
+    }),
   ).toBeTruthy();
-  fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(clearEvents).not.toHaveBeenCalled();
   dialog = await openClear();
   fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
@@ -553,12 +600,14 @@ it("clears only the confirmed current-page IDs, suppresses double submit, and re
     .mockResolvedValueOnce(page([event("last")], { offset: 20, total: 21 }));
   mount();
   await loaded("first");
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await loaded("last");
   const pending = deferred<void>();
   clearEvents.mockReturnValueOnce(pending.promise);
   const dialog = await openClear();
-  const confirm = within(dialog).getByRole("button", { name: "确认清除" });
+  const confirm = within(dialog).getByRole("button", {
+    name: "Confirm clearing",
+  });
   fireEvent.click(confirm);
   fireEvent.click(confirm);
   expect(clearEvents).toHaveBeenCalledTimes(1);
@@ -566,8 +615,11 @@ it("clears only the confirmed current-page IDs, suppresses double submit, and re
   expect(clearEvents.mock.calls[0][1]).toEqual(expect.any(String));
   expect(row("last")).toBeNull();
   expect(
-    (within(dialog).getByRole("button", { name: "取消" }) as HTMLButtonElement)
-      .disabled,
+    (
+      within(dialog).getByRole("button", {
+        name: "Cancel",
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(true);
   getHistory.mockResolvedValueOnce(
     page([event("new-arrival")], { offset: 20, total: 21 }),
@@ -576,7 +628,7 @@ it("clears only the confirmed current-page IDs, suppresses double submit, and re
   await loaded("new-arrival");
   expect(getHistory).toHaveBeenLastCalledWith({ limit: 20, offset: 20 });
   expect(clearEvents).toHaveBeenCalledTimes(1);
-  expect(screen.getByText("已清除所选记录。")).toBeTruthy();
+  expect(screen.getByText("Selected records cleared.")).toBeTruthy();
 });
 
 it("rereads after an unknown clear outcome without replaying the deletion", async () => {
@@ -585,10 +637,14 @@ it("rereads after an unknown clear outcome without replaying the deletion", asyn
   clearEvents.mockRejectedValueOnce(new Error("private body"));
   getHistory.mockResolvedValueOnce(page([event("retained")]));
   const dialog = await openClear();
-  fireEvent.click(within(dialog).getByRole("button", { name: "确认清除" }));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Confirm clearing" }),
+  );
   await loaded("retained");
-  expect(screen.getByText(/清除结果未确认/)).toBeTruthy();
-  expect(screen.queryByText(/private body|已清除所选记录/)).toBeNull();
+  expect(screen.getByText(/clear result is unconfirmed/)).toBeTruthy();
+  expect(
+    screen.queryByText(/private body|Selected records cleared/),
+  ).toBeNull();
   refresh();
   await loaded();
   expect(clearEvents).toHaveBeenCalledTimes(1);
@@ -601,17 +657,19 @@ it("keeps read failure and unknown deletion visible together", async () => {
   clearEvents.mockRejectedValueOnce(new Error("lost response"));
   getHistory.mockRejectedValueOnce(new Error("offline"));
   const dialog = await openClear();
-  fireEvent.click(within(dialog).getByRole("button", { name: "确认清除" }));
-  await screen.findByText("记录读取失败，请刷新重试。");
-  expect(screen.getByText(/清除结果未确认/)).toBeTruthy();
-  expect(screen.queryByText("暂无使用记录")).toBeNull();
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Confirm clearing" }),
+  );
+  await screen.findByText("Couldn't read the records. Refresh and try again.");
+  expect(screen.getByText(/clear result is unconfirmed/)).toBeTruthy();
+  expect(screen.queryByText("No usage records yet")).toBeNull();
   expect(clearEvents).toHaveBeenCalledTimes(1);
 });
 
 it("reports a refused clear as a definite failure, not as unconfirmed", async () => {
   // Core answers `409 call_history_disabled` when the store is disabled: that
   // is a refusal, so nothing was deleted. The old code logged `unknown` and
-  // said "未确认" for this case, contradicting a definite Core answer.
+  // said "unconfirmed" for this case, contradicting a definite Core answer.
   mount();
   await loaded();
   clearEvents.mockRejectedValueOnce(
@@ -621,11 +679,15 @@ it("reports a refused clear as a definite failure, not as unconfirmed", async ()
   );
   getHistory.mockResolvedValueOnce(page([event("retained")]));
   const dialog = await openClear();
-  fireEvent.click(within(dialog).getByRole("button", { name: "确认清除" }));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Confirm clearing" }),
+  );
   expect(
-    await screen.findByText(/未能清除所选记录，当前记录保持不变/),
+    await screen.findByText(
+      /Couldn't clear the selected records. The existing records are unchanged/,
+    ),
   ).toBeTruthy();
-  expect(screen.queryByText(/清除结果未确认/)).toBeNull();
+  expect(screen.queryByText(/clear result is unconfirmed/)).toBeNull();
   // The records are still there and are never auto-deleted twice.
   expect(clearEvents).toHaveBeenCalledTimes(1);
 });
@@ -639,16 +701,18 @@ it("reports a refused clear-all as a definite failure", async () => {
     }),
   );
   getHistory.mockResolvedValueOnce(page([event("retained")]));
-  fireEvent.click(screen.getByRole("button", { name: "清空全部记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear all records" }));
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: "确认清空全部",
+      name: "Confirm clearing all",
     }),
   );
   expect(
-    await screen.findByText(/未能清空使用记录，当前记录保持不变/),
+    await screen.findByText(
+      /Couldn't clear the usage records. The existing records are unchanged/,
+    ),
   ).toBeTruthy();
-  expect(screen.queryByText(/清除结果未确认/)).toBeNull();
+  expect(screen.queryByText(/clear result is unconfirmed/)).toBeNull();
   expect(clearAllEvents).toHaveBeenCalledTimes(1);
 });
 
@@ -671,7 +735,9 @@ it("does not issue recovery reads after unmount during deletion", async () => {
   const pending = deferred<void>();
   clearEvents.mockReturnValueOnce(pending.promise);
   const dialog = await openClear();
-  fireEvent.click(within(dialog).getByRole("button", { name: "确认清除" }));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Confirm clearing" }),
+  );
   view.unmount();
   await act(async () => pending.reject(new Error("lost response")));
   await waitFor(() => expect(getHistory).toHaveBeenCalledTimes(1));
@@ -684,17 +750,17 @@ it("can return from a page emptied by retention or clearing", async () => {
     .mockResolvedValueOnce(page([], { offset: 20, total: 20 }));
   mount();
   await loaded();
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  await screen.findByText("本页暂无记录");
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByText("No records on this page");
   expect(
-    (screen.getByRole("button", { name: "下一页" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(
-    (screen.getByRole("button", { name: "上一页" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Previous page" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
   await loaded();
   expect(getHistory).toHaveBeenLastCalledWith({ limit: 20, offset: 0 });
 });
@@ -706,7 +772,7 @@ it("offers host filters even when that host is absent from the current page", as
   fireEvent.change(screen.getByRole("combobox"), {
     target: { value: "workbuddy" },
   });
-  await screen.findByText("暂无使用记录");
+  await screen.findByText("No usage records yet");
   expect(getHistory).toHaveBeenLastCalledWith({
     limit: 20,
     offset: 0,
@@ -724,15 +790,17 @@ it("preserves the filter and offset after an unknown clear result", async () => 
     target: { value: "cursor" },
   });
   await loaded();
-  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await loaded("last");
   clearEvents.mockRejectedValueOnce(new Error("unknown"));
   getHistory.mockResolvedValueOnce(
     page([event("last")], { total: 21, offset: 20 }),
   );
   const dialog = await openClear();
-  fireEvent.click(within(dialog).getByRole("button", { name: "确认清除" }));
-  await screen.findByText(/清除结果未确认/);
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Confirm clearing" }),
+  );
+  await screen.findByText(/clear result is unconfirmed/);
   await loaded("last");
   expect(getHistory).toHaveBeenLastCalledWith({
     limit: 20,
@@ -762,15 +830,15 @@ it("resolves titles only on detail selection and shows explicit loading without 
   expect(getReferences).not.toHaveBeenCalled();
   fireEvent.click(row);
   expect(getReferences).toHaveBeenCalledExactlyOnceWith(call);
-  expect(screen.getByText("正在读取相关内容")).toBeTruthy();
-  expect(screen.queryByText("原文 · permission-checked-raw")).toBeNull();
+  expect(screen.getByText("Loading related content")).toBeTruthy();
+  expect(screen.queryByText("Source text · permission-checked-raw")).toBeNull();
   await act(async () => pending.resolve(resolved(call, "permission-checked")));
-  expect(screen.getByText("原文 · permission-checked-raw")).toBeTruthy();
-  expect(screen.getByText("记忆 · permission-checked-memory")).toBeTruthy();
+  expect(screen.getByText("Source text · permission-checked-raw")).toBeTruthy();
+  expect(screen.getByText("Memory · permission-checked-memory")).toBeTruthy();
   expect(screen.getByText("source-1")).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
-  expect(screen.getByRole("button", { name: "查看原文" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "查看记忆" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "View source text" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "View memory" })).toBeTruthy();
   expect(storage).not.toHaveBeenCalled();
   expect(call.references[0]).not.toHaveProperty("title");
 });
@@ -787,9 +855,9 @@ it("opens currently permitted memory or evidence and hides withdrawn titles", as
     />,
   );
   fireEvent.click(await loaded());
-  await screen.findByText("原文 · permission-checked-raw");
-  fireEvent.click(screen.getByRole("button", { name: "查看原文" }));
-  fireEvent.click(screen.getByRole("button", { name: "查看记忆" }));
+  await screen.findByText("Source text · permission-checked-raw");
+  fireEvent.click(screen.getByRole("button", { name: "View source text" }));
+  fireEvent.click(screen.getByRole("button", { name: "View memory" }));
   expect(onOpenEvidence).toHaveBeenCalledExactlyOnceWith("raw-1");
   expect(onOpenMemory).toHaveBeenCalledExactlyOnceWith("memory-1");
   getReferences.mockResolvedValueOnce([
@@ -807,9 +875,9 @@ it("opens currently permitted memory or evidence and hides withdrawn titles", as
     },
   ]);
   refresh();
-  await screen.findByText("原文 · 版本已变更");
+  await screen.findByText("Source text · Version changed");
   expect(
-    screen.queryByRole("button", { name: /查看记忆|查看原文/ }),
+    screen.queryByRole("button", { name: /View memory|View source text/ }),
   ).toBeNull();
 });
 
@@ -823,12 +891,12 @@ it("drops a late reference response after selecting a different event", async ()
     .mockResolvedValueOnce(resolved(second, "current"));
   mount();
   fireEvent.click(await loaded("one"));
-  fireEvent.click(screen.getByRole("button", { name: "返回记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to records" }));
   fireEvent.click(await loaded("two"));
-  await screen.findByText("原文 · current-raw");
+  await screen.findByText("Source text · current-raw");
   await act(async () => old.resolve(resolved(first, "old-private-title")));
   expect(screen.queryByText(/old-private-title/)).toBeNull();
-  expect(screen.getByText("原文 · current-raw")).toBeTruthy();
+  expect(screen.getByText("Source text · current-raw")).toBeTruthy();
   expect(getReferences).toHaveBeenNthCalledWith(2, second);
 });
 
@@ -836,20 +904,22 @@ it("removes titles immediately on refresh and keeps them hidden when rechecking 
   getReferences.mockResolvedValueOnce(resolved(event(), "previous-title"));
   mount();
   fireEvent.click(await loaded());
-  await screen.findByText("原文 · previous-title-raw");
+  await screen.findByText("Source text · previous-title-raw");
   const pending = deferred<ResolvedCallReference[]>();
   getReferences.mockReturnValueOnce(pending.promise);
   refresh();
   expect(screen.queryByText(/previous-title/)).toBeNull();
-  await screen.findByText("正在读取相关内容");
+  await screen.findByText("Loading related content");
   expect(screen.queryByText(/previous-title/)).toBeNull();
   await act(async () => pending.reject(new Error("private error content")));
-  await screen.findByText("相关内容暂时无法读取，请刷新重试。");
+  await screen.findByText(
+    "Related content can't be read right now. Refresh and try again.",
+  );
   expect(screen.queryByText(/previous-title|private error content/)).toBeNull();
-  expect(screen.getByText("原文 · 不可用")).toBeTruthy();
+  expect(screen.getByText("Source text · Unavailable")).toBeTruthy();
   getReferences.mockResolvedValueOnce(resolved(event(), "fresh-title"));
   refresh();
-  await screen.findByText("原文 · fresh-title-raw");
+  await screen.findByText("Source text · fresh-title-raw");
 });
 
 it("does not restore a pre-refresh title after a newer reference recheck fails", async () => {
@@ -860,17 +930,23 @@ it("does not restore a pre-refresh title after a newer reference recheck fails",
   mount();
   fireEvent.click(await loaded());
   refresh();
-  await screen.findByText("相关内容暂时无法读取，请刷新重试。");
+  await screen.findByText(
+    "Related content can't be read right now. Refresh and try again.",
+  );
   await act(async () => pending.resolve(resolved(event(), "stale-title")));
   expect(screen.queryByText(/stale-title/)).toBeNull();
-  expect(screen.getByText("相关内容暂时无法读取，请刷新重试。")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Related content can't be read right now. Refresh and try again.",
+    ),
+  ).toBeTruthy();
 });
 
 it("shows changed or unavailable references without retaining previously permitted titles", async () => {
   getReferences.mockResolvedValueOnce(resolved(event(), "revoked-title"));
   mount();
   fireEvent.click(await loaded());
-  await screen.findByText("记忆 · revoked-title-memory");
+  await screen.findByText("Memory · revoked-title-memory");
   getReferences.mockResolvedValueOnce([
     {
       ...event().references[0],
@@ -886,8 +962,8 @@ it("shows changed or unavailable references without retaining previously permitt
     },
   ]);
   refresh();
-  await screen.findByText("原文 · 版本已变更");
-  expect(screen.getByText("记忆 · 不可用")).toBeTruthy();
+  await screen.findByText("Source text · Version changed");
+  expect(screen.getByText("Memory · Unavailable")).toBeTruthy();
   expect(screen.queryByText(/revoked-title/)).toBeNull();
   expect(screen.queryByRole("link")).toBeNull();
 });
@@ -903,7 +979,7 @@ it("never renders a title from an unavailable reference even if a malformed mock
   );
   mount();
   fireEvent.click(await loaded());
-  await screen.findByText("原文 · 不可用");
+  await screen.findByText("Source text · Unavailable");
   expect(screen.queryByText(/forbidden-title/)).toBeNull();
 });
 
@@ -912,7 +988,7 @@ it("drops late reference content after leaving detail or unmounting", async () =
   getReferences.mockReturnValueOnce(pending.promise);
   const view = mount();
   fireEvent.click(await loaded());
-  fireEvent.click(screen.getByRole("button", { name: "返回记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to records" }));
   await act(async () => pending.resolve(resolved(event(), "late-title")));
   expect(screen.queryByText(/late-title/)).toBeNull();
   const unmounted = deferred<ResolvedCallReference[]>();
@@ -931,6 +1007,6 @@ it("does not resolve references for calls with no references", async () => {
   getHistory.mockResolvedValue(page([event("empty", { references: [] })]));
   mount();
   fireEvent.click(await loaded("empty"));
-  expect(screen.getByText("没有找到相关内容")).toBeTruthy();
+  expect(screen.getByText("No related content found")).toBeTruthy();
   expect(getReferences).not.toHaveBeenCalled();
 });

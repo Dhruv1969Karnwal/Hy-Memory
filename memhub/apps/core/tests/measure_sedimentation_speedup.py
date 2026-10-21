@@ -46,9 +46,13 @@ def _one_run(tmp_path, *, workers: int | None, MODEL_SECONDS: float) -> tuple[fl
 
 def test_measure(tmp_path_factory) -> None:
     print()
-    print(f"{CONVERSATIONS} 段对话，{ROUNDS} 轮取中位数，测于 {time.strftime('%Y-%m-%d %H:%M')}")
     print(
-        f"{'假模型每次':>10}{'模型占串行耗时':>16}{'串行':>10}{'并发':>10}{'实测并行度':>12}{'加速比':>9}"
+        f"{CONVERSATIONS} conversations, median of {ROUNDS} rounds, "
+        f"measured at {time.strftime('%Y-%m-%d %H:%M')}"
+    )
+    print(
+        f"{'fake/call':>10}{'model share':>15}{'serial':>10}"
+        f"{'parallel':>10}{'par degree':>10}{'speedup':>9}"
     )
     for model_seconds in MIXES:
         medians, peaks = [], []

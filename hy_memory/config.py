@@ -1,7 +1,7 @@
 """
-Agent Memory - 配置管理
+Agent Memory - Configuration management
 
-提供灵活的配置选项，支持环境变量和配置文件
+Provides flexible configuration options via environment variables and config files
 """
 
 import os
@@ -11,8 +11,8 @@ from pathlib import Path
 
 
 def _load_dotenv():
-    """加载 .env 文件（如果存在），向上逐级查找"""
-    # 从当前文件向上逐级查找 .env
+    """Load the .env file (if present), searching parent directories."""
+    # Search upward from this file for .env
     cur = Path(__file__).resolve().parent
     env_path = None
     for _ in range(5):
@@ -33,7 +33,7 @@ def _load_dotenv():
             key, _, value = line.partition("=")
             key = key.strip()
             value = value.strip()
-            # 不覆盖已存在的环境变量
+            # Do not overwrite environment variables that already exist
             if key and key not in os.environ:
                 os.environ[key] = value
 
@@ -42,7 +42,7 @@ _load_dotenv()
 
 
 def _get_env_float(key: str, default: float) -> float:
-    """获取浮点型环境变量"""
+    """Get a float environment variable."""
     value = os.getenv(key)
     if value is None:
         return default
@@ -53,7 +53,7 @@ def _get_env_float(key: str, default: float) -> float:
 
 
 def _get_env_int(key: str, default: int) -> int:
-    """获取整型环境变量"""
+    """Get an int environment variable."""
     value = os.getenv(key)
     if value is None:
         return default
@@ -64,7 +64,7 @@ def _get_env_int(key: str, default: int) -> int:
 
 
 def _get_env_bool(key: str, default: bool) -> bool:
-    """获取布尔型环境变量"""
+    """Get a bool environment variable."""
     value = os.getenv(key)
     if value is None:
         return default
@@ -73,30 +73,30 @@ def _get_env_bool(key: str, default: bool) -> bool:
 
 def _default_data_dir() -> str:
     """
-    返回数据根目录。
+    Return the data root directory.
 
-    优先级:
-      1. 环境变量 MEMORY_DATA_DIR（云端部署时指定挂载路径，如 /data/memory）
-      2. ~/.hy_memory（本地 pip install 用户的默认路径）
+    Priority:
+      1. Env var MEMORY_DATA_DIR (mount path for cloud deployments, e.g. /data/memory)
+      2. ~/.hy_memory (default path for local pip installs)
 
-    所有本地存储（向量数据库、图数据库、SQLite、日志）均基于此目录派生。
-    当配置了远程服务（如 Qdrant host、Neo4j url）时，对应的本地路径不会被使用。
+    All local storage (VDB, graph database, SQLite, logs) is derived from this directory.
+    When a remote service is configured (e.g. Qdrant host, Neo4j url), the matching local path is unused.
     """
     return os.getenv("MEMORY_DATA_DIR", os.path.join(Path.home(), ".hy_memory"))
 
 
 @dataclass
 class VectorStoreConfig:
-    """向量存储配置"""
+    """Vector store configuration."""
 
     provider: str = None  # qdrant, chroma, faiss
-    collection_name: str = None  # 集合名称
+    collection_name: str = None  # Collection name
     tag_index_collection_name: Optional[str] = None  # env: MEMORY_TAG_INDEX_COLLECTION_NAME
-    persist_directory: str = None  # 持久化目录
-    embedding_dims: int = None  # 向量维度
-    on_disk: bool = True  # 是否持久化
+    persist_directory: str = None  # Persistence directory
+    embedding_dims: int = None  # Embedding dimensions
+    on_disk: bool = True  # Whether to persist to disk
 
-    # 连接配置（远程存储）
+    # Connection settings (remote storage)
     host: Optional[str] = None
     port: Optional[int] = None
     api_key: Optional[str] = None
@@ -128,49 +128,49 @@ class VectorStoreConfig:
 
 @dataclass
 class LLMConfig:
-    """LLM 配置（用于记忆提取和处理）"""
+    """LLM configuration (used for memory extraction and processing)."""
 
-    # provider 目前统一使用 openai；第三方服务通过兼容的 base_url 接入。
+    # The provider is uniformly openai for now; third-party services connect through a compatible base_url.
     provider: str = None
     model: str = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
 
-    # 生成参数
+    # Generation parameters
     temperature: float = None
-    # True = 请求里**完全不带 temperature**。
-    # 有些网关（如 Opus 5）只接受 temperature=1 或干脆不传，传 0/0.1/0.3 会 400。
-    # env: MEMORY_LLM_OMIT_TEMPERATURE=true，或 MEMORY_LLM_TEMPERATURE=none/omit
+    # True = **omit temperature from the request entirely**.
+    # Some gateways (e.g. Opus 5) accept only temperature=1 or nothing at all; 0/0.1/0.3 returns 400.
+    # env: MEMORY_LLM_OMIT_TEMPERATURE=true, or MEMORY_LLM_TEMPERATURE=none/omit
     omit_temperature: bool = None
-    max_tokens: int = None  # 默认 max_tokens（通用）
-    agent_max_tokens: int = None  # Agent 场景统一 max_tokens
+    max_tokens: int = None  # Default max_tokens (general)
+    agent_max_tokens: int = None  # Shared max_tokens for agent scenarios
 
-    # 调用参数
-    timeout: int = None  # LLM 请求超时（秒）
-    max_retries: int = None  # 最大重试次数
-    retry_delay: float = None  # 重试间隔（秒）
+    # Call parameters
+    timeout: int = None  # LLM request timeout (seconds)
+    max_retries: int = None  # Maximum number of retries
+    retry_delay: float = None  # Retry interval (seconds)
 
-    # 功能开关
-    few_shot_enabled: bool = None  # 是否在 extractor / reconcile prompt 中附加 few-shot 示例（默认关闭，env: MEMORY_FEW_SHOT_ENABLED）
+    # Feature flags
+    few_shot_enabled: bool = None  # Whether to append few-shot examples to the extractor / reconcile prompts (off by default, env: MEMORY_FEW_SHOT_ENABLED)
     structure_metadata_enabled: bool = None  # env: MEMORY_STRUCTURE_METADATA_ENABLED
 
-    # default 模式下，仅当调用方显式传 queries=[...] 时，此开关控制是否把旧的
-    # 多-query 路由升级为“分类 + rewrite + 时间解析”。单 query 永远不受它影响。
-    # search_mode="agentic" 则不看此开关，单/多 query 都执行 judge + rewrite。
+    # In default mode this applies only when the caller explicitly passes queries=[...]; the flag decides whether the
+    # legacy multi-query route is upgraded to "classify + rewrite + time parsing". A single query is never affected.
+    # search_mode="agentic" ignores this flag and runs judge + rewrite for both single and multi query.
     enable_query_rewrite: bool = None
-    query_rewrite_max_chars: int = None  # queries 合并长度超过此值则跳过 rewrite（env MEMORY_QUERY_REWRITE_MAX_CHARS，默认 1000）
+    query_rewrite_max_chars: int = None  # Skip rewrite when the joined length of queries exceeds this (env MEMORY_QUERY_REWRITE_MAX_CHARS, default 1000)
 
-    # Intention（L7）抽取开关：关闭后 extractor prompt 不再要求 intentions，
-    # writer 也不落 L7。未来计划若值得记，应进 memory（L2）。默认开。
-    enable_intention: bool = None  # env MEMORY_ENABLE_INTENTION，默认 true
+    # Intention (L7) extraction switch: when off, the extractor prompt no longer asks for intentions
+    # and the writer stops persisting L7. Future plans worth recording belong in memory (L2). On by default.
+    enable_intention: bool = None  # env MEMORY_ENABLE_INTENTION, default true
 
-    # 自定义 extractor system prompt（client 级，仅通过 from_config/LLMConfig 配置，无 env）。
-    # None = 用内置默认；非空则该语言 extractor 直接用此 system prompt（不再追加内置 few-shot）。
-    # user 模板（数据注入段：content/last_messages/memory_at/current_date）仍用内置。
-    extract_system_prompt_zh: Optional[str] = None  # 中文输入时的 extractor system prompt 覆盖
-    extract_system_prompt_en: Optional[str] = None  # 英文输入时的 extractor system prompt 覆盖
+    # Custom extractor system prompt (client level, configured only via from_config/LLMConfig, no env var).
+    # None = use the built-in default; when non-empty, that language's extractor uses this system prompt directly (no built-in few-shot appended).
+    # The user template (data injection: content/last_messages/memory_at/current_date) still uses the built-in one.
+    extract_system_prompt_zh: Optional[str] = None  # Extractor system prompt override for Chinese input
+    extract_system_prompt_en: Optional[str] = None  # Extractor system prompt override for English input
 
-    # OpenAI-compatible 扩展（extra_headers / extra_body 原样透传）
+    # OpenAI-compatible extensions (extra_headers / extra_body passed through as-is)
     extra_headers: Optional[Dict[str, str]] = None
     extra_body: Optional[Dict[str, Any]] = None
 
@@ -187,14 +187,14 @@ class LLMConfig:
         if self.base_url is None:
             self.base_url = os.getenv("MEMORY_LLM_BASE_URL", os.getenv("LLM_BASE_URL"))
         if self.temperature is None:
-            # MEMORY_LLM_TEMPERATURE=none/omit/null/空 → 不发这个参数
+            # MEMORY_LLM_TEMPERATURE=none/omit/null/empty -> do not send this parameter
             _raw_temp = os.getenv("MEMORY_LLM_TEMPERATURE")
             if _raw_temp is not None and _raw_temp.strip().lower() in (
                 "", "none", "null", "omit", "unset",
             ):
                 if self.omit_temperature is None:
                     self.omit_temperature = True
-                self.temperature = 0.1   # 占位；omit_temperature 为真时不会被发送
+                self.temperature = 0.1   # Placeholder; never sent while omit_temperature is true
             else:
                 self.temperature = _get_env_float("MEMORY_LLM_TEMPERATURE", 0.1)
         if self.omit_temperature is None:
@@ -210,7 +210,7 @@ class LLMConfig:
         if self.retry_delay is None:
             self.retry_delay = _get_env_float("MEMORY_LLM_RETRY_DELAY", 1.0)
         if self.few_shot_enabled is None:
-            # 默认关闭 few-shot；开启后 extractor / reconcile prompt 会附加示例。
+            # Few-shot is off by default; when enabled, extractor / reconcile prompts append examples.
             self.few_shot_enabled = _get_env_bool("MEMORY_FEW_SHOT_ENABLED", False)
         if self.structure_metadata_enabled is None:
             self.structure_metadata_enabled = _get_env_bool(
@@ -222,10 +222,10 @@ class LLMConfig:
             self.query_rewrite_max_chars = _get_env_int("MEMORY_QUERY_REWRITE_MAX_CHARS", 1000)
         if self.enable_intention is None:
             self.enable_intention = _get_env_bool("MEMORY_ENABLE_INTENTION", True)
-        # extra_headers / extra_body：透传给 OpenAI 兼容 API。
-        # 若 env 未真正读取，会导致
-        # MEMORY_LLM_EXTRA_BODY='{"reasoning_effort":"none"}' 这类「关思考」配置
-        # 静默失效——推理模型的思维链照样吃掉 max_tokens。
+        # extra_headers / extra_body: passed through to the OpenAI-compatible API.
+        # If the env vars are never actually read,
+        # "disable thinking" settings such as MEMORY_LLM_EXTRA_BODY='{"reasoning_effort":"none"}'
+        # fail silently -- the reasoning model's chain of thought still consumes max_tokens.
         for _attr, _env in (
             ("extra_headers", "MEMORY_LLM_EXTRA_HEADERS"),
             ("extra_body", "MEMORY_LLM_EXTRA_BODY"),
@@ -241,27 +241,27 @@ class LLMConfig:
                 _parsed = _json.loads(_val)
             except (ValueError, TypeError):
                 _parsed = None
-            # 非法 JSON 或非 dict 一律忽略（保持 None），不要让配置错误炸掉 client 构造
+            # Invalid JSON or non-dict values are ignored (stay None); a config error must not break client construction
             if isinstance(_parsed, dict):
                 setattr(self, _attr, _parsed)
 
 
 @dataclass
 class EmbedderConfig:
-    """Embedder 配置（统一走 OpenAI 兼容协议）"""
+    """Embedder configuration (always over the OpenAI-compatible protocol)."""
 
-    provider: str = None  # openai（兼容 DashScope、DeepSeek 等）
+    provider: str = None  # openai (compatible with DashScope, DeepSeek, etc.)
     model: str = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     embedding_dims: int = None
 
-    # 重试参数
-    max_retries: int = None  # 最大重试次数
-    retry_delay: float = None  # 重试间隔（秒）
-    timeout: int = None  # 请求超时（秒）
+    # Retry parameters
+    max_retries: int = None  # Maximum number of retries
+    retry_delay: float = None  # Retry interval (seconds)
+    timeout: int = None  # Request timeout (seconds)
 
-    # 内部平台扩展（extra_headers / extra_body 会透传给 OpenAI client）
+    # Internal platform extensions (extra_headers / extra_body are passed to the OpenAI client)
     extra_headers: Optional[Dict[str, str]] = None
     extra_body: Optional[Dict[str, Any]] = None
 
@@ -283,16 +283,16 @@ class EmbedderConfig:
             val = os.getenv("MEMORY_EMBEDDING_DIMS")
             self.embedding_dims = int(val) if val else None
         if self.max_retries is None:
-            # 重试次数：仅对 timeout/连接错误重试，业务错立即抛。默认 2 次。
-            # 总耗时上限 ≈ timeout × (max_retries+1) + retry_delay × max_retries
+            # Retry count: retry only on timeout/connection errors, raise business errors immediately. Default 2.
+            # Worst-case wall time ≈ timeout × (max_retries+1) + retry_delay × max_retries
             #           = 3 × 3 + 0.3 × 2 ≈ 9.6s
             self.max_retries = _get_env_int("MEMORY_EMBEDDER_MAX_RETRIES", 2)
         if self.retry_delay is None:
             self.retry_delay = _get_env_float("MEMORY_EMBEDDER_RETRY_DELAY", 0.3)
         if self.timeout is None:
-            # 单次 embed 请求超时。线上长跑样本 p50 已到约 8s；3s 会把本可成功的
-            # 请求切断并制造重试风暴。SDK 内层重试已关闭，15s 是每个显式 attempt
-            # 的真实上限；部署可通过 MEMORY_EMBEDDER_TIMEOUT 覆盖。
+            # Timeout for a single embed request. Long-running production samples already reach ~8s at p50; 3s would
+            # cut off requests that could have succeeded and cause retry storms. SDK-internal retries are disabled, so
+            # 15s is the real ceiling per explicit attempt; deployments can override it via MEMORY_EMBEDDER_TIMEOUT.
             self.timeout = _get_env_int("MEMORY_EMBEDDER_TIMEOUT", 15)
         if self.extra_headers is None:
             val = os.getenv("MEMORY_EMBEDDER_EXTRA_HEADERS")
@@ -316,46 +316,46 @@ class EmbedderConfig:
 
 @dataclass
 class RecallConfig:
-    """召回配置"""
+    """Retrieval configuration."""
 
-    # 默认召回数量
+    # Default retrieval limits
     default_limit: int = 10
     max_limit: int = 100
     default_limit_per_layer: int = 5
 
-    # 评分权重
+    # Scoring weights
     semantic_weight: float = 0.5
     recency_weight: float = 0.3
     importance_weight: float = 0.15
     access_weight: float = 0.05
 
-    # 时间衰减
-    recency_decay_days: int = 30  # 衰减周期（天）
-    recency_decay_factor: float = 0.9  # 衰减因子
+    # Recency decay
+    recency_decay_days: int = 30  # Decay period (days)
+    recency_decay_factor: float = 0.9  # Decay factor
 
-    # Memory Strength（基于闲置时长的时间衰减排序）
-    # strength = (1 + log(access_count)) * exp(-idle_days / tau)，乘进 normal 通道分数
-    strength_enabled: bool = False        # 总开关（默认关闭）：关闭时不做 strength 重排，也不回写 access
-    strength_tau: float = 180.0           # 衰减时间常数（天）
-    access_tracking_enabled: bool = True  # 搜索后是否回写 access_count / last_accessed_at（受总开关约束）
+    # Memory Strength (time-decay ranking based on idle time)
+    # strength = (1 + log(access_count)) * exp(-idle_days / tau), multiplied into the normal channel score
+    strength_enabled: bool = False        # Master switch (off by default): when off, no strength reranking and no access write-back
+    strength_tau: float = 180.0           # Decay time constant (days)
+    access_tracking_enabled: bool = True  # Whether to write back access_count / last_accessed_at after search (gated by the master switch)
 
-    # Entity Store（独立 {collection}_entities collection）
-    # 此开关**只控制写入侧**：开启后写入 L2_FACT 落库时自动抽 entity 刷 store。
-    # 读侧共享流程可结合 graph entity 命中做候选加成；底层 entity collection 同时
-    # 保留给写侧与迁移工具。
-    entity_store_enabled: bool = False    # 写入侧开关（默认关闭），env: MEMORY_ENTITY_STORE_ENABLED
+    # Entity Store (separate {collection}_entities collection)
+    # This switch **controls the write side only**: when on, persisting L2_FACT also extracts entities and refreshes the store.
+    # The shared read path may boost candidates using graph entity hits; the underlying entity collection stays
+    # available for the write side and migration tools.
+    entity_store_enabled: bool = False    # Write-side switch (off by default), env: MEMORY_ENTITY_STORE_ENABLED
 
-    # ── Episode（内部会话）──
-    # 把跨 write 批次的"一件事"归到同一个 episode_id，读侧用它框出候选做加权。
+    # ── Episode (internal session) ──
+    # Groups "one thing" across write batches under the same episode_id; the read side uses it to scope candidates for weighting.
     episode_gap_seconds: float = None   # env: MEMORY_EPISODE_GAP_SECONDS
     episode_max_memories: int = None    # env: MEMORY_EPISODE_MAX_MEMORIES
-    episode_recall_enabled: bool = None # env: MEMORY_EPISODE_RECALL_ENABLED（读侧开关）
+    episode_recall_enabled: bool = None # env: MEMORY_EPISODE_RECALL_ENABLED (read-side switch)
     episode_recall_weight: float = None # env: MEMORY_EPISODE_RECALL_WEIGHT
-    # episode 关闭时总结一次（替代 rolling summary 的每 N 轮重写，省 token）
+    # Summarize once when an episode closes (replaces the every-N-turns rewrite of rolling summary, saving tokens)
     episode_summary_enabled: bool = None      # env: MEMORY_EPISODE_SUMMARY_ENABLED
     episode_summary_min_memories: int = None  # env: MEMORY_EPISODE_SUMMARY_MIN_MEMORIES
-    # 一等 session episode：由调用方显式 finalize，直接从该 session 的 L1_RAW
-    # 生成完整叙事；读侧以 episode 为主，并附少量 atomic facts。
+    # First-class session episode: finalized explicitly by the caller, producing a full narrative straight from
+    # that session's L1_RAW; the read side leads with the episode plus a few atomic facts.
     session_episode_enabled: bool = None       # env: MEMORY_SESSION_EPISODE_ENABLED
     session_episode_context_enabled: bool = None  # env: MEMORY_SESSION_EPISODE_CONTEXT_ENABLED
     session_episode_limit: int = None          # env: MEMORY_SESSION_EPISODE_LIMIT
@@ -428,7 +428,7 @@ class RecallConfig:
     retrieval_clauses_min_keyword_score: float = None  # normalized BM25 floor
     supplemental_propositions_enabled: bool = None  # env: MEMORY_SUPPLEMENTAL_PROPOSITIONS_ENABLED
 
-    # 最小分数阈值
+    # Minimum score threshold
     min_score_threshold: float = 0.0
 
     def __post_init__(self):
@@ -444,10 +444,10 @@ class RecallConfig:
         self.access_tracking_enabled = _get_env_bool("MEMORY_RECALL_ACCESS_TRACKING", True)
         self.entity_store_enabled = _get_env_bool("MEMORY_ENTITY_STORE_ENABLED", False)
         if self.episode_gap_seconds is None:
-            # 30 分钟：跨 write 但间隔不长 → 同一次讨论
+            # 30 minutes: across writes but close in time → same discussion
             self.episode_gap_seconds = _get_env_float("MEMORY_EPISODE_GAP_SECONDS", 1800.0)
         if self.episode_max_memories is None:
-            # 上限防止"一直开着的会话"变成一个巨型 episode
+            # The cap keeps an always-open session from becoming one giant episode
             self.episode_max_memories = _get_env_int("MEMORY_EPISODE_MAX_MEMORIES", 50)
         if self.episode_recall_enabled is None:
             self.episode_recall_enabled = _get_env_bool("MEMORY_EPISODE_RECALL_ENABLED", False)
@@ -749,21 +749,21 @@ class RecallConfig:
 
 @dataclass
 class TimeWindowConfig:
-    """时间窗口配置"""
+    """Time window configuration."""
 
-    # 滚动删除
+    # Rolling deletion
     enable_rolling_delete: bool = False
-    rolling_window_days: int = 90  # 滚动窗口（天）
-    rolling_check_interval: int = 3600  # 检查间隔（秒）
+    rolling_window_days: int = 90  # Rolling window (days)
+    rolling_check_interval: int = 3600  # Check interval (seconds)
 
-    # 按层配置不同的窗口
+    # Per-layer window configuration
     layer_windows: Dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self):
         self.enable_rolling_delete = _get_env_bool("MEMORY_ROLLING_DELETE", False)
         self.rolling_window_days = _get_env_int("MEMORY_ROLLING_WINDOW_DAYS", 90)
 
-        # 默认各层窗口
+        # Default windows per layer
         if not self.layer_windows:
             self.layer_windows = {
                 "raw": _get_env_int("MEMORY_RAW_WINDOW_DAYS", 30),
@@ -776,23 +776,23 @@ class TimeWindowConfig:
 
 @dataclass
 class ExtractorConfig:
-    """记忆提取器配置"""
+    """Memory extractor configuration."""
 
-    # 自动路由
+    # Automatic routing
     enable_auto_routing: bool = True
 
-    # 自动提取
+    # Automatic extraction
     enable_auto_extract: bool = False
-    extract_entities: bool = True  # 提取实体
-    extract_summary: bool = True  # 提取摘要
-    extract_profile: bool = True  # 提取画像
+    extract_entities: bool = True  # Extract entities
+    extract_summary: bool = True  # Extract summary
+    extract_profile: bool = True  # Extract profile
 
-    # 提取阈值
-    min_content_length: int = 10  # 最小内容长度
-    summary_trigger_length: int = 500  # 触发摘要的长度
+    # Extraction thresholds
+    min_content_length: int = 10  # Minimum content length
+    summary_trigger_length: int = 500  # Length that triggers a summary
 
-    # extract 时注入的历史上下文轮数（k 轮对话 = k*2 条 message）。
-    # client 可覆盖；env: MEMORY_EXTRACT_HISTORY_TURNS
+    # Number of history context turns injected at extract time (k dialogue turns = k*2 messages).
+    # The client can override it; env: MEMORY_EXTRACT_HISTORY_TURNS
     history_turns: int = None
 
     def __post_init__(self):
@@ -805,62 +805,62 @@ class ExtractorConfig:
 
 @dataclass
 class GraphStoreConfig:
-    """图存储配置 (Kuzu / Neo4j / Memgraph)"""
+    """Graph store configuration (Kuzu / Neo4j / Memgraph)."""
 
     provider: str = None  # "kuzu" | "neo4j" | "memgraph"
-    db_path: str = None  # Kuzu 数据库路径
+    db_path: str = None  # Kuzu database path
     url: str = None  # Neo4j/Memgraph bolt URL
-    username: str = None  # Neo4j/Memgraph 用户名
-    password: str = None  # Neo4j/Memgraph 密码
-    database: str = None  # Neo4j 数据库名
+    username: str = None  # Neo4j/Memgraph username
+    password: str = None  # Neo4j/Memgraph password
+    database: str = None  # Neo4j database name
 
-    # ── 记忆关系图（pro 模式）──
-    # 写侧：把 L2_FACT 投影进图并建 RELATED_TO / TAGGED_WITH 边
-    memory_graph_write: bool = None   # env: MEMORY_GRAPH_WRITE，默认 True（graph 开了才生效）
-    # 显式 Subject→Topic→Subtopic 层级投影。默认关，建模验证后才接 Search。
+    # ── Memory relation graph (pro mode) ──
+    # Write side: project L2_FACT into the graph and build RELATED_TO / TAGGED_WITH edges
+    memory_graph_write: bool = None   # env: MEMORY_GRAPH_WRITE, default True (takes effect only when graph is on)
+    # Explicit Subject→Topic→Subtopic hierarchy projection. Off by default; wired into Search only after modelling validation.
     hierarchy_topic_write: bool = None  # env: MEMORY_HIERARCHY_TOPIC_WRITE
-    # 读侧总开关：默认 **关**，需要灰度验证后再开
+    # Read-side master switch: **off** by default, enabled only after canary validation
     graph_rerank_enabled: bool = None  # env: MEMORY_GRAPH_RERANK_ENABLED
 
-    # 用法 A：池内支持度传播
+    # Usage A: in-pool support propagation
     propagate_beta: float = None       # env: MEMORY_GRAPH_PROPAGATE_BETA
     propagate_iters: int = None        # env: MEMORY_GRAPH_PROPAGATE_ITERS
     support_cap: float = None          # env: MEMORY_GRAPH_SUPPORT_CAP
-    # 用法 B：阈值松弛
-    relax_gamma: float = None          # env: MEMORY_GRAPH_RELAX_GAMMA，0 表示关闭用法 B
+    # Usage B: threshold relaxation
+    relax_gamma: float = None          # env: MEMORY_GRAPH_RELAX_GAMMA, 0 disables usage B
     seed_floor: float = None           # env: MEMORY_GRAPH_SEED_FLOOR
     max_expand: int = None             # env: MEMORY_GRAPH_MAX_EXPAND
-    # 用法 C：关系路径
+    # Usage C: relation paths
     path_enabled: bool = None          # env: MEMORY_GRAPH_PATH_ENABLED
     path_high_floor: float = None      # env: MEMORY_GRAPH_PATH_HIGH_FLOOR
-    # 写侧建边阈值
+    # Write-side edge-building thresholds
     edge_min_score: float = None       # env: MEMORY_GRAPH_EDGE_MIN_SCORE
     co_occurs_max_batch: int = None    # env: MEMORY_GRAPH_CO_OCCURS_MAX_BATCH
 
-    # ── 阶段 5（均默认关，都要额外成本）──
-    # 时序脊：同 Topic 内按 memory_at 串有向 TEMPORAL_NEXT 边（写侧，无 LLM）
+    # ── Phase 5 (all off by default, each one adds cost) ──
+    # Temporal spine: chain directed TEMPORAL_NEXT edges within one Topic by memory_at (write side, no LLM)
     temporal_spine: bool = None        # env: MEMORY_GRAPH_TEMPORAL_SPINE
-    # Topic-scoped summary：按主题切摘要而非按时间窗（写侧，**要 LLM**）
+    # Topic-scoped summary: split summaries by topic instead of by time window (write side, **requires an LLM**)
     topic_summary_enabled: bool = None      # env: MEMORY_TOPIC_SUMMARY_ENABLED
     topic_summary_min_memories: int = None  # env: MEMORY_TOPIC_SUMMARY_MIN_MEMORIES
     topic_summary_step: int = None          # env: MEMORY_TOPIC_SUMMARY_STEP
     topic_summary_concurrency: int = None   # env: MEMORY_TOPIC_SUMMARY_CONCURRENCY
-    # 用法 B：扩展 + 重新打分（漏斗，见 _graph/rerank.py）
+    # Usage B: expansion + rescoring (funnel, see _graph/rerank.py)
     expand_hops: int = None            # env: MEMORY_GRAPH_EXPAND_HOPS
     expand_prefilter_top_n: int = None # env: MEMORY_GRAPH_EXPAND_PREFILTER_TOP_N
     expand_boost_beta: float = None    # env: MEMORY_GRAPH_EXPAND_BOOST_BETA
-    # 用法 B 硬闸：sim(cand) ≥ seed_sim − delta（替代旧 gamma 松弛门槛的准入判定）
-    seed_sim_delta: float = None       # env: MEMORY_GRAPH_SEED_SIM_DELTA，默认 0.2
-    # 通过闸的扩展是否按时间并进 seed（\\n\\n）；True 时不单独占 top-k
+    # Usage B hard gate: sim(cand) ≥ seed_sim − delta (admission test replacing the old gamma relaxation threshold)
+    seed_sim_delta: float = None       # env: MEMORY_GRAPH_SEED_SIM_DELTA, default 0.2
+    # Whether expansions that pass the gate are merged into the seed in time order (\\n\\n); when True they take no separate top-k slot
     expand_merge_into_seed: bool = None  # env: MEMORY_GRAPH_EXPAND_MERGE_SEED
-    # 多通道打分权重（语义 / BM25 / tag∩keyword / 时序 / co_occur / 其它结构边）
+    # Multi-channel scoring weights (semantic / BM25 / tag∩keyword / temporal / co_occur / other structural edges)
     expand_w_sem: float = None         # env: MEMORY_GRAPH_EXPAND_W_SEM
     expand_w_bm25: float = None        # env: MEMORY_GRAPH_EXPAND_W_BM25
-    expand_w_tag: float = None         # env: MEMORY_GRAPH_EXPAND_W_TAG（建议最高）
+    expand_w_tag: float = None         # env: MEMORY_GRAPH_EXPAND_W_TAG (recommended highest)
     expand_w_temporal: float = None    # env: MEMORY_GRAPH_EXPAND_W_TEMPORAL
-    expand_w_co_occur: float = None    # env: MEMORY_GRAPH_EXPAND_W_CO_OCCUR（建议偏低）
-    expand_w_struct: float = None      # env: MEMORY_GRAPH_EXPAND_W_STRUCT（typed 边）
-    # episode 支持度叠加到图边支持度上的折扣系数（有界叠加，非取 max）
+    expand_w_co_occur: float = None    # env: MEMORY_GRAPH_EXPAND_W_CO_OCCUR (recommended low)
+    expand_w_struct: float = None      # env: MEMORY_GRAPH_EXPAND_W_STRUCT (typed edges)
+    # Discount factor when episode support is stacked on graph-edge support (bounded stacking, not max)
     episode_blend_lambda: float = None  # env: MEMORY_GRAPH_EPISODE_BLEND_LAMBDA
     multi_seed_bonus: float = None     # env: MEMORY_GRAPH_MULTI_SEED_BONUS
     temporal_tau_days: float = None    # env: MEMORY_GRAPH_TEMPORAL_TAU_DAYS
@@ -889,7 +889,7 @@ class GraphStoreConfig:
         if self.database is None:
             self.database = os.getenv("NEO4J_DATABASE", "neo4j")
 
-        # ── 记忆关系图参数（默认值见 docs/pro_graph_design.md）──
+        # ── Memory relation graph parameters (defaults in docs/pro_graph_design.md) ──
         if self.memory_graph_write is None:
             self.memory_graph_write = _get_env_bool("MEMORY_GRAPH_WRITE", True)
         if self.hierarchy_topic_write is None:
@@ -897,7 +897,7 @@ class GraphStoreConfig:
                 "MEMORY_HIERARCHY_TOPIC_WRITE", False
             )
         if self.graph_rerank_enabled is None:
-            # 读侧默认关：图为空/稀疏时接进来没有收益，要先灰度验证（含 null test）
+            # Read side off by default: wiring in an empty/sparse graph brings no gain, run a canary first (incl. null test)
             self.graph_rerank_enabled = _get_env_bool("MEMORY_GRAPH_RERANK_ENABLED", False)
         if self.propagate_beta is None:
             self.propagate_beta = _get_env_float("MEMORY_GRAPH_PROPAGATE_BETA", 0.15)
@@ -908,24 +908,24 @@ class GraphStoreConfig:
         if self.relax_gamma is None:
             self.relax_gamma = _get_env_float("MEMORY_GRAPH_RELAX_GAMMA", 0.3)
         if self.seed_floor is None:
-            # 0.5 而非 0.6：实测 15 个真实召回池，向量最高分中位数才 0.636，
-            # 0.6 时"可当 seed 的命中"中位数是 **0 个** → 扩展根本不触发，
-            # 多 seed 佐证从未 engage。0.5 时中位 18 个可达候选、80% 查询有 >=2 seed。
+            # 0.5 rather than 0.6: measured over 15 real recall pools the median top vector score is only 0.636,
+            # so at 0.6 the median number of "hits usable as seeds" is **0** → expansion never fires,
+            # and multi-seed corroboration never engages. At 0.5 the median is 18 reachable candidates and 80% of queries have >=2 seeds.
             self.seed_floor = _get_env_float("MEMORY_GRAPH_SEED_FLOOR", 0.5)
         if self.max_expand is None:
             self.max_expand = _get_env_int("MEMORY_GRAPH_MAX_EXPAND", 20)
         if self.path_enabled is None:
             self.path_enabled = _get_env_bool("MEMORY_GRAPH_PATH_ENABLED", True)
         if self.path_high_floor is None:
-            # 同 seed_floor 重标定。路径要求**两端**都过线，0.6 时典型只有 top-1
-            # 能过线、凑不出两个 → 实测 262 次检索产出 0 条路径。
+            # Recalibrated like seed_floor. Paths require **both ends** above the line; at 0.6 typically only top-1
+            # clears it and no pair can be formed → 262 measured retrievals produced 0 paths.
             self.path_high_floor = _get_env_float("MEMORY_GRAPH_PATH_HIGH_FLOOR", 0.5)
         if self.edge_min_score is None:
             self.edge_min_score = _get_env_float("MEMORY_GRAPH_EDGE_MIN_SCORE", 0.55)
         if self.co_occurs_max_batch is None:
             self.co_occurs_max_batch = _get_env_int("MEMORY_GRAPH_CO_OCCURS_MAX_BATCH", 8)
 
-        # 阶段 5：都要额外成本（LLM 或额外检索），一律默认关
+        # Phase 5: each adds cost (LLM or extra retrieval), all off by default
         if self.temporal_spine is None:
             self.temporal_spine = _get_env_bool("MEMORY_GRAPH_TEMPORAL_SPINE", False)
         if self.topic_summary_enabled is None:
@@ -986,23 +986,23 @@ class GraphStoreConfig:
 @dataclass
 class CacheConfig:
     """
-    缓存后端配置
+    Cache backend configuration
 
-    支持的后端:
-    - "sqlite"   : SQLite 本地数据库（默认，零依赖）
-    - "mysql"    : 标准 MySQL 持久化（需 aiomysql 包）
+    Supported backends:
+    - "sqlite"   : Local SQLite database (default, zero dependencies)
+    - "mysql"    : Standard MySQL persistence (requires the aiomysql package)
 
-    细粒度控制：可以启用/禁用特定的缓存功能
-    - enable_profile_cache   : Profile 热点缓存（读优化）
-    - enable_system2_queue   : System2 任务队列（后台任务）
-    - enable_intention_cache : Intention 队列（触发器）
-    - enable_write_records   : Write record（状态查询）
+    Fine-grained control: enable/disable individual cache features
+    - enable_profile_cache   : Profile hot cache (read optimization)
+    - enable_system2_queue   : System2 task queue (background tasks)
+    - enable_intention_cache : Intention queue (triggers)
+    - enable_write_records   : Write records (status queries)
     """
 
     backend: str = None  # "sqlite" | "mysql"
-    db_path: str = None  # SQLite 路径
+    db_path: str = None  # SQLite path
 
-    # MySQL 连接参数（backend="mysql" 时使用）
+    # MySQL connection parameters (used when backend="mysql")
     mysql_host: str = None
     mysql_port: int = None
     mysql_user: str = None
@@ -1011,11 +1011,11 @@ class CacheConfig:
     mysql_pool_size: int = None
     mysql_pool_recycle: int = None
 
-    # 细粒度缓存控制（所有后端均支持）
-    enable_profile_cache: bool = None  # Profile 缓存
-    enable_system2_queue: bool = None  # System2 任务队列
-    enable_intention_cache: bool = None  # Intention 队列
-    enable_write_records: bool = None  # Write 记录
+    # Fine-grained cache control (supported by all backends)
+    enable_profile_cache: bool = None  # Profile cache
+    enable_system2_queue: bool = None  # System2 task queue
+    enable_intention_cache: bool = None  # Intention queue
+    enable_write_records: bool = None  # Write records
 
     def __post_init__(self):
         if self.backend is None:
@@ -1033,7 +1033,7 @@ class CacheConfig:
                 os.path.join(_default_data_dir(), "data", "cache.db"),
             )
 
-        # MySQL 连接参数
+        # MySQL connection parameters
         if self.mysql_host is None:
             self.mysql_host = os.getenv("MEMORY_MYSQL_HOST", "localhost")
         if self.mysql_port is None:
@@ -1049,7 +1049,7 @@ class CacheConfig:
         if self.mysql_pool_recycle is None:
             self.mysql_pool_recycle = _get_env_int("MEMORY_MYSQL_POOL_RECYCLE", 3600)
 
-        # 细粒度缓存控制 - 默认均为 True（启用所有功能）
+        # Fine-grained cache control - all default to True (every feature enabled)
         if self.enable_profile_cache is None:
             self.enable_profile_cache = _get_env_bool(
                 "MEMORY_CACHE_ENABLE_PROFILE", True
@@ -1070,17 +1070,17 @@ class CacheConfig:
 
 @dataclass
 class APIConfig:
-    """API 配置"""
+    """API configuration."""
 
     host: str = "0.0.0.0"
     port: int = 8000
     prefix: str = "/api/v1/memory"
 
-    # 认证
+    # Authentication
     enable_auth: bool = False
     api_keys: List[str] = field(default_factory=list)
 
-    # 限流
+    # Rate limiting
     enable_rate_limit: bool = False
     rate_limit_per_minute: int = 100
 
@@ -1102,11 +1102,11 @@ class APIConfig:
 
 @dataclass
 class HistoryConfig:
-    """历史记录配置（SQLite 审计追踪）"""
+    """History record configuration (SQLite audit trail)."""
 
-    enable: bool = None  # 是否启用历史记录
-    db_path: str = None  # SQLite 数据库路径
-    record_searches: bool = None  # 是否记录搜索操作
+    enable: bool = None  # Whether history records are enabled
+    db_path: str = None  # SQLite database path
+    record_searches: bool = None  # Whether to record search operations
 
     def __post_init__(self):
         if self.enable is None:
@@ -1125,16 +1125,16 @@ class HistoryConfig:
 @dataclass
 class CodingConfig:
     """
-    Coding Memory 配置（生产力 / 编码场景独立链路）
+    Coding Memory configuration (standalone pipeline for productivity / coding scenarios)
 
-    对外使用方式见 docs/scene_coding_usage.md。
+    See docs/scene_coding_usage.md for external usage.
     """
 
-    enable: bool = None  # 是否启用 coding 链路（默认 True；关闭后所有 add 走 chat 链）
-    db_path: str = None  # coding_memory.db 路径
-    tool_result_max_bytes: int = None  # 单条 tool_result 截断字节上限
-    # LLM 失败或没有抽出 fact 时，是否把对话原文存成 working fact。
-    # 默认关闭，避免 assistant/tool 轨迹以 statement 形式直接暴露给消费方。
+    enable: bool = None  # Whether the coding pipeline is enabled (default True; when off every add uses the chat pipeline)
+    db_path: str = None  # coding_memory.db path
+    tool_result_max_bytes: int = None  # Truncation byte cap for a single tool_result
+    # Whether to store the raw dialogue as a working fact when the LLM fails or extracts no fact.
+    # Off by default so assistant/tool traces are not exposed to consumers as statements.
     verbatim_fallback_enabled: bool = None
 
     def __post_init__(self):
@@ -1158,19 +1158,19 @@ class CodingConfig:
 @dataclass
 class BasicProfileConfig:
     """
-    用户基础画像（L0_BASIC_INFO）的字段 schema 配置。
+    Field schema configuration for the user base profile (L0_BASIC_INFO).
 
-    设计原则：
-    - 不再使用 LLM function-calling tool（会让弱模型乱填字段）。
-    - extractor 直接把 fields 字段表 format 到 EXTRACT prompt 里，要求 LLM
-      在 JSON 输出中以 `basic_info` 字段返回（仅当对话明确出现时才填）。
-    - 不同 client 可以配置不同的 schema（例如车机场景关注 vehicle_model，
-      医疗场景关注 medical_history），SDK 默认提供 5 个通用字段。
-    - 如果配置为空（fields == {}），SDK 回退到 default_factory 给出的默认 5 字段。
+    Design principles:
+    - No LLM function-calling tool (it makes weak models fill fields arbitrarily).
+    - The extractor formats the fields table straight into the EXTRACT prompt and asks the LLM
+      to return it as the `basic_info` field of its JSON output (filled only when the dialogue states it explicitly).
+    - Different clients can configure different schemas (e.g. car systems care about vehicle_model,
+      medical scenarios about medical_history); the SDK provides 5 generic fields by default.
+    - If the configuration is empty (fields == {}), the SDK falls back to the 5 defaults from default_factory.
 
-    用法：
+    Usage:
         config.basic_profile.fields["hobby"] = "User's main hobby."
-        # 或整体替换
+        # Or replace the whole schema
         config.basic_profile.fields = {
             "name": "User's full or preferred name.",
             "vehicle_model": "User's primary vehicle model.",
@@ -1188,7 +1188,7 @@ class BasicProfileConfig:
     )
 
     def effective_fields(self) -> Dict[str, str]:
-        """配置为空时回落到默认；否则用配置值。"""
+        """Fall back to the defaults when the configuration is empty, otherwise use the configured value."""
         if not self.fields:
             return BasicProfileConfig().fields
         return dict(self.fields)
@@ -1197,24 +1197,24 @@ class BasicProfileConfig:
 @dataclass
 class PipelineRouteConfig:
     """
-    Pipeline 路由配置
+    Pipeline routing configuration
 
-    控制不同业务方/请求使用哪个版本的 Pipeline (Lite, Pro, ...)。
+    Controls which Pipeline version (Lite, Pro, ...) a given business party or request uses.
     """
 
-    # 默认 Pipeline 版本
+    # Default Pipeline version
     default_version: str = None
 
-    # 业务方 → Pipeline 版本映射
-    # 例: {"business_a": "pro", "experiment_group": "pro"}
+    # Business party → Pipeline version mapping
+    # Example: {"business_a": "pro", "experiment_group": "pro"}
     business_version_map: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.default_version is None:
             self.default_version = os.getenv("MEMORY_PIPELINE_DEFAULT_VERSION", "lite")
 
-        # 从环境变量加载业务方映射
-        # 格式: MEMORY_PIPELINE_BUSINESS_MAP="business_a:pro,business_b:lite"
+        # Load the business party mapping from an environment variable
+        # Format: MEMORY_PIPELINE_BUSINESS_MAP="business_a:pro,business_b:lite"
         map_str = os.getenv("MEMORY_PIPELINE_BUSINESS_MAP", "")
         if map_str and not self.business_version_map:
             for pair in map_str.split(","):
@@ -1227,12 +1227,12 @@ class PipelineRouteConfig:
 @dataclass
 class MemoryConfig:
     """
-    Agent Memory 主配置
+    Agent Memory main configuration
 
-    整合所有子配置，提供统一的配置入口
+    Aggregates all sub-configurations behind one unified configuration entry point
     """
 
-    # 子配置
+    # Sub-configurations
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     graph_store: GraphStoreConfig = field(default_factory=GraphStoreConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
@@ -1247,7 +1247,7 @@ class MemoryConfig:
     coding: CodingConfig = field(default_factory=CodingConfig)
     basic_profile: BasicProfileConfig = field(default_factory=BasicProfileConfig)
 
-    # 全局配置
+    # Global configuration
     enable_graph: bool = False
     enable_agent: bool = False
     debug: bool = False
@@ -1261,20 +1261,20 @@ class MemoryConfig:
     )
 
     def __post_init__(self):
-        # enable_graph 跟随 mode 走：mode=ultra 时自动启用，无需独立环境变量
-        # 保留 from_dict() 可显式覆盖
+        # enable_graph follows mode: enabled automatically when mode=ultra, no separate env var
+        # from_dict() can still override it explicitly
         self.enable_agent = _get_env_bool("MEMORY_ENABLE_AGENT", False)
         self.debug = _get_env_bool("MEMORY_DEBUG", False)
         self.metrics_enabled = _get_env_bool("MEMORY_METRICS", True)
 
     @classmethod
     def from_env(cls) -> "MemoryConfig":
-        """从环境变量创建配置"""
+        """Create the configuration from environment variables."""
         return cls()
 
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "MemoryConfig":
-        """从字典创建配置"""
+        """Create the configuration from a dict."""
         config = cls()
 
         _sections = [
@@ -1298,12 +1298,12 @@ class MemoryConfig:
                     if hasattr(sub, key):
                         setattr(sub, key, value)
 
-        # basic_profile: fields 是 Dict[str, str]，整体替换（非空时）
+        # basic_profile: fields is Dict[str, str], replaced wholesale (when non-empty)
         if "basic_profile" in config_dict:
             bp = config_dict["basic_profile"] or {}
             fields = bp.get("fields")
             if isinstance(fields, dict) and fields:
-                # 强制 str→str；过滤掉空 description
+                # Force str→str; drop empty descriptions
                 config.basic_profile.fields = {
                     str(k): str(v).strip()
                     for k, v in fields.items()
@@ -1320,7 +1320,7 @@ class MemoryConfig:
         return config
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """Convert to a dict."""
         return {
             "vector_store": {
                 "provider": self.vector_store.provider,
@@ -1377,7 +1377,7 @@ class MemoryConfig:
         }
 
     def print_config(self) -> None:
-        """打印配置信息"""
+        """Print the configuration."""
         print("=" * 60)
         print("Agent Memory Configuration")
         print("=" * 60)

@@ -176,7 +176,7 @@ describe("A19 batch execution", () => {
     expect(document.accepted_source_ids).toEqual(["codex"]);
     // Partial success must be distinguishable by exit code.
     expect(batchScanExitCode(document)).toBe(1);
-    expect(renderBatchScanText(document)).toContain("部分完成");
+    expect(renderBatchScanText(document)).toContain("Partially complete");
   });
 
   // A fresh batch request that is refused because imports are already in

@@ -1,4 +1,5 @@
 import type { GovernedMemory, MemoryDetail } from "@one-memory/contracts";
+import { countLabel } from "./count-label";
 
 export function MatterMemoryPanel({
   memories,
@@ -14,9 +15,12 @@ export function MatterMemoryPanel({
   onSelect(memoryId: string): void;
 }) {
   return (
-    <section className="matter-memory-panel" aria-label="事项基础记忆">
+    <section
+      className="matter-memory-panel"
+      aria-label="Matter baseline memories"
+    >
       <header>
-        <h3>基础记忆</h3>
+        <h3>Baseline memories</h3>
         <span>{memories.length}</span>
       </header>
       <div className="matter-memory-list">
@@ -24,39 +28,45 @@ export function MatterMemoryPanel({
           <button
             type="button"
             key={memory.memory_id}
-            aria-label={`选择记忆 ${memory.content}`}
+            aria-label={`Select memory ${memory.content}`}
             aria-pressed={selectedMemoryId === memory.memory_id}
             onClick={() => onSelect(memory.memory_id)}
           >
             <span>{memory.content}</span>
             <small>
-              基础记忆 · {memory.evidence_ids.length} 条原话 · r
+              Baseline memory ·{" "}
+              {countLabel(memory.evidence_ids.length, "quote")} · r
               {memory.revision}
             </small>
           </button>
         ))}
       </div>
-      {loading && <p role="status">正在读取基础记忆与原话…</p>}
+      {loading && <p role="status">Loading baseline memories and quotes...</p>}
       {detail && !loading && (
-        <section className="matter-memory-detail" aria-label="基础记忆原文">
-          <h3>来源原话</h3>
+        <section
+          className="matter-memory-detail"
+          aria-label="Baseline memory originals"
+        >
+          <h3>Source quotes</h3>
           {detail.evidence.map((item) => (
             <section key={item.evidence_id} className="matter-memory-excerpt">
               <p>
-                {item.source_id ?? "来源未知"} ·{" "}
+                {item.source_id ?? "Unknown source"} ·{" "}
                 {item.written_by === "person"
-                  ? "用户原话"
+                  ? "User quote"
                   : item.written_by === "agent"
-                    ? "Agent 发言"
-                    : "作者未知"}
+                    ? "Agent message"
+                    : "Unknown author"}
               </p>
               <small>
                 {item.created_at
                   ? new Date(item.created_at).toLocaleString("zh-CN")
-                  : "消息时间未知"}
+                  : "Message time unknown"}
               </small>
               <blockquote>
-                {item.available ? item.verbatim : "来源原话已不可读取"}
+                {item.available
+                  ? item.verbatim
+                  : "The source quote is no longer readable"}
               </blockquote>
             </section>
           ))}

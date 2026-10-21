@@ -9,7 +9,7 @@ vi.mock("./api", () => ({
   getModelProfiles: vi.fn().mockResolvedValue([
     {
       profile_id: "profile-1",
-      name: "当前模型",
+      name: "Current model",
       model: "model-1",
       base_url: "https://example.test/v1",
       is_active: true,
@@ -38,10 +38,16 @@ afterEach(() => {
 it("shows the help and diagnostics group by default and hides it when opted out", async () => {
   const user = userEvent.setup();
   const view = render(<R6Settings onDiagnostics={vi.fn()} />);
-  await user.click(screen.getByRole("button", { name: "帮助与诊断" }));
-  expect(screen.getByRole("heading", { name: "帮助与诊断" })).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "导出日志" })).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Help and diagnostics" }),
+  );
+  expect(
+    screen.getByRole("heading", { name: "Help and diagnostics" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Export logs" })).toBeTruthy();
 
   view.rerender(<R6Settings onDiagnostics={vi.fn()} showDiagnostics={false} />);
-  expect(screen.queryByRole("button", { name: "帮助与诊断" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Help and diagnostics" }),
+  ).toBeNull();
 });

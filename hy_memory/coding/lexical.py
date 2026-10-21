@@ -1,22 +1,22 @@
-"""事实层的词面通道：BM25 + 分数融合，给 store.search_facts 做重排。
+"""Lexical channel for the fact layer: BM25 + score fusion, reranking store.search_facts.
 
-为什么要加这一路：statement 是唯一进检索向量的字段（store._upsert_fact_vec 只嵌
-`subject: statement`），而它记的大量内容是给定量——符号名、数值、单位、标签。稠密
-向量对这类 token 很钝："step 3 input: n=64" 和 "step 4 input: n=32" 的余弦几乎一样，
-但查询要的是其中一条。词面通道对精确 token 敏感，正好补这个洞。
+Why this channel exists: statement is the only field that enters the retrieval vector (store._upsert_fact_vec embeds only
+`subject: statement`), while much of what it records is given quantities -- symbol names, numbers, units, labels. Dense
+vectors are blunt about such tokens: the cosine between "step 3 input: n=64" and "step 4 input: n=32" is nearly identical,
+yet the query wants exactly one of them. The lexical channel is sensitive to exact tokens and fills that hole.
 
-只有候选数超过 top-k 时重排才会改变结果；候选不足时该通道自然是空操作。
-词面权重应足以打破语义分接近的邻居，但不能盖过明显更相关的语义候选。
+Reranking only changes results when there are more candidates than top-k; with fewer candidates the channel is naturally a no-op.
+The lexical weight should suffice to break up close-scoring semantic neighbours, but never outweigh clearly more relevant semantic candidates.
 
-两个设计约束，都是被调用方逼出来的：
+Two design constraints, both forced by the caller:
 
-  1. 绝不能把融合分数返回给上层。client.py:851 用 `s >= fact_min_score`
-     （默认 0.30）过闸门，那是余弦分的量纲；融合分是另一套量纲，一返回就等于
-     把整个事实层静默清空。所以融合只用来定顺序，返回的分数仍是稠密余弦分。
+  1. Never return the fused score upward. client.py:851 gates on `s >= fact_min_score`
+     (default 0.30), which is on the cosine scale; the fused score is on another scale, and returning it would
+     silently empty the whole fact layer. Fusion therefore only determines order; returned scores stay dense cosine scores.
 
-  2. 重排只在"已经过了稠密下限"的候选里做。否则 BM25 可能把一条余弦 0.2 的事实顶进
-     前 top，它随后被 client 的闸门丢掉，于是混检反而比纯稠密召回得更少。先按
-     min_score 砍掉候选池，再重排，返回条数就恒等于纯稠密的条数，只是选得更准。
+  2. Reranking only runs over candidates that are "already past the dense floor". Otherwise BM25 could push a fact with cosine 0.2
+     into the top, only for the client gate to drop it, and the hybrid would recall less than dense-only. Cutting the pool by
+     min_score first and reranking afterwards keeps the returned count equal to dense-only, just better chosen.
 """
 from __future__ import annotations
 
@@ -27,17 +27,17 @@ from typing import List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
-ENV_DISABLE = "HY_FACT_LEXICAL_OFF"   # 置 1 关掉词面通道，退回纯稠密
+ENV_DISABLE = "HY_FACT_LEXICAL_OFF"   # Set to 1 to turn the lexical channel off and fall back to dense-only
 ENV_WEIGHT = "HY_FACT_LEXICAL_WEIGHT"
 
-# 词面相对稠密的权重，含义是"词面最多能翻过多大的余弦间距"。
+# Lexical weight relative to dense, meaning "how large a cosine gap lexical may at most overturn".
 _LEX_WEIGHT = 0.05
 
-# 数值必须整体成词，包括科学计数法：给定量的辨识度全在完整数值上，"1e-6" 被切成
-# 1/e/6 之后和 "6e-1" 无从区分。数值分支放在字母分支前面，否则 "1e-6" 的 e 会先被
-# 字母分支吃掉。
+# Numbers must tokenize as a whole, scientific notation included: the identity of a given quantity lives entirely in the full value, so "1e-6"
+# cut into 1/e/6 can no longer be told apart from "6e-1". The numeric branch comes before the alphabetic one, otherwise the
+# e in "1e-6" would be eaten by the alphabetic branch first.
 _LATIN = re.compile(r"\d+(?:\.\d+)?(?:e[-+]?\d+)?|[a-z]+")
-_CJK = re.compile(r"[一-鿿]+")
+_CJK = re.compile(r"[\u4e00-\u9fff]+")  # CJK Unified Ideographs basic block
 
 _warned = False
 
@@ -50,10 +50,10 @@ def _warn_once(msg: str) -> None:
 
 
 def tokenize(text: str) -> List[str]:
-    """中英混排分词。
+    """Tokenizer for mixed Chinese/English text.
 
-    先用正则取拉丁词和数值（数值整体成词，见 _LATIN 上的注释），CJK 段落交给 jieba。
-    jieba 首次调用要加载 0.4s 词典，所以在这里 lazy import，没有 CJK 的库不付这个钱。
+    Latin words and numbers come from the regex first (numbers stay whole, see the comment on _LATIN); CJK runs go to jieba.
+    The first jieba call loads a dictionary (~0.4s), hence the lazy import here: stores without CJK never pay for it.
     """
     low = text.lower()
     tokens = _LATIN.findall(low)
@@ -72,7 +72,7 @@ def tokenize(text: str) -> List[str]:
 
 
 def _weight() -> float:
-    """每次调用都读环境变量：便于在不改代码的前提下切换。"""
+    """Reads the env var on every call, so behaviour can be switched without changing code."""
     raw = os.getenv(ENV_WEIGHT)
     if not raw:
         return _LEX_WEIGHT
@@ -89,10 +89,10 @@ def rerank(
     *,
     lex_weight: Optional[float] = None,
 ) -> Optional[List[str]]:
-    """返回融合后的 id 顺序；不可用或无意义时返回 None（调用方保持纯稠密）。
+    """Returns the fused id order; None when unavailable or meaningless (the caller then stays dense-only).
 
-    candidates 是 (id, 稠密余弦分, 用于建词面索引的文本)。文本应当与嵌入侧一致
-    （`subject: statement`），否则两路排的不是同一个东西。
+    candidates are (id, dense cosine score, text used to build the lexical index). The text should match the embedding side
+    (`subject: statement`); otherwise the two channels are not ranking the same thing.
     """
     if os.getenv(ENV_DISABLE, "").strip() in ("1", "true", "True"):
         return None
@@ -101,10 +101,10 @@ def rerank(
     if lex_weight is None:
         lex_weight = _weight()
     try:
-        # BM25Plus 而不是 BM25Okapi。Okapi 的 idf 对"出现在多数文档里"的词取负值，
-        # 再由 epsilon 地板截平：候选池只有 2 条时每个词都出现在 >=50% 的文档里，
-        # 两条得分相同，完全无法区分。而小候选池正是本路的主要工作区间，用
-        # Okapi 等于在最常见的情形下把词面通道关掉。BM25Plus 的下界项保证正分。
+        # BM25Plus rather than BM25Okapi. Okapi's idf turns negative for terms "present in most documents" and is
+        # then flattened by the epsilon floor: with a two-item candidate pool every term appears in >=50% of documents, so
+        # both items score the same and cannot be separated at all. Small candidate pools are exactly this channel's
+        # working range; Okapi would switch lexical off in the most common case. BM25Plus's delta term keeps scores positive.
         from rank_bm25 import BM25Plus
     except Exception as e:  # noqa: BLE001
         _warn_once(f"rank_bm25 unavailable ({e}); fact search stays dense-only")
@@ -123,24 +123,24 @@ def rerank(
         return None
 
     ids = [fid for fid, _, _ in candidates]
-    # 全部候选得分相同 => 词面没有区分力（一个查询 token 都没命中，或命中得一样多）。
-    # 此时它的"排名"是任意的，融合进去等于拿噪声扰动稠密顺序，直接不重排。
+    # All candidates score the same => lexical has no discriminative power (no query token matched, or all matched equally).
+    # Its "ranking" would then be arbitrary, and fusing it in would perturb the dense order with noise, so skip the rerank.
     lo, hi = min(scores), max(scores)
     if hi - lo <= 1e-9:
         return None
 
-    # 融合用余弦原分 + 归一化的词面分，而不是两路各自的名次。
+    # Fusion uses the raw cosine score plus the normalized lexical score, not the ranks of the two channels.
     #
-    # 名次的问题是它抹掉间距：候选池只有个位数，把名次归一到 [0,1] 会把 0.0004 的
-    # 余弦差和 0.05 的余弦差同等放大成一个名次身位，于是"稠密几乎没意见"和"稠密强烈
-    # 反对"变得无从区分。余弦本身已经是可比的标度，直接用。
+    # The trouble with ranks is that they erase margins: with a single-digit candidate pool, normalizing ranks to [0,1]
+    # amplifies a 0.0004 cosine difference and a 0.05 one equally into one rank apart, so "dense barely cares" and "dense
+    # strongly objects" become indistinguishable. Cosine is already a comparable scale, so use it directly.
     #
-    # 这样 lex_weight 就有了可解释的含义：词面最多能翻过 lex_weight 这么大的余弦
-    # 间距。
+    # This gives lex_weight an interpretable meaning: lexical may overturn at most a cosine margin of lex_weight.
+    # No more than that.
     lex = {ids[i]: (scores[i] - lo) / (hi - lo) for i in range(len(ids))}
     dense = {fid: s for fid, s, _ in candidates}
     dense_pos = {fid: i for i, fid in enumerate(
         sorted(ids, key=lambda f: -dense[f]))}
     fused = {fid: dense[fid] + lex_weight * lex[fid] for fid in ids}
-    # 并列时按稠密顺序稳定收敛：稠密是主索引，词面是补丁。
+    # Ties resolve stably in dense order: dense is the primary index, lexical is a patch.
     return sorted(ids, key=lambda f: (-fused[f], dense_pos[f]))

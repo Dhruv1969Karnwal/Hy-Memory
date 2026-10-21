@@ -56,9 +56,9 @@ describe("Windows runtime control matrix", () => {
 
   it("builds a Windows layout with spaced install roots without changing semantics", () => {
     const plan = planWindowsRuntimeControl({
-      home: "C:\\Users\\张三",
+      home: "C:\\Users\\John Doe",
       installRoot:
-        "C:\\Users\\张三\\AppData\\Local\\One Memory With Spaces\\current",
+        "C:\\Users\\John Doe\\AppData\\Local\\One Memory With Spaces\\current",
       host: { windowsPowerShell: false, currentUserDataRoot: false },
     });
     expect(path.win32.isAbsolute(plan.current_user_service.service_id)).toBe(

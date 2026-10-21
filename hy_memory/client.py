@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-HY Memory Client - 面向用户的同步客户端（无状态）
+HY Memory Client - user-facing synchronous client (stateless)
 
-所有组件在构造函数中完成初始化，失败立即报错。
-构造函数只接受连接配置，不绑定任何业务参数（user_id/agent_id 等），
-一个 client 实例可被多线程共享。
+All components are initialized in the constructor; failures raise immediately.
+The constructor accepts only connection config and binds no business parameters (user_id/agent_id, etc.);
+a single client instance can be shared across threads.
 
-    # 最简用法 — 环境变量配置
+    # Minimal usage - configure via env vars
     client = HyMemoryClient()
-    client.add("用户喜欢科幻电影", user_id="test_user")
-    results = client.search("用户喜欢什么？", user_ids=["test_user"])
+    client.add("The user likes sci-fi movies", user_id="test_user")
+    results = client.search("What does the user like?", user_ids=["test_user"])
     client.close()
 
-    # 自定义配置（类似 mem0 风格）
+    # Custom config (mem0-style)
     client = HyMemoryClient.from_config({
         "embedder": {"provider": "openai", "model": "text-embedding-3-small"},
         "vector_store": {"provider": "qdrant", "collection_name": "my_memories"},
@@ -57,32 +57,32 @@ from .pipelines import (
     ReadRequest,
     ReadResponse,
 )
-# Productivity memory 模块（含 tool 时三分类为 working/coding 才启用）
+# Productivity memory module (enabled only when tool messages are triaged as working/coding)
 from .coding.preproc import has_any_tool_message, strip_tool_messages
 from .coding.judge import classify_messages_scene
 
 logger = logging.getLogger(__name__)
 
-# add() 第一个参数的类型：字符串 或 messages 列表
+# Type of the first argument to add(): a string or a messages list
 MessageList = List[Dict[str, str]]
 AddInput = Union[str, MessageList]
 
-# working（coding）路两层的默认阈值。刻意不复用 chat 路的 min_score：
-# chat 匹配的是完整语义单元，0.4 是长期在用的经验值；working 事实层匹配的是一句话
-# 结论，同样语义相关度下分数系统性偏低，0.4
-# 会把明确相关的事实挡掉。而事实层是主索引，它被挡掉不只是少一条事实：顺
-# derived_experience_ids 带经验那一路会跟着断源，双层结构对该 query 直接退化成一次
-# 普通经验搜索。所以事实层宁松勿严，噪声交给经验直查那道闸门单独收。
+# Default thresholds for the two layers on the working (coding) path. Deliberately not reusing the chat path's min_score:
+# chat matches whole semantic units and 0.4 is a long-standing empirical value; the working fact layer matches single-sentence
+# conclusions, whose scores run systematically lower at the same semantic relevance, so 0.4
+# would filter out clearly relevant facts. The fact layer is the primary index, and filtering it out is more than one fewer fact: the
+# experience path via derived_experience_ids loses its source too, degrading the two-layer structure into a plain
+# experience search for this query. So the fact layer errs loose rather than strict, leaving noise to the experience direct-query gate alone.
 _WORKING_FACT_DEFAULT_MIN_SCORE = 0.30
 
-# 经验直查阈值相对事实层阈值的默认抬升量。
-# 两层 embed 的文本形态不同——事实层是整句 statement，经验层是 task + search_keys
-# 这类短片段——短片段之间的余弦相似度基线本来就更高，同一个阈值下经验层会明显更松。
-# 两层相关/无关的可分区间错开约 0.1，共用一个阈值罩不住。
+# Default bump of the experience direct-query threshold relative to the fact-layer threshold.
+# The two layers embed different text forms -- the fact layer is a full-sentence statement, the experience layer is short segments like task + search_keys;
+# the cosine-similarity baseline among short segments is inherently higher, so under the same threshold the experience layer is clearly looser.
+# The separable relevant/irrelevant bands of the two layers are offset by about 0.1, so a single shared threshold cannot cover both.
 _WORKING_EXPERIENCE_MIN_SCORE_DELTA = 0.10
 
-# 一次 get_many 最多带多少个 experience_id。SQLite 的 IN 子句有绑定变量上限
-# （默认 999），这是防病态长链的安全阀，不是返回条数控制。
+# Maximum number of experience_id values per get_many call. SQLite IN clauses have a bound-variable limit
+# (999 by default); this is a safety valve against pathologically long chains, not a return-count control.
 _CODING_GET_MANY_MAX_IDS = 500
 
 
@@ -124,8 +124,8 @@ def _search_memory_channel(
     return "normal"
 
 
-# cgroup CPU 限流累计时长的文件位置（v2 优先，回退 v1）。
-# (路径, 字段名, 除数)——v1 的 throttled_time 单位是纳秒，需 /1000 换成微秒。
+# File locations for cumulative cgroup CPU throttling time (prefer v2, fall back to v1).
+# (path, field name, divisor) -- v1's throttled_time is in nanoseconds, so /1000 converts it to microseconds.
 _CGROUP_CPU_STAT_SOURCES = (
     ("/sys/fs/cgroup/cpu.stat", "throttled_usec", 1),
     ("/sys/fs/cgroup/cpu/cpu.stat", "throttled_time", 1000),
@@ -133,18 +133,18 @@ _CGROUP_CPU_STAT_SOURCES = (
 
 
 def _read_throttled_usec() -> int:
-    """读 cgroup 累计被 CPU 限流的微秒数；读不到返回 0。
+    """Read the cumulative microseconds the process has been CPU-throttled by cgroup; return 0 if unreadable.
 
-    用于归因进程级停顿：在一段纯同步代码前后各取一次，差值即该段内被容器
-    强制暂停的时长。容器 CPU quota 打满时，进程会被内核整体挂起，表现为
-    "纯同步代码耗时几百毫秒"。
+    Used to attribute process-level stalls: sample once before and once after a block of pure synchronous code, and the difference is the time
+    the container forcibly paused it. When the container's CPU quota is exhausted, the kernel suspends the whole process, which shows up as
+    "pure synchronous code taking hundreds of milliseconds".
 
-    同步读小文件（procfs/cgroupfs，无磁盘 IO），微秒级，不阻塞 event loop。
-    任何异常都静默返回 0——这是可观测性字段，绝不能影响主流程。
+    Reads a small file synchronously (procfs/cgroupfs, no disk IO), microsecond-scale, and does not block the event loop.
+    Any exception silently returns 0 -- this is an observability field and must never affect the main flow.
 
-    注：字段用**精确等值**匹配而非前缀匹配。cgroup v1 的 cpu.stat 里同时存在
-    `throttled_time` 与 `throttled_time_bt`（burst 统计），前缀匹配会因文件内
-    字段顺序不同而取错值。
+    Note: fields are matched by **exact equality** rather than prefix. cgroup v1's cpu.stat contains both
+    `throttled_time` and `throttled_time_bt` (burst stats); prefix matching picks the wrong value depending on the field order within
+    the file.
     """
     for path, key, div in _CGROUP_CPU_STAT_SOURCES:
         try:
@@ -159,10 +159,10 @@ def _read_throttled_usec() -> int:
 
 
 def _gc_collection_count() -> int:
-    """GC 各代累计回收次数之和；异常返回 0。
+    """Sum of cumulative collections across GC generations; return 0 on error.
 
-    与 _read_throttled_usec 配对使用：前后差值 >=1 说明该段内发生过 GC，
-    可解释纯同步代码的意外停顿（高对象分配率下 gen2 GC 可达数百毫秒）。
+    Used in pairs with _read_throttled_usec: a before/after difference >=1 means GC ran within the block,
+    which can explain unexpected stalls in pure synchronous code (at high allocation rates gen2 GC can reach hundreds of milliseconds).
     """
     try:
         import gc
@@ -224,13 +224,13 @@ def _ensure_search_loop(method):
     """
     Decorator for async_search() on HyMemoryClient.
 
-    与 _ensure_internal_loop 同构，但把协程绑定到 **search 专用 loop**
-    (self._search_loop_thread) 而非 write loop，使 search 的调度不被 write
-    队列（EXTRACT/RECONCILE/write_queue 并发）挤占。
-    search 与 write 使用独立 loop，避免写队列占用 search 调度。
+    Same shape as _ensure_internal_loop, but binds the coroutine to the **dedicated search loop**
+    (self._search_loop_thread) rather than the write loop, so search scheduling is not crowded out by the write
+    queue (EXTRACT/RECONCILE/write_queue concurrency).
+    search and write use independent loops, so the write queue cannot consume search scheduling.
 
-    solo 模式下 _search_loop_thread 可能与 _loop_thread 是同一个（不隔离），
-    行为等价于旧路径；shared 模式（SharedRuntime）下二者是两个独立线程。
+    In solo mode _search_loop_thread may be the same object as _loop_thread (no isolation),
+    behaving like the old path; in shared mode (SharedRuntime) they are two independent threads.
     """
     import functools
 
@@ -244,10 +244,10 @@ def _ensure_search_loop(method):
         search_loop = self._search_loop_thread._loop
 
         if current_loop is search_loop:
-            # 已经在 search loop 上 — 直接执行
+            # Already on the search loop -- execute directly
             return await method(self, *args, **kwargs)
         else:
-            # 外部 loop（uvicorn 等）— 委托到 search loop
+            # External loop (uvicorn, etc.) -- delegate to the search loop
             future = asyncio.run_coroutine_threadsafe(
                 method(self, *args, **kwargs), search_loop
             )
@@ -258,11 +258,11 @@ def _ensure_search_loop(method):
 
 class _LoopThread:
     """
-    后台线程持有一个持久的 event loop。
+    A background thread that holds a persistent event loop.
 
-    解决问题：本地 Qdrant（AsyncQdrantLocal）通过文件锁绑定到创建它的 event loop，
-    如果每次 asyncio.run() 创建新 loop，文件锁会冲突。
-    用同一个 loop 运行所有协程即可。
+    Problem solved: local Qdrant (AsyncQdrantLocal) binds to the event loop that created it via a file lock,
+    so creating a new loop on every asyncio.run() makes the file locks conflict.
+    Running all coroutines on the same loop avoids this.
     """
 
     def __init__(self):
@@ -335,7 +335,7 @@ class _LoopThread:
             }
 
     def run(self, coro, *, include_runtime_diag: bool = False):
-        """在后台 loop 中运行协程，同步等待结果"""
+        """Run a coroutine on the background loop, waiting for the result synchronously."""
         if not include_runtime_diag:
             future = asyncio.run_coroutine_threadsafe(coro, self._loop)
             return concurrent_result_guarded(future, self._loop)
@@ -358,10 +358,10 @@ class _LoopThread:
 
     async def run_async(self, coro):
         """
-        在后台 loop 中运行协程，异步等待结果。
+        Run a coroutine on the background loop, awaiting the result asynchronously.
 
-        可从任意 event loop 中安全 await — 如果已经在正确的 loop 上则直接执行，
-        否则委托到 _LoopThread 的 loop 并 await。
+        Safe to await from any event loop -- runs directly if already on the correct loop,
+        otherwise delegates to _LoopThread's loop and awaits.
         """
         try:
             current_loop = asyncio.get_running_loop()
@@ -369,10 +369,10 @@ class _LoopThread:
             current_loop = None
 
         if current_loop is self._loop:
-            # 已经在 _LoopThread 的 loop 里，直接执行
+            # Already on _LoopThread's loop, execute directly
             return await coro
         else:
-            # 在外部 loop 里（如 uvicorn），委托到 _LoopThread
+            # On an external loop (e.g. uvicorn), delegate to _LoopThread
             future = asyncio.run_coroutine_threadsafe(coro, self._loop)
             return await await_concurrent_future_guarded(future, self._loop)
 
@@ -390,42 +390,42 @@ class _LoopThread:
 
 class HyMemoryClient:
     """
-    HY Memory 无状态客户端。
+    HY Memory stateless client.
 
-    构造函数只接受连接配置和处理模式，不绑定任何业务参数。
-    所有业务隔离参数（user_id/agent_id/session_id 等）在每次调用时传入，
-    一个 client 实例可被多线程安全共享。
+    The constructor accepts only connection config and processing mode, and binds no business parameters.
+    All business isolation parameters (user_id/agent_id/session_id, etc.) are passed per call,
+    so a single client instance can be shared safely across threads.
 
-    处理模式（mode）：
-    - "lite":  raw-only 纯 embedding 写入/检索，不调用 LLM；忽略 scene/layers 路由
-    - "pro":   embedding + LLM agent 提取（事实/实体/意图），标准模式
-    - "ultra": pro + 可显式触发的 System 2 认知加工（Schema 归纳），完整模式
+    Processing modes (mode):
+    - "lite":  raw-only pure-embedding write/retrieval, no LLM call; ignores scene/layers routing
+    - "pro":   embedding + LLM agent extraction (facts/entities/intentions), the standard mode
+    - "ultra": pro plus explicitly triggerable System 2 cognitive processing (Schema induction), the full mode
 
-    数据隔离模型（三级）：
-    - user_id:    一级 key — 每个用户唯一的记忆库
-    - agent_id:   二级 key — 同一用户下不同 Agent 场景的隔离
-    - session_id: 三级 key — 同一 Agent 下不同会话的隔离
+    Data isolation model (three levels):
+    - user_id:    level-1 key -- a memory store unique to each user
+    - agent_id:   level-2 key -- isolation across different Agent scenarios for the same user
+    - session_id: level-3 key -- isolation across different sessions for the same Agent
 
     Usage:
-        # lite: 纯向量写入，不调 LLM
+        # lite: pure vector write, no LLM call
         client = HyMemoryClient(mode="lite")
 
-        # pro: 标准模式（embedding + agent 提取）
+        # pro: standard mode (embedding + agent extraction)
         client = HyMemoryClient(mode="pro")
 
-        # ultra: 完整模式（pro + System 2 认知层）
+        # ultra: full mode (pro + System 2 cognitive layer)
         client = HyMemoryClient(mode="ultra")
 
-        client.add("用户喜欢科幻电影", user_id="user_001")
-        results = client.search("用户喜欢什么？", user_ids=["user_001"])
+        client.add("The user likes sci-fi movies", user_id="user_001")
+        results = client.search("What does the user like?", user_ids=["user_001"])
         client.close()
 
     Args:
-        config: 自定义 MemoryConfig（默认从环境变量加载）
-        mode:   处理模式 ("lite" / "pro" / "ultra")，默认从环境变量 MEMORY_MODE 读取
+        config: custom MemoryConfig (loaded from env vars by default)
+        mode:   processing mode ("lite" / "pro" / "ultra"), read from the MEMORY_MODE env var by default
     """
 
-    # 合法的 mode 值
+    # Valid mode values
     VALID_MODES = ("lite", "pro", "ultra")
 
     def __init__(
@@ -435,14 +435,14 @@ class HyMemoryClient:
         coding_writer: Optional[str] = None,
         runtime: Optional["SharedRuntime"] = None,
     ):
-        # 确保日志系统已配置（幂等，多次调用安全）
+        # Ensure the logging system is configured (idempotent, safe to call repeatedly)
         setup_logging()
 
-        # 配置
+        # Config
         self._config = config or MemoryConfig.from_env()
 
-        # coding_writer 显式传入则覆盖 config / env（默认 None → 沿用 config.coding.writer）
-        # 取值: "legacy" | "agent"
+        # An explicit coding_writer overrides config / env (default None → keep config.coding.writer)
+        # Allowed values: "legacy" | "agent"
         if coding_writer is not None:
             cw = str(coding_writer).strip().lower()
             if cw in ("legacy", "agent"):
@@ -452,7 +452,7 @@ class HyMemoryClient:
                     f"[init] invalid coding_writer={coding_writer!r}; falling back to config default"
                 )
 
-        # 解析 mode
+        # Resolve mode
         import os
         self._mode = mode or os.getenv("MEMORY_MODE", "pro")
         if self._mode not in self.VALID_MODES:
@@ -460,12 +460,12 @@ class HyMemoryClient:
                 f"Invalid mode '{self._mode}'. Must be one of: {self.VALID_MODES}"
             )
 
-        # 图数据库开关：与 mode 解耦。
-        #   ultra           → 恒开（System 2 写 L6_SCHEMA 依赖它）
-        #   pro             → 由 MEMORY_ENABLE_GRAPH 决定（默认关），用于记忆关系图
-        #   lite            → 恒关（lite 不做任何 LLM 加工，图无从建立）
-        # GraphStore 的初始化本来就在 client 启动时完成、与 evolve()/System 2 无关，
-        # 所以 pro 开图不需要把 System 2 拖进来。
+        # Graph database toggle: decoupled from mode.
+        #   ultra           → always on (System 2's L6_SCHEMA writes depend on it)
+        #   pro             → decided by MEMORY_ENABLE_GRAPH (off by default), for the memory relation graph
+        #   lite            → always off (lite does no LLM processing, so there is no graph to build)
+        # GraphStore init already happens at client startup and is unrelated to evolve()/System 2,
+        # so enabling the graph under pro does not require pulling in System 2.
         if self._mode == "ultra":
             self.enable_graph = True
         elif self._mode == "pro":
@@ -475,49 +475,49 @@ class HyMemoryClient:
             self.enable_graph = False
         self._config.enable_graph = self.enable_graph
 
-        # 进程级初始化日志强制不带业务 request_id（哨兵 "-"），避免污染 App
-        # 请求上下文里按 request_id 的过滤。
+        # Process-level init logs force an empty business request_id (sentinel "-") to avoid polluting the App's
+        # request-scoped filtering by request_id.
         with request_id_scope():
             logger.info(
                 f"Initializing HyMemoryClient: mode={self._mode} "
                 f"enable_graph={self.enable_graph}"
             )
 
-            # SharedRuntime 接入（多 client 部署用，避免 cross-loop bug）
-            # - runtime is None  → solo 模式：自己起 _LoopThread + 自己的 cache pool
-            # - runtime is given → shared 模式：复用 runtime 的 loop / cache / metrics 绑定
+            # SharedRuntime hookup (for multi-client deployment, avoids cross-loop bugs)
+            # - runtime is None  → solo mode: start its own _LoopThread + own cache pool
+            # - runtime is given → shared mode: reuse the runtime's loop / cache / metrics bindings
             self._runtime = runtime
             self._owns_runtime = runtime is None
 
-            # 创建/复用持久 event loop
+            # Create/reuse the persistent event loop
             if self._owns_runtime:
                 self._loop_thread = _LoopThread()
-                # solo 模式：search 也开一个独立 loop，隔离效果与 shared 模式一致。
+                # solo mode: search also gets its own loop, isolating the same way shared mode does.
                 self._search_loop_thread = _LoopThread()
             else:
                 self._loop_thread = runtime.loop_thread
-                # shared 模式：用 runtime 的 search 专用 loop（与 write loop 隔离）。
-                # 兼容旧 runtime（无 search_loop_thread）时回落到 write loop。
+                # shared mode: use the runtime's dedicated search loop (isolated from the write loop).
+                # Fall back to the write loop for older runtimes (no search_loop_thread).
                 self._search_loop_thread = (
                     getattr(runtime, "search_loop_thread", None) or runtime.loop_thread
                 )
 
-            # 同步初始化所有组件
+            # Initialize all components synchronously
             self._loop_thread.run(self._initialize())
 
             logger.info("HyMemoryClient ready")
 
     async def _initialize(self):
-        """初始化所有核心组件"""
-        # 进程级初始化日志不应继承外层（如 App 请求上下文）的业务 request_id，
-        # 否则按 request_id 过滤会混入一次性 init 噪音。强制设为哨兵 "-"。
+        """Initialize all core components."""
+        # Process-level init logs must not inherit the outer (e.g. App request context) business request_id,
+        # otherwise filtering by request_id picks up one-off init noise. Force it to the sentinel "-".
         with request_id_scope():
             await self._initialize_impl()
 
     async def _initialize_impl(self):
-        """初始化所有核心组件（实际实现）"""
+        """Initialize all core components (actual implementation)."""
 
-        # 0. 扩大全局默认线程池 + 各组件后续用独立池
+        # 0. Enlarge the global default thread pool + each component later uses its own pool
         import concurrent.futures
         loop = asyncio.get_event_loop()
         _max_workers = int(os.getenv("MEMORY_THREAD_POOL_SIZE", "256"))
@@ -526,13 +526,13 @@ class HyMemoryClient:
         )
         logger.info(f"[init] Default ThreadPoolExecutor max_workers={_max_workers}")
 
-        # 1. EmbedService（纯配置，首次调用时真正连接 API）
+        # 1. EmbedService (config only; it actually connects to the API on first call)
         self._embed_service = EmbedService(self._config)
         logger.debug(
             f"[init] EmbedService created: model={self._config.embedder.model}"
         )
 
-        # 2. VectorStore（根据配置选择后端）
+        # 2. VectorStore (backend selected from config)
         self._vector_store = create_vector_store(self._config)
         await self._vector_store.initialize()
         logger.info(
@@ -540,13 +540,13 @@ class HyMemoryClient:
             f"collection={self._vector_store._collection_name}"
         )
 
-        # 3. GraphStore（可选，由 enable_graph 配置控制）
+        # 3. GraphStore (optional, controlled by the enable_graph config)
         self._graph_store = None
         if self.enable_graph:
             from .data.graph_store import create_graph_store
             self._graph_store = create_graph_store(self._config)
             await self._graph_store.initialize()
-            # 检查图数据库是否真正可用（Kuzu 会静默降级为 no-op）
+            # Check whether the graph database is truly usable (Kuzu silently degrades to a no-op)
             if hasattr(self._graph_store, '_available') and not self._graph_store._available:
                 raise RuntimeError(
                     f"GraphStore ({self._config.graph_store.provider}) init failed. "
@@ -556,7 +556,7 @@ class HyMemoryClient:
                 f"[init] GraphStore ready: provider={self._config.graph_store.provider}"
             )
 
-        # 4. ComponentFactory（注入已初始化的共享组件）
+        # 4. ComponentFactory (injects the already-initialized shared components)
         self._registry = ComponentFactory(config=self._config)
         self._registry._shared_embed_service = self._embed_service
         self._registry._shared_vector_store = self._vector_store
@@ -564,9 +564,9 @@ class HyMemoryClient:
         if self._graph_store is not None:
             self._registry._shared_graph_store = self._graph_store
 
-        # 5. Cache（必须在组件预热前初始化，writer 创建时需要注入 cache）
-        # - solo 模式：自己 create + initialize
-        # - shared 模式：复用 runtime 的 cache（已 init + 已装 observability hook）
+        # 5. Cache (must be initialized before component warmup; writer creation needs the cache injected)
+        # - solo mode: create + initialize its own
+        # - shared mode: reuse the runtime's cache (already inited + observability hook installed)
         if self._owns_runtime:
             self._cache = create_cache(self._config)
             await self._cache.initialize()
@@ -577,13 +577,13 @@ class HyMemoryClient:
 
         self._registry._shared_cache = self._cache
 
-        # 5.1 Pipeline 可观测性 hook
-        # - solo 模式：自己装一次
-        # - shared 模式：runtime 已经在 shared cache 上装过了，跳过避免重复包装
+        # 5.1 Pipeline observability hook
+        # - solo mode: install it once itself
+        # - shared mode: the runtime already installed it on the shared cache, skip to avoid double-wrapping
         if self._owns_runtime:
             self._install_pipeline_observability_hooks()
 
-        # 6. 预热组件（确保首次 add/search 不需要等待初始化）
+        # 6. Warm up components (ensures the first add/search need not wait for initialization)
         await self._registry.get_writer()
         await self._registry.get_reader()
         logger.info(f"[init] Writer & Reader ready (mode={self._mode})")
@@ -597,7 +597,7 @@ class HyMemoryClient:
             except Exception as e:
                 logger.warning(f"[init] System2Writer warmup failed: {e}")
 
-        # 7. HistoryStore（可选，由 config.history.enable 控制）
+        # 7. HistoryStore (optional, controlled by config.history.enable)
         self._history_store = None
         if self._config.history.enable:
             self._history_store = HistoryStore(self._config)
@@ -605,8 +605,8 @@ class HyMemoryClient:
             logger.info("[init] HistoryStore ready")
 
         # 8. MetricsCollector
-        # - solo 模式：bind cache 到 metrics 单例 + 启 background flush
-        # - shared 模式：runtime 已经做过，跳过（关键！避免覆盖 _cache 触发 cross-loop）
+        # - solo mode: bind cache to the metrics singleton + start background flush
+        # - shared mode: the runtime already did it, skip (critical: avoids overwriting _cache and triggering cross-loop)
         if self._owns_runtime:
             from .metrics import MetricsCollector
             _metrics = MetricsCollector.get()
@@ -616,25 +616,25 @@ class HyMemoryClient:
         else:
             logger.info("[init] MetricsCollector already bound by SharedRuntime")
 
-        # 9. Coding memory 链路占位（lazy 初始化）
-        #    仅在 add(messages_with_tool) 首次命中 is_coding=True 时才真正初始化。
+        # 9. Coding memory pipeline placeholder (lazy initialization)
+        #    Actually initialized only when add(messages_with_tool) first hits is_coding=True.
         self._coding_writer = None       # CodingWriter | None
         self._coding_store = None        # CodingMemoryStore | None
         self._coding_llm_provider = None  # LLMProvider | None
         self._coding_init_lock = asyncio.Lock()
-        # ── 按变体缓存 ────────────────────────────────────────────────────
-        # 两个变体的库是**分开**的（见 CodingMemoryStore.__init__ 的 _suffix 注释），
-        # 所以不能只留一份 store —— 否则 add(scene="working") 之后
-        # search(scene="coding") 会去读 working 的库，静默读错。
-        # `_coding_store` / `_coding_writer` 保留为"最近一次用的那个"，读取侧通过
-        # _store_for_variant() 取正确的那一份。
+        # ── Cached per variant ────────────────────────────────────────────────────
+        # The two variants' stores are **separate** (see the _suffix comment in CodingMemoryStore.__init__),
+        # so we cannot keep just one store -- otherwise, after add(scene="working"),
+        # search(scene="coding") would read working's store and silently read the wrong one.
+        # `_coding_store` / `_coding_writer` stay as "the most recently used one"; the read side uses
+        # _store_for_variant() to fetch the correct one.
         self._coding_writers: Dict[str, Any] = {}   # variant → CodingWriter
         self._coding_stores: Dict[str, Any] = {}    # variant → CodingMemoryStore
-        # 版本演进链层（scene="coding" 独有）。零 LLM 纯 sqlite，见 _get_chain_store。
+        # Version-evolution chain layer (unique to scene="coding"). Zero LLM, pure sqlite; see _get_chain_store.
         self._chain_store = None         # HyCodeMem | None
-        self._chain_store_failed = False  # 初始化失败过就不再重试
-        # 链层反查真实 diff 用的本地仓路径。None = 只用对话里的 old/new 兜底抽取；
-        # 给不了本地仓也能用，只是 diff 来自对话原文而非 git。
+        self._chain_store_failed = False  # Once init fails, never retry
+        # Local repo path the chain layer uses to look up real diffs. None = fall back to extracting only old/new from the conversation;
+        # it still works without a local repo, except the diffs come from the source text rather than git.
         self._chain_repo_root = os.getenv("MEMORY_CODING_CHAIN_REPO_ROOT") or None
 
     async def _initialize_local_reranker(self) -> None:
@@ -678,10 +678,10 @@ class HyMemoryClient:
 
     def _install_pipeline_observability_hooks(self) -> None:
         """
-        包装 cache.store_pipeline_log：
-        - Log：JSONL 文件，始终写入（环节级，不依赖 Trace 开关）
-        - Trace：SQLite pipeline_logs，由 MEMORY_PIPELINE_TRACE_ENABLED 控制（Inspector）
-        - 落盘 fire-and-forget，不阻塞 search/write 热路径
+        Wraps cache.store_pipeline_log:
+        - Log: JSONL file, always written (stage-level, independent of the Trace toggle)
+        - Trace: SQLite pipeline_logs, controlled by MEMORY_PIPELINE_TRACE_ENABLED (Inspector)
+        - Persisting is fire-and-forget and does not block the search/write hot path
         """
         from .utils.pipeline_observability import install_pipeline_observability
 
@@ -694,7 +694,7 @@ class HyMemoryClient:
         mode: Optional[str] = None,
     ) -> "HyMemoryClient":
         """
-        从字典创建客户端（类似 mem0 风格）。
+        Create a client from a dict (mem0-style).
 
         Usage:
             client = HyMemoryClient.from_config({
@@ -726,24 +726,24 @@ class HyMemoryClient:
         return cls(config=config, mode=resolved_mode)
 
     # ================================================================
-    # 属性
+    # Properties
     # ================================================================
 
     @property
     def mode(self) -> str:
-        """当前处理模式 (lite/pro/ultra)"""
+        """The current processing mode (lite/pro/ultra)."""
         return self._mode
 
     # ================================================================
-    # 内部
+    # Internal
     # ================================================================
 
     @staticmethod
     def _build_isolation_key(uid: str, agent_id: str) -> str:
         """
-        构建 history 用的 isolation_key。
+        Build the isolation_key used for history.
 
-        两级隔离: "{user_id}:{agent_id}"
+        Two-level isolation: "{user_id}:{agent_id}"
         """
         parts = [uid or "default", agent_id or "default"]
         return ":".join(parts)
@@ -751,22 +751,22 @@ class HyMemoryClient:
     @staticmethod
     def _normalize_scene(scene: Optional[str]) -> Optional[str]:
         """
-        归一化用户显式指定的场景参数 —— 只解析**路由**，不区分变体。
+        Normalize the user-supplied scene argument -- resolve only the **route**, not the variant.
 
-        只接受三个值（大小写不敏感）：
-          - "chat"    → 走 chat 链路
-          - "working" → 走 coding 链路（通用生产力变体）
-          - "coding"  → 走 coding 链路（软件工程变体，见 _scene_variant）
-          - None      → 未指定，由 LLM 自动判定
+        Accepts only three values (case-insensitive):
+          - "chat"    → takes the chat pipeline
+          - "working" → takes the coding pipeline (general productivity variant)
+          - "coding"  → takes the coding pipeline (software-engineering variant, see _scene_variant)
+          - None      → unspecified, decided automatically by the LLM
 
-        "working" 和 "coding" 在这里归一成同一个返回值 "coding"：它们走的是同一种
-        生产力 pipeline，但使用按变体隔离的 store / writer / reader。抽取规范及是否挂
-        版本链层由 _scene_variant() 单独解析。这样 add()/search() 里所有
-        `scene_forced == "coding"` 的判断对两者同时生效，不必逐处加分支。
+        "working" and "coding" normalize to the same return value "coding" here: they run the same kind of
+        productivity pipeline but use variant-isolated store / writer / reader. The extraction spec and whether the
+        chain layer is attached are resolved separately by _scene_variant(). This way every
+        `scene_forced == "coding"` check in add()/search() applies to both at once, with no per-site branch.
 
         Returns:
             "coding" | "chat" | None
-        非法值抛 ValueError。
+        Raises ValueError on an invalid value.
         """
         if scene is None:
             return None
@@ -782,41 +782,41 @@ class HyMemoryClient:
     @staticmethod
     def _scene_variant(scene: Optional[str]) -> str:
         """
-        解析 coding 链路的**变体**。与 _normalize_scene 正交：那个决定走哪条链，
-        这个决定走上去之后用哪套规范。
+        Resolve the **variant** of the coding pipeline. Orthogonal to _normalize_scene: that one decides which chain to take,
+        this one decides which spec to use once on it.
 
-          - "coding"        → "coding"   软件工程场景
-          - 其他 / None     → "working"  通用生产力场景（原有行为）
+          - "coding"        → "coding"   software-engineering scenario
+          - other / None    → "working"  general-productivity scenario (the original behavior)
 
-        这个 helper 对 None 返回 working 只是兼容 fallback；真正的 scene=None 自动
-        路由会由三分类 judge 回填 working/coding，不会固定吞成 working。
+        This helper returning working for None is just a compatibility fallback; the real scene=None auto
+        routing is filled back in as working/coding by the three-way judge, not always swallowed to working.
 
-        两个变体共用表结构和处理流程，但使用独立 SQLite 文件与向量集合。行为差异为：
-          1. 抽取规范 —— coding 用 EXTRACT_PROMPT_CODING（HARD CONSTRAINT 头部 +
-             CODE WORK 节：分支名逐字、哪一版赢了、精确坐标、verified vs written）。
-          2. 版本演进链层 —— coding 额外挂 coding.chain_store：零 LLM 地存下每处
-             代码每一版的真实 patch。治的是抽取规范本身砍掉的那类信息（它明文要求
-             "EXACT COORDINATES, NOT PASTED CODE"，而被撤掉那版的代码不在工作区、
-             不在 HEAD，只在某次中间提交里，读不回来）。
+        The two variants share the table schema and processing flow but use separate SQLite files and vector collections. Behavioral differences:
+          1. Extraction spec -- coding uses EXTRACT_PROMPT_CODING (HARD CONSTRAINT header +
+             CODE WORK section: branch names verbatim, which version won, exact coordinates, verified vs written).
+          2. Version-evolution chain layer -- coding additionally attaches coding.chain_store, storing every version of each
+             code's real patch with zero LLM. This addresses the very class of information the extraction spec itself cuts (it explicitly requires
+             "EXACT COORDINATES, NOT PASTED CODE", yet the reverted version's code is not in the working tree,
+             not in HEAD, only in some intermediate commit, and cannot be read back).
         """
         return "coding" if str(scene or "").strip().lower() == "coding" else "working"
 
     @staticmethod
     def _parse_input(data: AddInput):
         """
-        解析 add() 的输入，统一返回 (content, chat_messages, content_type)。
+        Parse add()'s input, uniformly returning (content, chat_messages, content_type).
 
-        str  → ("文本", [], "text")
+        str  → ("text", [], "text")
         list → ("", [ChatMessage, ...], "messages")
 
-        list 模式下兼容两种 tool 调用风格，规范化到统一的 ChatMessage：
-        - OpenAI: assistant.tool_calls (function.arguments 是 JSON 字符串) +
-                   独立 role="tool" 消息（含 tool_call_id / name）
-        - Anthropic: assistant.content 为 list[content_block]，含 type=tool_use；
-                     tool_result 嵌在后续 role="user" 消息的 content list 里，
-                     需要拆为独立的 role="tool" 规范化消息
+        In list mode it supports two tool-call styles, normalizing both into a unified ChatMessage:
+        - OpenAI: assistant.tool_calls (function.arguments is a JSON string) +
+                   a standalone role="tool" message (with tool_call_id / name)
+        - Anthropic: assistant.content is a list[content_block] containing type=tool_use;
+                     tool_result is nested in the content list of a later role="user" message,
+                     and must be split into standalone normalized role="tool" messages
 
-        一条原始消息可能产出 0~多 条 ChatMessage（Anthropic tool_result 拆分）。
+        A single raw message may yield 0 or more ChatMessages (Anthropic tool_result splitting).
         """
         if isinstance(data, str):
             return data, [], "text"
@@ -828,29 +828,29 @@ class HyMemoryClient:
             return "", chat_messages, "messages"
 
         raise TypeError(
-            f"add() 第一个参数应为 str 或 list[dict]，收到 {type(data).__name__}"
+            f"add() first argument should be str or list[dict], got {type(data).__name__}"
         )
 
     @staticmethod
     def _normalize_message(m: Dict[str, Any]) -> List[ChatMessage]:
         """
-        把单条原始消息规范化到 ChatMessage 列表。
+        Normalize a single raw message into a ChatMessage list.
 
-        返回值通常是单条；当原始消息是 Anthropic 风格 user 消息且其 content
-        list 含 tool_result block 时，会拆为 [user_text_msg?, tool_msg, ...]。
+        The return is usually a single item; when the raw message is an Anthropic-style user message whose content
+        list contains a tool_result block, it splits into [user_text_msg?, tool_msg, ...].
         """
         role = m.get("role", "user")
         raw_content = m.get("content")
         raw_tool_calls = m.get("tool_calls", []) or []
 
-        # 部分客户端（如 codebuddy）会把 tool_calls 编码成 JSON 字符串而非 list，
-        # 这里统一规范化为 list，避免下面的 for 循环把字符串当成可迭代对象。
+        # Some clients (e.g. codebuddy) encode tool_calls as a JSON string rather than a list;
+        # normalize to a list here so the for loop below does not iterate over the string.
         if isinstance(raw_tool_calls, str):
             try:
                 parsed_tool_calls = json.loads(raw_tool_calls) if raw_tool_calls else []
             except Exception:
                 logger.warning(
-                    "tool_calls 是非法 JSON 字符串，已忽略: %r", raw_tool_calls[:200]
+                    "tool_calls is an invalid JSON string and was ignored: %r", raw_tool_calls[:200]
                 )
                 parsed_tool_calls = []
             raw_tool_calls = parsed_tool_calls if isinstance(parsed_tool_calls, list) else []
@@ -865,7 +865,7 @@ class HyMemoryClient:
             fn = tc.get("function", {}) or {}
             args = fn.get("arguments")
             if isinstance(args, str):
-                # OpenAI 编码为 JSON 字符串
+                # OpenAI encodes it as a JSON string
                 try:
                     args = json.loads(args) if args else {}
                 except Exception:
@@ -880,8 +880,8 @@ class HyMemoryClient:
                 arguments=args,
             ))
 
-        # ── 2. OpenAI 独立 tool 消息 ──
-        # 注意：tool 消息的 `name` 是**工具名**，不是说话人名，仍归 tool_name。
+        # ── 2. OpenAI standalone tool message ──
+        # Note: a tool message's `name` is the **tool name**, not the speaker name, so it still maps to tool_name.
         if role == "tool":
             return [ChatMessage(
                 role="tool",
@@ -890,8 +890,8 @@ class HyMemoryClient:
                 tool_name=m.get("name"),
             )]
 
-        # 非 tool 角色的 `name` 是**说话人显示名**（OpenAI messages 规范）。
-        # 多真人对话靠它区分对方是谁：role=assistant + name → 对方真人而非 AI。
+        # For non-tool roles, `name` is the **speaker display name** (OpenAI messages spec).
+        # Multi-person dialogues use it to tell who is who: role=assistant + name → a real person, not the AI.
         speaker_name = m.get("name") or None
 
         # ── 3. Anthropic content blocks ──
@@ -900,14 +900,14 @@ class HyMemoryClient:
             tool_result_msgs: List[ChatMessage] = []
             for block in raw_content:
                 if not isinstance(block, dict):
-                    # 非标准形态：当字符串处理
+                    # Non-standard shape: treat as a string
                     text_parts.append(str(block))
                     continue
                 btype = block.get("type")
                 if btype == "text":
                     text_parts.append(block.get("text", "") or "")
                 elif btype == "tool_use":
-                    # Anthropic：input 已是 dict
+                    # Anthropic: input is already a dict
                     tool_input = block.get("input", {}) or {}
                     if not isinstance(tool_input, dict):
                         tool_input = {"_raw": tool_input}
@@ -917,11 +917,11 @@ class HyMemoryClient:
                         arguments=tool_input,
                     ))
                 elif btype == "tool_result":
-                    # 拆为独立 role=tool 消息
+                    # Split into a standalone role=tool message
                     tc_id = block.get("tool_use_id")
                     inner = block.get("content", "")
                     if isinstance(inner, list):
-                        # 嵌套 content list（通常是 [{type:text,text:...}]）
+                        # Nested content list (usually [{type:text,text:...}])
                         inner = "\n".join(
                             b.get("text", "") if isinstance(b, dict) and b.get("type") == "text"
                             else str(b)
@@ -933,13 +933,13 @@ class HyMemoryClient:
                         role="tool",
                         content=inner,
                         tool_call_id=tc_id,
-                        tool_name=None,  # Anthropic tool_result 没带 name
+                        tool_name=None,  # Anthropic tool_result carries no name
                     ))
-                # 其他未知 block 类型静默忽略
+                # Silently ignore other unknown block types
             text = "\n".join(p for p in text_parts if p).strip()
 
             outputs: List[ChatMessage] = []
-            # 即使 text 为空，只要 tool_calls 非空也保留 assistant 消息
+            # Keep the assistant message even when text is empty, as long as tool_calls is non-empty
             if text or tool_calls:
                 outputs.append(ChatMessage(
                     role=role,
@@ -950,9 +950,9 @@ class HyMemoryClient:
             outputs.extend(tool_result_msgs)
             return outputs
 
-        # ── 4. 普通 string content ──
-        # role=="tool" 已在分支 2 提前返回，这里不会是 tool 消息，故不再填 tool_name
-        # （旧代码把 `name` 塞进 tool_name，对非 tool 角色是无意义的）。
+        # ── 4. Plain string content ──
+        # role=="tool" already returned early in branch 2, so this is never a tool message, hence tool_name is not filled
+        # (the old code stuffed `name` into tool_name, which was meaningless for non-tool roles).
         content_str = "" if raw_content is None else str(raw_content)
         return [ChatMessage(
             role=role,
@@ -968,24 +968,24 @@ class HyMemoryClient:
 
     async def _get_coding_writer(self, variant: str = "working"):
         """
-        Lazy 初始化 coding 写入链路。**按变体各一份**。
+        Lazily initialize the coding write pipeline. **One per variant**.
 
-        命中 is_coding=True 时才真正构造 store / extractor / reconciler。
-        chat 路径的用户永远不会触发这块开销。
+        Only actually builds store / extractor / reconciler when it hits is_coding=True.
+        Users on the chat path never incur this overhead.
 
-        legacy CodingWriter = extractor + reconciler。
+        legacy CodingWriter = extractor + reconciler.
 
-        variant("working" | "coding") 决定两件事：
-          1. 用哪份抽取规范（见 _scene_variant）
-          2. 读写哪个库 —— 两个变体的 sqlite 和向量集合都是分开的
+        variant("working" | "coding") decides two things:
+          1. Which extraction spec to use (see _scene_variant)
+          2. Which store to read/write -- the two variants' sqlite and vector collections are separate
 
-        两个变体各缓存一份 writer/store，可以在同一个 client 上混用：
-        add(scene="working") 和 add(scene="coding") 各写各的库，
-        search 时按 scene 取对应那一份，不会串。
+        Each variant caches its own writer/store, so they can be mixed on the same client:
+        add(scene="working") and add(scene="coding") each write their own store,
+        and search fetches the matching one by scene, so they never cross.
 
-        `self._coding_store` / `self._coding_writer` 同步指向**最近一次**用的那份，
-        只为兼容既有代码路径（如 list_memories）。要按变体取请走
-        _store_for_variant()。
+        `self._coding_store` / `self._coding_writer` also point to the **most recently** used one,
+        only for compatibility with existing code paths (e.g. list_memories). To fetch by variant, use
+        _store_for_variant().
         """
         cached = self._coding_writers.get(variant)
         if cached is not None:
@@ -999,17 +999,17 @@ class HyMemoryClient:
                 self._coding_store = self._coding_stores.get(variant)
                 return cached
 
-            # 局部 import 避免冷启动开销
+            # Local import to avoid cold-start overhead
             from .agent.llm_provider import LLMProvider
             from .coding.store import CodingMemoryStore
 
-            # 共享 LLMProvider（与 chat 链路相同 LLMConfig.model）
+            # Shared LLMProvider (same LLMConfig.model as the chat pipeline)
             if self._coding_llm_provider is None:
                 self._coding_llm_provider = LLMProvider(self._config)
 
-            # Store —— 按变体分库（db_path 和两个向量集合都带后缀），见
-            # CodingMemoryStore.__init__ 里 _suffix 的注释。variant="working" 时
-            # 后缀为空，路径与集合名和改动前逐字相同。
+            # Store -- separate DB per variant (db_path and both vector collections carry a suffix); see
+            # the _suffix comment in CodingMemoryStore.__init__. When variant="working"
+            # the suffix is empty and the path and collection names are byte-identical to before the change.
             store = CodingMemoryStore(
                 self._config,
                 embed_service=self._embed_service,
@@ -1018,7 +1018,7 @@ class HyMemoryClient:
             )
             await store.initialize()
 
-            # extractor + reconciler 串联
+            # extractor + reconciler chained
             from .coding.extractor import CodingMemoryExtractor
             from .coding.reconciler import CodingMemoryReconciler
             from .coding.writer import CodingWriter
@@ -1052,7 +1052,7 @@ class HyMemoryClient:
             )
             self._coding_stores[variant] = store
             self._coding_writers[variant] = writer
-            # 兼容既有路径：指向最近一次用的那份
+            # Compatibility with existing paths: point to the most recently used one
             self._coding_store = store
             self._coding_writer = writer
             logger.info(
@@ -1061,22 +1061,22 @@ class HyMemoryClient:
             return writer
 
     def _store_for_variant(self, variant: str = "working"):
-        """取某个变体的 store。没初始化过返回 None。
+        """Get a variant's store. Returns None if never initialized.
 
-        读取侧必须走这个而不是直接读 self._coding_store —— 后者是"最近一次用的
-        那份"，在 add(working) 之后 search(coding) 会拿到 working 的库。
+        The read side must go through this rather than reading self._coding_store directly -- the latter is "the most recently
+        used one", so after add(working), search(coding) would get working's store.
         """
         return self._coding_stores.get(variant) or None
 
     @staticmethod
     def _chain_owner(user_id=None, workspace_id=None) -> str:
-        """链层的隔离键。
+        """The chain layer's isolation key.
 
-        `<user_id>|<workspace_id>` —— 两个都空时返回 ""。空串只匹配空串，
-        不是公共池，所以旧数据不会被新写入的行串进来。
+        `<user_id>|<workspace_id>` -- returns "" when both are empty. An empty string matches only an empty string,
+        not a shared pool, so old data is not mixed in by newly written rows.
 
-        为什么 user_id 必须在键里：thread 的键原来只有 (branch, file, pkey)，
-        不带 owner 时不同用户的同名 branch/file/pkey 会并成一条链，造成数据泄漏。
+        Why user_id must be in the key: the thread key used to be only (branch, file, pkey),
+        and without an owner, the same branch/file/pkey across different users merged into one chain, leaking data.
         """
         u = str(user_id or "").strip()
         w = str(workspace_id or "").strip()
@@ -1084,19 +1084,19 @@ class HyMemoryClient:
 
     def _get_chain_store(self, owner: str = ""):
         """
-        Lazy 初始化版本演进链层（scene="coding" 独有）。
+        Lazily initialize the version-evolution chain layer (unique to scene="coding").
 
-        零 LLM、零 embedding、纯 sqlite —— 构造代价可以忽略，所以不用异步锁。
-        失败返回 None：这层是**增量**，拿不到就退回纯向量双层（= working 的行为），
-        不该让一次 add/search 整体失败。
+        Zero LLM, zero embedding, pure sqlite -- construction cost is negligible, so no async lock is needed.
+        Returns None on failure: this layer is an **increment**; if unavailable it falls back to the pure-vector two-layer (the working behavior)
+        rather than failing a whole add/search.
 
-        owner 变了要换实例（同一个 client 服务多个 user 时）—— 实例只是个 sqlite
-        连接 + owner 字符串，重建很便宜，而复用会让 owner 过滤失效。
-        库文件是同一个，所以不同 owner 共享文件、靠 WHERE 隔离。
+        A changed owner needs a new instance (when one client serves multiple users) -- the instance is just a sqlite
+        connection + owner string, cheap to rebuild, whereas reusing would break owner filtering.
+        The database file is the same, so different owners share the file and isolate via WHERE.
 
-        库位置：跟 coding_memory.db 同目录下的 hy_code_chain/hy_code.db。不并进同一个
-        文件是因为 CodingMemoryStore 自己管 schema 迁移，塞三张表进去会让两边的迁移
-        逻辑互相踩；两个文件同目录，备份/清理时不会漏。
+        Store location: hy_code_chain/hy_code.db in the same directory as coding_memory.db. Not merged into one
+        file because CodingMemoryStore manages its own schema migrations; cramming three tables in would make the two migrations
+        step on each other; two files in the same directory means backups/cleanup miss neither.
         """
         if self._chain_store is not None and getattr(
                 self._chain_store, "owner", "") == owner:
@@ -1116,8 +1116,8 @@ class HyMemoryClient:
                         _dir, owner)
             return self._chain_store
         except Exception as e:
-            # 只试一次。失败通常是环境性的（目录不可写 / sqlite 不可用），重试每次
-            # add 都付一遍代价却不会变好。
+            # Try only once. Failures are usually environmental (unwritable directory / sqlite unavailable), and retrying pays the cost on every
+            # add without ever improving.
             self._chain_store_failed = True
             logger.warning(
                 "[coding] chain store init failed, falling back to vector-only: %s", e
@@ -1125,19 +1125,19 @@ class HyMemoryClient:
             return None
 
     # ----------------------------------------------------------------
-    # 版本演进链层的两个胶水方法（写 / 读）
+    # Two glue methods for the version-evolution chain layer (write / read)
     # ----------------------------------------------------------------
 
     @staticmethod
     def _chain_text(chat_messages) -> str:
-        """把一次 add 的 messages 渲染成链层能读的纯文本。
+        """Render one add's messages into plain text the chain layer can read.
 
-        形态刻意对齐 chain_store 里 _USER_LC / _DIFF_END 认的小写前缀
-        （`user:` / `assistant:` / `[tool:name]`）。大写 `USER:` 也能被 _USER 识别，
-        但工具消息无法进入同一套边界判定。
+        The shape deliberately matches the lowercase prefixes _USER_LC / _DIFF_END recognize in chain_store
+        (`user:` / `assistant:` / `[tool:name]`). Uppercase `USER:` is also recognized by _USER,
+        but tool messages cannot enter the same boundary detection.
 
-        为什么不复用 CodingMemoryExtractor._format_conversation：那个给每行加了
-        `[i] ` 下标前缀（给 LLM 读的），链层的正则锚在行首，前缀一加全都匹配不上。
+        Why not reuse CodingMemoryExtractor._format_conversation: it prefixes each line with an
+        `[i] ` index prefix (for the LLM to read), and the chain layer's regex anchors at line start, so any prefix breaks every match.
         """
         rows = []
         for m in (chat_messages or []):
@@ -1154,17 +1154,17 @@ class HyMemoryClient:
 
     def _observe_chain(self, chat_messages, *, user_id=None, workspace_id=None,
                        branch=None) -> int:
-        """写入侧：把这一段对话里的代码改动存进版本演进链。
+        """Write side: store the code changes in this conversation segment into the version-evolution chain.
 
-        返回存下的 hunk 数（0 = 这段没有可识别的代码改动，正常情况，不是错误）。
+        Returns the number of hunks stored (0 = no recognizable code change in this segment, a normal case, not an error).
 
-        全程零 LLM、零 embedding、纯 sqlite + 正则，适合在写链路同步执行。
+        Zero LLM, zero embedding, pure sqlite + regex throughout, suitable for synchronous execution on the write pipeline.
 
-        best-effort：任何异常只记 warning。这层是增量，它失败时向量双层已经写完了，
-        把整个 add 拖失败是净亏。
+        Best-effort: any exception only logs a warning. This layer is an increment; when it fails the vector two-layer is already written,
+        so dragging the whole add into failure is a net loss.
         """
-        # 走类而不是 self：_chain_owner 是 staticmethod，而这两个方法会被测试绑到裸
-        # SimpleNamespace 上调（同 _scene_variant 那处），self 上没有这个属性。
+        # Go through the class rather than self: _chain_owner is a staticmethod, and these two methods get bound by tests onto a bare
+        # SimpleNamespace (as with _scene_variant), so self has no such attribute.
         store = self._get_chain_store(
             HyMemoryClient._chain_owner(user_id, workspace_id))
         if store is None:
@@ -1173,9 +1173,9 @@ class HyMemoryClient:
             text = self._chain_text(chat_messages)
             if not text.strip():
                 return 0
-            # branch 给了就不猜（meta 里的 branch 优先于从文本里正则认）。
-            # workspace_id 不单独透传给 observe：它已经进了 owner（见 _chain_owner），
-            # thread 的键里不再需要第二个仓维度。
+            # If branch is given, do not guess (the branch in meta takes precedence over regex from the text).
+            # workspace_id is not passed to observe separately: it is already in owner (see _chain_owner),
+            # so the thread key no longer needs a second repo dimension.
             return int(store.observe(text, meta={"branch": branch or ""}) or 0)
         except Exception as e:
             logger.warning("[coding] chain observe failed: %s", e)
@@ -1183,21 +1183,21 @@ class HyMemoryClient:
 
     def _decorate_with_chain(self, facts, instruction: str = "", scope=None,
                              user_id=None, workspace_id=None):
-        """读取侧：给向量层召回的 facts 挂上版本演进链块。
+        """Read side: attach version-evolution chain blocks to the facts recalled by the vector layer.
 
-        返回 (block, used_idx)：
-          block    —— 要放在 fact 列表**之前**的多行结构块（挂不上任何链时为 ""）
-          used_idx —— 已挂进 block 的 fact 下标；调用方应把这些从 fact 列表里去掉，
-                      避免同一条 fact 出现两次。
+        Returns (block, used_idx):
+          block    -- the multiline structured block to place **before** the fact list ("" when no chain attaches)
+          used_idx -- indices of facts already placed into block; callers should remove them from the fact list to
+                      avoid the same fact appearing twice.
 
-        facts 顺序不重排 —— top-k 是向量层的事，这层只负责"每条 fact 后面跟什么"。
+        facts order is not re-sorted -- top-k is the vector layer's job; this layer only decides "what follows each fact".
 
-        best-effort：失败返回 ("", [])，退化成纯向量双层（= working 的行为）。
+        Best-effort: on failure returns ("", []), degrading to the pure-vector two-layer (the working behavior).
         """
         if not facts:
             return "", []
-        # 走类而不是 self：_chain_owner 是 staticmethod，而这两个方法会被测试绑到裸
-        # SimpleNamespace 上调（同 _scene_variant 那处），self 上没有这个属性。
+        # Go through the class rather than self: _chain_owner is a staticmethod, and these two methods get bound by tests onto a bare
+        # SimpleNamespace (as with _scene_variant), so self has no such attribute.
         store = self._get_chain_store(
             HyMemoryClient._chain_owner(user_id, workspace_id))
         if store is None:
@@ -1225,48 +1225,48 @@ class HyMemoryClient:
         exclude_sources: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        Coding 召回路径（事实主导的双层召回）：
-          1. 拿 store（lazy init），ensure 已 initialize
-          2. embed(target_query) —— 一次，两层共用同一个向量
-          3. 事实主索引：召回 top-K 的 active facts
-          4. 顺链带出经验：沿命中事实的 derived_experience_ids 拉经验
-          5. 经验直查兜底：同一向量直接搜经验层，合并进来
-          6. 去重（多事实指向同一经验只留一条）+ 存在性过滤（死链自然滤掉）
-          7. 标注 via: fact_link / direct 后返回
+        Coding retrieval path (fact-led two-layer retrieval):
+          1. Get the store (lazy init), ensure it is initialized
+          2. embed(target_query) -- once; both layers share the same vector
+          3. Fact primary index: recall top-K active facts
+          4. Follow links to experiences: pull experiences along the hit facts' derived_experience_ids
+          5. Experience direct-query fallback: search the experience layer with the same vector and merge in
+          6. Deduplicate (many facts pointing to one experience keep one) + existence filter (dead links drop out naturally)
+          7. Label via: fact_link / direct, then return
 
-        limit 是**每层的返回上限**：facts ≤ limit，experiences ≤ limit，所以一次调用
-        最多给出 2*limit 条。两层分开计数而不是共用一个总预算——它们承担的角色不同，
-        事实答"是什么"、经验答"怎么做"，谁挤掉谁都不合理。
+        limit is the **per-layer return cap**: facts ≤ limit, experiences ≤ limit, so one call
+        yields at most 2*limit items. The two layers count separately rather than share one total budget -- they play different roles:
+        facts answer "what", experiences answer "how", and crowding either out is unreasonable.
 
-        取数时都会多捞一些再落回 limit：事实层按 max(limit, 5) 取、经验层顺链和直查
-        各取至多 limit 条，中间要过阈值、去重、剔死链，不多捞就填不满。
+        Both fetch some extra before trimming back to limit: the fact layer takes max(limit, 5), and the experience layer's link-follow and direct-query
+        each take at most limit; in between they pass thresholds, dedup, and drop dead links, so without oversampling they cannot fill up.
 
-        两道闸门，每层一道，谁也不豁免：
-          working_fact_min_score        事实层，默认 0.30
-          working_experience_min_score  经验层，默认事实阈值 + 0.10
+        Two gates, one per layer, neither exempt:
+          working_fact_min_score        fact layer, default 0.30
+          working_experience_min_score  experience layer, default fact threshold + 0.10
 
-        经验那道对顺链和直查一视同仁。两路卡的本来就是同一批分数（都来自下面那次
-        直查，顺链只是借用），同一个尺度上再分两档没有依据。事实背书体现在**排序**
-        上——顺链的排在直查前面，limit 截断时先保住——而不是准入上打折。
+        The experience gate treats link-follow and direct-query alike. Both paths gate on the same batch of scores anyway (all from the direct query below;
+        link-follow just borrows them), so splitting into two tiers on one scale has no basis. Fact endorsement shows up in the **ordering**:
+        link-follow ranks ahead of direct-query and is kept first when limit truncates -- not as a discount on admission.
 
-        workspace_id / branch 是**作用域筛选条件**，两层都生效：不传就不筛（全量
-        召回），传了则只在作用域内召回。规则由 coding.store._scope_where 定义，与
-        list_memories 共用一套：workspace_id 精确匹配；branch 只在 workspace_id
-        非空时叠加，且容 NULL（没记录分支的行不算"记录了别的分支"）。过滤下推到
-        SQLite（这两列的权威来源），向量层按作用域选择率放大取数，所以过滤不吃召回。
+        workspace_id / branch are **scope filters**, applied to both layers: unset means no filter (full recall),
+        set means recall only within the scope. The rules are defined by coding.store._scope_where and shared with
+        list_memories: workspace_id matches exactly; branch applies only when workspace_id
+        is non-empty, and tolerates NULL (a row with no branch recorded is not treated as "recording a different branch"). The filter is pushed down to
+        SQLite (the authoritative source for these two columns), and the vector layer widens fetching by scope selectivity, so filtering does not cost recall.
 
-        作用域把事实层筛空时，顺链那一路跟着断源，本次检索退化成只有经验直查的单
-        层。这是可接受的——事实是"这个 repo 里发生过什么"，跨 workspace 拿它去带
-        经验没有意义——但结果里看不出来，所以退化时打 warning。
+        When the scope empties the fact layer, the link-follow path loses its source too, and this retrieval degrades into a single layer of
+        experience direct-query only. That is acceptable -- facts are "what happened in this repo", and using them across workspaces to drive
+        experiences is meaningless -- but it is invisible in the result, so a warning is logged when degrading.
 
-        失败时 fail-safe：返回 success=True + 两层都空（不抛错）。
+        On failure it is fail-safe: returns success=True with both layers empty (no exception raised).
         """
         fact_min_score = (_WORKING_FACT_DEFAULT_MIN_SCORE
                           if working_fact_min_score is None else working_fact_min_score)
         exp_min_score = (fact_min_score + _WORKING_EXPERIENCE_MIN_SCORE_DELTA
                          if working_experience_min_score is None
                          else working_experience_min_score)
-        # coding 路径 trace（与 chat 路径共用 pipeline_logs；best-effort）
+        # coding-path trace (shares pipeline_logs with the chat path; best-effort)
         _tracer = None
         if getattr(self, "_cache", None) is not None:
             try:
@@ -1289,25 +1289,25 @@ class HyMemoryClient:
                 "experiences": [],
                 "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
             }
-            # 键集合与成功路径保持一致 —— 否则调用方对 fail-safe 的空结果要写两套
-            # 取值逻辑，而 fail-safe 本来就是"不抛错，返回空"。
+            # Keep the key set identical to the success path -- otherwise callers need two code paths for the fail-safe empty result,
+            # yet fail-safe is by definition "no exception, return empty".
             if variant == "coding":
                 _r["chain_block"] = ""
                 _r["chain_used"] = []
             return _r
 
         try:
-            # ★ 必须传 variant：两个变体的库是分开的，不传就会去读 working 的库
-            #   （静默读错，症状是"明明灌进去了却召不回来"）。
-            #   现在按变体各缓存一份 writer/store，所以传了也不会把另一个变体的
-            #   extractor 定死 —— 早先那版单实例缓存才有那个问题。
+            # ★ Must pass variant: the two variants' stores are separate; omitting it reads working's store
+            #   (silently reads the wrong one, symptom: "it was clearly ingested but cannot be recalled").
+            #   Now each variant caches its own writer/store, so passing it does not pin the other variant's
+            #   extractor -- only the earlier single-instance cache had that problem.
             #
-            # 用 TypeError 兜一次零参调用：测试会把这个方法换成零参 stub
-            # （tests/coding/ 里三处 _stub_get_coding_writer），而它们只是要
-            # "store 已就绪"这个副作用，不关心变体。给 stub 硬塞 kwarg 会让
-            # 一批与本改动无关的测试红掉，那是接口洁癖而非正确性。
+            # Catch a zero-arg call with TypeError once: tests replace this method with a zero-arg stub
+            # (three _stub_get_coding_writer in tests/coding/), and they only want
+            # the "store is ready" side effect, not the variant. Forcing a kwarg on the stub would turn
+            # a batch of tests unrelated to this change red, which is API fastidiousness, not correctness.
             try:
-                await self._get_coding_writer(variant=variant)  # 副作用：初始化 store
+                await self._get_coding_writer(variant=variant)  # side effect: initialize the store
             except TypeError as _te:
                 if "variant" not in str(_te):
                     raise
@@ -1316,17 +1316,17 @@ class HyMemoryClient:
             logger.warning(f"[search-coding] init failed: {e}")
             return _empty()
 
-        # 取**这个变体**的 store。不直接用 self._coding_store —— 那是"最近一次用的
-        # 那份"，add(working) 之后 search(coding) 会拿到错的库。
+        # Get **this variant's** store. Do not use self._coding_store directly -- that is "the most recently used
+        # one", so after add(working), search(coding) would get the wrong store.
         #
-        # 两级兜底都是为测试留的，不是防御性编程：tests/coding/ 的 fixture 把这个方法
-        # 绑到裸 SimpleNamespace 上调（self 上既没有 _coding_stores 也没有
-        # _store_for_variant），而它们直接往 ns 上挂好了 _coding_store。
+        # Both fallback levels exist for tests, not defensive programming: the tests/coding/ fixture binds this method
+        # onto a bare SimpleNamespace (self has neither _coding_stores nor
+        # _store_for_variant), and they attach _coding_store directly onto the ns.
         _store = (getattr(self, "_coding_stores", None) or {}).get(variant) \
             or getattr(self, "_coding_store", None)
 
-        # 多 user_ids 时取首位（coding memory 一般跟单 user 绑定；
-        # 跨 user 的 coding memory 检索属未来扩展）
+        # With multiple user_ids take the first (coding memory usually binds a single user;
+        # cross-user coding memory retrieval is a future extension)
         primary_user = user_ids[0]
 
         try:
@@ -1342,14 +1342,14 @@ class HyMemoryClient:
             logger.warning(f"[search-coding] embed failed: {e}")
             return _empty()
 
-        # ---- 1. 事实主索引 ----
+        # ---- 1. Fact primary index ----
         try:
             fact_hits = await _store.search_facts(
                 embedding, user_id=primary_user,
                 workspace_id=workspace_id, branch=branch,
                 top=max(limit, 5),
-                # 词面通道 + 把下面那道闸门下移到重排之前：先砍掉过不了闸的候选再重排，
-                # 返回条数就恒等于纯稠密，词面只改选谁（理由见 store.search_facts）。
+                # lexical channel + move the gate below ahead of rerank: drop candidates that fail the gate first, then rerank,
+                # so the returned count always equals pure-dense; the lexical channel only changes who is chosen (see store.search_facts).
                 query_text=target_query,
                 min_score=fact_min_score,
                 include_sources=include_sources,
@@ -1358,15 +1358,15 @@ class HyMemoryClient:
         except Exception as e:
             logger.warning(f"[search-coding] fact search failed: {e}")
             fact_hits = []
-        # 事实层是主索引，噪声会顺 derived_experience_ids 放大成一串无关经验，
-        # 所以这道闸门比经验直查那路更要紧
+        # The fact layer is the primary index; noise would be amplified along derived_experience_ids into a string of unrelated experiences,
+        # so this gate matters even more than the experience direct-query path
         _fact_top_score = max((s for _, s in fact_hits), default=0.0)
         _fact_raw = len(fact_hits)
         fact_hits = [(f, s) for f, s in fact_hits if s >= fact_min_score]
         if _fact_raw and not fact_hits:
-            # 召回到了事实但全被阈值挡下：顺链那一路跟着断源，本次检索实际退化成
-            # 只有经验直查的单层。这种退化在结果里看不出来（经验照样有），只能在
-            # 这里报，否则阈值调过头了没人知道。
+            # Facts were recalled but all blocked by the threshold: the link-follow path loses its source too, and this retrieval actually degrades into
+            # a single layer of experience direct-query only. This degradation is invisible in the result (experiences are still there), so it can only
+            # be reported here, otherwise nobody knows when the threshold is tuned too tight.
             logger.warning(
                 f"[search-coding] fact layer emptied by threshold: "
                 f"{_fact_raw} hit(s), top={_fact_top_score:.3f} < "
@@ -1374,17 +1374,17 @@ class HyMemoryClient:
                 f"fact_link path disabled for this query"
             )
         elif workspace_id and not fact_hits:
-            # 作用域过滤把事实层清空（或这个 workspace 本来就没事实）。后果与上面
-            # 那种一样：顺链断源，本次检索退化成只有经验直查的单层。结果里看不出
-            # 来，只能在这里报。
+            # The scope filter emptied the fact layer (or this workspace simply has no facts). The consequence is the same as above:
+            # the link-follow path loses its source and this retrieval degrades into a single experience-direct-query layer. It is invisible in the
+            # result, so it can only be reported here.
             logger.warning(
                 f"[search-coding] fact layer empty under scope "
                 f"workspace_id={workspace_id!r} branch={branch!r}; "
                 f"fact_link path disabled for this query"
             )
-        # 事实层多取了几条（top 有 5 的下限，且阈值会砍掉一部分），这里落回 limit。
-        # 顺链要基于最终返回的事实来走，否则会出现"经验标了 via=fact_link，但担保它的
-        # 那条事实没在结果里"。
+        # The fact layer over-fetched (top has a floor of 5, and the threshold cuts some), so trim back to limit here.
+        # Link-follow must run on the finally returned facts, otherwise you get "an experience labeled via=fact_link whose endorsing
+        # fact is not in the results".
         fact_hits = fact_hits[:limit]
 
         out_facts: List[Dict[str, Any]] = []
@@ -1395,31 +1395,31 @@ class HyMemoryClient:
                 "fact_id": fact.fact_id,
                 "statement": fact.statement,
                 "files": list(fact.files),
-                # 会话主体。覆盖闸门用它，检索侧带出来是为了让消费方能分辨
-                # "这几条讲的是不同的人/文件"，而不是把它们读成同一件事的复述。
+                # Conversation subject. The coverage gate uses it; the retrieval side surfaces it so consumers can tell apart
+                # "these entries are about different people/files" instead of reading them as restatements of one thing.
                 "subject": fact.subject,
-                # 被 statement 摘要掉的原文（计划表、配置块、命令输出）。摘要负责
-                # 被召回，这一段负责召回之后真的有那个值——点查类问题要的是格子里的
-                # 取值，不是"这次做了什么"的概述。不参与检索。
+                # The source text summarized away by statement (plan tables, config blocks, command output). The summary is responsible for
+                # being recalled; this section is responsible for the value actually being there after recall -- point-lookup questions want the value in the cell,
+                # not an overview of "what was done this time". Not involved in retrieval.
                 "details": fact.details,
-                # LLM 写的"这个结论一路怎么改成现在这样"，直接进提示词；
-                # 没被覆盖过就是空串。不参与检索——召回认的是 statement 的当前值。
+                # The LLM-written "how this conclusion was changed step by step into what it is now", fed straight into the prompt;
+                # an empty string if never overwritten. Not involved in retrieval -- recall keys on the statement's current value.
                 "fact_chain_summary": fact.fact_chain_summary,
                 "created_at": fact.created_at.isoformat() if fact.created_at else None,
                 "score": round(float(score), 4),
                 "source": fact.source,
             })
-            # ---- 2. 顺链带出经验（按事实分数序，多事实指向同一经验只留首次） ----
+            # ---- 2. Follow links to experiences (by fact-score order; many facts to one experience keep the first) ----
             for eid in fact.derived_experience_ids:
                 if eid not in _seen_linked:
                     _seen_linked.add(eid)
                     linked_ids.append(eid)
-        # 这里不截断。id 列表里可能混着死链（经验被 DELETE，事实上的引用还留着），
-        # 死了几条只有 get_many 查过才知道，任何固定余量都可能被吃穿。统一等取完
-        # 详情、死链自然掉队之后再按 limit 截一次。
-        # 长度天然有界：facts 已经 ≤ limit，每条的 derived_experience_ids 是个位数。
+        # No truncation here. The id list may contain dead links (the experience was DELETEd but the reference on the fact remains);
+        # how many are dead is only known after get_many, so any fixed margin can be exhausted. Wait until details are fetched and
+        # dead links have naturally dropped out, then truncate once by limit.
+        # The length is naturally bounded: facts are already ≤ limit, and each derived_experience_ids is single-digit.
 
-        # ---- 3. 经验直查兜底 ----
+        # ---- 3. Experience direct-query fallback ----
         try:
             _t_vdb = time.perf_counter()
             hits = await _store.search_by_query_embedding(
@@ -1427,7 +1427,7 @@ class HyMemoryClient:
                 user_id=primary_user,
                 workspace_id=workspace_id,
                 branch=branch,
-                top=max(limit * 4, 8),  # 过采样为 dedup 留余量
+                top=max(limit * 4, 8),  # oversample to leave headroom for dedup
                 include_sources=include_sources,
                 exclude_sources=exclude_sources,
             )
@@ -1438,21 +1438,21 @@ class HyMemoryClient:
 
         _raw_hits = len(hits)
         _top_scores = [h.get("score", 0.0) for h in hits[:10]]
-        # 过滤前先把分数留一份：顺链那批经验自己没有分（它们是顺 id 拉出来的，
-        # 不是搜出来的），要卡阈值只能借这一轮的分。同一个 query 向量，不额外调用。
+        # Save a copy of the scores before filtering: the link-follow experiences have no scores of their own (they were pulled by id,
+        # not searched), so gating on a threshold can only borrow this round's scores. Same query vector, no extra call.
         score_by_id = {h["experience_id"]: h.get("score", 0.0) for h in hits}
         hits = [h for h in hits if h.get("score", 0.0) >= exp_min_score]
-        # 同上，不在这里截。长度由上面 VDB 的 top 兜着。
+        # As above, no truncation here. Length is bounded by the VDB top above.
 
-        # ---- 2b. 顺链那批也要过闸门 ----
-        # 早期这一路是免检的（理由是"相关性由命中的事实担保"），但担保太弱：
-        # 一条事实可能在某个侧面匹上 query，却把它另一个侧面的经验一起拖进来。
-        # 现在跟直查同一道闸门：两边卡的本来就是同一批分数，分两档没有依据。
-        # 分数取不到的（没出现在直查的 top-N 里）视为不合格：连前 N 都进不去，
-        # 相似度必然低于第 N 名，正常语料下够不着闸门。
+        # ---- 2b. The link-follow batch must pass the gate too ----
+        # This path was originally exempt (rationale: "relevance is guaranteed by the hit fact"), but that guarantee is too weak:
+        # a fact may match the query on one facet yet drag in experiences from another of its facets.
+        # Now it shares the direct-query gate: both sides gate on the same batch of scores anyway, so two tiers have no basis.
+        # Those whose score is unavailable (absent from the direct-query top-N) are treated as failing: if they cannot even make the top N,
+        # their similarity is necessarily below the Nth, so on normal corpora they do not reach the gate.
         #
-        # 同阈值意味着顺链不再额外放行任何经验（能过闸的必然也在 direct_ids 里），
-        # 它的作用退成排序：顺链的排在前面，limit 截断时先保住。
+        # The same threshold means link-follow admits no extra experiences (anything passing the gate is already in direct_ids),
+        # so its role reduces to ordering: link-follow ranks first and is kept first when limit truncates.
         linked_ids = [e for e in linked_ids
                       if score_by_id.get(e, 0.0) >= exp_min_score]
         linked_set = set(linked_ids)
@@ -1467,12 +1467,12 @@ class HyMemoryClient:
         direct_ids = [h["experience_id"] for h in hits]
         hit_by_id = {h["experience_id"]: h for h in hits}
 
-        # ---- 4. 去重 + 存在性过滤 ----
-        # 顺链在前、直查在后；get_many 查不到的（经验已被 DELETE / 两库不一致）
-        # 自然被丢掉，死链不用单独处理
+        # ---- 4. Deduplicate + existence filter ----
+        # Link-follow first, direct-query second; those get_many cannot find (experience already DELETEd / the two stores disagree)
+        # are dropped naturally, so dead links need no separate handling
         ordered_ids = linked_ids + [e for e in direct_ids if e not in linked_set]
-        # 纯安全阀：get_many 走 SQLite 的 IN 子句，绑定变量个数有上限（默认 999）。
-        # 正常量级远够不到，这里只防病态长的链。语义上的条数控制在下面按 limit 做。
+        # Pure safety valve: get_many uses a SQLite IN clause with a bound-variable limit (999 by default).
+        # Normal volumes never come close; this only guards against pathologically long chains. Semantic count control is done by limit below.
         ordered_ids = ordered_ids[:_CODING_GET_MANY_MAX_IDS]
         try:
             details = await _store.get_many(
@@ -1483,12 +1483,12 @@ class HyMemoryClient:
         except Exception as e:
             logger.warning(f"[search-coding] fetch details failed: {e}")
             details = []
-        # 唯一一道语义截断。放在 get_many 之后：死链到这一步已经掉队了，
-        # 先截的话它们会白占名额，实际返回数够不到 limit。
-        # 顺链在前，所以砍掉的优先是直查那批——有事实背书的更该留。
+        # The single semantic truncation. Placed after get_many: dead links have already dropped out by this point,
+        # so truncating first would let them waste slots and the actual return count would fall short of limit.
+        # Link-follow is first, so what gets cut is preferentially the direct-query batch -- fact-endorsed ones deserve to stay.
         details = details[:limit]
 
-        # ---- 5. 标注来源 ----
+        # ---- 5. Label the source ----
         out_experiences: List[Dict[str, Any]] = []
         for d in details:
             h = hit_by_id.get(d.experience_id) or {}
@@ -1506,8 +1506,8 @@ class HyMemoryClient:
                 "via": "fact_link" if d.experience_id in linked_set else "direct",
                 "matched_key": h.get("matched_key_text"),
                 "matched_key_kind": h.get("matched_key_kind"),
-                # 顺链那批不在 hit_by_id 里（分数够不上直查阈值才需要顺链救），
-                # 但 score_by_id 留了它们过滤前的分，这里透出来
+                # The link-follow batch is not in hit_by_id (it needed link-follow rescue precisely because its score fell short of the direct-query threshold),
+                # but score_by_id kept their pre-filter scores, so surface them here
                 "score": (round(float(score_by_id[d.experience_id]), 4)
                           if d.experience_id in score_by_id else None),
                 "confidence": d.confidence,
@@ -1526,8 +1526,8 @@ class HyMemoryClient:
             await _tracer.log_coding_result(
                 query=target_query,
                 returned=len(out_experiences),
-                # memory_ids 是 pipeline_logs 的通用列名（与 chat 路径共用），
-                # 这里装的是 coding 侧的 experience_id
+                # memory_ids is pipeline_logs' generic column name (shared with the chat path);
+                # here it holds the coding-side experience_id
                 memory_ids=[m["experience_id"] for m in out_experiences],
                 previews=[
                     {"experience_id": m["experience_id"], "task": (m.get("task") or "")[:120],
@@ -1543,12 +1543,12 @@ class HyMemoryClient:
             "experiences": out_experiences,
             "elapsed_ms": elapsed,
         }
-        # 版本演进链块（scene="coding" 独有）。放在最后：它吃的是上面已经定稿的
-        # out_facts，链层不参与召回和排序。
+        # Version-evolution chain block (unique to scene="coding"). Placed last: it consumes the already-finalized out_facts above,
+        # and the chain layer takes no part in recall or ordering.
         #
-        # 注意返回形状：块单独放在 "chain_block" 字段，**不**把挂上链的 fact 从
-        # out_facts 里删掉。不同调用方可能自行拼 prompt，悄悄少给 facts 比多给一个
-        # 字段危险得多；需要“块 + 剩余 facts”时可按 chain_used 自行过滤。
+        # Note the return shape: the block goes in its own "chain_block" field, and chain-attached facts are **not** removed from
+        # out_facts. Different callers may assemble prompts themselves, and silently withholding facts is more dangerous than adding one
+        # extra field; when you need "block + remaining facts", filter yourself by chain_used.
         if variant == "coding":
             _blk, _used = self._decorate_with_chain(
                 out_facts, instruction=target_query,
@@ -1560,7 +1560,7 @@ class HyMemoryClient:
         return resp
 
     # ================================================================
-    # 同步 API
+    # Synchronous API
     # ================================================================
 
     def add(
@@ -1581,56 +1581,56 @@ class HyMemoryClient:
         embed_override: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        写入记忆。
+        Write a memory.
 
-        处理深度由 Client 初始化时的 mode 决定：
-        - lite:  纯 embedding 写入
-        - pro:   embedding + LLM agent 提取（事实/实体/reconcile）
-        - ultra: pro + 可通过 evolve() 显式触发的 System 2 认知加工
+        Processing depth is determined by the mode at Client init:
+        - lite:  pure embedding write
+        - pro:   embedding + LLM agent extraction (facts/entities/reconcile)
+        - ultra: pro plus System 2 cognitive processing explicitly triggerable via evolve()
 
         Args:
-            data: 文本字符串，或 messages 列表
-                  - "用户喜欢科幻电影"
+            data: a text string, or a messages list
+                  - "The user likes sci-fi movies"
                   - [{"role": "user", "content": "..."}, ...]
-            user_id:      用户 ID（一级隔离 key）
-            agent_id:     Agent ID（二级隔离 key）
-            session_id:   Session ID（三级隔离 key）
-            source:       调用来源，例如 openclaw / cursor / codex；与 agent_id 正交。
-                          写入前执行 strip().lower()，默认 "default"。
-            metadata:     自定义元数据
-            memory_at:    记忆时间戳（不传则用当前时间），用于导入历史记忆
-            scene:        显式指定写入路由，跳过 LLM 自动判定。
-                          - None（默认）：含 tool 时 LLM 判 chat/working/coding；
-                            无 tool 时直接走 chat
-                          - "chat"：强制走 chat 链路（tool 消息会被 strip）
-                          - "working"：强制走 coding 链路（通用生产力场景）
-                          - "coding"：强制走 coding 链路（软件工程场景）
-                          注意：强制 working / coding 时输入必须含 tool 消息，
-                          否则回退 chat 链路。
+            user_id:      user ID (level-1 isolation key)
+            agent_id:     Agent ID (level-2 isolation key)
+            session_id:   Session ID (level-3 isolation key)
+            source:       call source, e.g. openclaw / cursor / codex; orthogonal to agent_id.
+                          Before writing, strip().lower() is applied; default "default".
+            metadata:     custom metadata
+            memory_at:    memory timestamp (current time if omitted), for importing historical memories
+            scene:        explicitly specify the write route, skipping the LLM's auto decision.
+                          - None (default): with tools, the LLM decides chat/working/coding;
+                            without tools it goes straight to chat
+                          - "chat": force the chat pipeline (tool messages are stripped)
+                          - "working": force the coding pipeline (general-productivity scenario)
+                          - "coding": force the coding pipeline (software-engineering scenario)
+                          Note: when forcing working / coding the input must contain tool messages,
+                          otherwise it falls back to the chat pipeline.
 
-                          "working" 与 "coding" 复用同一种生产力 pipeline 和表结构，
-                          但使用独立 SQLite 文件与向量集合。行为差异为：
-                            1. 抽取规范不同。coding 用 EXTRACT_PROMPT_CODING：要求
-                               分支名逐字保留、说明哪一版赢了哪一版被弃、给精确的
-                               仓相对路径 + 符号名、区分"已验证"与"只是写了"。
-                            2. coding 额外维护版本演进链层（零 LLM 的 sqlite），存下
-                               每处代码每一版的真实 patch。补的是抽取规范本身砍掉的
-                               那类信息 —— 它明文要求"给坐标不要贴代码"，而被撤掉那
-                               版的代码不在工作区也不在 HEAD，读不回来。
-                          搜索侧要拿到链块必须也传 scene="coding"，见 search()。
-            workspace_id: Coding memory 路径专用。repo 标识（建议 git remote URL 规范化）。
-                          随经验与事实一起落库，供 search / list 按作用域筛选。chat 路径忽略。
-            branch:       Coding memory 路径专用。分支名。同 workspace_id。chat 路径忽略。
-            meta:         调用方自定义业务 meta，随本次产出的记忆存储、查询时原样返回。
-                          不 embed、不参与召回、不作过滤条件。
-                          与 metadata 不同：metadata 会并入 extra（含 SDK 内部控制键），
-                          meta 独立存放，只做透传。
-                          语义为「该次 write 时刻的上下文」，故存为 list——同一节点被
-                          多次写入合并时会追加而非覆盖，详见 get() 返回的 meta 字段。
+                          "working" and "coding" reuse the same productivity pipeline and table schema,
+                          but use separate SQLite files and vector collections. Behavioral differences:
+                            1. Different extraction specs. coding uses EXTRACT_PROMPT_CODING: it requires
+                               branch names kept verbatim, stating which version won and which was discarded, giving exact
+                               repo-relative paths + symbol names, and distinguishing "verified" from "merely written".
+                            2. coding additionally maintains the version-evolution chain layer (zero-LLM sqlite), storing
+                               the real patch of every version of each code change. It recovers the class of information the extraction spec itself cuts --
+                               it explicitly requires "coordinates, not pasted code", yet the reverted version's code is neither in the working tree
+                               nor in HEAD, and cannot be read back.
+                          To get the chain block, the search side must also pass scene="coding"; see search().
+            workspace_id: for the Coding memory path only. Repo identifier (a normalized git remote URL is recommended).
+                          Persisted with experiences and facts, so search / list can filter by scope. The chat path ignores it.
+            branch:       for the Coding memory path only. Branch name. Same as workspace_id. The chat path ignores it.
+            meta:         caller-defined business meta, stored with the memories produced this call and returned verbatim on query.
+                          Not embedded, not involved in recall, not a filter condition.
+                          Unlike metadata: metadata is merged into extra (which contains SDK internal control keys),
+                          whereas meta is stored independently and only passed through.
+                          Its semantics are "the context at the moment of that write", so it is stored as a list -- when the same node is
+                          written multiple times the merge appends rather than overwrites; see the meta field returned by get().
 
         Returns:
-            chat 链路：{"success": True, "memory_id": "...", "request_id": "...", "elapsed_ms": ...}
-            coding 链路：{"success": True, "scene": "productivity", "ops": [...],
+            chat pipeline: {"success": True, "memory_id": "...", "request_id": "...", "elapsed_ms": ...}
+            coding pipeline: {"success": True, "scene": "productivity", "ops": [...],
                         "experience_ids": [...], "fact_ops": [...], "fact_ids": [...], ...}
         """
         return self._loop_thread.run(
@@ -1694,86 +1694,86 @@ class HyMemoryClient:
         query_embedding: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
         """
-        搜索记忆。
+        Search memories.
 
-        三路召回（chat 路径）：
-        - **Schema 路**: L6_SCHEMA（高层行为/状态 schema）
-        - **Proactive 路**: L7_INTENTION（主动意图，默认关闭）
-        - **Normal 路**: L2_FACT + L3_SUMMARY + L4_IDENTITY + L5_KNOWLEDGE 等
+        Three-way recall (chat path):
+        - **Schema path**: L6_SCHEMA (high-level behavior/state schema)
+        - **Proactive path**: L7_INTENTION (proactive intention, off by default)
+        - **Normal path**: L2_FACT + L3_SUMMARY + L4_IDENTITY + L5_KNOWLEDGE, etc.
 
-        用户画像 L0 不再混入 Search；请调用 get_user_profile() 单独获取。
+        The L0 user profile is no longer mixed into Search; call get_user_profile() to fetch it separately.
 
-        Coding 路径（自动判定）：
-        - 当 queries 上下文判定为 coding 时，走 CodingMemoryStore 的双层召回：
-          事实层为主索引，命中的事实顺 derived_experience_ids 带出经验，再用同一
-          向量直查经验层兜底。返回结构含 "scene": "productivity" 和 "facts" /
-          "experiences" 两个列表。
-        - 否则走 chat 路径，返回与历史完全一致。
+        Coding path (auto-decided):
+        - When the queries context is decided to be coding, use CodingMemoryStore's two-layer recall:
+          the fact layer is the primary index, hit facts bring out experiences along derived_experience_ids, then the same
+          vector directly queries the experience layer as a fallback. The return contains "scene": "productivity" and the "facts" /
+          "experiences" lists.
+        - otherwise use the chat path, returning results identical to before.
 
         Args:
-            query:              搜索查询（兼容旧调用；与 queries 二选一）
-            queries:            多条 queries（最后一条为 target；前置项用于上下文消解）。
-                                default 模式下，Coding 开启时分类并 rewrite；Coding 关闭但
-                                Query Rewrite 开启时只 rewrite/time；两者关闭时零 LLM。
-            scene:              显式指定检索路由，跳过 LLM 自动判定。与 add() 取值一致：
-                                - None（默认）：由 search_mode 决定是否自动判定
-                                - "chat"：强制走 chat 召回
-                                - "working"：强制走 coding（生产力）召回
-                                - "coding"：同上，额外返回版本演进链块
-                                  （"chain_block" / "chain_used" 两个字段，见下方 Returns）
-                                （旧别名 "normal"/"productivity" 仍兼容）
-            search_mode:        搜索执行模式：
-                                - "default"（默认）：query="..." 是 light search，直接
-                                  chat/normal、零 LLM；显式传 queries=[...] 时由 Coding 与
-                                  Query Rewrite 开关共同决定是否分类/改写。
-                                - "agentic"：scene=None 时，单 query / 多 queries 都用
-                                  一次 LLM 完成三分类、query rewrite 和时间范围解析。
-                                显式 scene 始终直接路由，不调用 LLM。
-            user_ids:           用户 ID 列表（一级隔离 key，支持跨用户搜索）
-            agent_ids:          Agent ID 列表（空列表 = 搜索所有 agent）
-            session_ids:        Session ID 列表（空列表 = 搜索所有 session）
-            include_sources:    调用来源白名单；空列表 = 不限。
-            exclude_sources:    调用来源黑名单；与白名单冲突时黑名单优先。
-            limit:              Normal 路的 topk 数量，默认 10
-            min_score:          **chat 路专用**的最低分数阈值，默认 0.4。working 路不看
-                                这个值，两层各有自己的阈值（见下两项）。
+            query:              search query (for legacy calls; mutually exclusive with queries)
+            queries:            multiple queries (the last is the target; earlier ones resolve context).
+                                In default mode, when Coding is on it classifies and rewrites; when Coding is off but
+                                Query Rewrite is on it only rewrites/times; with both off there is zero LLM.
+            scene:              explicitly specify the retrieval route, skipping the LLM's auto decision. Same values as add():
+                                - None (default): search_mode decides whether to auto-decide
+                                - "chat": force chat recall
+                                - "working": force coding (productivity) recall
+                                - "coding": as above, additionally returning the version-evolution chain block
+                                  (the "chain_block" / "chain_used" fields; see Returns below)
+                                (the legacy aliases "normal"/"productivity" remain supported)
+            search_mode:        search execution mode:
+                                - "default" (default): query="..." is a light search, going straight to
+                                  chat/normal with zero LLM; with explicit queries=[...], whether to classify/rewrite is
+                                  decided jointly by the Coding and Query Rewrite toggles.
+                                - "agentic": with scene=None, both single query and multiple queries use
+                                  one LLM call to do three-way classification, query rewrite, and time-range resolution.
+                                An explicit scene always routes directly and never calls the LLM.
+            user_ids:           list of user IDs (level-1 isolation key, supports cross-user search)
+            agent_ids:          list of Agent IDs (empty list = search all agents)
+            session_ids:        list of Session IDs (empty list = search all sessions)
+            include_sources:    call-source allowlist; empty list = unrestricted.
+            exclude_sources:    call-source blocklist; when it conflicts with the allowlist the blocklist wins.
+            limit:              topk count for the Normal path, default 10
+            min_score:          minimum score threshold **for the chat path only**, default 0.4. The working path ignores
+                                this value; each layer has its own threshold (see the next two items).
             working_fact_min_score:
-                                working 路事实层（主索引）的阈值，默认 0.30。刻意低于
-                                chat：事实是一句话结论，同样相关度下分数系统性偏低，沿用
-                                0.4 会挡掉明确相关的事实，还会连带把顺链带经验那一路掐断。
+                                working-path fact layer (primary index) threshold, default 0.30. Deliberately lower than
+                                chat: facts are single-sentence conclusions whose scores run systematically lower at the same relevance, so reusing
+                                0.4 would block clearly relevant facts and also cut off the link-follow-to-experience path.
             working_experience_min_score:
-                                working 路经验层的阈值，顺链和直查共用。经验层 embed
-                                的是 task + search_keys 这类短片段，相似度基线高于事实
-                                层的整句 statement，跟事实共用一个阈值会让经验明显偏松，
-                                所以不传则取 working_fact_min_score + 0.10。
-            schema_min_score:   Schema 路的最低分数阈值，默认 0.4
-            schema_limit:       L6 Schema 路的最大返回数，默认 10
-            intention_limit:    Proactive 路的 topk 数量，默认 0（关闭）
-            created_after:      Unix timestamp (float)，只返回 gmt_created >= 此值的记忆
-            reader:             Reader 类型，动态切换。仅支持 legacy / hybrid。
-                                空字符串 = 使用环境变量 HY_MEMORY_READER 或默认 legacy。
-            workspace_id:       Coding 路径专用（chat 路径忽略）。作用域筛选条件：不传则
-                                不筛（全量语义召回），传了则事实层与经验层都只在该
-                                workspace 内召回。过滤在 SQLite 侧做，向量取数按作用域
-                                选择率放大，不会因为过滤掉召回。
-            branch:             同 workspace_id，但只在 workspace_id 非空时才叠加（与
-                                list_memories 一致），单独传不生效。容 NULL：没记录分支
-                                的经验/事实照样召回，否则老数据会被整片筛掉。
-            request_id:         可选。App 层预生成以对齐 SEARCH_API_ACCEPTED；不传则 SDK 自生成
-            layers:             可选。pro/ultra 下只召回指定层级（字符串或
-                                MemoryLayer），在召回阶段生效。lite 下忽略该参数并
-                                强制只召回 L1_RAW。
+                                working-path experience layer threshold, shared by link-follow and direct-query. The experience layer embeds
+                                short segments like task + search_keys, whose similarity baseline is higher than the fact layer's
+                                full-sentence statement, so sharing one threshold with facts makes experiences clearly too loose;
+                                so when unset it takes working_fact_min_score + 0.10.
+            schema_min_score:   minimum score threshold for the Schema path, default 0.4
+            schema_limit:       maximum return count for the L6 Schema path, default 10
+            intention_limit:    topk count for the Proactive path, default 0 (off)
+            created_after:      Unix timestamp (float); return only memories with gmt_created >= this value
+            reader:             Reader type, switched dynamically. Supports only legacy / hybrid.
+                                Empty string = use the HY_MEMORY_READER env var or the default legacy.
+            workspace_id:       for the Coding path only (the chat path ignores it). Scope filter: unset means
+                                no filter (full semantic recall); set means both the fact and experience layers recall only within that
+                                workspace. Filtering happens on the SQLite side, and vector fetching is widened by scope
+                                selectivity, so filtering does not cost recall.
+            branch:             same as workspace_id, but applied only when workspace_id is non-empty (consistent with
+                                list_memories); passing it alone has no effect. Tolerates NULL: experiences/facts with no branch recorded
+                                are still recalled, otherwise old data would be filtered out wholesale.
+            request_id:         optional. Pre-generated by the App layer to align with SEARCH_API_ACCEPTED; if unset the SDK generates one
+            layers:             optional. Under pro/ultra, recall only the specified layers (strings or
+                                MemoryLayer), applied at the recall stage. Under lite this parameter is ignored and
+                                recall is forced to L1_RAW only.
 
         Returns:
-            chat 路径：{"request_id": "...", "memories": [...], "elapsed_ms": ...}
-            coding 路径：{"request_id": "...", "scene": "productivity",
+            chat path: {"request_id": "...", "memories": [...], "elapsed_ms": ...}
+            coding path: {"request_id": "...", "scene": "productivity",
                          "facts": [...], "experiences": [...], "elapsed_ms": ...}
-            scene="coding" 额外带两个字段：
-                "chain_block" —— 版本演进链块（多行文本，挂不上时为 ""）。
-                                 该放在 facts 之前给模型读。
-                "chain_used"  —— 已挂进 chain_block 的 facts 下标列表。
-                                 facts **没有**被去重过（不悄悄少给）；需要
-                                 "块 + 剩余 fact" 的拼法就按这个列表自行过滤。
+            scene="coding" additionally carries two fields:
+                "chain_block" -- the version-evolution chain block (multiline text, "" when nothing attaches).
+                                 It should go before facts for the model to read.
+                "chain_used"  -- list of facts indices already placed into chain_block.
+                                 facts are **not** deduplicated (nothing is silently withheld); for the
+                                 "block + remaining fact" layout, filter yourself using this list.
         """
         return self._search_loop_thread.run(self.async_search(
             query, queries=queries, scene=scene, search_mode=search_mode,
@@ -1793,13 +1793,13 @@ class HyMemoryClient:
 
     def get(self, memory_id: str) -> Optional[Dict[str, Any]]:
         """
-        获取单条记忆。
+        Get a single memory.
 
         Args:
-            memory_id: 记忆 ID
+            memory_id: memory ID
 
         Returns:
-            {"memory_id", "content", "layer", "request_id", "elapsed_ms"} 或 None（不存在时）
+            {"memory_id", "content", "layer", "request_id", "elapsed_ms"} or None (when it does not exist)
         """
         return self._loop_thread.run(self.async_get(memory_id))
 
@@ -1809,11 +1809,11 @@ class HyMemoryClient:
         content: str,
     ) -> Dict[str, Any]:
         """
-        更新记忆内容。
+        Update memory content.
 
         Args:
-            memory_id: 记忆 ID
-            content:   新内容
+            memory_id: memory ID
+            content:   new content
 
         Returns:
             {"success": True, "memory_id": "...", "request_id": "...", "elapsed_ms": ...}
@@ -1822,10 +1822,10 @@ class HyMemoryClient:
 
     def delete(self, memory_id: str) -> Dict[str, Any]:
         """
-        删除单条记忆。
+        Delete a single memory.
 
         Args:
-            memory_id: 记忆 ID
+            memory_id: memory ID
 
         Returns:
             {"success": True, "deleted_count": 1, "request_id": "...", "elapsed_ms": ...}
@@ -1840,15 +1840,15 @@ class HyMemoryClient:
         session_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        删除用户的记忆。
+        Delete a user's memories.
 
-        默认删除该用户的所有记忆（agent_ids/session_ids 都不传时）。
-        可通过 agent_ids/session_ids 缩小删除范围。
+        By default it deletes all of the user's memories (when neither agent_ids nor session_ids is passed).
+        The delete scope can be narrowed via agent_ids/session_ids.
 
         Args:
-            user_id:      用户 ID（一级隔离 key）
-            agent_ids:    Agent ID 列表（空列表 = 所有 agent）
-            session_ids:  Session ID 列表（空列表 = 所有 session）
+            user_id:      user ID (level-1 isolation key)
+            agent_ids:    list of Agent IDs (empty list = all agents)
+            session_ids:  list of Session IDs (empty list = all sessions)
 
         Returns:
             {"success": True, "deleted_count": N, "request_id": "...", "elapsed_ms": ...}
@@ -1873,30 +1873,30 @@ class HyMemoryClient:
         with_evolution: bool = False,
     ) -> Dict[str, Any]:
         """
-        列出用户的记忆（同步）。
+        List a user's memories (synchronous).
 
-        从向量库直接读取，只返回 ACTIVE 状态的记忆。
-        按 created_at 排序，支持分页。
+        Reads directly from the vector database, returning only memories in ACTIVE state.
+        Sorted by created_at, with pagination support.
 
         Args:
-            user_id:  用户 ID
-            agent_id: 可选，限定某个 agent
-            limit:    每页条数（默认 100）
-            offset:   偏移量（默认 0）
-            order:    排序方式，"desc"（默认，最新在前）或 "asc"
-            workspace_id: 可选（默认空）。非空则直接走 coding memory 列表路径，
-                          按 workspace_id 过滤，返回 {"scene": "productivity", ...}。
-            branch:   可选（默认空）。仅在 workspace_id 非空时叠加 branch 精确过滤。
-            user_ids: 可选，多用户批量列举。非空时优先于 user_id，返回并集
-                      （分页在合并排序后统一施加）。
-            agent_ids: 可选，多 agent 批量列举。非空时优先于 agent_id。
-            layers:   可选，只返回指定层级（字符串或 MemoryLayer）。不传时返回
-                      L1_RAW 以外的全部层级，与改动前一致。
-            with_evolution: 可选，为当前页条目附加 evolution_chain（默认关闭）。
+            user_id:  user ID
+            agent_id: optional, restrict to one agent
+            limit:    items per page (default 100)
+            offset:   offset (default 0)
+            order:    sort order, "desc" (default, newest first) or "asc"
+            workspace_id: optional (empty by default). Non-empty goes straight to the coding memory list path,
+                          filtering by workspace_id and returning {"scene": "productivity", ...}.
+            branch:   optional (empty by default). Adds exact branch filtering only when workspace_id is non-empty.
+            user_ids: optional, batch listing across users. Non-empty takes precedence over user_id and returns the union
+                      (pagination is applied uniformly after the merged sort).
+            agent_ids: optional, batch listing across agents. Non-empty takes precedence over agent_id.
+            layers:   optional, return only the specified layers (strings or MemoryLayer). When unset, returns
+                      all layers except L1_RAW, identical to before the change.
+            with_evolution: optional, attach evolution_chain to current-page entries (off by default).
 
         Returns:
-            chat 路径: {"vdb": {...}, "graph": {...} | 省略, "elapsed_ms": ...}
-            coding 路径: {"scene": "productivity", "experiences": [...], ...}
+            chat path: {"vdb": {...}, "graph": {...} | omitted, "elapsed_ms": ...}
+            coding path: {"scene": "productivity", "experiences": [...], ...}
         """
         return self._loop_thread.run(
             self.async_list_memories(
@@ -1913,9 +1913,9 @@ class HyMemoryClient:
         *,
         user_id: str = "",
     ) -> Dict[str, Any]:
-        """返回用户的 L0 basic info 记忆（同步）。
+        """Return the user's L0 basic info memories (synchronous).
 
-        存在演化链时以链头为代表返回并附 `evolution_chain`，与 search / list 一致。
+        When an evolution chain exists, the chain head represents it and an attached `evolution_chain` is returned, consistent with search / list.
 
         Returns:
             {"request_id", "memories": [...], "elapsed_ms"}
@@ -1951,15 +1951,15 @@ class HyMemoryClient:
         agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        克隆用户记忆。
+        Clone a user's memories.
 
-        将 src_user_id 下的全部记忆深拷贝到 dst_user_id 下，
-        两者此后完全独立互不影响。
+        Deep-copies all memories under src_user_id into dst_user_id;
+        thereafter the two are fully independent and do not affect each other.
 
         Args:
-            src_user_id: 源用户 ID
-            dst_user_id: 目标用户 ID
-            agent_id:    可选，限定克隆某个 agent 下的记忆
+            src_user_id: source user ID
+            dst_user_id: destination user ID
+            agent_id:    optional, restrict the clone to memories under one agent
 
         Returns:
             {"success": True, "request_id": "...", "cloned_count": N,
@@ -1982,25 +1982,25 @@ class HyMemoryClient:
         max_batches: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        手动触发 System 2 认知加工（ultra 模式专用，同步阻塞直到完成）。
+        Manually trigger System 2 cognitive processing (ultra mode only, blocking synchronously until done).
 
-        evolve 一次 = 对该 user 的 VDB 全量跑一次 System 2（Schema 归纳 → L6_SCHEMA
-        + cross-domain sweeper）。System 2 的输入是 VDB 全量扫描，与「期间 add 了几次」
-        无关，因此 evolve 不消费写入队列、跑一次完整认知周期。
+        One evolve = run System 2 once over the user's entire VDB (Schema induction → L6_SCHEMA
+        + cross-domain sweeper). System 2's input is a full VDB scan, independent of "how many adds happened in between",
+        so evolve does not consume the write queue and runs one complete cognitive cycle.
 
-        非幂等：每次 evolve 看到的是当前最新 VDB 全量，连续多次 evolve 有意义
-        （add 一批 → evolve → 再 add 一批 → 再 evolve）。
+        Not idempotent: each evolve sees the latest full VDB, so running evolve multiple times in a row is meaningful
+        (add a batch → evolve → add another batch → evolve again).
 
-        注意：意图（L7_INTENTION）由 System 1 在 add/write 时即时抽取落库（pro/ultra
-        模式都有），不在 evolve 里处理。evolve 只负责 System 2 的 Schema 层。
+        Note: intentions (L7_INTENTION) are extracted and persisted immediately by System 1 at add/write time (present in pro/ultra
+        modes) and are not handled in evolve. evolve is responsible only for System 2's Schema layer.
 
-        触发时机由调用方控制：System 2 不在 add/write 里自动触发，也无进程内队列。
-        典型用法：批量 add()（只跑 S1）→ 调一次 evolve() 做全量 Schema 归纳。
+        The caller controls when it triggers: System 2 is not auto-triggered inside add/write and has no in-process queue.
+        Typical usage: batch add() (running only S1) → call evolve() once to do full Schema induction.
 
-        仅 ultra 模式可调用。lite/pro 模式调用会抛出 RuntimeError。
+        Callable only in ultra mode. Calling it in lite/pro mode raises RuntimeError.
 
         Args:
-            user_id:  用户 ID
+            user_id:  User ID
             agent_id: Agent ID
 
         Returns:
@@ -2025,10 +2025,10 @@ class HyMemoryClient:
         agent_id: str = "default_agent",
         max_batches: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """手动触发 System 2 认知加工（异步）"""
+        """Manually trigger System 2 cognitive processing (async)."""
         t0 = __import__("time").perf_counter()
 
-        # 获取 System2Writer
+        # Get the System2Writer
         try:
             writer = await self._registry.get_system2_writer()
         except (ValueError, KeyError):
@@ -2038,7 +2038,7 @@ class HyMemoryClient:
                 "tasks_processed": 0,
             }
 
-        # 检查是否支持 evolve
+        # Check whether evolve is supported
         if not hasattr(writer, "evolve"):
             return {
                 "success": False,
@@ -2058,17 +2058,17 @@ class HyMemoryClient:
         agent_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        手动触发 cross-domain sweeper（同步）。
+        Manually trigger the cross-domain sweeper (synchronous).
 
-        独立于 evolve 流程，不执行 S2 Agent，只做：
-        1. 补齐 schema 的 beh abstraction + beh_embedding
-        2. 碰撞扫描 + core 归纳
+        Independent of the evolve flow: it runs no S2 Agent and only does:
+        1. Backfill the schema's beh abstraction + beh_embedding
+        2. Collision scanning + core induction
 
-        对每个 user_id × agent_id 组合执行一次 sweeper。
+        Runs the sweeper once for each user_id × agent_id combination.
 
         Args:
-            user_ids:  SDK user_id 列表
-            agent_ids: Agent ID 列表（默认 ["default_agent"]）
+            user_ids:  List of SDK user_id values
+            agent_ids: Agent ID list (default ["default_agent"])
 
         Returns:
             {"success": True, "results": [{...}, ...]}
@@ -2087,9 +2087,9 @@ class HyMemoryClient:
         user_ids: List[str],
         agent_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """手动触发 cross-domain sweeper（异步）
+        """Manually trigger the cross-domain sweeper (async)
 
-        对每个 user_id × agent_id 组合执行一次 sweeper。
+        Runs the sweeper once for each user_id × agent_id combination.
         """
         t0 = __import__("time").perf_counter()
 
@@ -2114,10 +2114,10 @@ class HyMemoryClient:
 
     def get_metrics(self, minutes: int = 5) -> Dict[str, Any]:
         """
-        获取系统整体负载指标。
+        Get overall system load metrics.
 
         Args:
-            minutes: 查询最近 N 分钟的数据（默认 5 分钟）
+            minutes: Query data for the last N minutes (default 5 minutes)
 
         Returns:
             {
@@ -2132,29 +2132,29 @@ class HyMemoryClient:
 
     @_ensure_internal_loop
     async def async_get_metrics(self, minutes: int = 5) -> Dict[str, Any]:
-        """获取系统整体负载指标（异步）"""
+        """Get overall system load metrics (async)."""
         from .metrics import MetricsCollector
         return await MetricsCollector.get().get_snapshot(minutes=minutes)
 
     def close(self):
-        """关闭客户端，释放所有资源"""
+        """Close the client and release all resources."""
         if self._registry is not None:
             self._loop_thread.run(self._close_async())
-        # solo 模式：本 client 拥有 loop_thread，可以安全 stop
-        # shared 模式：loop_thread 由 runtime 管，留给 runtime.aclose() 关
+        # solo mode: this client owns loop_thread, so stopping it is safe
+        # shared mode: loop_thread belongs to the runtime, leave it to runtime.aclose()
         if hasattr(self, '_loop_thread') and self._owns_runtime:
             self._loop_thread.stop()
 
     def history(self, memory_id: str) -> List[Dict[str, Any]]:
         """
-        查询某条记忆的变更历史。
+        Query the change history of a memory.
 
         Args:
-            memory_id: 记忆 ID
+            memory_id: Memory ID
 
         Returns:
-            按时间排序的历史记录列表，每条包含 event/old_memory/new_memory/created_at 等字段。
-            如果未启用历史记录，返回空列表。
+            History records sorted by time, each with event/old_memory/new_memory/created_at among other fields.
+            Returns an empty list if history recording is not enabled.
         """
         return self._loop_thread.run(self.async_history(memory_id))
 
@@ -2165,16 +2165,16 @@ class HyMemoryClient:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """
-        查询最近的操作历史。
+        Query recent operation history.
 
         Args:
-            user_id:    用户 ID
-            agent_ids:  Agent ID 列表（空列表 = 查所有 agent 的历史）
-            limit:      返回数量上限
+            user_id:    User ID
+            agent_ids:  Agent ID list (empty list = query history of all agents)
+            limit:      Maximum number of records to return
 
         Returns:
-            按时间倒序的最近操作列表。
-            如果未启用历史记录，返回空列表。
+            Recent operations in reverse chronological order.
+            Returns an empty list if history recording is not enabled.
         """
         return self._loop_thread.run(
             self.async_get_recent_history(user_id=user_id, agent_ids=agent_ids, limit=limit)
@@ -2186,9 +2186,9 @@ class HyMemoryClient:
 
             await MetricsCollector.get().stop_background_tasks()
 
-        # 先关 coding 链路（不依赖其他组件）
-        # ⚠️ 遍历 _coding_stores 而不是只关 self._coding_store —— 后者只是"最近一次
-        #    用的那份"，两个变体混用过时另一份会漏掉（sqlite 连接和向量库句柄泄漏）。
+        # Close the coding pipeline first (it depends on no other component)
+        # ⚠️ Iterate _coding_stores instead of closing only self._coding_store -- the latter is only the "most
+        #    recently used" one; when both variants are mixed the other one is missed (sqlite connections and VDB handles leak).
         for _v, _st in list(getattr(self, "_coding_stores", {}).items()):
             try:
                 await _st.close()
@@ -2202,7 +2202,7 @@ class HyMemoryClient:
             self._coding_store = None
             self._coding_writer = None
             self._coding_llm_provider = None
-        # 链层：纯 sqlite，没有异步资源
+        # Chain layer: plain sqlite, no async resources
         if getattr(self, "_chain_store", None) is not None:
             try:
                 self._chain_store.close()
@@ -2218,54 +2218,54 @@ class HyMemoryClient:
         if self._history_store:
             await self._history_store.close()
             self._history_store = None
-        # cache：solo 模式下 client 拥有，关；shared 模式下 runtime 拥有，留给 runtime.aclose()
+        # cache: owned by the client in solo mode, so close it; owned by the runtime in shared mode, leave it to runtime.aclose()
         if self._cache and self._owns_runtime:
             await self._cache.close()
             self._cache = None
         elif self._cache and not self._owns_runtime:
-            # shared 模式：仅断引用，不真正关 pool
+            # shared mode: drop the reference only, do not actually close the pool
             self._cache = None
         logger.info("HyMemoryClient closed")
 
     # ================================================================
-    # Delete helpers — 演化链修复 + Graph evidence 清理
+    # Delete helpers -- evolution chain repair + Graph evidence cleanup
     # ================================================================
 
     async def _repair_evolution_chain_on_delete(self, node) -> None:
         """
-        删除节点前修复演化链。
+        Repair the evolution chain before a node is deleted.
 
-        场景 1: 删除链头（is_latest=True + supersedes 非空）
-          → 将 supersedes 列表中的前驱恢复为 is_latest=True + ACTIVE
-          → 从前驱的 superseded_by 中移除本节点 ID
+        Case 1: delete the chain head (is_latest=True + non-empty supersedes)
+          → Restore the predecessors listed in supersedes to is_latest=True + ACTIVE
+          → Remove this node ID from each predecessor's superseded_by
 
-        场景 2: 删除链中间节点（is_latest=False + superseded_by 非空 + supersedes 非空）
-          → 将前驱的 superseded_by 改为指向后继
-          → 将后继的 supersedes 改为指向前驱（跳过本节点）
+        Case 2: delete a middle node (is_latest=False + non-empty superseded_by + non-empty supersedes)
+          → Point the predecessor's superseded_by at the successor
+          → Point the successor's supersedes at the predecessor (skipping this node)
 
-        场景 3: 删除链尾（is_latest=False + supersedes 为空）
-          → 只需从后继的 supersedes 中移除本节点 ID
+        Case 3: delete the chain tail (is_latest=False + empty supersedes)
+          → Only remove this node ID from the successor's supersedes
         """
         from .models.memory import MemoryStatus
 
         node_id = node.node_id
-        supersedes = node.supersedes or []        # 本节点取代的旧节点
-        superseded_by = node.superseded_by or []  # 取代本节点的新节点
+        supersedes = node.supersedes or []        # older nodes that this node supersedes
+        superseded_by = node.superseded_by or []  # newer nodes that supersede this node
         is_latest = node.is_latest
 
         if not supersedes and not superseded_by:
-            return  # 不在任何链上
+            return  # not on any chain
 
         try:
-            # 场景 1: 删除链头 — 恢复前驱
+            # Case 1: delete the chain head -- restore the predecessors
             if is_latest and supersedes:
                 for pred_id in supersedes:
                     pred = await self._vector_store.get_by_id(pred_id)
                     if pred is None:
                         continue
-                    # 从前驱的 superseded_by 中移除本节点
+                    # Remove this node from the predecessor's superseded_by
                     pred_sb = [x for x in (pred.superseded_by or []) if x != node_id]
-                    # 如果前驱没有其他后继，恢复为链头
+                    # If the predecessor has no other successor, restore it as the chain head
                     if not pred_sb:
                         await self._vector_store.update_payload(pred_id, {
                             "is_latest": True,
@@ -2278,9 +2278,9 @@ class HyMemoryClient:
                             "superseded_by": pred_sb,
                         })
 
-            # 场景 2: 删除链中间 — 跳接前驱和后继
+            # Case 2: delete a middle node -- bridge predecessor and successor
             elif not is_latest and supersedes and superseded_by:
-                # 后继的 supersedes: 把本节点替换为本节点的前驱
+                # successor's supersedes: replace this node with this node's predecessors
                 for succ_id in superseded_by:
                     succ = await self._vector_store.get_by_id(succ_id)
                     if succ is None:
@@ -2293,7 +2293,7 @@ class HyMemoryClient:
                         "supersedes": succ_sup,
                     })
 
-                # 前驱的 superseded_by: 把本节点替换为本节点的后继
+                # predecessor's superseded_by: replace this node with this node's successors
                 for pred_id in supersedes:
                     pred = await self._vector_store.get_by_id(pred_id)
                     if pred is None:
@@ -2307,7 +2307,7 @@ class HyMemoryClient:
                     })
                 logger.info(f"[delete] chain repair: bridged {supersedes} → {superseded_by}")
 
-            # 场景 3: 删除链尾 — 从后继的 supersedes 中移除
+            # Case 3: delete the chain tail -- remove it from the successor's supersedes
             elif not is_latest and not supersedes and superseded_by:
                 for succ_id in superseded_by:
                     succ = await self._vector_store.get_by_id(succ_id)
@@ -2323,13 +2323,13 @@ class HyMemoryClient:
 
     async def _cleanup_graph_evidence(self, deleted_node_id: str) -> None:
         """
-        清理已删除 VDB 节点在 Graph 中的 evidence 引用。
+        Clean up the Graph evidence references of a deleted VDB node.
 
-        当一个 VDB 节点被删除后，如果它作为 VdbRef 影子节点被某个
-        Schema/Intention 通过 DERIVED_FROM 引用，需要清理悬空引用。
+        After a VDB node is deleted, a Schema/Intention may still reference it as a VdbRef shadow
+        node through DERIVED_FROM; that dangling reference has to be cleaned up.
 
-        注意：VdbRef 是独立的 node table，不能用 delete_node（那是删 Memory）。
-        直接用底层 execute 删 VdbRef + DERIVED_FROM 边。
+        Note: VdbRef lives in its own node table, so delete_node cannot be used (it deletes Memory).
+        Use the low-level execute to delete the VdbRef plus its DERIVED_FROM edges.
         """
         if self._graph_store is None:
             return
@@ -2354,7 +2354,7 @@ class HyMemoryClient:
             logger.debug(f"[delete] VdbRef cleanup for {deleted_node_id}: {e}")
 
     # ================================================================
-    # 异步 API
+    # Async API
     # ================================================================
 
     @_ensure_internal_loop
@@ -2375,11 +2375,11 @@ class HyMemoryClient:
         meta: Optional[Dict[str, Any]] = None,
         embed_override: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """写入记忆（异步）
+        """Write memory (async)
 
-        embed_override: 本次写入的 embedding 端点覆盖（不改 model/dims，只换接入点）。
-            dict，可含 base_url / api_key / extra_headers / timeout；None = 用 client 配置。
-            可用于按请求切换任意 OpenAI-compatible embedding endpoint。
+        embed_override: Per-call embedding endpoint override for this write (model/dims unchanged, only the endpoint switches).
+            dict that may contain base_url / api_key / extra_headers / timeout; None = use the client config.
+            Lets a single request switch to any OpenAI-compatible embedding endpoint.
         """
         if embed_override:
             with embed_endpoint_override(
@@ -2481,22 +2481,22 @@ class HyMemoryClient:
         request_id: Optional[str] = None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """写入记忆（异步）
+        """Write memory (async)
 
         Args:
-            scene: 显式指定写入路由（"chat" / "working" / "coding"）；
-                   None = 自动判定。详见 add() docstring。
-            workspace_id / branch: Coding memory 路径专用，详见 add() docstring。
-            meta: 调用方自定义业务 meta，透传存储，详见 add() docstring。
+            scene: Explicitly force the write route ("chat" / "working" / "coding");
+                   None = auto-detect. See the add() docstring.
+            workspace_id / branch: Coding memory path only; see the add() docstring.
+            meta: Caller-defined business meta, passed through to storage; see the add() docstring.
         """
         from .utils.source_filter import normalize_source
         source = normalize_source(source)
-        # 归一化显式 scene（None = 自动判定）
+        # Normalize the explicit scene (None = auto-detect)
         scene_forced = self._normalize_scene(scene)
-        # coding 链路的变体（"working" | "coding"）。显式 scene 直接决定；
-        # scene=None 时由三分类 judge 回填，不能默认吞成 working。
+        # Variant of the coding pipeline ("working" | "coding"). An explicit scene decides it
+        # directly; with scene=None the 3-way judge fills it in, so it must not silently default to working.
         scene_variant = self._scene_variant(scene)
-        # 生成 request_id 并注入日志上下文（队列消费可传入固定 id 保证幂等与追溯）
+        # Generate the request_id and inject it into the log context (queue consumers can pass a fixed id to keep idempotency and traceability)
         request_id = request_id or str(uuid.uuid4())
         set_request_id(request_id)
         t0 = time.perf_counter()
@@ -2504,20 +2504,20 @@ class HyMemoryClient:
         content, chat_messages, content_type = self._parse_input(data)
         uid = user_id
 
-        # 纯 input token 数（tiktoken 精确估算；不含 system/few-shot/历史等 prompt 开销）
+        # Pure input token count (exact tiktoken estimate; excludes prompt overhead such as system/few-shot/history)
         from .utils.token_count import count_input_tokens
         input_tokens = count_input_tokens(content, chat_messages)
 
         # ────────────────────────────────────────────────────────────
-        # Coding 链路分流
-        # scene 显式指定时跳过 LLM 判定：
-        #   scene="chat"   → 强制 chat（strip tool 后走 chat 链）
-        #   scene="coding" → 强制 coding（须含 tool 消息，否则回退 chat）
-        # scene=None（默认）→ 自动三分类：
-        #   不含 tool: O(1) 短路 → chat 链
-        #   含 tool 但判 chat: strip tool 后走 chat 链
-        #   含 tool 且判 working/coding: 走对应 variant 的生产力链路
-        # 关键：不影响现有 chat 路径
+        # Coding pipeline routing
+        # An explicit scene skips the LLM decision:
+        #   scene="chat"   → force chat (chat pipeline after stripping tool messages)
+        #   scene="coding" → force coding (tool messages required, otherwise falls back to chat)
+        # scene=None (default) → automatic 3-way classification:
+        #   no tool messages: O(1) short circuit → chat pipeline
+        #   tool messages present but judged chat: chat pipeline after stripping tool messages
+        #   tool messages present and judged working/coding: productivity pipeline of that variant
+        # Key point: the existing chat path is left untouched
         # ────────────────────────────────────────────────────────────
         coding_available = (
             getattr(self, "_mode", "pro") != "lite"
@@ -2527,7 +2527,7 @@ class HyMemoryClient:
         )
 
         if scene_forced == "chat":
-            # 强制 chat：跳过一切 coding 判定，strip tool 消息后走 chat 链
+            # Forced chat: skip every coding decision, strip tool messages and take the chat pipeline
             if content_type == "messages" and has_any_tool_message(chat_messages):
                 logger.info("[add] scene=chat forced; stripping tool messages")
                 chat_messages = strip_tool_messages(chat_messages)
@@ -2537,19 +2537,19 @@ class HyMemoryClient:
             has_tool = has_any_tool_message(chat_messages)
 
             if scene_forced == "coding" and not has_tool:
-                # 强制 coding 但无 tool 消息：无法抽 coding memory，回退 chat
+                # Forced coding but no tool messages: no coding memory can be extracted, fall back to chat
                 logger.warning(
                     "[add] scene=coding forced but no tool messages found; "
                     "falling back to chat path"
                 )
                 is_coding = False
             elif scene_forced == "coding":
-                # 显式指定 coding：跳过 LLM judge
+                # Explicitly set to coding: skip the LLM judge
                 logger.info("[add] scene=coding forced; skip LLM judge")
                 is_coding = True
             else:
-                # 自动判定（scene=None，含 tool 消息）
-                # lazy 初始化 coding LLM provider（用于 judge）
+                # Auto-detect (scene=None, tool messages present)
+                # Lazily initialize the coding LLM provider (used by the judge)
                 if self._coding_llm_provider is None:
                     from .agent.llm_provider import LLMProvider
                     self._coding_llm_provider = LLMProvider(self._config)
@@ -2586,26 +2586,26 @@ class HyMemoryClient:
                     request_id=request_id,
                     source=source,
                 )
-                # 版本演进链层（scene="coding" 独有）。放在 writer.write 之后、返回
-                # 之前，因为它只依赖对话原文，与向量层写入结果无关。
-                # best-effort：这层挂不上不影响本次 add 的向量层产出。
+                # Version evolution chain layer (specific to scene="coding"). Placed after writer.write
+                # and before the return, because it only depends on the source conversation, not on the vector-layer write result.
+                # Best-effort: failing to attach this layer does not affect the vector-layer output of this add.
                 if scene_variant == "coding":
                     resp["chain_rounds"] = self._observe_chain(
                         chat_messages, user_id=uid,
                         workspace_id=workspace_id, branch=branch,
                     )
-                # 同步刷新 elapsed
+                # Refresh elapsed in the same path
                 resp["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 2)
                 resp["input_tokens"] = input_tokens
-                # 与 chat 链路对齐：chat 总是返回单数 memory_id；coding 双层 writer
-                # 返回复数 experience_ids（一次 add 通常 0~1 条 ADD）。补一个单数
-                # memory_id 取首个 experience_id，让调用方无需区分 scene 即可读
-                # resp["memory_id"]。
+                # Aligned with the chat pipeline: chat always returns the singular memory_id, while the
+                # coding two-tier writer returns the plural experience_ids (one add usually yields 0 or 1 ADD).
+                # An extra singular memory_id holds the first experience_id, so a caller can simply read
+                # resp["memory_id"].
                 _coding_eids = resp.get("experience_ids") or []
                 resp["memory_id"] = _coding_eids[0] if _coding_eids else None
                 return resp
 
-            # 判定为 chat：strip tool 消息再继续
+            # Classified as chat: strip tool messages and continue
             if has_tool:
                 logger.info(
                     "[add] classified as CHAT; stripping tools"
@@ -2626,9 +2626,9 @@ class HyMemoryClient:
                 f"content={content}"
             )
 
-        # mode → agent_mode 映射
-        # lite: 不调 LLM agent
-        # pro/ultra: 调 LLM agent 做事实提取
+        # mode → agent_mode mapping
+        # lite: no LLM agent call
+        # pro/ultra: call the LLM agent for fact extraction
         agent_mode = "disabled" if self._mode == "lite" else "full"
         extra = dict(metadata) if metadata else {}
         extra["agent_mode"] = agent_mode
@@ -2644,15 +2644,15 @@ class HyMemoryClient:
             content_type=content_type,
             extra=extra,
             memory_at=memory_at,
-            # 显式透传 request_id（本地变量，不受 contextvar 污染）作为整条写入链路
-            # 落库 memory_ops / WRITE_SUMMARY / pipeline_logs 的单一真相源。
+            # Explicitly pass request_id through (a local variable, not polluted by the contextvar) as the single
+            # source of truth for memory_ops / WRITE_SUMMARY / pipeline_logs along the whole write pipeline.
             request_id=request_id,
             client_meta=meta,
         )
 
         # mode → writer:
-        #   lite/pro → MemoryWriter (区别在 agent_mode)
-        #   ultra    → System2Writer（write 只执行 System 1；System 2 由 evolve() 触发）
+        #   lite/pro → MemoryWriter (they differ only in agent_mode)
+        #   ultra    → System2Writer (write runs System 1 only; System 2 is triggered by evolve())
         if self._mode == "ultra":
             writer = await self._registry.get_system2_writer()
         else:
@@ -2682,8 +2682,8 @@ class HyMemoryClient:
             resp["memory_ids"] = result.extra["agent_stored_ids"]
         _attach_write_diagnostics(resp, result.extra)
 
-        # token usage：纯 input（tiktoken）+ extract / reconcile 两条 LLM 链路的
-        # prompt/completion 消耗（lite 模式无 LLM，extract/reconcile 为 0）。
+        # Token usage: pure input (tiktoken) plus the prompt/completion consumed by the
+        # extract and reconcile LLM pipelines (lite mode runs no LLM, so extract/reconcile are 0).
         resp["input_tokens"] = input_tokens
         resp["extract_tokens"] = result.extra.get(
             "extract_tokens", {"prompt": 0, "completion": 0, "total": 0}
@@ -2695,11 +2695,11 @@ class HyMemoryClient:
         if result.success:
             logger.info(f"[add] done: memory_id={result.memory_id} elapsed={result.elapsed_ms:.0f}ms")
 
-            # 记录历史（非阻塞，失败仅 warning）
+            # Record history (non-blocking; a failure only logs a warning)
             if self._history_store is not None:
                 try:
                     isolation_key = self._build_isolation_key(uid, agent_id)
-                    # 从 content 或 messages 中提取用于记录的文本
+                    # Derive the text to record from content or messages
                     history_content = content or "; ".join(
                         f"{m.role}: {m.content}" for m in chat_messages
                     )
@@ -2728,20 +2728,20 @@ class HyMemoryClient:
         memory_at: Optional[datetime] = None,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """写入「调用方已抽取好的」记忆：跳过 extract，直接进 reconcile。
+        """Write memories already extracted by the caller: skip extract and go straight to reconcile.
 
-        适用场景：调用方（如 openclaw memory_add tool、上游 agent）已经把对话
-        抽象成结论性的 memory content，不需要 SDK 再跑一遍 LLM extract。SDK 仍会
-        执行完整 reconcile（与已有记忆判重 / 合并 / 矛盾演化），并落 L2_FACT。
+        Use it when the caller (for example the openclaw memory_add tool or an upstream agent) has
+        already distilled the conversation into conclusive memory content, so the SDK does not need to run LLM extract again.
+        The SDK still runs the full reconcile (deduplicate against existing memories / merge / contradiction evolution) and persists to L2_FACT.
 
-        与 add() 的区别：
-        - 不调 LLM extractor（省一次 LLM 调用、更快、更省 token）。
-        - 不写 L1_RAW 原始节点（content 本身即事实）。
-        - contents 每条视为一条独立事实，多条会一起进 reconcile 互相判重。
+        Differences from add():
+        - The LLM extractor is not called, which saves one LLM call and is faster and cheaper in tokens.
+        - No L1_RAW source node is written (the content is itself the fact).
+        - Each entry in contents is one independent fact; several entries enter reconcile together and are deduplicated against each other.
 
         Args:
-            contents: 单条事实字符串，或多条事实字符串列表。
-            其余参数语义同 add()。
+            contents: A single fact string, or a list of fact strings.
+            All remaining arguments behave as in add().
 
         Returns:
             {"success", "memory_id", "memory_ids", "request_id", "elapsed_ms",
@@ -2769,7 +2769,7 @@ class HyMemoryClient:
         memory_at: Optional[datetime] = None,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """写入已抽取好的记忆（异步）；跳过 extract，直接 reconcile。详见 add_extracted()。"""
+        """Write pre-extracted memories (async); skip extract and go straight to reconcile. See add_extracted()."""
         request_id = request_id or str(uuid.uuid4())
         set_request_id(request_id)
         t0 = time.perf_counter()
@@ -2810,7 +2810,7 @@ class HyMemoryClient:
             request_id=request_id,
         )
 
-        # lite/pro → MemoryWriter；ultra → System2Writer（内部复用 MemoryWriter）
+        # lite/pro → MemoryWriter; ultra → System2Writer (which reuses MemoryWriter internally)
         if self._mode == "ultra":
             writer = await self._registry.get_system2_writer()
         else:
@@ -2854,16 +2854,16 @@ class HyMemoryClient:
         user_id: str,
         agent_id: str,
     ) -> None:
-        """对 search 结果中的 L2_FACT + L4_IDENTITY 做去重（fire-and-forget）。
+        """Deduplicate the L2_FACT + L4_IDENTITY items in search results (fire-and-forget).
 
-        只取这两层（重复重灾区）；带 evolution_chain 的项视为链头，其 chain node_ids
-        从 evolution_chain 取出供连带处理。整体后台执行，不阻塞 search 返回。
+        Only these two layers are considered (where duplication is worst); an item carrying evolution_chain is treated as a chain head and its chain node_ids
+        are taken from evolution_chain so they are handled together with it. The whole job runs in the background and does not block search from returning.
 
-        判重按 owner 分批（group_items_by_owner）：search 默认不传 agent_ids，
-        结果里可能混着多个 agent（甚至多个 user）的节点 —— owner=user 的记忆属于
-        用户这一侧，跨 agent 合并判重；owner=agent 的按 agent 隔离。
+        Deduplication batches by owner (group_items_by_owner): search does not pass agent_ids by default,
+        so results may mix nodes of several agents (or even users) -- memories with owner=user belong
+        to the user side and are merged across agents; those with owner=agent stay isolated per agent.
 
-        命中的重复项置 SHADOW（逻辑删除、可恢复），不是硬删。
+        Duplicate hits are set to SHADOW (a recoverable logical delete), never hard deleted.
         """
         if os.getenv("MEMORY_SEARCH_DEDUP_ENABLED", "true").strip().lower() in {
             "0", "false", "no", "off",
@@ -2910,9 +2910,9 @@ class HyMemoryClient:
                         is_chain_head=bool(chain),
                         gmt_created=(float(m["gmt_created"]) if m.get("gmt_created") else None),
                         chain_node_ids=chain_ids or [mid],
-                        # 分批维度：search 默认不传 agent_ids，_all_mems 里可能混着
-                        # 多个 agent（甚至多个 user）的节点。owner=user 的跨 agent
-                        # 合并判重，owner=agent 的按 agent 隔离。
+                        # Batching dimension: search does not pass agent_ids by default, so _all_mems may mix
+                        # nodes of several agents (or even users). owner=user items are merged across agents,
+                        # owner=agent items stay isolated per agent.
                         owner=m.get("owner"),
                         user_id=m.get("user_id", "") or user_id,
                         agent_id=m.get("agent_id", "") or agent_id,
@@ -2930,9 +2930,9 @@ class HyMemoryClient:
                             cache=cache,
                             trigger="search",
                             request_id=request_id,
-                            # 此前固定传 effective_*_ids[0]，跨 user/跨 agent
-                            # 检索时 DEDUP log 的归属是错的（记第一个，删的可能
-                            # 是另一个的数据）。分批后每批归属确定。
+                            # This used to pass effective_*_ids[0] unconditionally, so in cross-user or cross-agent
+                            # retrieval the DEDUP log attribution was wrong (the first id was recorded while the
+                            # deleted data could belong to another one). After batching each batch has a definite owner.
                             user_id=_batch["user_id"],
                             agent_id=_batch["agent_id"],
                             delete_from_store=True,
@@ -2950,11 +2950,11 @@ class HyMemoryClient:
                 logger.debug(f"[search] background dedup failed: {e}")
 
         try:
-            # dedup 是非用户可感知的后台任务，且只碰 VDB（线程池，无 loop 亲和）。
-            # 显式派发到 write loop，避免占用 search loop 的调度权、让下一次 search 排队。
+            # dedup is a background task invisible to the user and touches only the VDB (thread pool, no loop affinity).
+            # Dispatch it explicitly to the write loop, so it does not take scheduling away from the search loop and make the next search wait.
             asyncio.run_coroutine_threadsafe(_run(), self._loop_thread._loop)
         except RuntimeError:
-            # 无事件循环（极少见）：同步跳过，不影响主流程
+            # No event loop (very rare): skip synchronously, the main flow is unaffected
             logger.debug("[search] no running loop for dedup; skipped")
 
     @_ensure_search_loop
@@ -2986,12 +2986,12 @@ class HyMemoryClient:
         embed_override: Optional[Dict[str, Any]] = None,
         query_embedding: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
-        """搜索记忆（异步）。详见 search() docstring。
+        """Search memories (async). See the search() docstring.
 
-        embed_override: 本次搜索 query embedding 的端点覆盖（不改 model/dims，只换接入点）。
-            dict，可含 base_url / api_key / extra_headers / timeout；None = 用 client 配置。
-            须在 @_ensure_search_loop 委托进 search loop **之后**再 set contextvar——
-            contextvar 不跨 run_coroutine_threadsafe 边界，故在此(已在 search loop 上)包裹。
+        embed_override: Per-call endpoint override for the query embedding of this search (model/dims unchanged, only the endpoint switches).
+            dict that may contain base_url / api_key / extra_headers / timeout; None = use the client config.
+            The contextvar must be set **after** @_ensure_search_loop delegates into the search loop --
+            a contextvar does not cross the run_coroutine_threadsafe boundary, so it is wrapped here (already on the search loop).
         """
         if embed_override:
             with embed_endpoint_override(
@@ -3056,12 +3056,12 @@ class HyMemoryClient:
         layers: Optional[List[Any]] = None,
         query_embedding: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
-        """搜索记忆（异步）。详见 search() docstring。
+        """Search memories (async). See the search() docstring.
 
-        layers（默认空）：只召回指定层级，接受字符串或 MemoryLayer。
-        过滤在召回阶段生效（而非召回后再筛），避免无关层级挤占 limit 名额。
+        layers (default empty): recall only the given layers, accepting strings or MemoryLayer values.
+        The filter takes effect during recall rather than after recall, so unrelated layers cannot consume the limit budget.
         """
-        # ── 入参归一化 ──
+        # ── Input normalization ──
         if queries is not None and query is not None:
             raise ValueError("query and queries are mutually exclusive; choose one")
         if queries is None and query is None:
@@ -3081,14 +3081,14 @@ class HyMemoryClient:
                 f"search_mode must be 'default' or 'agentic', got {search_mode!r}"
             )
 
-        # scene 校验 + 归一化
-        # 对外统一用 "chat" / "working" / "coding"（与 add() 一致）；内部检索链路仍用
-        # "normal" / "productivity"，这里在入参边界做一次映射。
-        #   "working"      → "productivity"（走 coding 召回，通用生产力变体）
-        #   "coding"       → "productivity"（走 coding 召回，软件工程变体：额外挂
-        #                     版本演进链块，见 _scene_variant / _decorate_with_chain）
-        #   "chat"         → "normal"（走 chat 召回）
-        #   "productivity" / "normal" 作为旧别名保留，向后兼容。
+        # scene validation + normalization
+        # The public API standardizes on "chat" / "working" / "coding" (consistent with add()); the internal retrieval pipeline still uses
+        # "normal" / "productivity", so this input boundary performs the mapping once.
+        #   "working"      → "productivity" (coding recall, general productivity variant)
+        #   "coding"       → "productivity" (coding recall, software engineering variant: additionally attaches
+        #                     the version evolution chain block; see _scene_variant / _decorate_with_chain)
+        #   "chat"         → "normal" (chat recall)
+        #   "productivity" / "normal" are kept as legacy aliases, for backward compatibility.
         scene_norm: Optional[str] = None
         if scene is not None:
             sn = str(scene).strip().lower()
@@ -3096,8 +3096,8 @@ class HyMemoryClient:
                 "working": "productivity",
                 "coding": "productivity",
                 "chat": "normal",
-                "productivity": "productivity",  # 向后兼容
-                "normal": "normal",              # 向后兼容
+                "productivity": "productivity",  # backward compatible
+                "normal": "normal",              # backward compatible
             }
             if sn not in _scene_map:
                 raise ValueError(
@@ -3105,15 +3105,15 @@ class HyMemoryClient:
                 )
             scene_norm = _scene_map[sn]
 
-        # 生成 / 复用 request_id 并注入日志上下文（App 可传入以对齐 SEARCH_API_ACCEPTED）
+        # Generate or reuse the request_id and inject it into the log context (the app may pass one to line up with SEARCH_API_ACCEPTED)
         request_id = (request_id or "").strip() or str(uuid.uuid4())
         set_request_id(request_id)
         t0 = time.perf_counter()
 
-        # 运行时停顿归因基线：与 t0 同点采样，终值在 log_scene_judge 前取，差值落进
-        # READ_SCENE_JUDGE.parsed。用于解释"纯同步代码却耗几百 ms"——区分
-        # cgroup CPU throttling（throttle_ms≈elapsed_ms）/ GC 长停顿（gc_delta>=1）/
-        # GIL 争抢（两者都≈0 但仍慢）。二者均为同步求值，与 elapsed_ms 同等可信。
+        # Stall attribution baseline: sampled at the same point as t0, the end value is taken before log_scene_judge and the delta lands in
+        # READ_SCENE_JUDGE.parsed. It explains why "pure synchronous code costs hundreds of ms", separating
+        # cgroup CPU throttling (throttle_ms≈elapsed_ms) / long GC pauses (gc_delta>=1) /
+        # GIL contention (both ≈0 yet still slow). Both are evaluated synchronously and are as trustworthy as elapsed_ms.
         _stall_gc0 = _gc_collection_count()
         _stall_thr0 = _read_throttled_usec()
 
@@ -3126,11 +3126,11 @@ class HyMemoryClient:
             include_sources, exclude_sources,
         )
 
-        # 校验: 必须传 user_ids
+        # Validation: user_ids must be provided
         if not effective_user_ids:
             raise ValueError("user_ids is required and cannot be empty")
 
-        # 校验: 多 agent_ids + 多 session_ids 非法
+        # Validation: multiple agent_ids together with multiple session_ids is invalid
         if len(effective_agent_ids) > 1 and len(effective_session_ids) > 1:
             raise ValueError(
                 "Cannot specify multiple agent_ids and multiple session_ids simultaneously. "
@@ -3138,16 +3138,16 @@ class HyMemoryClient:
             )
 
         # ────────────────────────────────────────────────────────────
-        # Search mode + scene 路由
+        # Search mode + scene routing
         #
-        #   scene 显式指定                         → 直接路由，零 LLM
-        #   default + query="..."                 → 固定 normal，零 LLM
-        #   default + queries=[...]                → 保持原多-query judge/rewrite 逻辑
-        #   agentic + query="..." / queries=[...] → 三分类 + rewrite + 时间
-        #   default 多-query 输入超长              → 跳 rewrite；需要时仅做分类
+        #   scene explicitly set                     → direct routing, zero LLM
+        #   default + query="..."                    → pinned to normal, zero LLM
+        #   default + queries=[...]                  → keep the original multi-query judge/rewrite logic
+        #   agentic + query="..." / queries=[...]    → 3-way classification + rewrite + time
+        #   default multi-query input too long       → skip rewrite; classification only when needed
         #
-        # queries= 本身就是用户对上下文 judge/rewrite 的显式选择；agentic 则进一步
-        # 让单 query 也走同样能力。query_rewrite_max_chars 作为共同长度保护。
+        # queries= is itself the caller's explicit choice of context judge/rewrite; agentic goes further and
+        # applies the same capability to a single query. query_rewrite_max_chars guards the length in both cases.
         # ────────────────────────────────────────────────────────────
         coding_enabled = (
             getattr(self._config, "coding", None) is not None
@@ -3161,20 +3161,20 @@ class HyMemoryClient:
         _combined_len = sum(len(q) for q in queries_list)
         _too_long = _combined_len > _max_chars
 
-        effective_target_query = target_query  # 默认用 queries[-1] 或 query
-        rewrite_created_after: Optional[float] = None  # rewrite 抽出的时间下界
+        effective_target_query = target_query  # defaults to queries[-1] or query
+        rewrite_created_after: Optional[float] = None  # lower time bound extracted by rewrite
         decided_scene: str
         decided_variant: str = HyMemoryClient._scene_variant(scene)
         rewrite_used: bool = False
         scene_mode: str = "default"          # explicit / llm / default
         scene_is_coding: bool = False
         _t_scene = t0
-        # scene judge 真实的 LLM 净耗时。只有走 LLM 分支（scene_mode="llm"）才有值；
-        # mode=default/explicit 是纯同步分支，保持 None → 不落 parsed.llm_ms。
-        # 与「本环节整体耗时」（elapsed_ms → parsed.step_ms）严格区分。
+        # Net LLM time actually spent by the scene judge. Only the LLM branch (scene_mode="llm") has a value;
+        # the pure synchronous default/explicit branches stay None, so parsed.llm_ms is not persisted.
+        # Strictly separate from the overall duration of this step (elapsed_ms → parsed.step_ms).
         _scene_llm_ms: Optional[float] = None
 
-        # 当前系统时间（供 rewrite 换算相对时间）
+        # Current system time (lets rewrite resolve relative times)
         from datetime import datetime as _dt_now
         _current_time_iso = _dt_now.now().isoformat(timespec="seconds")
 
@@ -3185,8 +3185,8 @@ class HyMemoryClient:
             return self._coding_llm_provider
 
         if lite_mode:
-            # lite 是严格的 raw-only 向量检索模式。scene / search_mode 不得把它
-            # 路由到 working/coding，也不应触发任何 LLM judge/rewrite。
+            # lite is a strict raw-only vector retrieval mode. scene / search_mode must not route it
+            # to working/coding, and no LLM judge/rewrite should be triggered either.
             decided_scene = "normal"
             scene_mode = "lite"
             scene_is_coding = False
@@ -3196,7 +3196,7 @@ class HyMemoryClient:
                 "(ignore scene/search_mode/layers; no LLM)"
             )
         elif scene_norm is not None:
-            # 1) 显式指定 → 不调 LLM
+            # 1) Explicitly provided → no LLM call
             decided_scene = scene_norm
             scene_mode = "explicit"
             scene_is_coding = (decided_scene == "productivity")
@@ -3206,15 +3206,15 @@ class HyMemoryClient:
                 f"target={effective_target_query!r}"
             )
         elif not agentic_enabled and not queries_supplied:
-            # 默认 light search 仅指 query="..."：固定 normal，绝不调用 LLM。
+            # The default light search covers only query="...": pinned to normal, the LLM is never called.
             decided_scene = "normal"
             logger.info(
                 f"[search] search_mode=default single-query scene=normal (no LLM); "
                 f"target={target_query!r}"
             )
         elif agentic_enabled:
-            # agentic：单/多 query 都强制一次 LLM 完成三分类 + rewrite + 时间解析。
-            # judge 内部已有有界 query 视图，因此原始 queries 再长也不降级成 classify-only。
+            # agentic: single or multiple queries force one LLM call that does 3-way classification + rewrite + time parsing.
+            # The judge already builds a bounded query view, so arbitrarily long raw queries never degrade it to classify-only.
             want_classify = True
             _t_llm = time.perf_counter()
             try:
@@ -3228,7 +3228,7 @@ class HyMemoryClient:
                 logger.warning(f"[search] analyze_queries failed, fallback normal: {e}")
                 ar = {"is_coding": False, "rewrite_query": target_query,
                       "created_after": None, "ok": False}
-            # 失败也计时：失败往往正是超时，耗时本身是关键信息
+            # Time failures too: the failure usually is a timeout, so the duration itself is key information
             _scene_llm_ms = (time.perf_counter() - _t_llm) * 1000
 
             scene_mode = "llm"
@@ -3255,8 +3255,8 @@ class HyMemoryClient:
                     f"[search] agentic rewrite-LLM fallback=normal; target={target_query!r}"
                 )
         elif rewrite_enabled and not _too_long:
-            # default + queries= 的原逻辑：配置开启时一次 LLM 做 rewrite/time，
-            # working memory 开启时同时三分类。
+            # Original default + queries= logic: one LLM call does rewrite/time when enabled in config,
+            # and also 3-way classification when working memory is enabled.
             want_classify = coding_enabled
             _t_llm = time.perf_counter()
             try:
@@ -3286,7 +3286,7 @@ class HyMemoryClient:
             else:
                 decided_scene = "normal"
         elif coding_enabled and not _too_long:
-            # default + queries= 的原逻辑：working memory 开启时判类 + 指代改写。
+            # Original default + queries= logic: classification + coreference rewrite when working memory is enabled.
             _t_llm = time.perf_counter()
             try:
                 from .coding.judge import classify_and_rewrite_queries
@@ -3310,7 +3310,7 @@ class HyMemoryClient:
             else:
                 decided_scene = "normal"
         elif coding_enabled:
-            # default + 超长 queries：保留旧行为，只分类、不改写。
+            # default with over-long queries: legacy behaviour kept, classification only without rewriting.
             _t_llm = time.perf_counter()
             try:
                 from .coding.judge import classify_queries_scene
@@ -3327,7 +3327,7 @@ class HyMemoryClient:
             scene_mode = "llm"
             decided_scene = "productivity" if scene_is_coding else "normal"
         else:
-            # default + queries=，但两个相关能力都关闭。
+            # default + queries=, but both related capabilities are disabled.
             decided_scene = "normal"
             logger.info(
                 f"[search] default multi-query features disabled; no LLM; "
@@ -3335,11 +3335,11 @@ class HyMemoryClient:
             )
 
         # ────────────────────────────────────────────────────────────
-        # 场景判定落 pipeline log（search 的第一步，在 reader 之前）
+        # Persist the scene decision to the pipeline log (the first search step, before the reader)
         # ────────────────────────────────────────────────────────────
         if getattr(self, "_cache", None) is not None:
-            # 停顿归因终值：必须在构造 ReadTraceLogger / 调 log_scene_judge 之前取，
-            # 与 elapsed_ms 的 perf_counter 口径圈定同一段代码（t0 → 此处）。
+            # Stall attribution end values: must be sampled before constructing ReadTraceLogger / calling log_scene_judge,
+            # covering the same code span as the perf_counter window of elapsed_ms (t0 → here).
             _stall_gc_delta = _gc_collection_count() - _stall_gc0
             _stall_throttle_ms = (_read_throttled_usec() - _stall_thr0) / 1000.0
             try:
@@ -3372,7 +3372,7 @@ class HyMemoryClient:
                 logger.debug(f"[search] scene judge trace failed: {_e}")
 
         # ────────────────────────────────────────────────────────────
-        # 按决定的 scene 分流
+        # Route by the scene that was decided
         # ────────────────────────────────────────────────────────────
         if decided_scene == "productivity":
             if not coding_enabled:
@@ -3397,23 +3397,23 @@ class HyMemoryClient:
                     working_experience_min_score=working_experience_min_score,
                     request_id=request_id,
                     t0=t0,
-                    # 走类而不是 self：_scene_variant 是 staticmethod，而 async_search
-                    # 会被测试绑到 SimpleNamespace 上单独调用（见
-                    # tests/coding/test_search_scene_routing.py），self 上没有这个属性。
+                    # Called on the class instead of self: _scene_variant is a staticmethod and async_search
+                    # is bound to a SimpleNamespace and called on its own in tests (see
+                    # tests/coding/test_search_scene_routing.py), so the attribute is missing on self.
                     variant=decided_variant,
                     include_sources=effective_include_sources,
                     exclude_sources=effective_exclude_sources,
                 )
 
         # ────────────────────────────────────────────────────────────
-        # Chat 召回链路（原有逻辑）
+        # Chat retrieval pipeline (original logic)
         # ────────────────────────────────────────────────────────────
         logger.info(
             f"[search] query='{effective_target_query}' user_ids={effective_user_ids} "
             f"agent_ids={effective_agent_ids} session_ids={effective_session_ids} limit={limit}"
         )
 
-        # rewrite 抽出的时间下界与用户显式 created_after 取更晚者（更严格）
+        # Take the later (stricter) of the time lower bound extracted by rewrite and an explicit created_after
         effective_created_after = created_after
         if rewrite_created_after is not None:
             effective_created_after = (
@@ -3421,9 +3421,9 @@ class HyMemoryClient:
                 else max(effective_created_after, rewrite_created_after)
             )
 
-        # lite 是纯向量存取：写入只产生 ACTIVE 的 L1_RAW，不会再抽取 L2/L4。
-        # 这是 mode 级硬约束，不是默认值：即使调用方显式传了其他 layers，也必须
-        # 忽略并只查 L1_RAW。pro / ultra 仍沿用原有层级语义。
+        # lite is pure vector storage: a write only yields an ACTIVE L1_RAW and never extracts L2/L4 again.
+        # This is a hard mode-level constraint, not a default: even when the caller passes other layers
+        # explicitly they must be ignored and only L1_RAW queried. pro / ultra keep the original layer semantics.
         from .models.memory import MemoryLayer
 
         effective_search_layers = [MemoryLayer.L1_RAW] if lite_mode else layers
@@ -3444,8 +3444,8 @@ class HyMemoryClient:
             intention_limit=effective_intention_limit,
             request_id=request_id,
             created_after=effective_created_after,
-            # ReadRequest.layers 是 List[str]；reader 侧再转回枚举。
-            # 此处仍走 _normalize_layers，以便非法值在入口就报错、并统一旧编号别名。
+            # ReadRequest.layers is List[str]; the reader converts it back into enums.
+            # It still goes through _normalize_layers so invalid values fail at the entry and legacy numeric aliases are unified.
             layers=(
                 [
                     layer.value
@@ -3468,9 +3468,9 @@ class HyMemoryClient:
                 "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
             }
 
-        # layers 兜底过滤：定向召回由各 reader 实现，但 reader 的支持程度不一
-        # （profile / graph 路常按固定层级召回，不吃 request.layers），只靠 reader
-        # 会漏出未被请求的层级。契约是「只返回命中层级」，故在此再筛一次。
+        # Fallback layers filter: targeted recall is implemented by each reader, but support varies
+        # (the profile / graph paths often recall fixed layers and ignore request.layers), so trusting the reader
+        # alone leaks layers that were never requested. The contract is to return only the hit layers, hence this extra filter.
         _wanted_layers = (
             {
                 layer.value
@@ -3491,22 +3491,22 @@ class HyMemoryClient:
                 "content": mem.get("content", ""),
                 "score": round(score, 4),
                 "layer": mem.get("layer", ""),
-                # 多 user 检索时调用方需据此追溯归属（R1）
+                # Callers need this to trace ownership in multi-user retrieval (R1)
                 "user_id": mem.get("user_id", "") or "",
                 "agent_id": mem.get("agent_id", "") or "",
                 "source": mem.get("source", "default") or "default",
                 "retrieval_source": mem.get("retrieval_source", "") or "",
                 "owner": mem.get("owner"),
                 "speculate": mem.get("speculate"),
-                # 不透出 source_raw_memory_id：它指向 L1_RAW 节点，而 raw 对外
-                # 读路径一律不可见，该 id 到手也查不到东西（按 ID 取返回"不存在"），
-                # 留着只会让调用方以为能据此追溯原文。
-                # 节点上仍保留该字段，内部溯源与 clone 重映射不受影响。
+                # source_raw_memory_id is not exposed: it points at an L1_RAW node, and raw nodes are never
+                # visible on external read paths, so the id resolves to nothing (fetching by ID reports it missing)
+                # and would only give callers the impression that they can trace the source text through it.
+                # The field stays on the node; internal tracing and clone remapping are unaffected.
                 "tags": mem.get("tags") or [],
                 "memory_at": mem.get("memory_at"),
                 "gmt_created": mem.get("gmt_created"),
-                # 调用方自定义 meta（透传负载）。由 reader 从 custom["meta"] 取出，
-                # 未实现该字段的 reader 下为空列表。
+                # Caller-defined meta (pass-through payload), which the reader takes from custom["meta"];
+                # a reader that does not implement this field returns an empty list.
                 "meta": mem.get("meta") or [],
                 "_schema_channel": bool(mem.get("_schema_channel")),
             }
@@ -3536,8 +3536,8 @@ class HyMemoryClient:
             copy["_memory_kind"] = source.get("_memory_kind", "")
             _dedup_mems.append(copy)
 
-        # search 链路去重：仅对 L2_FACT + L4_IDENTITY（重复重灾区）判重删库。
-        # L0 及其他层不参与。fire-and-forget，不阻塞本次返回（清理面向后续查询）。
+        # Search pipeline dedup: only L2_FACT + L4_IDENTITY (where duplication is worst) are deduplicated and removed.
+        # L0 and the other layers do not take part. Fire-and-forget, it does not block this return (the cleanup serves later queries).
         try:
             self._spawn_search_dedup(
                 _dedup_mems,
@@ -3548,10 +3548,10 @@ class HyMemoryClient:
         except Exception as e:
             logger.debug(f"[search] spawn dedup failed (non-fatal): {e}")
 
-        # Memory Strength：搜索后 best-effort 回写 access_count+1 / last_accessed_at=now
-        # （fire-and-forget，不阻塞响应；失败静默）。用 reader 透出的 access_count 计算 +1，
-        # 避免再读一次。受总开关 strength_enabled 约束（默认关闭），并可用
-        # MEMORY_RECALL_ACCESS_TRACKING=false 单独关闭回写。
+        # Memory Strength: best-effort write-back of access_count+1 / last_accessed_at=now after a search
+        # (fire-and-forget, does not block the response, failures stay silent). The +1 is computed from the
+        # access_count the reader already returned, avoiding an extra read. Gated by the master switch
+        # strength_enabled (off by default), and the write-back alone can be turned off with MEMORY_RECALL_ACCESS_TRACKING=false.
         _recall_cfg = self._config.recall
         if (getattr(_recall_cfg, "strength_enabled", False)
                 and getattr(_recall_cfg, "access_tracking_enabled", True)):
@@ -3570,14 +3570,14 @@ class HyMemoryClient:
                         logger.debug(f"[search] access bump failed: {_be}")
 
                 try:
-                    # access-bump 只碰 VDB，且不是关键路径 → 派发到 write loop，
-                    # 不占用 search loop 调度权。
+                    # access-bump touches only the VDB and is not on the critical path → dispatch it to the write loop,
+                    # so it does not take scheduling away from the search loop.
                     asyncio.run_coroutine_threadsafe(_do_bump(), self._loop_thread._loop)
                 except Exception as _be:
                     logger.debug(f"[search] access bump schedule failed: {_be}")
 
-        # 按 channel 分组：schema 只包含 L6；L0 由 get_user_profile() 单独返回。
-        # proactive = intention；其余（含 L2/L3/L4）归 normal。
+        # Group by channel: schema contains only L6; L0 is returned separately by get_user_profile().
+        # proactive = intention; everything else (including L2/L3/L4) belongs to normal.
         _SCHEMA_LAYERS = {"l6_schema"}
         _PROACTIVE_LAYERS = {"l7_intention"}
         memories = {"schema": [], "proactive": [], "normal": []}
@@ -3604,7 +3604,7 @@ class HyMemoryClient:
                     f"[{mem['layer']}] {mem['content']}"
                 )
 
-        # 记录搜索历史（可选，非阻塞）
+        # Record search history (optional, non-blocking)
         if self._history_store is not None and self._config.history.record_searches:
             try:
                 hist_user = effective_user_ids[0] if effective_user_ids else "default"
@@ -3646,18 +3646,18 @@ class HyMemoryClient:
         return output
 
     # ================================================================
-    # CRUD API（异步）— get / update / delete / delete_all
+    # CRUD API (async) -- get / update / delete / delete_all
     # ================================================================
 
     @_ensure_internal_loop
     async def async_get(self, memory_id: str) -> Optional[Dict[str, Any]]:
         """
-        获取单条记忆（异步）。
+        Get a single memory (async).
 
-        VDB + Graph 双路并行查询，哪个有结果返回哪个。
+        Queries the VDB and the graph in parallel and returns whichever side has a result.
 
         Returns:
-            {"memory_id", "content", "layer", "source", "request_id", "elapsed_ms"} 或 None
+            {"memory_id", "content", "layer", "source", "request_id", "elapsed_ms"} or None
         """
         import asyncio as _asyncio_get
         from .models.memory import MemoryLayer
@@ -3668,7 +3668,7 @@ class HyMemoryClient:
 
         logger.info(f"[get] memory_id={memory_id}")
 
-        # 双路并行
+        # Two paths in parallel
         async def _get_vdb():
             return await self._vector_store.get_by_id(memory_id)
 
@@ -3683,14 +3683,14 @@ class HyMemoryClient:
 
         vdb_node, graph_node = await _asyncio_get.gather(_get_vdb(), _get_graph())
 
-        # L1_RAW 不对外可见：按 ID 直取走主键查询、绕过向量库的 layer filter，
-        # 故在此统一挡掉。async_get 是 GET /v1/memories/{id} 与
-        # /v1/memories/batch 两个对外接口的共同必经处，而内部写链路不经过它
-        # （writer 写后校验直接调 vector_store.get_by_id），挡在此处不影响内部。
+        # L1_RAW is not externally visible: fetching directly by id uses a primary key lookup and bypasses the VDB layer filter,
+        # so it is blocked here uniformly. async_get is the mandatory common path of GET /v1/memories/{id} and
+        # /v1/memories/batch, the two external endpoints, while the internal write pipeline never reaches it
+        # (the writer post-write check calls vector_store.get_by_id directly), so blocking here leaves internals untouched.
         #
-        # 置于 gather 之后、埋点之前：命中 raw 仍照常落 GET 埋点（保留可观测性，
-        # 便于发现有调用方拿 raw id 试探），只是不把内容返回给调用方。
-        # 对调用方的表现与"该 id 不存在"完全一致，不额外暴露"存在但被挡"的信息。
+        # Placed after gather and before tracing: a raw hit still writes the GET trace as usual (keeping observability,
+        # so it stays visible when a caller probes with a raw id); only the content is withheld from the caller.
+        # The caller sees exactly what it would see for a nonexistent id, with no hint that the node exists but is blocked.
         if vdb_node is not None and vdb_node.layer == MemoryLayer.L1_RAW:
             vdb_node = None
         if graph_node is not None and getattr(graph_node, "layer", None) == MemoryLayer.L1_RAW:
@@ -3698,7 +3698,7 @@ class HyMemoryClient:
 
         elapsed = round((time.perf_counter() - t0) * 1000, 2)
 
-        # pipeline trace（best-effort，受 MEMORY_PIPELINE_TRACE_ENABLED 控制）
+        # pipeline trace (best-effort, controlled by MEMORY_PIPELINE_TRACE_ENABLED)
         _hit_node = vdb_node if vdb_node is not None else graph_node
         _source = "vdb" if vdb_node is not None else ("graph" if graph_node is not None else "")
         _ident = self._backend_identity()
@@ -3723,7 +3723,7 @@ class HyMemoryClient:
             elapsed_ms=elapsed,
         )
 
-        # VDB 优先（如果两边都有，以 VDB 为准）
+        # VDB takes precedence (when both sides have a result, the VDB wins)
         if vdb_node is not None:
             return {
                 "memory_id": vdb_node.node_id,
@@ -3737,7 +3737,7 @@ class HyMemoryClient:
                 "memory_at": int(vdb_node.memory_at.timestamp()) if isinstance(vdb_node.memory_at, datetime) else None,
                 "gmt_created": int(vdb_node.gmt_created.timestamp()) if isinstance(vdb_node.gmt_created, datetime) else None,
                 "speculate": getattr(vdb_node, "speculate", None),
-                # 不透出 source_raw_memory_id：见 async_search 同处说明。
+                # source_raw_memory_id is not exposed: see the note at the same place in async_search.
                 "user_id": vdb_node.user_id,
                 "agent_id": vdb_node.agent_id,
                 "confidence": vdb_node.confidence,
@@ -3761,7 +3761,7 @@ class HyMemoryClient:
                 "memory_at": int(graph_node.memory_at.timestamp()) if isinstance(graph_node.memory_at, datetime) else None,
                 "gmt_created": int(graph_node.gmt_created.timestamp()) if isinstance(graph_node.gmt_created, datetime) else None,
                 "speculate": getattr(graph_node, "speculate", None),
-                # 不透出 source_raw_memory_id：见 async_search 同处说明。
+                # source_raw_memory_id is not exposed: see the note at the same place in async_search.
                 "user_id": graph_node.user_id,
                 "agent_id": graph_node.agent_id,
                 "confidence": graph_node.confidence,
@@ -3777,9 +3777,9 @@ class HyMemoryClient:
     @_ensure_internal_loop
     async def async_update(self, memory_id: str, content: str) -> Dict[str, Any]:
         """
-        更新记忆内容（异步）。
+        Update memory content (async).
 
-        流程: get_by_id → 404 校验 → embed → 更新节点字段 → upsert → 记录历史
+        Flow: get_by_id → 404 check → embed → update node fields → upsert → record history
 
         Returns:
             {"success", "memory_id", "request_id", "elapsed_ms"}
@@ -3790,7 +3790,7 @@ class HyMemoryClient:
 
         logger.info(f"[update] memory_id={memory_id} new_content({len(content)} chars)")
 
-        # 获取旧节点
+        # Fetch the old node
         node = await self._vector_store.get_by_id(memory_id)
         if node is None:
             logger.warning(f"[update] not found: memory_id={memory_id}")
@@ -3805,10 +3805,10 @@ class HyMemoryClient:
         old_content = node.content
         old_status = node.status.value
 
-        # 生成新 embedding
+        # Generate the new embedding
         new_embedding = await self._embed_service.embed(content)
 
-        # 更新节点
+        # Update the node
         node.content = content
         node.embedding = new_embedding
 
@@ -3833,7 +3833,7 @@ class HyMemoryClient:
             logger.warning("[retrieval-clause] client.update maintain failed: %s", e)
         logger.info(f"[update] done: memory_id={memory_id}")
 
-        # 记录历史
+        # Record history
         if self._history_store is not None:
             try:
                 uid = node.user_id or ""
@@ -3859,10 +3859,10 @@ class HyMemoryClient:
         }
 
     def _backend_identity(self) -> Dict[str, str]:
-        """解析当前 VDB 后端身份：provider / db_name / collection_name。
+        """Resolve the identity of the current VDB backend: provider / db_name / collection_name.
 
-        供 delete/get/list 等操作落 pipeline trace 用。没有数据库命名空间概念的后端
-        会返回空的 db_name。
+        Used when delete/get/list and similar operations persist a pipeline trace. Backends that have no
+        notion of a database namespace return an empty db_name.
         """
         vs = self._vector_store
         provider = ""
@@ -3889,18 +3889,18 @@ class HyMemoryClient:
         elapsed_ms: float = 0.0,
         event_at_ms: int = 0,
     ) -> None:
-        """为 delete/get/list 等非 LLM 操作落一条 pipeline trace（best-effort）。
+        """Persist one pipeline trace for non-LLM operations such as delete/get/list (best-effort).
 
-        复用 pipeline_logs_v2 表：prompt/response 留空、token 为 0，结构化信息全部
-        放进 parsed(JSON)。受 MEMORY_PIPELINE_TRACE_ENABLED 控制，与 search 一致。
-        失败静默降级，绝不影响主操作。
+        Reuses the pipeline_logs_v2 table: prompt/response stay empty, tokens are 0, and all structured
+        information goes into parsed (JSON). Controlled by MEMORY_PIPELINE_TRACE_ENABLED, same as search.
+        Failures degrade silently and never affect the main operation.
 
-        event_at_ms: 事件真实发生时刻（epoch 毫秒）。绝大多数调用方是直接
-            `await _maybe_store_op_log(...)`，observability wrapper 首行的
-            `time.time()` 与调用点只差几微秒，无需传此参数（传 0 即可）。
-            **只有经 `create_task` / `ensure_future` 派发的调用方必须显式传**——
-            派发会让 wrapper 晚若干毫秒才执行，届时它自己打的时间戳已经偏晚，
-            导致 pipeline log 的 timestamp 与真实时序倒挂。
+        event_at_ms: The real moment the event occurred (epoch milliseconds). Most callers
+            call it directly as `await _maybe_store_op_log(...)`, so the first line of the observability
+            wrapper's `time.time()` differs from the call site by only a few microseconds, so 0 can be passed.
+            **Only callers dispatched via `create_task` / `ensure_future` must pass it explicitly** --
+            dispatching delays the wrapper by several milliseconds, so the timestamp it stamps is already late,
+            which inverts the pipeline log timestamp relative to the real order of events.
         """
         if self._cache is None:
             return
@@ -3927,17 +3927,17 @@ class HyMemoryClient:
     @_ensure_internal_loop
     async def async_delete(self, memory_id: str) -> Dict[str, Any]:
         """
-        删除单条记忆（异步）。
+        Delete a single memory (async).
 
-        同时删除向量库和图数据库（如有）中的对应节点。
+        Also removes the corresponding node from the vector database and the graph database (when present).
 
-        演化链处理：
-        - 如果删除的是链头（is_latest=True + supersedes 非空），
-          将前驱节点恢复为 is_latest=True + status=ACTIVE
-        - 如果删除的是链中间节点，将其 supersedes 指向的前驱重新挂到后继的 supersedes 上
+        Evolution chain handling:
+        - When the deleted node is the chain head (is_latest=True + non-empty supersedes),
+          its predecessors are restored to is_latest=True + status=ACTIVE
+        - When a middle node is deleted, the predecessors in its supersedes are reattached to the successor's supersedes
 
-        Graph evidence 处理：
-        - 删除 Graph 中该节点 + 关联的 VdbRef 影子节点 + DERIVED_FROM 边
+        Graph evidence handling:
+        - Deletes the node in the Graph plus its associated VdbRef shadow node and DERIVED_FROM edges
 
         Returns:
             {"success", "deleted_count", "request_id", "elapsed_ms"}
@@ -3948,7 +3948,7 @@ class HyMemoryClient:
 
         logger.info(f"[delete] memory_id={memory_id}")
 
-        # 先获取节点信息（用于链修复 + history + tag 清理）
+        # Fetch the node info first (for chain repair + history + tag cleanup)
         old_content = ""
         old_tags: List[str] = []
         old_user_id = ""
@@ -3966,20 +3966,20 @@ class HyMemoryClient:
             except Exception:
                 old_isolation_key = ""
 
-        # ── 演化链修复（VDB 删除前执行）──
+        # ── Evolution chain repair (runs before the VDB delete) ──
         chain_repaired = False
         if node is not None:
             await self._repair_evolution_chain_on_delete(node)
             chain_repaired = bool(node.supersedes or node.superseded_by)
 
-        # 删除向量库
+        # Delete from the vector database
         deleted = await self._vector_store.delete(memory_id)
         try:
             await self._vector_store.delete_retrieval_clauses(memory_id)
         except Exception as e:
             logger.debug("[retrieval-clause] delete cleanup failed: %s", e)
 
-        # 删除图数据库节点 + 清理 evidence（如有）
+        # Delete the graph database node + clean up evidence (when present)
         graph_deleted = False
         if self._graph_store is not None:
             try:
@@ -3987,7 +3987,7 @@ class HyMemoryClient:
                 graph_deleted = True
             except Exception as e:
                 logger.warning(f"[delete] graph_store delete failed: {e}")
-            # 清理该节点作为 VdbRef 被其他 Schema 引用的情况
+            # Clean up the case where this node is referenced as a VdbRef by other schemas
             try:
                 await self._cleanup_graph_evidence(memory_id)
             except Exception as e:
@@ -3995,8 +3995,8 @@ class HyMemoryClient:
 
         deleted_count = 1 if deleted else 0
 
-        # 清理 tag_index：此 memory 删除后，检查其每个 tag 是否还有其他 memory 引用；
-        # 无引用则从 tag_index 中移除。失败静默降级，不影响 delete 语义。
+        # Clean up tag_index: once this memory is deleted, check whether each of its tags is still referenced
+        # by any other memory, and drop an unreferenced tag from tag_index. Failures degrade silently and do not change delete semantics.
         if deleted and old_tags and old_user_id:
             try:
                 from .pipelines._retrieval import tag_index as _tag_index_helper
@@ -4011,7 +4011,7 @@ class HyMemoryClient:
             except Exception as e:
                 logger.debug(f"[delete] tag_index cleanup failed (non-fatal): {e}")
 
-        # 记录历史
+        # Record history
         if self._history_store is not None and deleted:
             try:
                 uid = (node.user_id if node else "") or ""
@@ -4027,7 +4027,7 @@ class HyMemoryClient:
 
         logger.info(f"[delete] done: deleted_count={deleted_count}")
 
-        # pipeline trace（best-effort，受 MEMORY_PIPELINE_TRACE_ENABLED 控制）
+        # pipeline trace (best-effort, controlled by MEMORY_PIPELINE_TRACE_ENABLED)
         _ident = self._backend_identity()
         _parsed = {
             "memory_id": memory_id,
@@ -4060,11 +4060,11 @@ class HyMemoryClient:
 
     async def _acquire_graph_store_for_purge(self):
         """
-        获取用于 purge 的 GraphStore（与 mode 无关）。
+        Acquire the GraphStore used for purge (independent of mode).
 
-        ultra 模式复用常驻连接；pro/lite 在检测到遗留图数据时临时打开并 purge 后关闭。
+        ultra mode reuses the persistent connection; pro/lite open one temporarily when leftover graph data is detected, purge it, then close.
         Returns:
-            (graph_store | None, ephemeral: bool) — ephemeral=True 时调用方须 close。
+            (graph_store | None, ephemeral: bool) -- the caller must close it when ephemeral=True.
         """
         if self._graph_store is not None:
             return self._graph_store, False
@@ -4097,12 +4097,12 @@ class HyMemoryClient:
         agent_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> tuple:
-        """按 user 范围清理图数据（VDB 与 mode 无关，图库亦同）。
+        """Purge graph data scoped by user (the VDB is mode-independent, and so is the graph DB).
 
         Returns:
             (deleted_count: int, elapsed_ms: float, ephemeral: bool)
-            供调用方落 DELETE_ALL_GRAPH pipeline log，区分
-            "VDB 慢" 与 "Graph 临时建连慢（ephemeral=True 时 initialize() 耗时）"。
+            Lets the caller persist a DELETE_ALL_GRAPH pipeline log, telling
+            "slow VDB" apart from "slow ephemeral graph connection (initialize() cost when ephemeral=True)".
         """
         _t = time.perf_counter()
         gs, ephemeral = await self._acquire_graph_store_for_purge()
@@ -4134,13 +4134,13 @@ class HyMemoryClient:
         session_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        删除用户的记忆（异步）。
+        Delete the user's memories (async).
 
-        默认删除该用户的所有记忆。可通过 agent_ids/session_ids 缩小范围。
+        Deletes all of the user's memories by default. Narrow the scope with agent_ids/session_ids.
 
-        - agent_ids=[], session_ids=[] → 删除 user 下所有 agent、所有 session
-        - agent_ids=["a1"] → 删除 user 下 a1 的所有 session
-        - agent_ids=["a1"], session_ids=["s1","s2"] → 删除指定组合
+        - agent_ids=[], session_ids=[] -> delete every agent and every session under the user
+        - agent_ids=["a1"] -> delete all sessions of a1 under the user
+        - agent_ids=["a1"], session_ids=["s1","s2"] -> delete the specified combinations
 
         Returns:
             {"success", "deleted_count", "request_id", "elapsed_ms"}
@@ -4155,20 +4155,20 @@ class HyMemoryClient:
 
         total_deleted = 0
         total_graph_deleted = 0
-        # 分段耗时聚合（供 DELETE_ALL_SUMMARY 落库）
+        # Per-stage timing aggregates (persisted for DELETE_ALL_SUMMARY)
         vdb_ms_total = 0.0
         graph_ms_total = 0.0
-        rounds = 0   # 实际执行了几轮(agent×session 组合数)
+        rounds = 0   # How many rounds actually ran (number of agent x session combinations)
 
         async def _do_round(
             aid: Optional[str] = None,
             sid: Optional[str] = None,
         ) -> None:
-            """一个 (agent, session) 组合的 VDB + Graph 删除，各落一条 pipeline log。"""
+            """VDB + Graph deletion for one (agent, session) combination, each writing one pipeline log."""
             nonlocal total_deleted, total_graph_deleted, vdb_ms_total, graph_ms_total, rounds
             rounds += 1
 
-            # ── VDB 删除 ──────────────────────────────────────────────
+            # ── VDB deletion ──────────────────────────────────────────────
             _t_vdb = time.perf_counter()
             try:
                 cnt = await self._vector_store.delete_by_metadata(
@@ -4209,7 +4209,7 @@ class HyMemoryClient:
                 elapsed_ms=_vdb_ms,
             )
 
-            # ── Graph 删除 ────────────────────────────────────────────
+            # ── Graph deletion ────────────────────────────────────────────
             g_cnt, _graph_ms, ephemeral = await self._purge_graph_data(
                 uid, agent_id=aid, session_id=sid,
             )
@@ -4226,13 +4226,13 @@ class HyMemoryClient:
                     "session_id": sid,
                     "graph_deleted_count": g_cnt,
                     "graph_ms": _graph_ms,
-                    # ephemeral=True 时含临时 initialize() 开销，是 Graph 超时的常见原因
+                    # When ephemeral=True this includes the ephemeral initialize() cost, a common cause of Graph timeouts
                     "ephemeral": ephemeral,
                 },
                 elapsed_ms=_graph_ms,
             )
 
-        # ── 路由到具体的删除模式 ──────────────────────────────────────
+        # ── Route to the concrete deletion mode ──────────────────────────────────────
         if not effective_agent_ids and not effective_session_ids:
             logger.info(f"[delete_all] deleting all for user={uid}")
             await _do_round()
@@ -4255,7 +4255,7 @@ class HyMemoryClient:
             f"graph_memory_nodes={total_graph_deleted} mode={self._mode}"
         )
 
-        # ── 总览 log ──────────────────────────────────────────────────
+        # ── Summary log ──────────────────────────────────────────────────
         await self._maybe_store_op_log(
             step="DELETE_ALL_SUMMARY",
             request_id=request_id,
@@ -4266,7 +4266,7 @@ class HyMemoryClient:
                 "rounds": rounds,
                 "vdb_ms_total": round(vdb_ms_total, 2),
                 "graph_ms_total": round(graph_ms_total, 2),
-                # scope：方便 inspector 一眼看出删的是什么范围
+                # scope: lets the inspector see at a glance which range was deleted
                 "scope": (
                     "all" if not effective_agent_ids and not effective_session_ids
                     else f"agents={effective_agent_ids}" if not effective_session_ids
@@ -4285,12 +4285,12 @@ class HyMemoryClient:
         }
 
     # ================================================================
-    # List Memories API（异步）
+    # List Memories API (async)
     # ================================================================
 
     @staticmethod
     def _memory_node_to_list_item(node) -> Dict[str, Any]:
-        """将 MemoryNode 序列化为 list API 条目。"""
+        """Serialize a MemoryNode into a list API item."""
         _memory_at = None
         if isinstance(node.memory_at, datetime):
             _memory_at = int(node.memory_at.timestamp())
@@ -4311,23 +4311,23 @@ class HyMemoryClient:
             "agent_id": node.agent_id,
             "session_id": getattr(node, "session_id", None),
             "speculate": getattr(node, "speculate", None),
-            # 不透出 source_raw_memory_id：见 async_search 同处说明。
+            # source_raw_memory_id is not exposed: see the note at the same spot in async_search.
             "tags": node.tags or [],
             "custom": node.custom or {},
-            # 调用方自定义 meta（透传负载）。与 search / get 一致地放在顶层，
-            # 免得调用方为不同接口写两套取值逻辑；custom 内含内部字段，
-            # 上层不应直接透出给业务方。
+            # Caller-supplied meta (pass-through payload). Kept at the top level, as in search / get,
+            # so callers do not need two extraction paths for different APIs; custom holds internal fields
+            # and must not be exposed to business code directly.
             "meta": list((node.custom or {}).get("meta") or []),
         }
 
     @staticmethod
     def _normalize_layers(layers: Optional[List[Any]]) -> Optional[List]:
-        """把 str / MemoryLayer 混合的 layers 规范化为去重后的 MemoryLayer 列表。
+        """Normalize a mixed str / MemoryLayer layers argument into a deduplicated MemoryLayer list.
 
-        接受字符串是为了与 search 侧对齐（ReadRequest.layers 为 List[str]），
-        并复用 from_string 的旧编号兼容（如 l5_schema → l6_schema）。
-        非法值直接抛 ValueError，由调用方（App 层）转成 400，不静默忽略——
-        静默忽略会让调用方以为筛选生效，实际拿到的是全量。
+        Strings are accepted to stay aligned with search (ReadRequest.layers is List[str]),
+        and to reuse the legacy numbering compatibility of from_string (e.g. l5_schema -> l6_schema).
+        Invalid values raise ValueError right away, which the caller (App layer) turns into 400; they are never silently ignored --
+        ignoring them would make callers believe the filter took effect while they actually get the full set.
         """
         from .models.memory import MemoryLayer
 
@@ -4373,15 +4373,15 @@ class HyMemoryClient:
         from .models.memory import MemoryLayer, MemoryStatus
         from .pipelines._retrieval.user_level_l0 import collapse_user_level_l0_hits
 
-        # 过滤条件维持改动前原样（仅 status=ACTIVE），本次只加多值枚举。
-        # 不叠加 only_latest：正常数据下 writer 对 is_latest/status 成对写，两者等效，
-        # 加了只能多拦脏数据，却会改变现网 list 的返回口径。
-        # 列表页只需 payload（content/tags/custom/链头信息）与排序字段，
-        # 不涉及向量运算，一概 with_vectors=False，避免拉回大量 embedding。
+        # Filters stay exactly as before this change (status=ACTIVE only); only the multi-value enums are added.
+        # only_latest is not layered on top: with healthy data the writer writes is_latest/status in pairs, so the two are equivalent;
+        # adding it would only catch a few extra dirty rows while changing what list returns in production.
+        # The list page only needs the payload (content/tags/custom/chain-head info) plus the sort fields;
+        # no vector math is involved, so with_vectors=False is used throughout to avoid pulling back large embeddings.
         #
-        # L1_RAW 的排除由向量库侧完成（allow_raw_layer 默认 False，条件随请求
-        # 下发，raw 不出库）。此前是把 raw 一并捞回进程再用 Python 筛掉，
-        # 既让原始对话经过本进程，又白拉一遍最大的那一层，已移除。
+        # L1_RAW is excluded on the vector store side (allow_raw_layer defaults to False and the condition travels with the
+        # request, so raw never leaves the store). It used to fetch raw into this process and filter it out in Python,
+        # which both routed raw conversations through this process and re-fetched the largest layer for nothing; removed.
         all_nodes = await self._vector_store.list_by_user(
             user_id=user_id,
             agent_id=agent_id,
@@ -4392,9 +4392,9 @@ class HyMemoryClient:
             with_vectors=False,
         )
 
-        # L0 是 user-level，不应被 agent 过滤。默认列表或显式包含 L0 时，额外按
-        # user 查询 L0，并把历史多个 agent-level 链头折叠为每个用户一条。
-        # L0 已无 agent 隔离，缺少 user 范围时必须跳过，避免返回其他用户画像。
+        # L0 is user-level and must not be filtered by agent. For the default list, or when L0 is explicitly included, also
+        # query L0 by user and fold the historical agent-level chain heads into one entry per user.
+        # L0 no longer has agent isolation, so it must be skipped without a user scope, to avoid returning other users' profiles.
         include_l0 = layers is None or MemoryLayer.L0_BASIC_INFO in layers
         if include_l0 and (user_id or user_ids):
             all_nodes = [n for n in all_nodes if n.layer != MemoryLayer.L0_BASIC_INFO]
@@ -4425,15 +4425,15 @@ class HyMemoryClient:
         }
 
     async def _attach_evolution_chains(self, nodes: List, items: List[Dict[str, Any]]) -> None:
-        """就地给 list 条目附加 evolution_chain，结构与 search 侧一致。
+        """Attach evolution_chain to list items in place, using the same structure as search.
 
-        只展开当前页：回溯要按链逐条查库，整表展开会随数据量线性放大，
-        而列表页一次只渲染一页。
+        Only the current page is expanded: walking back a chain needs one lookup per chain, and expanding everything would scale with the data set,
+        while the list page renders one page at a time.
 
-        只附加字段、不增删条目。expand_evolution_chains 自带同链去重（search 侧
-        可能召回同链多个节点），但 list 已按 status=ACTIVE 过滤，历史版本必为
-        SUPERSEDED，同链多条不会出现；即便出现也不能让 list 少返回条目，
-        故按链头 node_id 映射回原条目，而非直接采用其输出。
+        Fields are only added; no item is added or removed. expand_evolution_chains deduplicates chains on its own (search
+        may recall several nodes from the same chain), but list already filters on status=ACTIVE, so historical versions are
+        always SUPERSEDED and several entries per chain should not appear; even if they do, list must not return fewer items,
+        so results are mapped back to the original items by chain-head node_id instead of taking its output directly.
         """
         from .pipelines._retrieval.evolution import expand_evolution_chains
 
@@ -4450,7 +4450,7 @@ class HyMemoryClient:
                 [{"node_id": n.node_id, "score": 0.0, "node": n} for n in linked],
             )
         except Exception as e:
-            # 演化链是附加信息，取不到不应让整个列表失败
+            # The evolution chain is supplementary; failing to fetch it must not break the whole list
             logger.warning(f"[list] evolution chain expand failed: {e}")
             return
 
@@ -4476,13 +4476,13 @@ class HyMemoryClient:
         agent_ids: Optional[List[str]] = None,
         layers: Optional[List] = None,
     ) -> Optional[Dict[str, Any]]:
-        """列出图库 L6/L7 节点；无图数据、不可用或 layers 不含图层时返回 None。"""
+        """List the graph DB's L6/L7 nodes; returns None when there is no graph data, it is unavailable, or layers excludes both graph layers."""
         from .models.memory import MemoryLayer, MemoryNode
 
         graph_layers = [MemoryLayer.L6_SCHEMA, MemoryLayer.L7_INTENTION]
         if layers:
             graph_layers = [layer for layer in graph_layers if layer in layers]
-            # 指定的 layers 全在 VDB 侧，无需连图库（连接本身有开销）
+            # The requested layers are all VDB-side, so no graph connection is needed (connecting has a cost)
             if not graph_layers:
                 return None
 
@@ -4490,7 +4490,7 @@ class HyMemoryClient:
         if gs is None:
             return None
 
-        # 图库按 isolation_key 组织，无 in 查询能力，多值只能按组合逐个拉后合并
+        # The graph DB is organized by isolation_key and has no in-query capability, so multi-value requests are fetched per combination and merged
         effective_uids = list(user_ids) if user_ids else ([user_id] if user_id else [])
         effective_aids = list(agent_ids) if agent_ids else [agent_id or "default_agent"]
         iks = [
@@ -4525,7 +4525,7 @@ class HyMemoryClient:
                 "limit": limit,
                 "offset": offset,
             }
-            # 单组合时保持原字段形态，避免既有调用方读 isolation_key 失效
+            # Keep the original field shape for a single combination so existing callers reading isolation_key keep working
             if len(iks) == 1:
                 out["isolation_key"] = iks[0]
             else:
@@ -4546,10 +4546,10 @@ class HyMemoryClient:
         request_id: str,
         t0: float,
     ) -> Dict[str, Any]:
-        """按 workspace_id（+可选 branch）纯过滤列出经验层完整详情。
+        """List full experience-layer details by pure filtering on workspace_id (plus optional branch).
 
-        枚举而非召回，所以只有经验层、不带事实层。无 query、无语义排序，按
-        updated_at 倒序。fail-safe：失败返回空列表。
+        This is enumeration rather than retrieval, so only the experience layer is returned, without the fact layer. There is no
+        query and no semantic ranking; results are ordered by updated_at descending. Fail-safe: failures return an empty list.
         """
         empty = {
             "request_id": request_id,
@@ -4561,7 +4561,7 @@ class HyMemoryClient:
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 2),
         }
         try:
-            await self._get_coding_writer()  # 副作用：lazy init store
+            await self._get_coding_writer()  # Side effect: lazy-init the store
         except Exception as e:
             logger.warning(f"[list-coding] init failed: {e}")
             return empty
@@ -4625,45 +4625,45 @@ class HyMemoryClient:
         with_evolution: bool = False,
     ) -> Dict[str, Any]:
         """
-        列出用户的记忆（异步）。
+        List the user's memories (async).
 
-        VDB 与图库分桶返回（图库仅在存在 Kuzu/Neo4j 数据时包含 graph 键）。
+        The VDB and graph buckets are returned separately (the graph key is present only when Kuzu/Neo4j data exists).
 
-        user_ids / agent_ids（多值，默认空）：
-            - 提供时优先于单值 user_id / agent_id，一次返回多个用户（或多个 agent）
-              的记忆并集，分页在合并排序后统一施加。
-            - 每条记忆自带 user_id / agent_id，调用方据此追溯归属。
-            - coding 路径（workspace_id 非空）不支持多值，仅取单值 user_id。
+        user_ids / agent_ids (multi-value, empty by default):
+            - When provided they take precedence over the single-value user_id / agent_id, returning in one call the union of
+              several users' (or agents') memories; pagination is applied after the merged result is sorted.
+            - Each memory carries its own user_id / agent_id so callers can trace ownership.
+            - The coding path (workspace_id non-empty) does not support multi-value; only the single user_id is used.
 
-        layers（默认空）：
-            - 只返回指定层级，接受字符串或 MemoryLayer（与 search 侧写法对齐）；
-              非法值抛 ValueError。
-            - 不传时行为与改动前一致：返回 L1_RAW 以外的全部层级。
-              显式指定则完全以传入为准，包含只要 L1_RAW 的场景。
-            - 指定的层级都不在图库（L6/L7）时跳过图库查询，返回中省略 graph 键。
+        layers (empty by default):
+            - Return only the requested layers, accepting strings or MemoryLayer (aligned with the search API);
+              invalid values raise ValueError.
+            - When omitted the behaviour matches the previous version: every layer except L1_RAW is returned.
+              When specified the argument is authoritative, including a request for L1_RAW only.
+            - When none of the requested layers live in the graph DB (L6/L7), the graph query is skipped and the graph key is omitted.
 
-        with_evolution（默认 False）：
-            - 为 VDB 条目附加 `evolution_chain`（latest → oldest），结构与 search 一致，
-              仅在该条记忆确有演化链时出现。
-            - 默认关闭：展开需按链逐条回查，会拖慢默认列表。
-            - 只展开当前页，不影响 total 与条目数。
-            - 注意能看到的仅限「矛盾取代」型演化；「补充精炼」型在写入时是原地更新，
-              历史版本不落库，故无链可返回。
+        with_evolution (False by default):
+            - Attach `evolution_chain` (latest -> oldest) to VDB items, with the same structure as search,
+              and it is present only when that memory actually has an evolution chain.
+            - Off by default: expansion needs one lookup per chain and would slow down the default list.
+            - Only the current page is expanded; total and the item count are unaffected.
+            - Note that only contradiction-supersede evolution is visible; supplement-refine evolution is an in-place update at write time,
+              so historical versions are never persisted and no chain can be returned.
 
-        workspace_id / branch（默认空）：
-            - workspace_id 非空 → 直接走 coding memory 列表路径，按 workspace_id
-              （+可选 branch）纯过滤列出该 user 的完整经验层（按 updated_at
-              倒序，无语义排序），返回 {"scene": "productivity", "experiences": [...]}。
-            - 两者都为空 → 常规 chat 路径（VDB + graph 分桶）。
+        workspace_id / branch (empty by default):
+            - workspace_id non-empty -> go straight to the coding memory list path, listing that user's full experience layer by
+              pure workspace_id (plus optional branch) filtering (updated_at descending, no semantic ranking),
+              returning {"scene": "productivity", "experiences": [...]}.
+            - Both empty -> the regular chat path (VDB + graph buckets).
 
         Returns:
-            chat 路径:
+            chat path:
             {
                 "vdb": {"memories": [...], "total", "limit", "offset"},
-                "graph": {"nodes": [...], "total", ...} | 省略,
+                "graph": {"nodes": [...], "total", ...} | omitted,
                 "elapsed_ms": ...,
             }
-            coding 路径:
+            coding path:
             {
                 "scene": "productivity",
                 "experiences": [...],
@@ -4676,7 +4676,7 @@ class HyMemoryClient:
         set_request_id(request_id)
         t0 = time.perf_counter()
 
-        # workspace_id 非空 → 走 coding memory 列表路径
+        # workspace_id non-empty -> use the coding memory list path
         if workspace_id:
             return await self._list_coding(
                 user_id=user_id, workspace_id=workspace_id, branch=branch,
@@ -4705,7 +4705,7 @@ class HyMemoryClient:
             f"elapsed={elapsed}ms"
         )
 
-        # pipeline trace（best-effort，受 MEMORY_PIPELINE_TRACE_ENABLED 控制）
+        # pipeline trace (best-effort, controlled by MEMORY_PIPELINE_TRACE_ENABLED)
         _page_items = vdb.get("memories", []) or []
         _page_ids = [
             (m.get("memory_id") or m.get("id") or "")
@@ -4724,7 +4724,7 @@ class HyMemoryClient:
             "vdb_total": vdb.get("total", 0),
             "returned_count": len(_page_items),
         }
-        # op log 的 user_id/agent_id 字段是单值，多值查询范围额外记在 parsed 里，避免审计漏记
+        # The op log's user_id/agent_id fields are single-valued; the multi-value scope is also recorded in parsed so the audit trail stays complete
         if user_ids:
             _parsed["user_ids"] = list(user_ids)
         if agent_ids:
@@ -4751,7 +4751,7 @@ class HyMemoryClient:
         return out
 
     # ================================================================
-    # User Profile / Basic Info（L0）API
+    # User Profile / Basic Info (L0) API
     # ================================================================
 
     @_ensure_internal_loop
@@ -4891,10 +4891,10 @@ class HyMemoryClient:
         *,
         user_id: str = "",
     ) -> Dict[str, Any]:
-        """返回用户的 L0 basic info 记忆（异步）。
+        """Return the user's L0 basic info memories (async).
 
-        与 search / list 一致：当记忆存在演化链（supersede/evolution）时，以链头
-        （is_latest）为代表返回，并附 `evolution_chain`（latest → oldest）。
+        Consistent with search / list: when a memory has an evolution chain (supersede/evolution), the chain head
+        (is_latest) is returned as the representative, together with `evolution_chain` (latest -> oldest).
 
         Returns:
             {
@@ -4903,8 +4903,8 @@ class HyMemoryClient:
                     {
                         "memory_id", "content", "layer", "status",
                         "memory_at", "gmt_created", "tags",
-                        "basic_info_kv": {...},          # L0 结构化 KV（来自 custom）
-                        "evolution_chain": [...],        # 仅当有链
+                        "basic_info_kv": {...},          # Structured L0 KV (from custom)
+                        "evolution_chain": [...],        # Only when a chain exists
                     },
                     ...
                 ],
@@ -4919,10 +4919,10 @@ class HyMemoryClient:
         set_request_id(request_id)
         t0 = time.perf_counter()
 
-        # L0 head 是 ACTIVE 状态；链上更早的版本走 evolution 展开时按需拉取。
-        # basic_info 组装只读 custom.basic_info_kv / content / tags 与链上元信息，
-        # evolution 展开也不涉及 embedding，就一开始走 with_vectors=False 避免拉向量。
-        # L0 Basic Info 是 user-level 全局画像；agent_id 仅保留 API 向后兼容。
+        # The L0 head is ACTIVE; earlier versions on the chain are fetched on demand during evolution expansion.
+        # Assembling basic_info only reads custom.basic_info_kv / content / tags and the chain metadata,
+        # and evolution expansion needs no embeddings, so with_vectors=False from the start avoids fetching vectors.
+        # L0 Basic Info is the user-level global profile; agent_id is kept only for API backward compatibility.
         nodes = await self._vector_store.list_by_user(
             user_id=user_id,
             status_filter=[MemoryStatus.ACTIVE],
@@ -4991,7 +4991,7 @@ class HyMemoryClient:
         }
 
     # ================================================================
-    # Entity Store 构建 / 迁移 API
+    # Entity Store build / migration API
     # ================================================================
 
     def build_memory_graph(
@@ -5002,23 +5002,23 @@ class HyMemoryClient:
         limit: int = 10000,
         clear_first: bool = False,
     ) -> Dict[str, Any]:
-        """为指定 user 的全部 L2_FACT 回填记忆关系图（同步）。
+        """Backfill the memory relation graph for all L2_FACT of the given user (sync).
 
-        用途：图数据是增量积累的，开启 `MEMORY_ENABLE_GRAPH` 之前写入的记忆不在图里。
-        这个入口把历史 L2_FACT 投影成图节点 + 建 `TAGGED_WITH` + `semantic_neighbor` 边。
+        Why: graph data accumulates incrementally, so memories written before `MEMORY_ENABLE_GRAPH` was enabled are not in the graph.
+        This entry point projects the historical L2_FACT into graph nodes and builds `TAGGED_WITH` + `semantic_neighbor` edges.
 
-        建得出：`TAGGED_WITH`（Topic）+ `semantic_neighbor` + `TEMPORAL_NEXT` 时序脊
-        （后者需 `MEMORY_GRAPH_TEMPORAL_SPINE=true`）。
+        Built: `TAGGED_WITH` (Topic) + `semantic_neighbor` + the `TEMPORAL_NEXT` temporal spine
+        (the latter requires `MEMORY_GRAPH_TEMPORAL_SPINE=true`).
 
-        ⚠️ 回填**建不出** `co_occurs` 和 LLM 标注的 `causes`/`elaborates`/`contrasts`：
-        前者需要"同一次写入批次"这个信息（历史数据已丢失），后者需要重跑 reconcile。
-        也就是说回填拿不到信息量最高的那两类边，跨主题的因果关系仍要靠新写入积累。
+        ⚠️ Backfill **cannot build** `co_occurs`, nor the LLM-annotated `causes`/`elaborates`/`contrasts`:
+        The former needs the "same write batch" information (lost for historical data), the latter needs a reconcile re-run.
+        In other words, backfill cannot produce the two highest-value edge types; cross-topic causality still accumulates through new writes.
 
-        投影本身是幂等的（节点/标签/边都走 MERGE），重复跑不会叠数据。但它**不会删旧
-        节点** —— 如果投影规则变过（例如 Topic 隔离键从 `user::agent::session` 收窄成
-        `user::agent`），旧的 session 粒度 Topic 仍会留在库里与新的并存。这种情况传
-        `clear_first=True`，重建前先清掉该用户的 l2_fact 投影与孤儿 Topic
-        （**不动** System 2 的 l6_schema）。
+        The projection itself is idempotent (nodes/labels/edges all go through MERGE), so re-running does not stack data. It **does not
+        delete old nodes**, though -- if the projection rules ever changed (e.g. the Topic isolation key narrowed from `user::agent::session`
+        to `user::agent`), old session-granularity Topics remain in the store next to the new ones. In that case pass
+        `clear_first=True` to clear this user's l2_fact projection and orphan Topics before rebuilding
+        (**without touching** System 2's l6_schema).
 
         Returns:
             {"success", "memories_scanned", "nodes", "tags", "semantic", "errors",
@@ -5040,7 +5040,7 @@ class HyMemoryClient:
         limit: int = 10000,
         clear_first: bool = False,
     ) -> Dict[str, Any]:
-        """`build_memory_graph` 的异步版本。"""
+        """Async version of `build_memory_graph`."""
         import time as _t
         from .models.memory import MemoryLayer, MemoryStatus
         from .pipelines._graph.projector import project_memories_to_graph
@@ -5054,7 +5054,7 @@ class HyMemoryClient:
 
         cleared: Dict[str, int] = {}
         if clear_first:
-            # 只清 l2_fact 投影 + 孤儿 Topic；System 2 的 l6_schema 不动
+            # Clear only the l2_fact projection + orphan Topics; System 2's l6_schema is left alone
             cleared = await self._graph_store.clear_projection(
                 user_id, agent_id, layer=MemoryLayer.L2_FACT.value,
             )
@@ -5071,7 +5071,7 @@ class HyMemoryClient:
         )
         nodes = list(nodes or [])
 
-        # semantic_neighbor 回填：用库里已有的向量算 pairwise 相似度，不调 embedding API
+        # semantic_neighbor backfill: pairwise similarity from the vectors already in the store, no embedding API calls
         neighbors_by_node: Dict[str, List[Tuple[str, float]]] = {}
         gcfg = getattr(self._config, "graph_store", None)
         thr = getattr(gcfg, "edge_min_score", 0.55) if gcfg else 0.55
@@ -5095,10 +5095,10 @@ class HyMemoryClient:
             vector_store=vector_store,
             neighbors_by_node=neighbors_by_node,
             edge_min_score=thr,
-            # 回填没有"批次"概念，禁掉 co_occurs（否则会把全量记忆两两相连）
+            # Backfill has no notion of a "batch", so co_occurs is disabled (otherwise every memory pair would be linked)
             co_occurs_max_batch=0,
-            # 时序脊走 bulk 版：整批就是全部历史，前驱在批内直接排序即可。
-            # 若误用增量版，会因为"排除批内节点"而一条边都建不出来。
+            # The temporal spine uses the bulk variant: the whole batch is all of history, so predecessors are ordered inside the batch.
+            # Using the incremental variant by mistake would create no edges at all, because it excludes nodes inside the batch.
             temporal_spine_bulk=bool(
                 getattr(gcfg, "temporal_spine", False) if gcfg else False
             ),
@@ -5121,15 +5121,15 @@ class HyMemoryClient:
         agent_id: str = "default_agent",
         rebuild: bool = False,
     ) -> Dict[str, Any]:
-        """为指定 user 的全部 L2_FACT（含旧数据）抽取 entity 刷入 entity store（同步）。
+        """Extract entities from all of the user's L2_FACT (legacy data included) into the entity store (sync).
 
-        用于给历史 collection 补建 entity store，供写侧与内部迁移工具使用。
-        与 mode 无关（pro 也可调）。
+        Used to backfill the entity store for historical collections, for the write path and internal migration tools.
+        Independent of mode (also callable in pro).
 
         Args:
-            user_id:  用户 ID
-            agent_id: Agent ID（默认 default_agent）
-            rebuild:  True 时先清空该 user 现有 entity 再重建（默认 False，增量合并）
+            user_id:  User ID
+            agent_id: Agent ID (defaults to default_agent)
+            rebuild:  When True, clear this user's existing entities before rebuilding (default False, incremental merge)
 
         Returns:
             {"success", "memories_scanned", "entities_indexed", "elapsed_ms"}
@@ -5148,16 +5148,16 @@ class HyMemoryClient:
         agent_id: str = "default_agent",
         rebuild: bool = False,
     ) -> Dict[str, Any]:
-        """build_entity_store 的异步实现。"""
+        """Async implementation of build_entity_store."""
         from .models.memory import MemoryLayer, MemoryStatus
         from .pipelines._retrieval.entity_store import index_memory_entities
 
         t0 = time.perf_counter()
         vs = self._vector_store
 
-        # 扫描该 user 的全部 ACTIVE L2_FACT
-        # entity rebuild 只需 node_id/content/user_id/agent_id，下游 index_memory_entities 会对
-        # entity 名重新 embed，不依赖原 node 的 embedding——走 with_vectors=False 避免拉向量。
+        # Scan all ACTIVE L2_FACT for this user
+        # Entity rebuild only needs node_id/content/user_id/agent_id; the downstream index_memory_entities re-embeds the
+        # entity names itself and does not depend on the original node embeddings, so use with_vectors=False here.
         try:
             nodes = await vs.list_by_user(
                 user_id=user_id,
@@ -5171,7 +5171,7 @@ class HyMemoryClient:
             logger.error(f"[build_entity_store] list_by_user failed: {e}")
             return {"success": False, "error": str(e), "memories_scanned": 0, "entities_indexed": 0}
 
-        # rebuild：先剔除这些 memory 在 entity store 里的关联（best-effort）
+        # rebuild: first drop these memories' associations in the entity store (best-effort)
         if rebuild:
             for n in nodes:
                 try:
@@ -5212,7 +5212,7 @@ class HyMemoryClient:
         }
 
     # ================================================================
-    # Clone User API（异步）
+    # Clone User API (async)
     # ================================================================
 
     async def _load_clone_source_snapshot(
@@ -5330,10 +5330,10 @@ class HyMemoryClient:
         agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        克隆用户记忆（异步）。
+        Clone user memories (async).
 
-        深拷贝 src 的全部记忆到 dst，embedding 直接复制不重新计算。
-        dst 必须为空，否则返回错误。操作同步完成，失败时回滚已写入的数据。
+        Deep copies all of src's memories to dst; embeddings are copied as-is and never recomputed.
+        dst must be empty, otherwise an error is returned. The operation completes synchronously and rolls back written data on failure.
 
         Returns:
             {"success": True, "request_id": "...", "cloned_count": N, "elapsed_ms": ...}
@@ -5368,10 +5368,10 @@ class HyMemoryClient:
         try:
             from .models.memory import MemoryLayer, MemoryNode
 
-            # 1. 检查 dst 是否为空
-            # 只看长度判空，不需要 embedding；避免为一次存在性探测拉回大 payload。
-            # allow_raw_layer=True：判空要看"有没有任何数据"，含 raw；
-            # 否则目标只有 raw 时会被误判为空，clone 覆盖上去造成数据混杂。
+            # 1. Check whether dst is empty
+            # Emptiness is judged by length only, no embeddings needed; avoids pulling a large payload for an existence probe.
+            # allow_raw_layer=True: the emptiness check means "is there any data at all", raw included;
+            # otherwise a destination holding only raw would be misread as empty and the clone would overwrite it and mix data.
             dst_nodes = await self._vector_store.list_by_user(
                 dst_user_id, agent_id=agent_id, limit=1, with_vectors=False,
                 allow_raw_layer=True,
@@ -5401,11 +5401,11 @@ class HyMemoryClient:
                     ),
                 }
 
-            # 2. 列出 src 的全量记忆（含 embedding）。同一 winner 同时
-            # fan-out 到多个 rollout 时共享一次在途源快照，避免重复全库 scroll。
-            # allow_raw_layer=True：clone 语义是"完整复制这个用户的记忆"，
-            # 含原始对话层——目标用户的提取管线同样要靠 raw 拼对话历史，
-            # 漏掉 raw 会让克隆出的用户丢失全部历史上下文。
+            # 2. List all of src's memories (embeddings included). When one winner fans out to several
+            # rollout destinations at the same time, they share one in-flight source snapshot instead of scrolling repeatedly.
+            # allow_raw_layer=True: clone means "copy this user's memories in full", raw conversation layer included --
+            # the destination user's extraction pipeline also relies on raw to piece conversation history together,
+            # and dropping raw would leave the cloned user without any historical context.
             source_snapshot, snapshot_lease = await self._acquire_clone_source_snapshot(
                 src_user_id, agent_id,
             )
@@ -5422,29 +5422,29 @@ class HyMemoryClient:
 
             logger.info(f"[clone] found {len(src_nodes)} nodes to clone")
 
-            # 3. 深拷贝：第一遍——生成新 node_id，建完整映射表
+            # 3. Deep copy: first pass -- generate new node_ids and build the complete mapping table
             id_map: Dict[str, str] = {}  # old_node_id → new_node_id
 
             for src_node in src_nodes:
                 id_map[src_node.node_id] = str(uuid.uuid4())
 
-            # 第二遍——用完整的 id_map 做深拷贝 + 指针重映射
+            # Second pass -- deep copy with the complete id_map plus pointer remapping
             from .utils.clone_references import remap_memory_references
             new_nodes: List = []
             for src_node in src_nodes:
                 new_id = id_map[src_node.node_id]
 
-                # 使用 to_dict + from_dict 做深拷贝
+                # Deep copy via to_dict + from_dict
                 source_dict = src_node.to_dict()
                 node_dict = remap_memory_references(source_dict, id_map)
                 node_dict["node_id"] = new_id
                 node_dict["user_id"] = dst_user_id
-                # 重置检索元数据
+                # Reset retrieval metadata
                 node_dict["access_count"] = 0
                 node_dict["last_accessed_at"] = None
 
-                # 映射演化链指针（supersedes / superseded_by）
-                # 指向映射表外的 ID（不在本次 clone 范围内）则清空
+                # Remap evolution chain pointers (supersedes / superseded_by)
+                # IDs outside the map (not part of this clone) are cleared
                 if source_dict.get("supersedes"):
                     node_dict["supersedes"] = [
                         id_map[sid] for sid in source_dict["supersedes"]
@@ -5455,22 +5455,22 @@ class HyMemoryClient:
                         id_map[sid] for sid in source_dict["superseded_by"]
                         if sid in id_map
                     ]
-                # 映射 evidence_chain 中的 ID
+                # Remap the IDs inside evidence_chain
                 if source_dict.get("evidence_chain"):
                     node_dict["evidence_chain"] = [
                         id_map[eid] for eid in source_dict["evidence_chain"]
                         if eid in id_map
                     ]
                 new_node = MemoryNode.from_dict(node_dict)
-                # 保留原始 embedding（content 不变，无需重新计算）
+                # Keep the original embedding (content is unchanged, so no recomputation)
                 new_node.embedding = src_node.embedding
-                # 保留原始时间（不要被 __post_init__ 覆盖）
+                # Keep the original timestamps (do not let __post_init__ overwrite them)
                 new_node.memory_at = src_node.memory_at
                 new_node.gmt_created = src_node.gmt_created
                 new_node.valid_from = src_node.valid_from
                 new_nodes.append(new_node)
 
-            # 5. 批量写入向量库
+            # 5. Batch write to the vector database
             written_ids = await self._vector_store.upsert_batch(new_nodes)
             logger.info(f"[clone] upsert_batch: {len(written_ids)} nodes written")
             written_id_set = set(written_ids)
@@ -5499,8 +5499,8 @@ class HyMemoryClient:
                 layer = node.layer.value if hasattr(node.layer, "value") else str(node.layer)
                 by_layer[layer] = by_layer.get(layer, 0) + 1
 
-            # 6. 图数据库克隆（如启用）
-            # 正确流程：从源 Graph 读节点 + 边，用 id_map 重映射后写入目标 Graph
+            # 6. Graph database clone (when enabled)
+            # Correct flow: read nodes + edges from the source Graph, remap them with id_map, then write to the destination Graph
             if self._graph_store is not None:
                 graph_snapshot = source_snapshot.get("graph")
                 graph_import = getattr(
@@ -5533,7 +5533,7 @@ class HyMemoryClient:
                         id_map=id_map,
                     )
 
-            # 7. 复制 memory_operations 记录（src → dst，用 id_map 重映射）
+            # 7. Copy memory_operations records (src -> dst, remapped with id_map)
             if self._cache:
                 try:
                     await self._clone_memory_operations(
@@ -5561,7 +5561,7 @@ class HyMemoryClient:
 
         except Exception as e:
             logger.error(f"[clone] failed: {e}", exc_info=True)
-            # 回滚：删除已写入 dst 的数据
+            # Rollback: delete whatever was already written to dst
             try:
                 await self._vector_store.delete_by_metadata(user_id=dst_user_id)
                 delete_clauses = getattr(self._vector_store, "delete_retrieval_clauses_by_metadata", None)
@@ -5595,26 +5595,26 @@ class HyMemoryClient:
         id_map: Dict[str, str],
     ) -> None:
         """
-        从源用户的 Graph 深拷贝到目标用户。
+        Deep copies from the source user's Graph to the destination user.
 
-        流程：
-        1. 读源 Graph 的所有 Memory 节点（按 isolation_key）
-        2. 用 id_map 重映射节点 ID + user_id + isolation_key，写入目标 Graph
-        3. 复制 VdbRef 影子节点（ID 重映射）+ DERIVED_FROM 边
-        4. 复制 Memory→Memory 关系边（RELATED_TO）
-        5. 复制 TAGGED_WITH 边（Topic tag）
+        Flow:
+        1. Read all Memory nodes from the source Graph (by isolation_key)
+        2. Remap node IDs + user_id + isolation_key with id_map and write to the destination Graph
+        3. Copy VdbRef shadow nodes (with ID remapping) + DERIVED_FROM edges
+        4. Copy Memory -> Memory relation edges (RELATED_TO)
+        5. Copy TAGGED_WITH edges (Topic tags)
         """
         from .models.memory import MemoryNode
         gs = self._graph_store
         if gs is None:
             return
 
-        # 构建源/目标 isolation_key
-        # 源用户可能有多个 session，用 get_all_nodes 按 user_id 前缀匹配
-        # 但 get_all_nodes 需要精确 isolation_key，所以遍历 id_map 里的源节点找 isolation_key
+        # Build the source/destination isolation_key
+        # The source user may have several sessions, so get_all_nodes matches by user_id prefix;
+        # but get_all_nodes needs an exact isolation_key, so the source nodes in id_map are scanned for isolation_key
         try:
-            # Step 1: 读源 Graph 的所有 Memory 节点
-            # 用 Cypher 按 user_id 查（不依赖 isolation_key，更通用）
+            # Step 1: read all Memory nodes from the source Graph
+            # Query with Cypher by user_id (independent of isolation_key, more general)
             src_graph_nodes = []
             if hasattr(gs, '_execute') and hasattr(gs, '_available'):
                 # Kuzu
@@ -5628,7 +5628,7 @@ class HyMemoryClient:
                     row = result.get_next()
                     src_graph_nodes.append(gs._row_to_memory_node(row[0]))
             elif hasattr(gs, '_run'):
-                # Neo4j — 同时取 embedding / beh_embedding 以便 clone 时一并复制
+                # Neo4j -- also fetch embedding / beh_embedding so the clone can copy them as well
                 rows = await gs._run(
                     "MATCH (m:Memory) WHERE m.user_id = $uid "
                     "RETURN m, m.embedding AS _emb, m.beh_embedding AS _beh_emb",
@@ -5636,7 +5636,7 @@ class HyMemoryClient:
                 )
                 for r in rows:
                     node = gs._record_to_memory_node(r["m"])
-                    # 把 embedding 暂存到 node 上，供后续 upsert 使用
+                    # Stash the embedding on the node for the later upsert
                     if r.get("_emb") is not None:
                         node._graph_embedding = list(r["_emb"])
                     if r.get("_beh_emb") is not None:
@@ -5649,39 +5649,39 @@ class HyMemoryClient:
 
             logger.info(f"[clone] Graph: found {len(src_graph_nodes)} source nodes")
 
-            # 记住每个源节点的 old_id，确保 id_map 覆盖
-            graph_old_ids = []  # 与 src_graph_nodes 一一对应
+            # Remember each source node's old_id so id_map covers it
+            graph_old_ids = []  # One entry per element of src_graph_nodes
             for src_node in src_graph_nodes:
                 old_nid = src_node.node_id
                 graph_old_ids.append(old_nid)
                 if old_nid not in id_map:
                     id_map[old_nid] = str(uuid.uuid4())
 
-            # Step 2: 写入目标 Graph Memory 节点（深拷贝 + ID 重映射）
+            # Step 2: write the destination Graph Memory nodes (deep copy + ID remapping)
             from .models.memory import MemoryNode as _MN
             for i, src_node in enumerate(src_graph_nodes):
                 old_nid = graph_old_ids[i]
                 new_id = id_map[old_nid]
-                # 深拷贝，不修改源 node
+                # Deep copy; the source node is left untouched
                 from .utils.clone_references import remap_memory_references
                 d = remap_memory_references(src_node.to_dict(), id_map)
                 d["node_id"] = new_id
                 d["user_id"] = dst_user_id
                 dst_node = _MN.from_dict(d)
-                # 携带源节点的 embedding（to_dict 不含 embedding，需手动传递）
+                # Carry over the source node's embedding (to_dict omits it, so pass it manually)
                 src_emb = getattr(src_node, '_graph_embedding', None)
                 src_beh = getattr(src_node, '_graph_beh_embedding', None)
                 if src_emb:
                     dst_node._graph_embedding = src_emb
                 try:
                     await gs.upsert_memory_node(dst_node)
-                    # upsert 后再补 beh_embedding（upsert 只写 embedding，不写 beh）
+                    # Patch beh_embedding after the upsert (upsert only writes embedding, not beh)
                     if src_beh:
                         await gs.update_embedding(new_id, beh_embedding=src_beh)
                 except Exception as e:
                     logger.warning(f"[clone] Graph node upsert failed {new_id}: {e}")
 
-            # Step 3: 复制 VdbRef + DERIVED_FROM 边
+            # Step 3: copy VdbRef + DERIVED_FROM edges
             for i, old_nid in enumerate(graph_old_ids):
                 new_id = id_map[old_nid]
                 try:
@@ -5698,12 +5698,12 @@ class HyMemoryClient:
                     except Exception as e:
                         logger.debug(f"[clone] DERIVED_FROM edge failed: {e}")
 
-            # Step 4: 复制 Memory→Memory 关系边。
+            # Step 4: copy Memory -> Memory relation edges.
             #
-            # RELATED_TO 的 relation_type / weight 是读侧图重排的核心语义，
-            # 不能只复制 Neo4j/Kuzu 的关系表类型。旧实现传空 properties，导致
-            # semantic_neighbor/co_occurs/typed edges 全部退化成默认 related，
-            # clone bank 与 seed bank 的检索行为因此不再等价。
+            # The relation_type / weight of RELATED_TO are core semantics for read-side graph reranking; copying only
+            # the Neo4j/Kuzu relation table type is not enough. The old implementation passed empty properties, which turned
+            # semantic_neighbor/co_occurs/typed edges all into the default related,
+            # so the clone bank and the seed bank were no longer equivalent at retrieval time.
             seen_relation_edges = set()
 
             for i, old_nid in enumerate(graph_old_ids):
@@ -5772,8 +5772,8 @@ class HyMemoryClient:
                         except Exception as e:
                             logger.debug(f"[clone] edge {et} failed: {e}")
 
-            # Step 4b: 复制有向时序脊。这里只读 source 端，避免把同一有向边
-            # 从两个端点各重放一次；topic_id 参与时间语义，必须保留。
+            # Step 4b: copy the directed temporal spine. Only the source end is read here, so the same directed edge is
+            # not replayed once from each endpoint; topic_id takes part in the temporal semantics and must be kept.
             for old_nid in graph_old_ids:
                 try:
                     if hasattr(gs, '_execute'):
@@ -5811,7 +5811,7 @@ class HyMemoryClient:
                         except Exception as e:
                             logger.debug(f"[clone] TEMPORAL_NEXT edge failed: {e}")
 
-            # Step 4c: 复制 System 2 的跨抽象有向边。
+            # Step 4c: copy System 2's cross-abstraction directed edges.
             for old_nid in graph_old_ids:
                 try:
                     if hasattr(gs, '_execute'):
@@ -5884,8 +5884,8 @@ class HyMemoryClient:
                     tag_emb = tr.get("embedding")
                     try:
                         await gs.add_topic_tag(new_id, tag_name, dst_ik)
-                        # 把源 Topic 的 embedding 写到目标 Topic（add_topic_tag 按 name
-                        # 精确匹配时不设 embedding，需要补写）
+                        # Copy the source Topic's embedding onto the destination Topic (when add_topic_tag matches by name
+                        # exactly it leaves the embedding unset, so it has to be patched in)
                         if tag_emb is not None and hasattr(gs, '_run_write'):
                             await gs._run_write(
                                 "MATCH (t:Topic {isolation_key: $ik, name: $name}) "
@@ -5922,8 +5922,8 @@ class HyMemoryClient:
                         except Exception as e:
                             logger.debug(f"[clone] hierarchy topic failed: {e}")
 
-                # 正文 NER 是 normal recall 的独立加分通道。clone 后必须重建
-                # MENTIONS，否则同一份 bank 仅因 user_id 改名就失去 entity recall。
+                # Body-text NER is an independent scoring channel in normal recall. MENTIONS must be rebuilt after a clone,
+                # otherwise the same bank loses entity recall merely because the user_id was renamed.
                 try:
                     if hasattr(gs, '_execute'):
                         result = gs._execute(
@@ -5971,34 +5971,34 @@ class HyMemoryClient:
         id_map: Dict[str, str],
     ) -> None:
         """
-        复制源用户的 memory_operations 到目标用户。
+        Copy the source user's memory_operations to the destination user.
 
-        - user_id 替换为 dst_user_id
-        - memory_id / old_memory_id 按 id_map 重映射（找不到映射的保留原值）
-        - supersedes 列表中的 ID 也做重映射
-        - request_id 保留源的（保持 per_request 分组语义）
-        - 额外追加一条 CLONE op 记录（标记 clone 来源）
+        - user_id is replaced with dst_user_id
+        - memory_id / old_memory_id are remapped via id_map (values without a mapping keep the original)
+        - IDs in the supersedes list are remapped as well
+        - request_id keeps the source value (preserving per_request grouping semantics)
+        - One extra CLONE op record is appended (marking the clone origin)
         """
         import json as _json
 
-        # 1. 查出 src 的所有 ops
+        # 1. Load all ops of src
         src_ops = await self._cache.get_memory_operations(user_id=src_user_id, limit=50000)
         if not src_ops:
             logger.info("[clone] no memory_operations to clone")
             return
 
-        # 2. 逐条写入 dst（ID 重映射）
+        # 2. Write them one by one into dst (with ID remapping)
         cloned_count = 0
         for op in src_ops:
-            # 重映射 memory_id
+            # Remap memory_id
             src_mem_id = op.get("memory_id", "")
             dst_mem_id = id_map.get(src_mem_id, src_mem_id)
 
-            # 重映射 old_memory_id
+            # Remap old_memory_id
             src_old_id = op.get("old_memory_id") or ""
             dst_old_id = id_map.get(src_old_id, src_old_id) if src_old_id else None
 
-            # 重映射 supersedes 列表
+            # Remap the supersedes list
             raw_supersedes = op.get("supersedes", [])
             if isinstance(raw_supersedes, str):
                 try:
@@ -6021,7 +6021,7 @@ class HyMemoryClient:
             )
             cloned_count += 1
 
-        # 3. 追加一条 CLONE 元记录（标记 clone 来源，方便回溯）
+        # 3. Append one CLONE meta record (marks the clone origin for traceability)
         await self._cache.store_memory_operation(
             request_id=clone_request_id,
             user_id=dst_user_id,
@@ -6040,12 +6040,12 @@ class HyMemoryClient:
         logger.info(f"[clone] memory_operations: cloned {cloned_count} ops from {src_user_id} → {dst_user_id}")
 
     # ================================================================
-    # History API（异步）
+    # History API (async)
     # ================================================================
 
     @_ensure_internal_loop
     async def async_history(self, memory_id: str) -> List[Dict[str, Any]]:
-        """查询某条记忆的变更历史（异步）"""
+        """Query the change history of a memory (async)"""
         if self._history_store is None:
             return []
         return await self._history_store.get_history(memory_id)
@@ -6058,9 +6058,9 @@ class HyMemoryClient:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """
-        查询最近的操作历史（异步）。
+        Query the recent operation history (async).
 
-        agent_ids 为空时，查询该用户所有 agent 的历史。
+        When agent_ids is empty, the history of every agent of that user is queried.
         """
         if self._history_store is None:
             return []
@@ -6069,17 +6069,17 @@ class HyMemoryClient:
         effective_agent_ids = agent_ids if agent_ids is not None else []
 
         if not effective_agent_ids:
-            # 查所有 agent 的历史：用 "user_id:" 前缀匹配
+            # Query every agent's history: match on the "user_id:" prefix
             isolation_key = self._build_isolation_key(uid, "default")
             return await self._history_store.get_recent(isolation_key, limit=limit)
         else:
-            # 查指定 agent 的历史
+            # Query the history of the specified agents
             all_results = []
             for aid in effective_agent_ids:
                 isolation_key = self._build_isolation_key(uid, aid)
                 results = await self._history_store.get_recent(isolation_key, limit=limit)
                 all_results.extend(results)
-            # 按时间倒序排列，取 top limit
+            # Sort by time descending and take the top limit
             all_results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             return all_results[:limit]
 

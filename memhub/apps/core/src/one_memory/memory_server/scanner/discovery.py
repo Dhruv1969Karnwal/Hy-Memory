@@ -194,7 +194,8 @@ def page_roots(
     if not walks:
         return page
 
-    # 轮转：每个 root 每次只贡献**一个**文件，避免大 root 独占整页。
+    # Rotation: each root contributes only **one** file per pass so a large root cannot take the
+    # whole page.
     while len(page) < page_size:
         progressed = False
         for root in roots:
@@ -213,7 +214,8 @@ def page_roots(
             taken: FileMetadata | None = None
             dir_of_taken = ""
             for dir_key, metadata in walk:
-                # 跳过断点之前已发射的文件（按 file_key 比较，跨调用稳定）
+                # Skip files already emitted before the checkpoint (compared by file_key, stable
+                # across calls)
                 if resume_dir is not None:
                     if dir_key < resume_dir:
                         continue
@@ -290,5 +292,5 @@ def _walk_files(
         files.sort(key=lambda item: item.file_key)
         for metadata in files:
             yield dir_key, metadata
-        # 子目录按 key 排序入队，保证整体顺序与 file_key 顺序一致
+        # Subdirectories are queued in key order so the overall order matches file_key order
         pending.extend(sorted(subdirs, key=lambda p: _file_key(p, root)))
