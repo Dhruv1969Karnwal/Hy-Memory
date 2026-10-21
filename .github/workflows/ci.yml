@@ -86,3 +86,5 @@ jobs:
           tests/test_recent_first_import.py
           tests/test_source_session_count_api.py
           tests/test_schema_migrations.py
+          tests/test_derived_echo.py
+          tests/test_workbuddy_boundary.py
