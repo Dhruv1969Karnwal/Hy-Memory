@@ -44,6 +44,24 @@ CLAIM_MYSQL = "INSERT IGNORE INTO model_profile_seeds (name, seeded_at) VALUES (
 
 PRESET_PROFILE_NAME = "Preconfigured model service"
 
+#: The preset's name before this repository was translated. It is not display
+#: text: it is the primary key of the preset's seed claim, and the only handle
+#: `ModelSettings` has for recognising the preset at all. A directory that
+#: already seeded under it therefore has to be moved to the new name, not seeded
+#: again beside it - a second row would leave the stored key on the row nothing
+#: reads, and the profile the UI does read would look unconfigured.
+#: "Preconfigured model service"
+LEGACY_PRESET_PROFILE_NAME = "\u9884\u914d\u7f6e\u6a21\u578b\u670d\u52a1"
+
+#: Reading that claim and moving the profile, per engine. Placeholders are
+#: deliberately not rewritten for you, so each statement is spelled twice.
+LEGACY_CLAIM_SQLITE = "SELECT 1 FROM model_profile_seeds WHERE name = ?"
+LEGACY_CLAIM_MYSQL = "SELECT 1 FROM model_profile_seeds WHERE name = %s"
+LEGACY_PROFILE_RENAME_SQLITE = "UPDATE model_profiles SET name = ? WHERE name = ?"
+LEGACY_PROFILE_RENAME_MYSQL = "UPDATE model_profiles SET name = %s WHERE name = %s"
+LEGACY_CLAIM_DROP_SQLITE = "DELETE FROM model_profile_seeds WHERE name = ?"
+LEGACY_CLAIM_DROP_MYSQL = "DELETE FROM model_profile_seeds WHERE name = %s"
+
 #: One row per preset ever seeded, so deleting one is a decision that
 #: survives a restart. Without it, seeding on an empty profile list would
 #: quietly undo the deletion the next time the app opened.
@@ -86,6 +104,7 @@ def seed_preset_profile(
     preset = configured_preset()
     if preset is None:
         return None
+    _rekey_legacy_preset_name(profiles.database_path)
     if not _claim_seed(profiles.database_path, preset.name):
         return None
     return profiles.create(preset, secrets)
@@ -115,6 +134,52 @@ def _preset_data() -> dict[str, Any] | None:
     if not base_url or not model:
         return None
     return {"base_url": base_url, "model": model}
+
+
+def _rekey_legacy_preset_name(database_path: Path) -> None:
+    """Move a pre-translation seed claim, and the profile it claimed, forward.
+
+    The lookup is on the claim rather than on the profile row, because the claim
+    is the evidence that *we* created that profile; a directory where somebody
+    typed the old name into a profile of their own is not ours to rename.
+
+    Everything keyed by `profile_id` - the version history, and the secret
+    reference that holds the API key - is left alone, so the key stays attached
+    and the profile is never created a second time.
+    """
+    store: Any = store_for(database_path)
+    mysql = is_mysql(store)
+    with store.write(autocommit=True) as connection:
+        execute(connection, mysql, SEED_SCHEMA)
+        claimed_before = execute(
+            connection,
+            mysql,
+            LEGACY_CLAIM_MYSQL if mysql else LEGACY_CLAIM_SQLITE,
+            (LEGACY_PRESET_PROFILE_NAME,),
+        ).fetchone()
+        if claimed_before is None:
+            return
+        execute(
+            connection,
+            mysql,
+            LEGACY_PROFILE_RENAME_MYSQL if mysql else LEGACY_PROFILE_RENAME_SQLITE,
+            (PRESET_PROFILE_NAME, LEGACY_PRESET_PROFILE_NAME),
+        )
+        # The new claim is taken before the old one is dropped. Reversed, a
+        # crash between the two would let the next start win a fresh claim and
+        # create the duplicate profile this whole step exists to prevent.
+        execute(
+            connection,
+            mysql,
+            CLAIM_MYSQL if mysql else CLAIM_SQLITE,
+            (PRESET_PROFILE_NAME, datetime.now(UTC).isoformat()),
+        )
+        execute(
+            connection,
+            mysql,
+            LEGACY_CLAIM_DROP_MYSQL if mysql else LEGACY_CLAIM_DROP_SQLITE,
+            (LEGACY_PRESET_PROFILE_NAME,),
+        )
 
 
 def _claim_seed(database_path: Path, name: str) -> bool:

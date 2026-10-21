@@ -15,7 +15,10 @@ from pathlib import Path
 import pytest
 
 from one_memory.model_presets import (
+    LEGACY_PRESET_PROFILE_NAME,
     PRESET_PROFILE_NAME,
+    _claim_seed,
+    apply_preset_key,
     configured_preset,
     seed_preset_profile,
 )
@@ -167,3 +170,84 @@ def test_preset_configuration_does_not_import_a_generated_module() -> None:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert "import_module" not in called
+
+
+def _directory_from_before_the_translation(tmp_path, profiles, secrets):
+    """A data directory exactly as the pre-translation build left it.
+
+    The claim row and the profile carry the name that build used, and the
+    profile has a key saved against it. That combination is the state the
+    rename has to survive: losing the claim means seeding a second profile,
+    and losing the key means the one profile the interface reads looks
+    unconfigured.
+    """
+    assert _claim_seed(profiles.database_path, LEGACY_PRESET_PROFILE_NAME)
+    preset = configured_preset()
+    assert preset is not None
+    legacy = profiles.create(
+        preset.model_copy(update={"name": LEGACY_PRESET_PROFILE_NAME}), secrets
+    )
+    return apply_preset_key(
+        profiles,
+        legacy.profile_id,
+        "sk-legacy-key",
+        secrets=secrets,
+        expected_revision=legacy.revision,
+    )
+
+
+def test_an_upgrade_from_before_the_translation_seeds_no_second_profile(
+    tmp_path,
+    configured_build,
+) -> None:
+    profiles, secrets = _store(tmp_path)
+    legacy = _directory_from_before_the_translation(tmp_path, profiles, secrets)
+
+    assert seed_preset_profile(profiles, secrets) is None
+
+    kept = profiles.list(secrets)
+    assert [profile.name for profile in kept] == [PRESET_PROFILE_NAME]
+    assert kept[0].profile_id == legacy.profile_id
+
+
+def test_the_saved_key_stays_on_the_profile_the_interface_reads(
+    tmp_path,
+    configured_build,
+) -> None:
+    """The failure this guards is a key left on a row nothing looks at again."""
+    profiles, secrets = _store(tmp_path)
+    _directory_from_before_the_translation(tmp_path, profiles, secrets)
+
+    seed_preset_profile(profiles, secrets)
+
+    readable = [
+        profile for profile in profiles.list(secrets) if profile.name == PRESET_PROFILE_NAME
+    ]
+    assert len(readable) == 1
+    assert readable[0].has_api_key is True
+
+
+def test_the_rename_happens_once(tmp_path, configured_build) -> None:
+    profiles, secrets = _store(tmp_path)
+    _directory_from_before_the_translation(tmp_path, profiles, secrets)
+
+    for _ in range(3):
+        seed_preset_profile(profiles, secrets)
+
+    assert len(profiles.list(secrets)) == 1
+
+
+def test_a_profile_the_user_named_themselves_is_not_renamed(tmp_path, configured_build) -> None:
+    """The claim row, not the name, is what makes a profile ours to move."""
+    profiles, secrets = _store(tmp_path)
+    preset = configured_preset()
+    assert preset is not None
+    theirs = profiles.create(
+        preset.model_copy(update={"name": LEGACY_PRESET_PROFILE_NAME}), secrets
+    )
+
+    assert seed_preset_profile(profiles, secrets) is not None
+
+    by_id = {profile.profile_id: profile.name for profile in profiles.list(secrets)}
+    assert by_id[theirs.profile_id] == LEGACY_PRESET_PROFILE_NAME
+    assert PRESET_PROFILE_NAME in by_id.values()
