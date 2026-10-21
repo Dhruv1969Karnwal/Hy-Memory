@@ -1569,7 +1569,7 @@ export function MemorySpace({
             </p>
             {(processing.unknown ?? 0) > 0 ? (
               <div className="memory-processing-unknown" role="status">
-                <span>{`${countLabel(processing.unknown ?? 0, "conversation")} have an uncertain processing result`}</span>
+                <span>{`An uncertain processing result for ${countLabel(processing.unknown ?? 0, "conversation")}`}</span>
                 <R6Button disabled={busy} onClick={() => void retryUnknown()}>
                   Reprocess
                 </R6Button>

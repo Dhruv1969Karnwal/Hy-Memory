@@ -1762,7 +1762,7 @@ describe("MemorySpace", () => {
 
     expect(
       await screen.findByText(
-        "17 conversations have an uncertain processing result",
+        "An uncertain processing result for 17 conversations",
       ),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reprocess" }));
