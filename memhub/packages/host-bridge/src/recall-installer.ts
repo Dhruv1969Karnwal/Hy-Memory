@@ -141,7 +141,7 @@ export const OWNER_VALUE = "one-memory";
  * embedded in the marker so a disk skill can say which template produced it
  * without a second file to keep in step.
  */
-export const SKILL_VERSION = 15;
+export const SKILL_VERSION = 16;
 
 /** Marker written after the complete YAML frontmatter of every managed skill.
  *
