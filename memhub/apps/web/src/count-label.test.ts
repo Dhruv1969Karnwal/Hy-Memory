@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { countLabel, groupedCountLabel } from "./count-label";
+import { countLabel, groupedCountLabel, groupedNumber } from "./count-label";
 
 describe("count label", () => {
   it("drops the plural ending when the count is one", () => {
@@ -33,6 +33,15 @@ describe("count label", () => {
     expect(groupedCountLabel(1, "message")).toBe("1 message");
     expect(groupedCountLabel(81_614, "conversation")).toBe(
       "81,614 conversations",
+    );
+  });
+
+  it("groups a bare count the way it groups a counted noun", () => {
+    expect(groupedNumber(1)).toBe("1");
+    expect(groupedNumber(1_234)).toBe("1,234");
+    expect(groupedNumber(81_614)).toBe("81,614");
+    expect(groupedCountLabel(81_614, "conversation")).toBe(
+      `${groupedNumber(81_614)} conversations`,
     );
   });
 });

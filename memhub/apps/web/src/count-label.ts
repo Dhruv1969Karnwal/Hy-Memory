@@ -13,13 +13,20 @@ export function countLabel(
   return `${count} ${nounFor(count, singular, plural)}`;
 }
 
+/** A count on its own, grouped the one way this UI groups counts. Copy that
+ * counts things without naming them ("3 already existed") still has to pick a
+ * locale, and it has to pick the same one `groupedCountLabel` picked. */
+export function groupedNumber(count: number): string {
+  return count.toLocaleString("en-US");
+}
+
 /** The same, with thousands separators, for the counters that had them. */
 export function groupedCountLabel(
   count: number,
   singular: string,
   plural?: string,
 ): string {
-  return `${count.toLocaleString("en-US")} ${nounFor(count, singular, plural)}`;
+  return `${groupedNumber(count)} ${nounFor(count, singular, plural)}`;
 }
 
 function nounFor(count: number, singular: string, plural?: string): string {

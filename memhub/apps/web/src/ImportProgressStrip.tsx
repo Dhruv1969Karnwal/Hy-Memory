@@ -21,7 +21,7 @@ import {
   validReceipt,
 } from "./SourceJobActions";
 import "./import-progress-strip.css";
-import { groupedCountLabel } from "./count-label";
+import { groupedCountLabel, groupedNumber } from "./count-label";
 
 const RUNNING = new Set(["running"]);
 const PAUSABLE = new Set(["pending", "running"]);
@@ -736,5 +736,5 @@ function jobSummary(
   },
   sync = false,
 ) {
-  return `${sync ? `${groupedCountLabel(totals.stored, "new original")} this run` : `${groupedCountLabel(totals.stored, "original")} saved`}${totals.merged > 0 ? ` · ${totals.merged.toLocaleString("zh-CN")} already existed` : ""}${totals.skipped > 0 ? ` · ${totals.skipped.toLocaleString("zh-CN")} skipped` : ""}${totals.errors > 0 ? ` · ${groupedCountLabel(totals.errors, "issue")}` : ""}`;
+  return `${sync ? `${groupedCountLabel(totals.stored, "new original")} this run` : `${groupedCountLabel(totals.stored, "original")} saved`}${totals.merged > 0 ? ` · ${groupedNumber(totals.merged)} already existed` : ""}${totals.skipped > 0 ? ` · ${groupedNumber(totals.skipped)} skipped` : ""}${totals.errors > 0 ? ` · ${groupedCountLabel(totals.errors, "issue")}` : ""}`;
 }
