@@ -22,10 +22,23 @@ WEB_SETTINGS = ROOT / "memhub" / "apps" / "web" / "src" / "ModelSettings.tsx"
 
 CONSTANT = "PRESET_PROFILE_NAME"
 
-pytestmark = pytest.mark.skipif(
-    not (CORE_PRESETS.exists() and WEB_SETTINGS.exists()),
-    reason="memhub workspaces are not present in this checkout",
-)
+MEMHUB = ROOT / "memhub"
+
+# An SDK-only distribution really has no memhub workspace, so that absence is a
+# skip. A missing file inside a memhub that IS here means one side was renamed or
+# moved - and skipping that too would let the parity this file exists to protect
+# disappear without a single failing test.
+if not MEMHUB.exists():
+    pytest.skip("this checkout has no memhub workspace", allow_module_level=True)
+
+
+def test_both_sides_of_the_parity_still_exist() -> None:
+    assert CORE_PRESETS.exists(), "%s moved or was renamed" % (
+        CORE_PRESETS.relative_to(ROOT),
+    )
+    assert WEB_SETTINGS.exists(), "%s moved or was renamed" % (
+        WEB_SETTINGS.relative_to(ROOT),
+    )
 
 
 def _core_constant():
@@ -49,16 +62,22 @@ def _core_constant():
 
 def _web_constant():
     """The value the web layer assigns to PRESET_PROFILE_NAME."""
-    matches = re.findall(
-        r"^const\s+%s\s*=\s*\"([^\"]*)\"\s*;" % CONSTANT,
-        WEB_SETTINGS.read_text(encoding="utf-8"),
+    source = WEB_SETTINGS.read_text(encoding="utf-8")
+    declarations = re.findall(
+        r"^const\s+%s\s*=\s*([\"'])(.*?)\1\s*;?\s*$" % CONSTANT,
+        source,
         re.MULTILINE,
     )
-    assert len(matches) == 1, "expected exactly one %s declaration in %s" % (
+    assert declarations, (
+        "no %s declaration was found in %s - the extractor, not the parity, is what "
+        "broke here; teach it the new spelling rather than loosening the comparison"
+        % (CONSTANT, WEB_SETTINGS.relative_to(ROOT))
+    )
+    assert len(declarations) == 1, "expected exactly one %s declaration in %s" % (
         CONSTANT,
         WEB_SETTINGS.relative_to(ROOT),
     )
-    return matches[0]
+    return declarations[0][1]
 
 
 def test_preset_profile_name_matches_across_core_and_web():

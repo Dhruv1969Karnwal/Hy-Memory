@@ -545,6 +545,14 @@ class TestCleanSummary:
         ("Summary: One sentence summary.", "One sentence summary."),
         ("'One sentence summary.'", "One sentence summary."),
         ('"One sentence summary."', "One sentence summary."),
+        # The Chinese prefix and the CJK quote pair are still matched in
+        # `fact_reconciler._clean_summary`, and model output in that language is
+        # what this stripper exists for, so they stay as the bytes they match on.
+        # "Summary: One sentence summary." / "One sentence summary." in CJK quotes.
+        ("\u603b\u7ed3\uff1a\u4e00\u53e5\u603b\u7ed3\u3002", "\u4e00\u53e5\u603b\u7ed3\u3002"),
+        ("Summary: \u4e00\u53e5\u603b\u7ed3\u3002", "\u4e00\u53e5\u603b\u7ed3\u3002"),
+        ("\u603b\u7ed3:\u4e00\u53e5\u603b\u7ed3\u3002", "\u4e00\u53e5\u603b\u7ed3\u3002"),
+        ("\u201c\u4e00\u53e5\u603b\u7ed3\u3002\u201d", "\u4e00\u53e5\u603b\u7ed3\u3002"),
         ("One sentence\nsummary.", "One sentence summary."),
         ("  One sentence summary.  ", "One sentence summary."),
         ("", ""),

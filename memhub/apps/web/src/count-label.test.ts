@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { countLabel, groupedCountLabel, groupedNumber } from "./count-label";
 
@@ -43,5 +43,25 @@ describe("count label", () => {
     expect(groupedCountLabel(81_614, "conversation")).toBe(
       `${groupedNumber(81_614)} conversations`,
     );
+  });
+
+  it("groups the same way wherever the app is run", () => {
+    // The locale is an argument, not an accident: without it the same build prints
+    // "1.234.567,5" under de_DE, "1 234 567,5" under fr_FR and "12,34,567.5" under
+    // hi_IN - a different grouping, not just a different separator. The digits are
+    // pinned for the reader, and the argument is asserted so this still bites on a
+    // runner whose default locale happens to agree with the expected output.
+    const locale = vi.spyOn(Number.prototype, "toLocaleString");
+    try {
+      expect(groupedNumber(1_234_567)).toBe("1,234,567");
+      expect(groupedCountLabel(1_234_567, "conversation")).toBe(
+        "1,234,567 conversations",
+      );
+      expect(locale).toHaveBeenCalledWith("en-US");
+      expect(countLabel(1, "conversation")).toBe("1 conversation");
+      expect(countLabel(17, "conversation")).toBe("17 conversations");
+    } finally {
+      locale.mockRestore();
+    }
   });
 });
