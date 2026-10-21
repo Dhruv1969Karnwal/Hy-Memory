@@ -138,7 +138,8 @@ def test_character_budget_names_the_budget_that_fired(tmp_path) -> None:
     _confirmed(
         governance,
         evidence_id,
-        content="nickname" + ("x" * 300),
+        # The space is load-bearing: "nickname" + "xxx" concatenates into one English token
+        content="nickname " + ("x" * 300),
     )
 
     receipt = GovernedRecallTarget(governance).recall(

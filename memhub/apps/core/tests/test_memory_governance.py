@@ -1245,7 +1245,10 @@ def test_content_candidate_backfill_handles_a_single_oversized_memory(
     database = tmp_path / "one-memory.sqlite3"
     store = MemoryGovernanceStore(database)
     evidence_id = evidence(database, message_id="huge", verbatim="Original text")
-    huge = "huge target phrase" + ("content" * 400_000)
+    # 130k repeats of a 7-char word, not the 400k the Chinese fixture needed: the point is
+    # one record over the backfill char budget but still inside MemoryDraft's 1,000,000-char
+    # field limit, and "content" is 3.5x the length of the two-character word it replaced.
+    huge = "huge target phrase" + ("content" * 130_000)
     as_person(store).create(
         MemoryDraft(
             user_id="local",
